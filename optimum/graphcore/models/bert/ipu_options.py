@@ -21,7 +21,7 @@ import numpy as np
 import ctypes
 import os
 
-from utils import logger
+from ...utils import logger
 
 
 def get_options(config):

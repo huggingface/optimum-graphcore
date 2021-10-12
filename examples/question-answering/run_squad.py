@@ -18,12 +18,14 @@ import torch
 import poptorch
 import transformers
 from transformers import default_data_collator
-from modeling import PipelinedBertForQuestionAnswering
-from optimization import get_lr_scheduler, get_optimizer
-from ipu_options import get_options
 from datasets import load_dataset, load_metric
-from squad_data import PadCollate, prepare_train_features, prepare_validation_features, postprocess_qa_predictions
-from utils import logger, parse_bert_args
+
+from optimum.graphcore import PipelinedBertForQuestionAnswering
+from optimum.graphcore.utils.optimization import get_lr_scheduler, get_optimizer
+from optimum.graphcore.models.bert.ipu_options import get_options
+
+from optimum.graphcore.data.squad_data import PadCollate, prepare_train_features, prepare_validation_features, postprocess_qa_predictions
+from optimum.graphcore.utils.utils import logger, parse_bert_args
 
 
 def main():

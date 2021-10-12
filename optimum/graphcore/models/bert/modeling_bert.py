@@ -19,8 +19,8 @@ from scipy.stats import truncnorm
 import poptorch
 import transformers
 
-from bert_fused_attention import BertFusedSelfAttention
-from utils import logger
+from .bert_fused_attention import BertFusedSelfAttention
+from ...utils import logger
 
 
 class OnehotGather(nn.Module):
