@@ -13,4 +13,4 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-from .utils import logger
+from .utils import logger, get_sdk_version
