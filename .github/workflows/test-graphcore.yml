@@ -25,10 +25,10 @@ jobs:
       run: |
         virtualenv sdk -p python3.6
         source sdk/bin/activate
-        export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_18_04*
+        export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_18_04-2\.3\.0*
         pip3 install ${SDK_PATH}/poptorch-*.whl
-        . ${SDK_PATH}/poplar-ubuntu_18_04*/enable.sh
-        . ${SDK_PATH}/popart-ubuntu_18_04*/enable.sh
+        . ${SDK_PATH}/poplar-ubuntu_18_04-2\.3\.0**/enable.sh
+        . ${SDK_PATH}/popart-ubuntu_18_04-*2\.3\.0*/enable.sh
         pip3 install .
     - name: Test with unittest
       working-directory: tests
