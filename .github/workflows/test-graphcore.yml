@@ -2,9 +2,9 @@ name: run_tests_ipu
 
 on:
   push:
-    branches: [ main, ci_setup ]
+    branches: [ main ]
   pull_request:
-    branches: [ main, ci_setup ]
+    branches: [ main ]
 
 jobs:
   build:
@@ -33,7 +33,7 @@ jobs:
     - name: Test with unittest
       working-directory: tests
       run: |
-        python -m unittest 'test_*.py'
+	pytest
     - name: Clean working directory
       run: |
         rm -r *
