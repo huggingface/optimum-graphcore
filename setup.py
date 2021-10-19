@@ -11,7 +11,18 @@ except Exception as error:
 
 
 install_requires = [
-    "optimum"
+    "optimum",
+    "datasets>=1.7.0",
+    "tokenizers>=0.10.3",
+    "scipy>=1.5.4",
+    "pyyaml>=5.4.1",
+    "wandb==0.12.1",
+    "pytest",
+    "pytest-pythonpath",
+    "tfrecord>=1.13",
+    "filelock>=3.0.12",
+    # "mpi4py>=3.0.3",
+    # "horovod>=0.22.0",
 ]
 
 setup(
@@ -41,15 +52,6 @@ setup(
     package_dir={"": "src"},
     packages=find_packages("src"),
     install_requires=install_requires,
-    # TODO: take care of extras_require and entry_points once possible.
-    # extras_require=None,
-    # entry_points={
-    #     "console_scripts": [
-    #         "optimum_export=optimum.onnxruntime.convert:main",
-    #         "optimum_optimize=optimum.onnxruntime.optimize_model:main",
-    #         "optimum_export_optimize=optimum.onnxruntime.convert_and_optimize:main"
-    #     ],
-    # },
     include_package_data=True,
     zip_safe=False,
 )

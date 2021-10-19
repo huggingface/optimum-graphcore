@@ -2,7 +2,7 @@ name: run_tests_ipu
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, ci_setup_part2 ]
   pull_request:
     branches: [ main ]
 
@@ -11,7 +11,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [3.8, 3.9]
+        python-version: [3.6]
         os: [ubuntu-18.04]
 
     runs-on: self-hosted
@@ -21,19 +21,23 @@ jobs:
       uses: actions/setup-python@v2
       with:
         python-version: ${{ matrix.python-version }}
+    - name: Create and start a virtual environment
+      run: |
+        virtualenv venv -p python3.6
+        source venv/bin/activate
     - name: Install dependencies
       run: |
-        virtualenv sdk -p python3.6
-        source sdk/bin/activate
-        export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_18_04-2\.3\.0*
+        source venv/bin/activate
+        pip install --upgrade pip
+        export SDK_PATH=/home/michaelb/poplar_sdk-ubuntu_18_04-2\.3\.0*
         pip3 install ${SDK_PATH}/poptorch-*.whl
-        . ${SDK_PATH}/poplar-ubuntu_18_04-2\.3\.0**/enable.sh
-        . ${SDK_PATH}/popart-ubuntu_18_04-*2\.3\.0*/enable.sh
         pip3 install .
-    - name: Test with unittest
+    - name: Test with Pytest
       working-directory: tests
       run: |
-	pytest
-    - name: Clean working directory
-      run: |
-        rm -r *
+        source ../venv/bin/activate
+        export SDK_PATH=/home/michaelb/poplar_sdk-ubuntu_18_04-2\.3\.0*
+        . ${SDK_PATH}/poplar-ubuntu_18_04-2\.3\.0**/enable.sh
+        . ${SDK_PATH}/popart-ubuntu_18_04-*2\.3\.0*/enable.sh
+        # TODO: run pytest once tests are added.
+        # pytest
