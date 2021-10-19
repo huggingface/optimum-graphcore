@@ -33,7 +33,7 @@ jobs:
     - name: Test with unittest
       working-directory: tests
       run: |
-	pytest
+        pytest
     - name: Clean working directory
       run: |
         rm -r *
