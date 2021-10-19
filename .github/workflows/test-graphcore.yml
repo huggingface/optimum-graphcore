@@ -1,0 +1,39 @@
+name: run_tests_ipu
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [3.8, 3.9]
+        os: [ubuntu-18.04]
+
+    runs-on: self-hosted
+    steps:
+    - uses: actions/checkout@v2
+    - name: Setup Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v2
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Install dependencies
+      run: |
+        virtualenv sdk -p python3.6
+        source sdk/bin/activate
+        export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_18_04-2\.3\.0*
+        pip3 install ${SDK_PATH}/poptorch-*.whl
+        . ${SDK_PATH}/poplar-ubuntu_18_04-2\.3\.0**/enable.sh
+        . ${SDK_PATH}/popart-ubuntu_18_04-*2\.3\.0*/enable.sh
+        pip3 install .
+    - name: Test with unittest
+      working-directory: tests
+      run: |
+	pytest
+    - name: Clean working directory
+      run: |
+        rm -r *
