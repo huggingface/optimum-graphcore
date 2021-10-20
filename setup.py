@@ -1,13 +1,14 @@
 import re
+
 from setuptools import find_packages, setup
 
 # Ensure we match the version set in optimum/version.py
 try:
-    filepath = 'src/optimum-graphcore/version.py'
+    filepath = "src/optimum-graphcore/version.py"
     with open(filepath) as version_file:
-        __version__, = re.findall('__version__ = "(.*)"', version_file.read())
+        (__version__,) = re.findall('__version__ = "(.*)"', version_file.read())
 except Exception as error:
-    assert False,  "Error: Could not open '%s' due %s\n" % (filepath, error)
+    assert False, "Error: Could not open '%s' due %s\n" % (filepath, error)
 
 
 install_requires = [
@@ -29,8 +30,8 @@ setup(
     name="optimum-graphcore",
     version=__version__,
     description="Optimum Library is an extension of the Hugging Face Transformers library, providing a framework to "
-                "integrate third-party libraries from Hardware Partners and interface with their specific "
-                "functionality.",
+    "integrate third-party libraries from Hardware Partners and interface with their specific "
+    "functionality.",
     long_description=open("README.md", "r", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
     classifiers=[
