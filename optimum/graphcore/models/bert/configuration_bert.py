@@ -282,6 +282,7 @@ def parse_bert_args(args=None):
         logger(f" Warning: Unknown arg(s) in config file: {unknown_args}")
 
     parser.set_defaults(**yaml_args)
+    remaining_args = ""
     args = parser.parse_args(remaining_args)
 
     # Initialise PopDist

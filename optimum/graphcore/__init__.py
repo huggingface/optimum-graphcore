@@ -16,3 +16,5 @@ from .models.bert import (
     PipelinedBertForPretraining,
     PipelinedBertForQuestionAnswering,
 )
+
+from .trainer import IPUTrainer

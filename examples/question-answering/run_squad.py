@@ -132,6 +132,7 @@ def main():
                 training_model.setOptimizer(optimizer)
                 step_length = time.perf_counter() - start_step
                 step_throughput = samples_per_step / step_length
+                import pdb; pdb.set_trace()
                 loss = outputs[0].mean().item()
                 logger(f"Epoch: {epoch}, Step:{step}, LR={scheduler.get_last_lr()[0]:.2e}, loss={loss:3.3f}, throughput={step_throughput:3.3f} samples/s")
 
