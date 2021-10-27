@@ -17,4 +17,7 @@ from .models.bert import (
     PipelinedBertForQuestionAnswering,
 )
 
+from .ipu_configuration import IPUConfig
+
 from .trainer import IPUTrainer
+from .training_args import IPUTrainingArguments

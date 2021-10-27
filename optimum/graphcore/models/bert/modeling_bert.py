@@ -20,6 +20,7 @@ import poptorch
 import transformers
 
 from .bert_fused_attention import BertFusedSelfAttention
+from ...modeling_utils import register, PipelineMixin
 from ...utils import logger
 
 
@@ -140,7 +141,8 @@ def accuracy_masked(out, targ, mask_val):
     return (out.argmax(dim=-1) == targ).float().mul(mask).div(num_unmasked).sum(1).mean()
 
 
-class PipelinedBertForPretraining(transformers.BertForPreTraining):
+@register(transformers.BertForPreTraining)
+class PipelinedBertForPretraining(transformers.BertForPreTraining, PipelineMixin):
     def __init__(self, config):
         super().__init__(config)
         self.gather_indices = OnehotGather()
@@ -305,7 +307,8 @@ class SerializedEmbedding(nn.Module):
         return x_sum
 
 
-class PipelinedBertForQuestionAnswering(transformers.BertForQuestionAnswering):
+@register(transformers.BertForQuestionAnswering)
+class PipelinedBertForQuestionAnswering(transformers.BertForQuestionAnswering, PipelineMixin):
     def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.

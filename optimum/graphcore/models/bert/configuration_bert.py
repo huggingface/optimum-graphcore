@@ -132,7 +132,6 @@ def get_options(config):
     return opts
 
 
-
 config_file = os.path.join(os.path.dirname(__file__), "configs.yml")
 
 

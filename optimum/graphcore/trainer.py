@@ -13,6 +13,7 @@
 #  limitations under the license.
 
 import collections
+import copy
 import math
 import os
 import time
@@ -30,6 +31,9 @@ from torch.utils.data import Dataset
 from torch.utils.data.distributed import DistributedSampler
 
 import poptorch
+from poptorch.optim import AdamW, LAMB
+
+import horovod.torch as hvd
 
 import transformers
 from transformers import (
@@ -80,10 +84,10 @@ from transformers.utils import logging
 
 # import wandb
 
+from .ipu_configuration import IPUConfig
+from .modeling_utils import to_pipelined
 from .trainer_utils import dataloader_method_wrapper
-from .models.bert import get_options, parse_bert_args
-from .utils import get_sdk_version
-from .utils.optimization import get_optimizer, get_lr_scheduler
+from .models.bert import get_options
 
 logger = logging.get_logger(__name__)
 
@@ -93,6 +97,7 @@ class IPUTrainer(Trainer):
     def __init__(
         self,
         model: Union[PreTrainedModel, nn.Module] = None,
+        ipu_config: IPUConfig = None,
         args: TrainingArguments = None,
         data_collator: Optional[DataCollator] = None,
         train_dataset: Optional[Dataset] = None,
@@ -103,6 +108,9 @@ class IPUTrainer(Trainer):
         callbacks: Optional[List[TrainerCallback]] = None,
         optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (None, None),
     ):
+        if optimizers != (None, None):
+            raise NotImplementedError("providing optimizers to IPUTrainer is not supported yet.")
+
         super().__init__(
             model=model,
             args=args,
@@ -115,6 +123,7 @@ class IPUTrainer(Trainer):
             callbacks=callbacks,
             optimizers=optimizers,
         )
+
         # TODO change this ASAP.
         # hardcoded_config = transformers.BertConfig(**(vars(parse_bert_args())))
         # config = self.model.config.to_dict()
@@ -129,10 +138,22 @@ class IPUTrainer(Trainer):
         #     wandb_config['sdk_version'] = get_sdk_version()
         #     wandb.config.update(wandb_config)
 
-        self.model = self.model.parallelize().half()
+        self.ipu_config = ipu_config
+
+        # TODO: make this cleaner.
+        opt_config = copy.deepcopy(self.model.config)
+        opt_config.__dict__.update(ipu_config.__dict__)
+        opt_config.__dict__.update(args.__dict__)
+        self.opts = get_options(opt_config)
+        if args.compile_only:
+            self.opts.useOfflineIpuTarget()
+
+        self.model = to_pipelined(self.model, ipu_config)
+        self.model = self.model.parallelize()
+        if self.args.fp16:
+            self.model = self.model.half()
         self.model_wrapped = self.model
-        self.opts = get_options(self.model.config)
-        self.optimizer = get_optimizer(self.model.config, model)
+
 
     def _compile_model(self, model: poptorch.PoplarExecutor, sample_batch: Union[Dict[str, torch.Tensor], Tuple[torch.Tensor]], log: bool = False):
         # Skipping compilation if the model was already compiled.
@@ -154,6 +175,74 @@ class IPUTrainer(Trainer):
     get_eval_dataloader = dataloader_method_wrapper(Trainer.get_eval_dataloader)
 
     get_test_dataloader = dataloader_method_wrapper(Trainer.get_test_dataloader)
+
+    def create_optimizer(self):
+        """
+        Setup the optimizer.
+
+        We provide a reasonable default that works well. If you want to use something else, you can pass a tuple in the
+        Trainer's init through :obj:`optimizers`, or subclass and override this method in a subclass.
+        """
+        if self.optimizer is None:
+            decay_parameters = get_parameter_names(self.model, [nn.LayerNorm])
+            decay_parameters = [name for name in decay_parameters if "bias" not in name]
+            # TODO: make sure the same thing is done as in GraphCore example.
+            optimizer_grouped_parameters = [
+                {
+                    "params": [p for n, p in self.model.named_parameters() if n in decay_parameters],
+                    "weight_decay": self.args.weight_decay,
+                },
+                {
+                    "params": [p for n, p in self.model.named_parameters() if n not in decay_parameters],
+                    "weight_decay": 0.0,
+                },
+            ]
+            if self.args.lamb or self.args.lamb_no_bias_correction:
+                optimizer_cls = LAMB
+                # optimizer_kwargs = {"scale_parameter": False, "relative_step": False}
+                optimizer_kwargs = {
+                    "max_weight_norm": None,
+                    "bias_correction": self.lamb_no_bias_correction,
+                }
+            else:
+                optimizer_cls = AdamW
+                optimizer_kwargs = {
+                    "betas": (self.args.adam_beta1, self.args.adam_beta2),
+                    "eps": self.args.adam_epsilon,
+                    "bias_correction": False,
+                }
+
+            # TODO: update the training args
+            first_order_type = torch.float16 if self.args.enable_half_first_order_momentum else torch.float32
+            optimizer_kwargs["lr"] = self.args.learning_rate
+            optimizer_kwargs["weight_decay"] = 0
+            optimizer_kwargs["loss_scaling"] = self.args.loss_scaling
+            optimizer_kwargs["accum_type"] = torch.float16
+            optimizer_kwargs["first_order_momentum_accum_type"] = first_order_type
+            optimizer_kwargs["second_order_momentum_accum_type"] = torch.float32
+
+            # if self.sharded_ddp == ShardedDDPOption.SIMPLE:
+            #     self.optimizer = OSS(
+            #         params=optimizer_grouped_parameters,
+            #         optim=optimizer_cls,
+            #         **optimizer_kwargs,
+            #     )
+            # else:
+            self.optimizer = optimizer_cls(optimizer_grouped_parameters, **optimizer_kwargs)
+
+            if self.args.lamb or self.args.lamb_no_bias_correction:
+                self.optimizer.variable_attrs.markAsConstant("max_weight_norm")
+
+            self.optimizer.variable_attrs.markAsConstant("weight_decay")
+
+            # TODO: enable this feature.
+            # if self.args.use_popdist:
+            #     # TODO make sure the proper model is provided.
+            #     hvd.broadcast_parameters(self.model.state_dict(), root_rank=0)
+        # if is_sagemaker_mp_enabled():
+        #     self.optimizer = smp.DistributedOptimizer(self.optimizer)
+
+        return self.optimizer
 
     def create_scheduler(self, num_training_steps: int, optimizer: torch.optim.Optimizer = None):
         """
@@ -296,7 +385,7 @@ class IPUTrainer(Trainer):
         # number of training epochs: num_train_epochs
         # number of training steps per epoch: num_update_steps_per_epoch
         # total number of training steps to execute: max_steps
-        total_train_batch_size = args.train_batch_size * args.gradient_accumulation_steps * args.world_size
+        total_train_batch_size = args.train_batch_size # * args.gradient_accumulation_steps * args.device_iterations
         if train_dataset_is_sized:
             num_update_steps_per_epoch = len(train_dataloader) // args.gradient_accumulation_steps
             num_update_steps_per_epoch = max(num_update_steps_per_epoch, 1)
