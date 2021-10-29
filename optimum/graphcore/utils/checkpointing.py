@@ -12,8 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 import glob
+import os
+
 import torch
 from utils import logger
 
@@ -34,8 +35,4 @@ def save_checkpoint(config, model, step, metrics=None):
 
         logger(f"Saving checkpoint for step {step} to: {path}\n")
         model.save_pretrained(path)
-        torch.save({
-            "step": step,
-            "metrics": metrics,
-            "config": config
-        }, os.path.join(path, "training_state.pt"))
+        torch.save({"step": step, "metrics": metrics, "config": config}, os.path.join(path, "training_state.pt"))

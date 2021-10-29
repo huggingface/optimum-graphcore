@@ -16,49 +16,49 @@ import collections
 import copy
 import math
 import os
-import time
-from typing import Any, Callable, Dict, List, Tuple, Optional, Union
 import sys
+import time
 import warnings
-
-from tqdm import tqdm
-
-import optuna
-
-import torch
-import torch.nn as nn
-from torch.utils.data import Dataset
-from torch.utils.data.distributed import DistributedSampler
-
-import poptorch
-from poptorch.optim import AdamW, LAMB
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import horovod.torch as hvd
-
+import numpy as np
+import optuna
+import poptorch
+import torch
+import torch.distributed as dist
+import torch.nn as nn
 import transformers
+from poptorch.optim import LAMB, AdamW
+from torch.utils.data import DataLoader, Dataset, IterableDataset
+from torch.utils.data.distributed import DistributedSampler
+from tqdm import tqdm
 from transformers import (
-    Trainer,
+    DataCollator,
+    EvalPrediction,
     PretrainedConfig,
     PreTrainedModel,
     PreTrainedTokenizerBase,
-    TrainingArguments,
+    Trainer,
     TrainerCallback,
-    EvalPrediction,
-    DataCollator
-)
-from transformers.trainer_callback import (
-    TrainerState,
+    TrainingArguments,
 )
 from transformers.debug_utils import DebugOption, DebugUnderflowOverflow
-from transformers.file_utils import CONFIG_NAME, WEIGHTS_NAME, is_torch_tpu_available
+from transformers.file_utils import (
+    CONFIG_NAME,
+    WEIGHTS_NAME,
+    is_torch_tpu_available,
+)
+from transformers.modeling_utils import unwrap_model
 from transformers.optimization import get_scheduler
 from transformers.trainer import (
-    TRAINING_ARGS_NAME,
-    TRAINER_STATE_NAME,
     OPTIMIZER_NAME,
-    SCHEDULER_NAME,
     SCALER_NAME,
+    SCHEDULER_NAME,
+    TRAINER_STATE_NAME,
+    TRAINING_ARGS_NAME,
 )
+from transformers.trainer_callback import TrainerState
 from transformers.trainer_pt_utils import (
     DistributedLengthGroupedSampler,
     DistributedSamplerWithLoop,
@@ -79,21 +79,25 @@ from transformers.trainer_pt_utils import (
     nested_xla_mesh_reduce,
     reissue_pt_warnings,
 )
-from transformers.trainer_utils import set_seed, get_last_checkpoint
+from transformers.trainer_utils import (
+    EvalLoopOutput,
+    TrainOutput,
+    denumpify_detensorize,
+    get_last_checkpoint,
+    set_seed,
+    speed_metrics,
+)
 from transformers.utils import logging
-
-# import wandb
 
 from .ipu_configuration import IPUConfig
 from .modeling_utils import to_pipelined
-from .trainer_utils import dataloader_method_wrapper
 from .models.bert import get_options
+from .trainer_utils import dataloader_method_wrapper
 
 logger = logging.get_logger(__name__)
 
 
 class IPUTrainer(Trainer):
-
     def __init__(
         self,
         model: Union[PreTrainedModel, nn.Module] = None,
@@ -124,43 +128,49 @@ class IPUTrainer(Trainer):
             optimizers=optimizers,
         )
 
-        # TODO change this ASAP.
-        # hardcoded_config = transformers.BertConfig(**(vars(parse_bert_args())))
-        # config = self.model.config.to_dict()
-        # for k, v in hardcoded_config.to_dict().items():
-        #     if k not in config:
-        #         setattr(self.model.config, k, v)
-        # W&B
-        # config = self.model.config
-        # if config.wandb and (not config.use_popdist or config.popdist_rank == 0):
-        #     wandb.init(project="torch-bert")
-        #     wandb_config = vars(config)
-        #     wandb_config['sdk_version'] = get_sdk_version()
-        #     wandb.config.update(wandb_config)
-
-        self.ipu_config = ipu_config
+        self.ipu_config = copy.deepcopy(ipu_config)
+        # overwrite_ipu_config_dict = {k: v for k, v in args.__dict__.items() if k in ipu_config.__dict__}
+        # if overwrite_ipu_config_dict:
+        #     self.ipu_config.update(overwrite_ipu_config_dict)
+        #     update_info = (f"{k} => {v}" for k, v in overwrite_ipu_config_dict.items())
+        #     logger.info(
+        #         f"Overwriting IPU configuration values provided as training arguments: {' ' .join(update_info)}"
+        #     )
+        self.args.__dict__.update(ipu_config.__dict__)
 
         # TODO: make this cleaner.
         opt_config = copy.deepcopy(self.model.config)
-        opt_config.__dict__.update(ipu_config.__dict__)
+        opt_config.__dict__.update(self.ipu_config.__dict__)
         opt_config.__dict__.update(args.__dict__)
         self.opts = get_options(opt_config)
+        self.eval_opts = get_options(opt_config)
+        self.eval_opts.Training.gradientAccumulation(1)
+        if self.args.output_dir:
+            path = os.path.join(self.args.output_dir, "executable_cache")
+            logger.info(f"Executable caching enabled, cache directory: {path}")
+            self.opts.enableExecutableCaching(path)
+            self.eval_opts.enableExecutableCaching(path)
         if args.compile_only:
             self.opts.useOfflineIpuTarget()
 
         self.model = to_pipelined(self.model, ipu_config)
         self.model = self.model.parallelize()
-        if self.args.fp16:
+        if not self.args.fp32:
             self.model = self.model.half()
         self.model_wrapped = self.model
 
-
-    def _compile_model(self, model: poptorch.PoplarExecutor, sample_batch: Union[Dict[str, torch.Tensor], Tuple[torch.Tensor]], log: bool = False):
+    def _compile_model(
+        self,
+        model: poptorch.PoplarExecutor,
+        sample_batch: Union[Dict[str, torch.Tensor], Tuple[torch.Tensor]],
+        log: bool = False,
+    ):
         # Skipping compilation if the model was already compiled.
         if model.isCompiled():
             return
         if log:
             logger.info("Compiling Model...")
+        sample_batch = self._prepare_inputs(sample_batch)
         start_compile = time.perf_counter()
         if isinstance(sample_batch, tuple):
             model.compile(*sample_batch)
@@ -273,9 +283,9 @@ class IPUTrainer(Trainer):
         if isinstance(model, poptorch.PoplarExecutor):
             return model
         elif training:
-            return poptorch.trainingModel(model, options=self.opts, optimizer=self.optimizer)
+            return poptorch.trainingModel(model.train(), options=self.opts, optimizer=self.optimizer)
         else:
-            return poptorch.inferenceModel(model, options=self.opts)
+            return poptorch.inferenceModel(model.eval(), options=self.eval_opts)
 
     def train(
         self,
@@ -385,9 +395,11 @@ class IPUTrainer(Trainer):
         # number of training epochs: num_train_epochs
         # number of training steps per epoch: num_update_steps_per_epoch
         # total number of training steps to execute: max_steps
-        total_train_batch_size = args.train_batch_size # * args.gradient_accumulation_steps * args.device_iterations
+        total_train_batch_size = args.train_batch_size
         if train_dataset_is_sized:
-            num_update_steps_per_epoch = len(train_dataloader) // args.gradient_accumulation_steps
+            # No need to divide by the number of gradient accumulation steps as poptorch already accounts for that.
+            # num_update_steps_per_epoch = len(train_dataloader) // args.gradient_accumulation_steps
+            num_update_steps_per_epoch = len(train_dataloader)
             num_update_steps_per_epoch = max(num_update_steps_per_epoch, 1)
             if args.max_steps > 0:
                 max_steps = args.max_steps
@@ -468,6 +480,8 @@ class IPUTrainer(Trainer):
         logger.info(f"  Num Epochs = {num_train_epochs}")
         logger.info(f"  Instantaneous batch size per device = {args.per_device_train_batch_size}")
         logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_train_batch_size}")
+        logger.info(f"  Device Iterations = {self.ipu_config.device_iterations}")
+        logger.info(f"  Replication Factor = {self.ipu_config.replication_factor}")
         logger.info(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
         logger.info(f"  Total optimization steps = {max_steps}")
 
@@ -485,7 +499,8 @@ class IPUTrainer(Trainer):
             epochs_trained = self.state.global_step // num_update_steps_per_epoch
             if not args.ignore_data_skip:
                 steps_trained_in_current_epoch = self.state.global_step % (num_update_steps_per_epoch)
-                steps_trained_in_current_epoch *= args.gradient_accumulation_steps
+                # No need to multiply by the number of gradient accumulation steps as poptorch already accounts for that.
+                # steps_trained_in_current_epoch *= args.gradient_accumulation_steps
             else:
                 steps_trained_in_current_epoch = 0
 
@@ -537,7 +552,9 @@ class IPUTrainer(Trainer):
                     break
 
         for epoch in range(epochs_trained, num_train_epochs):
-            if isinstance(train_dataloader, poptorch.DataLoader) and isinstance(train_dataloader.sampler, DistributedSampler):
+            if isinstance(train_dataloader, poptorch.DataLoader) and isinstance(
+                train_dataloader.sampler, DistributedSampler
+            ):
                 train_dataloader.sampler.set_epoch(epoch)
             elif isinstance(train_dataloader.dataset, IterableDatasetShard):
                 train_dataloader.dataset.set_epoch(epoch)
@@ -567,85 +584,88 @@ class IPUTrainer(Trainer):
                     steps_trained_progress_bar.close()
                     steps_trained_progress_bar = None
 
-                if step % args.gradient_accumulation_steps == 0:
-                    self.control = self.callback_handler.on_step_begin(args, self.state, self.control)
+                # TODO: gradient accumulation happens inside PopTorch, how to handle this then?
+                # if step % args.gradient_accumulation_steps == 0:
+                self.control = self.callback_handler.on_step_begin(args, self.state, self.control)
 
-                if (
-                    ((step + 1) % args.gradient_accumulation_steps != 0)
-                    and args.local_rank != -1
-                    and args._no_sync_in_gradient_accumulation
-                ):
-                    # Avoid unnecessary DDP synchronization since there will be no backward pass on this example.
-                    with model.no_sync():
-                        tr_loss_step = self.training_step(model, inputs)
-                else:
-                    tr_loss_step = self.training_step(model, inputs)
+                # if (
+                #     ((step + 1) % args.gradient_accumulation_steps != 0)
+                #     and args.local_rank != -1
+                #     and args._no_sync_in_gradient_accumulation
+                # ):
+                #     # Avoid unnecessary DDP synchronization since there will be no backward pass on this example.
+                #     with model.no_sync():
+                #         tr_loss_step = self.training_step(model, inputs)
+                # else:
+                tr_loss_step = self.training_step(model, inputs)
 
-                if (
-                    args.logging_nan_inf_filter
-                    and not is_torch_tpu_available()
-                    and (torch.isnan(tr_loss_step) or torch.isinf(tr_loss_step))
-                ):
-                    # if loss is nan or inf simply add the average of previous logged losses
-                    tr_loss += tr_loss / (1 + self.state.global_step - self._globalstep_last_logged)
-                else:
-                    tr_loss += tr_loss_step
+                # if (
+                #     args.logging_nan_inf_filter
+                #     and not is_torch_tpu_available()
+                #     and (torch.isnan(tr_loss_step) or torch.isinf(tr_loss_step))
+                # ):
+                #     # if loss is nan or inf simply add the average of previous logged losses
+                #     tr_loss += tr_loss / (1 + self.state.global_step - self._globalstep_last_logged)
+                # else:
+                tr_loss += tr_loss_step
 
-                self.current_flos += float(self.floating_point_ops(inputs))
+                # TODO: see how to enable this (if necessary), slows down training a lot.
+                # self.current_flos += float(self.floating_point_ops(inputs))
 
                 # Optimizer step for deepspeed must be called on every step regardless of the value of gradient_accumulation_steps
-                if self.deepspeed:
-                    self.deepspeed.step()
+                # if self.deepspeed:
+                #     self.deepspeed.step()
 
-                if (step + 1) % args.gradient_accumulation_steps == 0 or (
-                    # last step in epoch but step is always smaller than gradient_accumulation_steps
-                    steps_in_epoch <= args.gradient_accumulation_steps
-                    and (step + 1) == steps_in_epoch
-                ):
-                    # Gradient clipping
-                    if args.max_grad_norm is not None and args.max_grad_norm > 0 and not self.deepspeed:
-                        # deepspeed does its own clipping
+                # if (step + 1) % args.gradient_accumulation_steps == 0 or (
+                #     # last step in epoch but step is always smaller than gradient_accumulation_steps
+                #     steps_in_epoch <= args.gradient_accumulation_steps
+                #     and (step + 1) == steps_in_epoch
+                # ):
+                # Gradient clipping
+                # if args.max_grad_norm is not None and args.max_grad_norm > 0 and not self.deepspeed:
+                #    # deepspeed does its own clipping
+                #    if self.use_amp:
+                #        # AMP: gradients need unscaling
+                #        self.scaler.unscale_(self.optimizer)
 
-                        if self.use_amp:
-                            # AMP: gradients need unscaling
-                            self.scaler.unscale_(self.optimizer)
+                # if hasattr(self.optimizer, "clip_grad_norm"):
+                #     # Some optimizers (like the sharded optimizer) have a specific way to do gradient clipping
+                #     self.optimizer.clip_grad_norm(args.max_grad_norm)
+                # elif hasattr(model, "clip_grad_norm_"):
+                #     # Some models (like FullyShardedDDP) have a specific way to do gradient clipping
+                #     model.clip_grad_norm_(args.max_grad_norm)
+                # else:
+                #     # Revert to normal clipping otherwise, handling Apex or full precision
+                #     nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
 
-                        if hasattr(self.optimizer, "clip_grad_norm"):
-                            # Some optimizers (like the sharded optimizer) have a specific way to do gradient clipping
-                            self.optimizer.clip_grad_norm(args.max_grad_norm)
-                        elif hasattr(model, "clip_grad_norm_"):
-                            # Some models (like FullyShardedDDP) have a specific way to do gradient clipping
-                            model.clip_grad_norm_(args.max_grad_norm)
-                        else:
-                            # Revert to normal clipping otherwise, handling Apex or full precision
-                            nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
+                # Optimizer step
+                optimizer_was_run = True
+                # if self.deepspeed:
+                #     pass  # called outside the loop
+                # elif is_torch_tpu_available():
+                #     xm.optimizer_step(self.optimizer)
+                # elif self.use_amp:
+                #     scale_before = self.scaler.get_scale()
+                #     self.scaler.step(self.optimizer)
+                #     self.scaler.update()
+                #     scale_after = self.scaler.get_scale()
+                #     optimizer_was_run = scale_before <= scale_after
+                # else:
+                # self.optimizer.step()
 
-                    # Optimizer step
-                    optimizer_was_run = True
-                    if self.deepspeed:
-                        pass  # called outside the loop
-                    elif is_torch_tpu_available():
-                        xm.optimizer_step(self.optimizer)
-                    elif self.use_amp:
-                        scale_before = self.scaler.get_scale()
-                        self.scaler.step(self.optimizer)
-                        self.scaler.update()
-                        scale_after = self.scaler.get_scale()
-                        optimizer_was_run = scale_before <= scale_after
-                    else:
-                        self.optimizer.step()
+                if optimizer_was_run and not self.deepspeed:
+                    self.lr_scheduler.step()
 
-                    if optimizer_was_run and not self.deepspeed:
-                        self.lr_scheduler.step()
+                # self.model_wrapped.setOptimizer(self.optimizer)
 
-                    model.zero_grad()
-                    self.state.global_step += 1
-                    self.state.epoch = epoch + (step + 1) / steps_in_epoch
-                    self.control = self.callback_handler.on_step_end(args, self.state, self.control)
+                # model.zero_grad()
+                self.state.global_step += 1
+                self.state.epoch = epoch + (step + 1) / steps_in_epoch
+                self.control = self.callback_handler.on_step_end(args, self.state, self.control)
 
-                    self._maybe_log_save_evaluate(tr_loss, model, trial, epoch, ignore_keys_for_eval)
-                else:
-                    self.control = self.callback_handler.on_substep_end(args, self.state, self.control)
+                self._maybe_log_save_evaluate(tr_loss, model, trial, epoch, ignore_keys_for_eval)
+                # else:
+                #     self.control = self.callback_handler.on_substep_end(args, self.state, self.control)
 
                 if self.control.should_epoch_stop or self.control.should_training_stop:
                     break
@@ -653,15 +673,15 @@ class IPUTrainer(Trainer):
             self.control = self.callback_handler.on_epoch_end(args, self.state, self.control)
             self._maybe_log_save_evaluate(tr_loss, model, trial, epoch, ignore_keys_for_eval)
 
-            if DebugOption.TPU_METRICS_DEBUG in self.args.debug:
-                if is_torch_tpu_available():
-                    # tpu-comment: Logging debug metrics for PyTorch/XLA (compile, execute times, ops, etc.)
-                    xm.master_print(met.metrics_report())
-                else:
-                    logger.warning(
-                        "You enabled PyTorch/XLA debug metrics but you don't have a TPU "
-                        "configured. Check your training configuration if this is unexpected."
-                    )
+            # if DebugOption.TPU_METRICS_DEBUG in self.args.debug:
+            #     if is_torch_tpu_available():
+            #         # tpu-comment: Logging debug metrics for PyTorch/XLA (compile, execute times, ops, etc.)
+            #         xm.master_print(met.metrics_report())
+            #     else:
+            #         logger.warning(
+            #             "You enabled PyTorch/XLA debug metrics but you don't have a TPU "
+            #             "configured. Check your training configuration if this is unexpected."
+            #         )
             if self.control.should_training_stop:
                 break
 
@@ -672,10 +692,10 @@ class IPUTrainer(Trainer):
         logger.info("\n\nTraining completed. Do not forget to share your model on huggingface.co/models =)\n\n")
         if args.load_best_model_at_end and self.state.best_model_checkpoint is not None:
             # Wait for everyone to get here so we are sur the model has been saved by process 0.
-            if is_torch_tpu_available():
-                xm.rendezvous("load_best_model_at_end")
-            elif args.local_rank != -1:
-                dist.barrier()
+            # if is_torch_tpu_available():
+            #     xm.rendezvous("load_best_model_at_end")
+            # elif args.local_rank != -1:
+            #     dist.barrier()
 
             logger.info(
                 f"Loading best model from {self.state.best_model_checkpoint} (score: {self.state.best_metric})."
@@ -717,19 +737,11 @@ class IPUTrainer(Trainer):
 
         return TrainOutput(self.state.global_step, train_loss, metrics)
 
-    # def get_train_dataloader(self) -> DataLoader:
-    #     dataloader = super().get_train_dataloader()
-    #     return _pytorch_dataloader_to_poptorch_dataloader(dataloader, self.config, opts=self.opts)
-
-    # def get_eval_dataloader(self, eval_dataset: Optional[Dataset] = None) -> DataLoader:
-    #     dataloader = super().get_eval_dataloader(eval_dataset=eval_dataset)
-    #     return _pytorch_dataloader_to_poptorch_dataloader(dataloader, self.config, opts=self.opts)
-
     def _load_state_dict_in_model(self, state_dict, executor):
         executor_mapping = {
             "training": [self.training_model],
             "inference": [self.inference_model],
-            "both": [self.training_model, self.inference_model]
+            "both": [self.training_model, self.inference_model],
         }
         models_to_update = executor_mapping.get(executor, None)
         if models_to_update is None:
@@ -748,7 +760,54 @@ class IPUTrainer(Trainer):
         # if len(load_result.unexpected_keys) != 0:
         #     logger.warn(f"There were unexpected keys in the checkpoint model loaded: {load_result.unexpected_keys}.")
 
-    def training_step(self, model: poptorch.PoplarExecutor, inputs: Dict[str, Union[torch.Tensor, Any]]) -> torch.Tensor:
+    # def _prepare_input(self, data: Union[torch.Tensor, Any]) -> Union[torch.Tensor, Any]:
+    #     """
+    #     Prepares one :obj:`data` before feeding it to the model, be it a tensor or a nested list/dictionary of tensors.
+    #     """
+    #     if isinstance(data, dict):
+    #         return type(data)(**{k: self._prepare_input(v) for k, v in data.items()})
+    #     elif isinstance(data, (tuple, list)):
+    #         return type(data)(self._prepare_input(v) for v in data)
+    #     elif isinstance(data, torch.Tensor):
+    #         kwargs = dict()
+    #         if data.dtype == torch.int64:
+    #             kwargs["dtype"] = torch.int32
+    #             return data.to(**kwargs)
+    #     return data
+
+    def _maybe_log_save_evaluate(self, tr_loss, model, trial, epoch, ignore_keys_for_eval):
+        if self.control.should_log:
+            logs: Dict[str, float] = {}
+
+            # all_gather + mean() to get average loss over all processes
+            tr_loss_scalar = self._nested_gather(tr_loss).mean().item()
+
+            # reset tr_loss to zero
+            tr_loss -= tr_loss
+
+            logs["loss"] = round(tr_loss_scalar / (self.state.global_step - self._globalstep_last_logged), 4)
+            logs["learning_rate"] = self._get_learning_rate()
+
+            self._total_loss_scalar += tr_loss_scalar
+            self._globalstep_last_logged = self.state.global_step
+            self.store_flos()
+
+            self.log(logs)
+
+        metrics = None
+        if self.control.should_evaluate:
+            model.detachFromDevice()
+            metrics = self.evaluate(ignore_keys=ignore_keys_for_eval)
+            model.attachToDevice()
+            self._report_to_hp_search(trial, epoch, metrics)
+
+        if self.control.should_save:
+            self._save_checkpoint(model, trial, metrics=metrics)
+            self.control = self.callback_handler.on_save(self.args, self.state, self.control)
+
+    def training_step(
+        self, model: poptorch.PoplarExecutor, inputs: Dict[str, Union[torch.Tensor, Any]]
+    ) -> torch.Tensor:
         """
         Perform a training step on a batch of inputs.
 
@@ -766,37 +825,243 @@ class IPUTrainer(Trainer):
         Return:
             :obj:`torch.Tensor`: The tensor with training loss on this batch.
         """
-        model.train()
+        # model.train()
         inputs = self._prepare_inputs(inputs)
-
-        # if is_sagemaker_mp_enabled():
-        #     scaler = self.scaler if self.use_amp else None
-        #     loss_mb = smp_forward_backward(model, inputs, self.args.gradient_accumulation_steps, scaler=scaler)
-        #     return loss_mb.reduce_mean().detach().to(self.args.device)
-
-        # if self.use_amp:
-        #     with autocast():
-        #         loss = self.compute_loss(model, inputs)
-        # else:
         loss = self.compute_loss(model, inputs)
-        loss = loss.mean() # TODO: find a way to determine if there are multiple IPUs.
-
-        # if self.args.n_gpu > 1:
-        #     loss = loss.mean()  # mean() to average on multi-gpu parallel training
-
-        # if self.args.gradient_accumulation_steps > 1 and not self.deepspeed:
-        #     # deepspeed handles loss scaling by gradient_accumulation_steps in its `backward`
-        #     loss = loss / self.args.gradient_accumulation_steps
-
-        # if self.use_amp:
-        #     self.scaler.scale(loss).backward()
-        # elif self.use_apex:
-        #     with amp.scale_loss(loss, self.optimizer) as scaled_loss:
-        #         scaled_loss.backward()
-        # elif self.deepspeed:
-        #     # loss gets scaled under gradient_accumulation_steps in deepspeed
-        #     loss = self.deepspeed.backward(loss)
-        # else:
-        #     loss.backward()
-
+        loss = loss.mean()
         return loss
+
+    def evaluation_loop(
+        self,
+        dataloader: DataLoader,
+        description: str,
+        prediction_loss_only: Optional[bool] = None,
+        ignore_keys: Optional[List[str]] = None,
+        metric_key_prefix: str = "eval",
+    ) -> EvalLoopOutput:
+        """
+        Prediction/evaluation loop, shared by :obj:`Trainer.evaluate()` and :obj:`Trainer.predict()`.
+
+        Works both with or without labels.
+        """
+        prediction_loss_only = (
+            prediction_loss_only if prediction_loss_only is not None else self.args.prediction_loss_only
+        )
+
+        # if eval is called w/o train init deepspeed here
+        # if self.args.deepspeed and not self.deepspeed:
+
+        #     # XXX: eval doesn't have `resume_from_checkpoint` arg but we should be able to do eval
+        #     # from the checkpoint eventually
+        #     deepspeed_engine, _, _ = deepspeed_init(self, num_training_steps=0, resume_from_checkpoint=None)
+        #     self.model = deepspeed_engine.module
+        #     self.model_wrapped = deepspeed_engine
+        #     self.deepspeed = deepspeed_engine
+        #     # XXX: we don't need optim/sched for inference, but this needs to be sorted out, since
+        #     # for example the Z3-optimizer is a must for zero3 to work even for inference - what we
+        #     # don't need is the deepspeed basic optimizer which is self.optimizer.optimizer
+        #     deepspeed_engine.optimizer.optimizer = None
+        #     deepspeed_engine.lr_scheduler = None
+
+        model = self._wrap_model(self.model, training=False)
+        self._compile_model(model, next(iter(dataloader)), log=True)
+
+        # if full fp16 is wanted on eval and this ``evaluation`` or ``predict`` isn't called while
+        # ``train`` is running, halve it first and then put on device
+        if not self.is_in_train and self.args.fp16_full_eval:
+            model = model.half().to(self.args.device)
+
+        batch_size = dataloader.batch_size
+
+        logger.info(f"***** Running {description} *****")
+        if isinstance(dataloader.dataset, collections.abc.Sized):
+            logger.info(f"  Num examples = {self.num_examples(dataloader)}")
+        else:
+            logger.info("  Num examples: Unknown")
+        logger.info(f"  Batch size = {batch_size}")
+
+        model.eval()
+
+        self.callback_handler.eval_dataloader = dataloader
+        # Do this before wrapping.
+        eval_dataset = dataloader.dataset
+
+        # if is_torch_tpu_available():
+        #     dataloader = pl.ParallelLoader(dataloader, [self.args.device]).per_device_loader(self.args.device)
+
+        if self.args.past_index >= 0:
+            self._past = None
+
+        # Initialize containers
+        # losses/preds/labels on GPU/TPU (accumulated for eval_accumulation_steps)
+        losses_host = None
+        preds_host = None
+        labels_host = None
+        # losses/preds/labels on CPU (final containers)
+        all_losses = None
+        all_preds = None
+        all_labels = None
+        # Will be useful when we have an iterable dataset so don't know its length.
+
+        observed_num_examples = 0
+        # Main evaluation loop
+        for step, inputs in enumerate(dataloader):
+            # Update the observed num examples
+            observed_batch_size = find_batch_size(inputs)
+            if observed_batch_size is not None:
+                observed_num_examples += observed_batch_size
+                # For batch samplers, batch_size is not known by the dataloader in advance.
+                if batch_size is None:
+                    batch_size = observed_batch_size
+
+            # Prediction step
+            loss, logits, labels = self.prediction_step(model, inputs, prediction_loss_only, ignore_keys=ignore_keys)
+
+            # Update containers on host
+            if loss is not None:
+                losses = self._nested_gather(loss.repeat(batch_size))
+                losses_host = losses if losses_host is None else torch.cat((losses_host, losses), dim=0)
+            if logits is not None:
+                logits = self._pad_across_processes(logits)
+                logits = self._nested_gather(logits)
+                preds_host = logits if preds_host is None else nested_concat(preds_host, logits, padding_index=-100)
+            if labels is not None:
+                labels = self._pad_across_processes(labels)
+                labels = self._nested_gather(labels)
+                labels_host = labels if labels_host is None else nested_concat(labels_host, labels, padding_index=-100)
+            self.control = self.callback_handler.on_prediction_step(self.args, self.state, self.control)
+
+            # Gather all tensors and put them back on the CPU if we have done enough accumulation steps.
+            if self.args.eval_accumulation_steps is not None and (step + 1) % self.args.eval_accumulation_steps == 0:
+                if losses_host is not None:
+                    losses = nested_numpify(losses_host)
+                    all_losses = losses if all_losses is None else np.concatenate((all_losses, losses), axis=0)
+                if preds_host is not None:
+                    logits = nested_numpify(preds_host)
+                    all_preds = logits if all_preds is None else nested_concat(all_preds, logits, padding_index=-100)
+                if labels_host is not None:
+                    labels = nested_numpify(labels_host)
+                    all_labels = (
+                        labels if all_labels is None else nested_concat(all_labels, labels, padding_index=-100)
+                    )
+
+                # Set back to None to begin a new accumulation
+                losses_host, preds_host, labels_host = None, None, None
+
+        if self.args.past_index and hasattr(self, "_past"):
+            # Clean the state at the end of the evaluation loop
+            delattr(self, "_past")
+
+        # Gather all remaining tensors and put them back on the CPU
+        if losses_host is not None:
+            losses = nested_numpify(losses_host)
+            all_losses = losses if all_losses is None else np.concatenate((all_losses, losses), axis=0)
+        if preds_host is not None:
+            logits = nested_numpify(preds_host)
+            all_preds = logits if all_preds is None else nested_concat(all_preds, logits, padding_index=-100)
+        if labels_host is not None:
+            labels = nested_numpify(labels_host)
+            all_labels = labels if all_labels is None else nested_concat(all_labels, labels, padding_index=-100)
+
+        # Number of samples
+        if not isinstance(eval_dataset, IterableDataset):
+            num_samples = len(eval_dataset)
+        # The instance check is weird and does not actually check for the type, but whether the dataset has the right
+        # methods. Therefore we need to make sure it also has the attribute.
+        elif isinstance(eval_dataset, IterableDatasetShard) and hasattr(eval_dataset, "num_examples"):
+            num_samples = eval_dataset.num_examples
+        else:
+            num_samples = observed_num_examples
+
+        # Number of losses has been rounded to a multiple of batch_size and in a distributed training, the number of
+        # samplers has been rounded to a multiple of batch_size, so we truncate.
+        if all_losses is not None:
+            all_losses = all_losses[:num_samples]
+        if all_preds is not None:
+            all_preds = nested_truncate(all_preds, num_samples)
+        if all_labels is not None:
+            all_labels = nested_truncate(all_labels, num_samples)
+
+        # Metrics!
+        if self.compute_metrics is not None and all_preds is not None and all_labels is not None:
+            metrics = self.compute_metrics(EvalPrediction(predictions=all_preds, label_ids=all_labels))
+        else:
+            metrics = {}
+
+        # To be JSON-serializable, we need to remove numpy types or zero-d tensors
+        metrics = denumpify_detensorize(metrics)
+
+        if all_losses is not None:
+            metrics[f"{metric_key_prefix}_loss"] = all_losses.mean().item()
+
+        # Prefix all keys with metric_key_prefix + '_'
+        for key in list(metrics.keys()):
+            if not key.startswith(f"{metric_key_prefix}_"):
+                metrics[f"{metric_key_prefix}_{key}"] = metrics.pop(key)
+
+        return EvalLoopOutput(predictions=all_preds, label_ids=all_labels, metrics=metrics, num_samples=num_samples)
+
+    # def _nested_gather(self, tensors, name=None):
+    #     """
+    #     Gather value of `tensors` (tensor or list/tuple of nested tensors) and convert them to numpy before
+    #     concatenating them to `gathered`
+    #     """
+    #     import pdb; pdb.set_trace()
+    #     if tensors is None:
+    #         return
+    #     if is_torch_tpu_available():
+    #         if name is None:
+    #             name = "nested_gather"
+    #         tensors = nested_xla_mesh_reduce(tensors, name)
+    #     # elif is_sagemaker_mp_enabled():
+    #     #     tensors = smp_gather(tensors)
+    #     elif self.args.local_rank != -1:
+    #         tensors = distributed_concat(tensors)
+    #     return tensors
+
+    def save_model(self, output_dir: Optional[str] = None):
+        """
+        Will save the model, so you can reload it using :obj:`from_pretrained()`.
+
+        Will only save from the main process.
+        """
+
+        if output_dir is None:
+            output_dir = self.args.output_dir
+
+        if self.args.should_save:
+            self._save(output_dir)
+
+    def _save(self, output_dir: Optional[str] = None, state_dict=None):
+        # If we are executing this function, we are the process zero, so we don't check for that.
+        output_dir = output_dir if output_dir is not None else self.args.output_dir
+        os.makedirs(output_dir, exist_ok=True)
+        logger.info(f"Saving model checkpoint to {output_dir}")
+
+        # Updating self.model weights with the weights stored on device.
+        self.model_wrapped.copyWeightsToHost()
+
+        # TODO: should we keep the unwrap checks?
+        # Save a trained model and configuration using `save_pretrained()`.
+        # They can then be reloaded using `from_pretrained()`
+        if not isinstance(self.model, PreTrainedModel):
+            if isinstance(unwrap_model(self.model), PreTrainedModel):
+                if state_dict is None:
+                    state_dict = self.model.state_dict()
+                unwrap_model(self.model).save_pretrained(output_dir, state_dict=state_dict)
+            else:
+                logger.info("Trainer.model is not a `PreTrainedModel`, only saving its state dict.")
+                if state_dict is None:
+                    state_dict = self.model.state_dict()
+                torch.save(state_dict, os.path.join(output_dir, WEIGHTS_NAME))
+        else:
+            # TODO: make this more efficient.
+            deparallelized = copy.deepcopy(self.model).deparallelize()
+            deparallelized.save_pretrained(output_dir, state_dict=state_dict)
+        if self.tokenizer is not None:
+            self.tokenizer.save_pretrained(output_dir)
+
+        self.ipu_config.save_pretrained(output_dir)
+
+        # Good practice: save your training arguments together with the trained model
+        torch.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))

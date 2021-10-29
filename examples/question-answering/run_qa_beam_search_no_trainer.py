@@ -28,13 +28,12 @@ from pathlib import Path
 import datasets
 import numpy as np
 import torch
-from datasets import load_dataset, load_metric
-from torch.utils.data import DataLoader
-from tqdm.auto import tqdm
-
 import transformers
 from accelerate import Accelerator
+from datasets import load_dataset, load_metric
 from huggingface_hub import Repository
+from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
 from transformers import (
     AdamW,
     DataCollatorWithPadding,
@@ -51,7 +50,6 @@ from transformers.file_utils import get_full_repo_name
 from transformers.utils import check_min_version
 from transformers.utils.versions import require_version
 from utils_qa import postprocess_qa_predictions_with_beam_search
-
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.12.0.dev0")

@@ -14,24 +14,23 @@
 
 import glob
 import multiprocessing
-import numpy as np
 
+import numpy as np
+import popdist
 import torch
-from torch.utils.data import IterableDataset, Dataset
 from poptorch import DataLoader
 from poptorch.enums import DataLoaderMode
-import popdist
-from transformers import BertTokenizerFast
 from tfrecord.reader import tfrecord_loader
+from torch.utils.data import Dataset, IterableDataset
+from transformers import BertTokenizerFast
 
-
-TFRECORD_KEYS = (           # Torch Model Keys
-    'input_ids',            # input_ids                  : tokens after masking
-    'input_mask',           # attention_mask             : 1 if padding token, 0 otherwise
-    'segment_ids',          # token_type_ids             : sentence 0 or 1
-    'masked_lm_positions',  # masked_lm_positions        : position of masked tokens in input_ids
-    'masked_lm_ids',        # masked_lm_labels=None      : label of masked tokens with padding as 0.
-    'next_sentence_labels'  # next_sentence_label=None   : 1 if next sentence, 0 otherwise
+TFRECORD_KEYS = (  # Torch Model Keys
+    "input_ids",  # input_ids                  : tokens after masking
+    "input_mask",  # attention_mask             : 1 if padding token, 0 otherwise
+    "segment_ids",  # token_type_ids             : sentence 0 or 1
+    "masked_lm_positions",  # masked_lm_positions        : position of masked tokens in input_ids
+    "masked_lm_ids",  # masked_lm_labels=None      : label of masked tokens with padding as 0.
+    "next_sentence_labels",  # next_sentence_label=None   : 1 if next sentence, 0 otherwise
 )
 
 
@@ -70,9 +69,8 @@ class TFRecordPretrainingDataset(IterableDataset):
     files: List of TFRecord files containing the preprocessed pretraining data
     shuffle: Shuffle the data?
     """
-    def __init__(self,
-                 input_files,
-                 shuffle=True):
+
+    def __init__(self, input_files, shuffle=True):
         self.files = expand_glob_files(input_files)
         self.shuffle = shuffle
         self.reset()
@@ -88,8 +86,7 @@ class TFRecordPretrainingDataset(IterableDataset):
 
     def __len__(self):
         if getattr(self, "_len", None) is None:
-            pool = multiprocessing.Pool(
-                min(multiprocessing.cpu_count(), len(self.files)))
+            pool = multiprocessing.Pool(min(multiprocessing.cpu_count(), len(self.files)))
             num_samples = pool.map(self.samples_per_file, self.files)
             pool.close()
             pool.join()
@@ -101,7 +98,10 @@ class TFRecordPretrainingDataset(IterableDataset):
         if worker_info is not None:
             if popdist.isPopdistEnvSet():
                 self.worker_id = worker_info.id + worker_info.num_workers * popdist.getInstanceIndex()
-                self.shard = worker_info.id + worker_info.num_workers * popdist.getInstanceIndex(), worker_info.num_workers * popdist.getNumInstances()
+                self.shard = (
+                    worker_info.id + worker_info.num_workers * popdist.getInstanceIndex(),
+                    worker_info.num_workers * popdist.getNumInstances(),
+                )
             else:
                 self.worker_id = worker_info.id
                 self.shard = worker_info.id, worker_info.num_workers
@@ -118,10 +118,12 @@ class TFRecordPretrainingDataset(IterableDataset):
         except StopIteration:
             if self.file_index >= len(self.files):
                 raise StopIteration
-            self.reader = tfrecord_loader(self.files[self.file_index],
-                                          self.files[self.file_index].replace(".tfrecord", ".index"),
-                                          list(TFRECORD_KEYS),
-                                          self.shard)
+            self.reader = tfrecord_loader(
+                self.files[self.file_index],
+                self.files[self.file_index].replace(".tfrecord", ".index"),
+                list(TFRECORD_KEYS),
+                self.shard,
+            )
             self.file_index += 1
             datum = next(self.reader)
         datum = [datum[key] for key in TFRECORD_KEYS]
@@ -148,6 +150,7 @@ class GeneratedPretrainingDataset(Dataset):
     length: Length of generated dataset
     seed: Random seed
     """
+
     def __init__(self, vocab_size, sequence_length, mask_tokens, length=1, seed=42):
         self.vocab_size = vocab_size
         self.sequence_length = sequence_length
@@ -159,17 +162,11 @@ class GeneratedPretrainingDataset(Dataset):
     def generate_data(self):
         with torch.random.fork_rng():
             torch.manual_seed(self.seed)
-            tokens = torch.randint(0, self.vocab_size,
-                                   [self.sequence_length],
-                                   dtype=torch.long)
+            tokens = torch.randint(0, self.vocab_size, [self.sequence_length], dtype=torch.long)
             mask = torch.ones_like(tokens)
             types = torch.zeros_like(tokens)
-            masked_lm_positions = torch.randint(0, self.sequence_length,
-                                                [self.mask_tokens],
-                                                dtype=torch.long)
-            masked_lm_label = torch.randint(0, self.vocab_size,
-                                            [self.mask_tokens],
-                                            dtype=torch.long)
+            masked_lm_positions = torch.randint(0, self.sequence_length, [self.mask_tokens], dtype=torch.long)
+            masked_lm_label = torch.randint(0, self.vocab_size, [self.mask_tokens], dtype=torch.long)
             next_sentence_label = torch.randint(0, 2, [1], dtype=torch.long)
         return tokens, mask, types, masked_lm_positions, masked_lm_label, next_sentence_label
 
@@ -182,9 +179,7 @@ class GeneratedPretrainingDataset(Dataset):
 
 def get_generated_datum(config):
     result = []
-    dataset = GeneratedPretrainingDataset(config.vocab_size,
-                                          config.sequence_length,
-                                          config.mask_tokens)
+    dataset = GeneratedPretrainingDataset(config.vocab_size, config.sequence_length, config.mask_tokens)
     data = (dataset[i] for i in range(config.samples_per_step))
     for batches in zip(*data):
         result.append(torch.stack(batches))
@@ -200,24 +195,24 @@ class _WorkerInit:
 
 
 def get_dataloader(config, opts):
-    if config.dataset == 'generated':
-        dataset = GeneratedPretrainingDataset(config.vocab_size,
-                                              config.sequence_length,
-                                              config.mask_tokens,
-                                              config.samples_per_step,
-                                              config.random_seed)
-    elif config.dataset == 'pretraining':
+    if config.dataset == "generated":
+        dataset = GeneratedPretrainingDataset(
+            config.vocab_size, config.sequence_length, config.mask_tokens, config.samples_per_step, config.random_seed
+        )
+    elif config.dataset == "pretraining":
         dataset = TFRecordPretrainingDataset(config.input_files)
     else:
         raise RuntimeError(f"Unknown dataset '{config.dataset}', aborting.")
 
-    loader = DataLoader(opts,
-                        dataset,
-                        batch_size=config.batch_size,
-                        num_workers=config.dataloader_workers,
-                        worker_init_fn=_WorkerInit(config.random_seed),
-                        auto_distributed_partitioning = not isinstance(dataset, torch.utils.data.IterableDataset),
-                        mode=DataLoaderMode.AsyncRebatched if config.async_dataloader else DataLoaderMode.Sync)
+    loader = DataLoader(
+        opts,
+        dataset,
+        batch_size=config.batch_size,
+        num_workers=config.dataloader_workers,
+        worker_init_fn=_WorkerInit(config.random_seed),
+        auto_distributed_partitioning=not isinstance(dataset, torch.utils.data.IterableDataset),
+        mode=DataLoaderMode.AsyncRebatched if config.async_dataloader else DataLoaderMode.Sync,
+    )
     return loader
 
 
@@ -229,11 +224,13 @@ if __name__ == "__main__":
     dataset = TFRecordPretrainingDataset(["data/sample_text.tfrecord"])
     print("dataset length: ", len(dataset), "\n")
     first = next(iter(dataset))
-    named_datum = zip(['input_ids', 'input_mask', 'segment_ids', 'masked_lm_positions', 'masked_lm_ids', 'next_sentence_labels'], first)
+    named_datum = zip(
+        ["input_ids", "input_mask", "segment_ids", "masked_lm_positions", "masked_lm_ids", "next_sentence_labels"],
+        first,
+    )
     for (name, value) in iter(named_datum):
         print(name, value.shape, value.dtype, type(value), value, "\n\n")
 
     print("And now, we are going to decode the tokens.\n")
-    tokenizer = BertTokenizerFast.from_pretrained("bert-base-uncased",
-                                                  do_lower_case=True)
+    tokenizer = BertTokenizerFast.from_pretrained("bert-base-uncased", do_lower_case=True)
     print("\n\n", tokenizer.decode(first[0]), "\n\n")

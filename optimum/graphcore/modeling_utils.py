@@ -14,15 +14,14 @@
 
 import copy
 
-from .ipu_configuration import IPUConfig
 from transformers import PreTrainedModel
 
+from .ipu_configuration import IPUConfig
 
 _PRETRAINED_TO_PIPELINED_REGISTRY = {}
 
 
 def register(transformers_cls=None):
-
     def wrapper(cls):
         orig_cls = transformers_cls
         if orig_cls is None:
@@ -49,7 +48,6 @@ def to_pipelined(model: PreTrainedModel, ipu_config: IPUConfig):
 
 
 class PipelineMixin:
-
     @classmethod
     def from_transformers(cls, model: PreTrainedModel, ipu_config: IPUConfig):
         # TODO: make this cleaner.

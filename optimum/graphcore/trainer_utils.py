@@ -16,11 +16,10 @@ import functools
 from typing import Any, Dict, Optional
 
 import numpy as np
-import torch
 import poptorch
-from poptorch.enums import DataLoaderMode
-
+import torch
 import transformers
+from poptorch.enums import DataLoaderMode
 
 
 class _WorkerInit:
@@ -32,19 +31,18 @@ class _WorkerInit:
 
 
 class IPUDataLoader(poptorch.DataLoader):
-
     def __init__(
         self,
-        config: 'transformers.PretrainedConfig',
-        options: 'poptorch.Options',
-        dataset: 'torch.utils.data.Dataset',
+        config: "transformers.PretrainedConfig",
+        options: "poptorch.Options",
+        dataset: "torch.utils.data.Dataset",
         batch_size: int = 1,
         shuffle: bool = False,
         num_workers: int = 0,
         drop_last: bool = True,
         persistent_workers: Optional[bool] = None,
         auto_distributed_partitioning: bool = True,
-        mode: 'poptorch.DataLoaderMode' = DataLoaderMode.Sync,
+        mode: "poptorch.DataLoaderMode" = DataLoaderMode.Sync,
         async_options: Optional[Dict[str, Any]] = None,
         rebatched_worker_size: Optional[int] = None,
         **kwargs
@@ -65,12 +63,11 @@ class IPUDataLoader(poptorch.DataLoader):
             mode=mode,
             async_options=async_options,
             rebatched_worker_size=rebatched_worker_size,
-            **kwargs
+            **kwargs,
         )
 
 
 def dataloader_method_wrapper(func):
-
     def wrapper(*args, **kwargs):
         orig_init = IPUDataLoader.__init__
         partial_init = functools.partialmethod(IPUDataLoader.__init__, args[0].model.config, args[0].opts)

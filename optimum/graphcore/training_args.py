@@ -14,6 +14,7 @@
 
 from dataclasses import dataclass, field
 from typing import Optional
+
 from transformers.training_args import TrainingArguments
 from transformers.utils import logging
 
@@ -25,12 +26,18 @@ class IPUTrainingArguments(TrainingArguments):
     ipu_config_name: Optional[str] = field(
         default=None, metadata={"help": "Pretrained IPU config name or path if not the same as model_name"}
     )
+    fp32: bool = field(
+        default=False,
+        metadata={"help": "Whether to use 32-bit (full) precision instead of 16-bit"},
+    )
     enable_half_first_order_momentum: bool = field(
         default=False,
         metadata={"help": "Sets first order momentum type to float16 instead of float32"},
     )
     lamb: bool = field(default=False, metadata={"help": "Whether or not to replace AdamW by LAMB."})
-    lamb_no_bias_correction: bool = field(default=False, metadata={"help": "Whether or not to replace AdamW by LAMB without bias correction."})
+    lamb_no_bias_correction: bool = field(
+        default=False, metadata={"help": "Whether or not to replace AdamW by LAMB without bias correction."}
+    )
     loss_scaling: Optional[float] = field(
         default=None,
         metadata={
@@ -38,10 +45,10 @@ class IPUTrainingArguments(TrainingArguments):
             "If using automatic loss scaling, this value will be the initial value."
         },
     )
-    # TrainingArguments.per_device_train_batch_size.metadata["help"] = "The batch size per IPU for training."
-    # TrainingArguments.per_device_eval_batch_size.metadata["help"] = "The batch size per IPU for training."
-    device_iterations: int = field(default=1, metadata={"help": "Number of batches per training step"})
-    replication_factor: int = field(default=1, metadata={"help": "Number of replicas"})
+    # # TrainingArguments.per_device_train_batch_size.metadata["help"] = "The batch size per IPU for training."
+    # # TrainingArguments.per_device_eval_batch_size.metadata["help"] = "The batch size per IPU for training."
+    # device_iterations: int = field(default=1, metadata={"help": "Number of batches per training step"})
+    # replication_factor: int = field(default=1, metadata={"help": "Number of replicas"})
     compile_only: bool = field(default=False, metadata={"help": ""})
 
     @property
@@ -55,7 +62,9 @@ class IPUTrainingArguments(TrainingArguments):
                 "version. Using `--per_device_train_batch_size` is preferred."
             )
         per_device_batch_size = self.per_gpu_train_batch_size or self.per_device_train_batch_size
-        train_batch_size = per_device_batch_size * self.replication_factor * self.gradient_accumulation_steps * self.device_iterations
+        train_batch_size = (
+            per_device_batch_size * self.replication_factor * self.gradient_accumulation_steps * self.device_iterations
+        )
         return train_batch_size
 
     @property
@@ -69,5 +78,5 @@ class IPUTrainingArguments(TrainingArguments):
                 "version. Using `--per_device_eval_batch_size` is preferred."
             )
         per_device_batch_size = self.per_gpu_eval_batch_size or self.per_device_eval_batch_size
-        eval_batch_size = per_device_batch_size * self.replication_factor
+        eval_batch_size = per_device_batch_size * self.replication_factor * 1 * self.device_iterations
         return eval_batch_size

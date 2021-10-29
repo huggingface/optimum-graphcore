@@ -12,13 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import os
-import torch
+
+import horovod.torch as hvd
 import popdist
 import popdist.poptorch
-import horovod.torch as hvd
+import torch
 
-import logging
 logging.basicConfig(level=logging.INFO, format="%(message)s")
 
 

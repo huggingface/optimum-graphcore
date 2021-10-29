@@ -1,9 +1,10 @@
 import re
-from setuptools import find_packages, setup, find_namespace_packages
+
+from setuptools import find_namespace_packages, find_packages, setup
 
 # Ensure we match the version set in optimum/version.py
 try:
-    filepath = 'optimum/graphcore/version.py'
+    filepath = "optimum/graphcore/version.py"
     with open(filepath) as version_file:
         (__version__,) = re.findall('__version__ = "(.*)"', version_file.read())
 except Exception as error:

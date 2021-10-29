@@ -1,4 +1,3 @@
-
 #  Copyright 2021 The HuggingFace Team. All rights reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
@@ -13,4 +12,4 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-from .utils import logger, get_sdk_version
+from .utils import get_sdk_version, logger
