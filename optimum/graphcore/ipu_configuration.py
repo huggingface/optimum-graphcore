@@ -30,10 +30,6 @@ logger = logging.get_logger(__name__)
 
 CONFIG_NAME = "ipu_config.json"
 
-# def camel_to_snake(name):
-#     name = re.sub('(.)([A-Z][a-z]+)', r'\1_\2', name)
-#     return re.sub('([a-z0-9])([A-Z])', r'\1_\2', name).lower()
-
 
 class IPUConfig(PretrainedConfig):
     def __init__(self, **kwargs):
@@ -65,22 +61,6 @@ class IPUConfig(PretrainedConfig):
         self.embedding_serialization_factor = kwargs.pop("embedding_serialization_factor", 1)
 
         self.recompute_checkpoint_every_layer = kwargs.pop("recompute_checkpoint_every_layer", False)
-
-    # def _set_attributes(self, default_options: Options, options_dict: Dict[str, Any], dict_to_complete: Optional[Dict[str, Any]] = None):
-    #     default_options_dict = {camel_to_snake(k): v for k, v in default_options.toDict().items()}
-    #     for option_name, option_value in default_options_dict:
-    #         if dict_to_complete:
-    #             dict_to_complete[option_name] = options_dict.get(option_name, option_value)
-    #         else:
-    #             setattr(self, option_name, options_dict.get(option_name, option_value))
-
-    #     # TODO: handle values in options_dict that are not in default_options
-
-    # def _set_default_attributes(self, default_options: Options, provided_options: Dict[str, Any]):
-    #     self._set_attributes(default_options, provided_options)
-
-    #     for k, v in default_options.__dict__.items():
-    #         if isinstance(v, Options):
 
     def save_pretrained(self, save_directory: Union[str, os.PathLike], push_to_hub: bool = False, **kwargs):
         orig_transformers_config_name = transformers.file_utils.CONFIG_NAME
