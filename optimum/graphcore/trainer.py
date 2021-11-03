@@ -25,10 +25,10 @@ import horovod.torch as hvd
 import numpy as np
 import optuna
 import poptorch
+from poptorch import PoplarExecutor
 import torch
-import torch.distributed as dist
+# import torch.distributed as dist
 import torch.nn as nn
-import transformers
 from poptorch.optim import LAMB, AdamW
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch.utils.data.distributed import DistributedSampler
@@ -47,37 +47,21 @@ from transformers.debug_utils import DebugOption, DebugUnderflowOverflow
 from transformers.file_utils import (
     CONFIG_NAME,
     WEIGHTS_NAME,
-    is_torch_tpu_available,
 )
 from transformers.modeling_utils import unwrap_model
 from transformers.optimization import get_scheduler
 from transformers.trainer import (
-    OPTIMIZER_NAME,
-    SCALER_NAME,
-    SCHEDULER_NAME,
     TRAINER_STATE_NAME,
     TRAINING_ARGS_NAME,
 )
 from transformers.trainer_callback import TrainerState
 from transformers.trainer_pt_utils import (
-    DistributedLengthGroupedSampler,
-    DistributedSamplerWithLoop,
-    DistributedTensorGatherer,
     IterableDatasetShard,
-    LabelSmoother,
-    LengthGroupedSampler,
-    SequentialDistributedSampler,
-    ShardSampler,
-    distributed_broadcast_scalars,
-    distributed_concat,
     find_batch_size,
     get_parameter_names,
     nested_concat,
-    nested_detach,
     nested_numpify,
     nested_truncate,
-    nested_xla_mesh_reduce,
-    reissue_pt_warnings,
 )
 from transformers.trainer_utils import (
     EvalLoopOutput,
@@ -88,6 +72,8 @@ from transformers.trainer_utils import (
     speed_metrics,
 )
 from transformers.utils import logging
+
+from optimum.version import __version__
 
 from .ipu_configuration import IPUConfig
 from .modeling_utils import to_pipelined
@@ -129,35 +115,31 @@ class IPUTrainer(Trainer):
         )
 
         self.ipu_config = copy.deepcopy(ipu_config)
-        # overwrite_ipu_config_dict = {k: v for k, v in args.__dict__.items() if k in ipu_config.__dict__}
-        # if overwrite_ipu_config_dict:
-        #     self.ipu_config.update(overwrite_ipu_config_dict)
-        #     update_info = (f"{k} => {v}" for k, v in overwrite_ipu_config_dict.items())
-        #     logger.info(
-        #         f"Overwriting IPU configuration values provided as training arguments: {' ' .join(update_info)}"
-        #     )
-        self.args.__dict__.update(ipu_config.__dict__)
 
-        # TODO: make this cleaner.
-        opt_config = copy.deepcopy(self.model.config)
-        opt_config.__dict__.update(self.ipu_config.__dict__)
-        opt_config.__dict__.update(args.__dict__)
-        self.opts = get_options(opt_config)
-        self.eval_opts = get_options(opt_config)
-        self.eval_opts.Training.gradientAccumulation(1)
         if self.args.output_dir:
             path = os.path.join(self.args.output_dir, "executable_cache")
             logger.info(f"Executable caching enabled, cache directory: {path}")
-            self.opts.enableExecutableCaching(path)
-            self.eval_opts.enableExecutableCaching(path)
-        if args.compile_only:
-            self.opts.useOfflineIpuTarget()
+            if self.ipu_config.executable_cache_dir is not None:
+                logger.warning(f"IPUConfig executable_cache_dir was overriden to be: {path}")
+            self.ipu_config.executable_cache_dir = path
 
-        self.model = to_pipelined(self.model, ipu_config)
-        self.model = self.model.parallelize()
+        if args.compile_only:
+            if not self.ipu_config.compile_only:
+                logger.warning("IPUConfig compile_only was overriden to be set to True")
+            self.ipu_config.compile_only = True
+
+        self.args.__dict__.update(ipu_config.__dict__)
+        self.opts = ipu_config.to_options()
+        self.eval_opts = ipu_config.to_options(for_inference=True)
+
+        self.original_model = to_pipelined(self.model, ipu_config)
+        self.model = copy.deepcopy(self.original_model).parallelize()
         if not self.args.fp32:
             self.model = self.model.half()
         self.model_wrapped = self.model
+
+        self.training_model = None
+        self.inference_model = None
 
     def _compile_model(
         self,
@@ -209,7 +191,6 @@ class IPUTrainer(Trainer):
             ]
             if self.args.lamb or self.args.lamb_no_bias_correction:
                 optimizer_cls = LAMB
-                # optimizer_kwargs = {"scale_parameter": False, "relative_step": False}
                 optimizer_kwargs = {
                     "max_weight_norm": None,
                     "bias_correction": self.lamb_no_bias_correction,
@@ -231,13 +212,6 @@ class IPUTrainer(Trainer):
             optimizer_kwargs["first_order_momentum_accum_type"] = first_order_type
             optimizer_kwargs["second_order_momentum_accum_type"] = torch.float32
 
-            # if self.sharded_ddp == ShardedDDPOption.SIMPLE:
-            #     self.optimizer = OSS(
-            #         params=optimizer_grouped_parameters,
-            #         optim=optimizer_cls,
-            #         **optimizer_kwargs,
-            #     )
-            # else:
             self.optimizer = optimizer_cls(optimizer_grouped_parameters, **optimizer_kwargs)
 
             if self.args.lamb or self.args.lamb_no_bias_correction:
@@ -249,8 +223,6 @@ class IPUTrainer(Trainer):
             # if self.args.use_popdist:
             #     # TODO make sure the proper model is provided.
             #     hvd.broadcast_parameters(self.model.state_dict(), root_rank=0)
-        # if is_sagemaker_mp_enabled():
-        #     self.optimizer = smp.DistributedOptimizer(self.optimizer)
 
         return self.optimizer
 
@@ -278,14 +250,17 @@ class IPUTrainer(Trainer):
 
         return self.lr_scheduler
 
-    def _wrap_model(self, model, training=True):
-        # train/eval could be run multiple-times - if already wrapped, don't re-wrap it again
+    def _wrap_model(self, model: Union[PreTrainedModel, PoplarExecutor], training=True):
         if isinstance(model, poptorch.PoplarExecutor):
             return model
         elif training:
-            return poptorch.trainingModel(model.train(), options=self.opts, optimizer=self.optimizer)
+            if self.training_model is None:
+                self.training_model = poptorch.trainingModel(model.train(), options=self.opts, optimizer=self.optimizer)
+            return self.training_model
         else:
-            return poptorch.inferenceModel(model.eval(), options=self.eval_opts)
+            if self.inference_model is None:
+                self.inference_model = poptorch.inferenceModel(model.eval(), options=self.eval_opts)
+            return self.inference_model
 
     def train(
         self,
@@ -332,11 +307,6 @@ class IPUTrainer(Trainer):
 
         # This might change the seed so needs to run first.
         # self._hp_search_setup(trial)
-
-        # Model re-init
-        model_reloaded = False
-        if self.model_init is not None:
-            raise NotImplementedError("providing model_init is not supported yet with IPUs")
             # Seed must be set before instantiating the model when using model_init.
             # set_seed(args.seed)
             # self.model = self.call_model_init(trial)
@@ -380,10 +350,10 @@ class IPUTrainer(Trainer):
                 del state_dict
 
         # If model was re-initialized, put it on the right device and update self.model_wrapped
-        if model_reloaded:
-            if self.place_model_on_device:
-                self._move_model_to_device(self.model, args.device)
-            self.model_wrapped = self.model
+        # if model_reloaded:
+        #     if self.place_model_on_device:
+        #         self._move_model_to_device(self.model, args.device)
+        #     self.model_wrapped = self.model
 
         # Keeping track whether we can can len() on the dataset or not
         train_dataset_is_sized = isinstance(self.train_dataset, collections.abc.Sized)
@@ -406,6 +376,8 @@ class IPUTrainer(Trainer):
                 num_train_epochs = args.max_steps // num_update_steps_per_epoch + int(
                     args.max_steps % num_update_steps_per_epoch > 0
                 )
+                remainder = args.max_steps % num_update_steps_per_epoch
+
                 # May be slightly incorrect if the last batch in the training datalaoder has a smaller size but it's
                 # the best we can do.
                 num_train_samples = args.max_steps * total_train_batch_size
@@ -431,17 +403,6 @@ class IPUTrainer(Trainer):
             else:
                 debug_overflow = DebugUnderflowOverflow(self.model)  # noqa
 
-        # delay_optimizer_creation = self.sharded_ddp is not None and self.sharded_ddp != ShardedDDPOption.SIMPLE
-        # if args.deepspeed:
-        #     deepspeed_engine, optimizer, lr_scheduler = deepspeed_init(
-        #         self, num_training_steps=max_steps, resume_from_checkpoint=resume_from_checkpoint
-        #     )
-        #     self.model = deepspeed_engine.module
-        #     self.model_wrapped = deepspeed_engine
-        #     self.deepspeed = deepspeed_engine
-        #     self.optimizer = optimizer
-        #     self.lr_scheduler = lr_scheduler
-        # elif not delay_optimizer_creation:
         self.create_optimizer_and_scheduler(num_training_steps=max_steps)
 
         self.state = TrainerState()
@@ -462,7 +423,7 @@ class IPUTrainer(Trainer):
         #     self.create_optimizer_and_scheduler(num_training_steps=max_steps)
 
         # Check if saved optimizer or scheduler states exist
-        # self._load_optimizer_and_scheduler(resume_from_checkpoint)
+        self._load_optimizer_and_scheduler(resume_from_checkpoint)
 
         # important: at this point:
         # self.model         is the Transformers Model
@@ -640,10 +601,6 @@ class IPUTrainer(Trainer):
 
                 # Optimizer step
                 optimizer_was_run = True
-                # if self.deepspeed:
-                #     pass  # called outside the loop
-                # elif is_torch_tpu_available():
-                #     xm.optimizer_step(self.optimizer)
                 # elif self.use_amp:
                 #     scale_before = self.scaler.get_scale()
                 #     self.scaler.step(self.optimizer)
@@ -655,8 +612,6 @@ class IPUTrainer(Trainer):
 
                 if optimizer_was_run and not self.deepspeed:
                     self.lr_scheduler.step()
-
-                # self.model_wrapped.setOptimizer(self.optimizer)
 
                 # model.zero_grad()
                 self.state.global_step += 1
@@ -737,43 +692,26 @@ class IPUTrainer(Trainer):
 
         return TrainOutput(self.state.global_step, train_loss, metrics)
 
-    def _load_state_dict_in_model(self, state_dict, executor):
-        executor_mapping = {
-            "training": [self.training_model],
-            "inference": [self.inference_model],
-            "both": [self.training_model, self.inference_model],
-        }
-        models_to_update = executor_mapping.get(executor, None)
-        if models_to_update is None:
-            raise ValueError(f"allowed values for executor: training, inference or both, but {executor} was provided")
-        for model in models_to_update:
-            load_result = model.load_state_dict(state_dict, strict=False)
+    def _load_state_dict_in_model(self, state_dict):
+        load_result = self.original_model.load_state_dict(state_dict, strict=False)
+        model = copy.deepcopy(self.original_model).parallelize()
+        self.model.load_state_dict(model.state_dict())
 
-        # TODO: how to handle that?
-        # if len(load_result.missing_keys) != 0:
-        #     if self.model._keys_to_ignore_on_save is not None and set(load_result.missing_keys) == set(
-        #         self.model._keys_to_ignore_on_save
-        #     ):
-        #         self.model.tie_weights()
-        #     else:
-        #         logger.warn(f"There were missing keys in the checkpoint model loaded: {load_result.missing_keys}.")
-        # if len(load_result.unexpected_keys) != 0:
-        #     logger.warn(f"There were unexpected keys in the checkpoint model loaded: {load_result.unexpected_keys}.")
+        if self.training_model and self.training_model.isAttachedToDevice():
+            self.training_model.copyWeghtsToDevice()
 
-    # def _prepare_input(self, data: Union[torch.Tensor, Any]) -> Union[torch.Tensor, Any]:
-    #     """
-    #     Prepares one :obj:`data` before feeding it to the model, be it a tensor or a nested list/dictionary of tensors.
-    #     """
-    #     if isinstance(data, dict):
-    #         return type(data)(**{k: self._prepare_input(v) for k, v in data.items()})
-    #     elif isinstance(data, (tuple, list)):
-    #         return type(data)(self._prepare_input(v) for v in data)
-    #     elif isinstance(data, torch.Tensor):
-    #         kwargs = dict()
-    #         if data.dtype == torch.int64:
-    #             kwargs["dtype"] = torch.int32
-    #             return data.to(**kwargs)
-    #     return data
+        if self.inference_model and self.inference_model.isAttachedToDevice():
+            self.inference_model.copyWeghtsToDevice()
+
+        if len(load_result.missing_keys) != 0:
+            if self.model._keys_to_ignore_on_save is not None and set(load_result.missing_keys) == set(
+                self.model._keys_to_ignore_on_save
+            ):
+                self.model.tie_weights()
+            else:
+                logger.warn(f"There were missing keys in the checkpoint model loaded: {load_result.missing_keys}.")
+        if len(load_result.unexpected_keys) != 0:
+            logger.warn(f"There were unexpected keys in the checkpoint model loaded: {load_result.unexpected_keys}.")
 
     def _maybe_log_save_evaluate(self, tr_loss, model, trial, epoch, ignore_keys_for_eval):
         if self.control.should_log:
@@ -1006,7 +944,6 @@ class IPUTrainer(Trainer):
     #     Gather value of `tensors` (tensor or list/tuple of nested tensors) and convert them to numpy before
     #     concatenating them to `gathered`
     #     """
-    #     import pdb; pdb.set_trace()
     #     if tensors is None:
     #         return
     #     if is_torch_tpu_available():

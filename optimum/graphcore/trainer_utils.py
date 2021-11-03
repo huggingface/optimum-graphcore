@@ -13,13 +13,18 @@
 #  limitations under the license.
 
 import functools
+from inspect import signature
+# from typing import Any, Dict, Literal, Optional
 from typing import Any, Dict, Optional
 
 import numpy as np
 import poptorch
 import torch
-import transformers
+from torch.utils.data import DataLoader
 from poptorch.enums import DataLoaderMode
+from transformers.utils import logging
+
+logger = logging.get_logger(__name__)
 
 
 class _WorkerInit:
@@ -33,7 +38,6 @@ class _WorkerInit:
 class IPUDataLoader(poptorch.DataLoader):
     def __init__(
         self,
-        config: "transformers.PretrainedConfig",
         options: "poptorch.Options",
         dataset: "torch.utils.data.Dataset",
         batch_size: int = 1,
@@ -47,9 +51,14 @@ class IPUDataLoader(poptorch.DataLoader):
         rebatched_worker_size: Optional[int] = None,
         **kwargs
     ):
-        worker_init_fn = _WorkerInit(config.random_seed)
+        # TODO: link random seed to transformers seed.
+        worker_init_fn = _WorkerInit(123)
         auto_distributed_partitioning = not isinstance(dataset, torch.utils.data.IterableDataset)
-        mode = DataLoaderMode.AsyncRebatched if config.async_dataloader else DataLoaderMode.Sync
+        # TODO: check behaviour
+        if mode in [DataLoaderMode.Async, DataLoaderMode.AsyncRebatched]:
+            if drop_last:
+                logger.warning(f"drop_last=True is not a correct value for mode {mode}, setting drop_last to False.")
+                drop_last = False
         return super().__init__(
             options,
             dataset,
@@ -68,9 +77,12 @@ class IPUDataLoader(poptorch.DataLoader):
 
 
 def dataloader_method_wrapper(func):
+
+    # TODO: this is not a good way of doing things, make this better.
     def wrapper(*args, **kwargs):
+        poptorch_specific_args_and_others = {k: v for k, v in args[0].args.__dict__.items() if k not in signature(DataLoader.__init__).parameters}
         orig_init = IPUDataLoader.__init__
-        partial_init = functools.partialmethod(IPUDataLoader.__init__, args[0].model.config, args[0].opts)
+        partial_init = functools.partialmethod(IPUDataLoader.__init__, args[0].opts, **poptorch_specific_args_and_others)
         IPUDataLoader.__init__ = partial_init
         orig_dataloader = torch.utils.data.DataLoader
         torch.utils.data.DataLoader = IPUDataLoader

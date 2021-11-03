@@ -15,6 +15,8 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
+from poptorch import DataLoaderMode
+
 from transformers.training_args import TrainingArguments
 from transformers.utils import logging
 
@@ -45,11 +47,26 @@ class IPUTrainingArguments(TrainingArguments):
             "If using automatic loss scaling, this value will be the initial value."
         },
     )
+    # TODO: add choices.
+    # dataloader_mode: Literal["sync", "async", "async_rebatched"] = field(
+    dataloader_mode: str = field(
+        default="sync",
+        metadata={
+            "help": "The way data should be accessed."
+        }
+    )
+
     # # TrainingArguments.per_device_train_batch_size.metadata["help"] = "The batch size per IPU for training."
     # # TrainingArguments.per_device_eval_batch_size.metadata["help"] = "The batch size per IPU for training."
     # device_iterations: int = field(default=1, metadata={"help": "Number of batches per training step"})
     # replication_factor: int = field(default=1, metadata={"help": "Number of replicas"})
     compile_only: bool = field(default=False, metadata={"help": ""})
+
+    def __post_init__(self):
+        super().__post_init__()
+
+        dataloader_mode_mapping = {"sync": 0, "async": 1, "async_rebatched": 2}
+        self.dataloader_mode = DataLoaderMode(dataloader_mode_mapping[self.dataloader_mode])
 
     @property
     def train_batch_size(self) -> int:
