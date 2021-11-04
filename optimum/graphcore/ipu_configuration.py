@@ -15,14 +15,12 @@
 import os
 from typing import Any, Dict, Tuple, Union
 
-import torch
-
 import popart
 import popdist
 import poptorch
-from poptorch import Options
-
+import torch
 import transformers
+from poptorch import Options
 from transformers import PretrainedConfig
 from transformers.utils import logging
 
@@ -35,6 +33,7 @@ class IPUConfig(PretrainedConfig):
     def __init__(self, **kwargs):
         self.use_popdist = kwargs.pop("use_popdist", False)
         self.compile_only = kwargs.pop("compile_only", False)
+        self.random_seed = kwargs.pop("random_seed", None)
 
         self.ipus_per_replica = kwargs.pop("ipus_per_replica", 1)
         # TODO: invalid value for layers_per_ipu which must be a list.
@@ -99,8 +98,8 @@ class IPUConfig(PretrainedConfig):
         # Return all results from IPU to host
         opts.anchorMode(poptorch.AnchorMode.All)
 
-        # TODO: sync random seed with transformers.
-        # opts.randomSeed(config.random_seed)
+        if self.random_seed:
+            opts.randomSeed(self.random_seed)
 
         # Enable Replicated Tensor Sharding (RTS) of optimizer state
         #  with optimizer state residing either on-chip or in DRAM
@@ -142,13 +141,16 @@ class IPUConfig(PretrainedConfig):
         opts._Popart.set("disableGradAccumulationTensorStreams", True)
         # Parallelize optimizer step update across IPUs
         opts._Popart.set(
-            "accumulateOuterFragmentSettings.schedule", int(popart.AccumulateOuterFragmentSchedule.OverlapMemoryOptimized)
+            "accumulateOuterFragmentSettings.schedule",
+            int(popart.AccumulateOuterFragmentSchedule.OverlapMemoryOptimized),
         )
         opts._Popart.set("accumulateOuterFragmentSettings.excludedVirtualGraphs", ["0"])
         # Enable patterns for better throughput and memory reduction
         opts._Popart.set("subgraphCopyingStrategy", int(popart.SubgraphCopyingStrategy.JustInTime))
         opts._Popart.set("scheduleNonWeightUpdateGradientConsumersEarly", True)
-        opts._Popart.setPatterns({"TiedGather": True, "TiedGatherAccumulate": True, "UpdateInplacePrioritiesForIpu": True})
+        opts._Popart.setPatterns(
+            {"TiedGather": True, "TiedGatherAccumulate": True, "UpdateInplacePrioritiesForIpu": True}
+        )
 
         # Options for profiling with Popvision
         engine_options = {

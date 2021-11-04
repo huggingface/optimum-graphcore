@@ -13,15 +13,10 @@
 #  limitations under the license.
 
 import functools
-from inspect import signature
-# from typing import Any, Dict, Literal, Optional
-from typing import Any, Dict, Optional
 
 import numpy as np
 import poptorch
 import torch
-from torch.utils.data import DataLoader
-from poptorch.enums import DataLoaderMode
 from transformers.utils import logging
 
 logger = logging.get_logger(__name__)
@@ -35,63 +30,29 @@ class _WorkerInit:
         np.random.seed((self.seed + worker_id) % np.iinfo(np.uint32).max)
 
 
-class IPUDataLoader(poptorch.DataLoader):
-    def __init__(
-        self,
-        options: "poptorch.Options",
-        dataset: "torch.utils.data.Dataset",
-        batch_size: int = 1,
-        shuffle: bool = False,
-        num_workers: int = 0,
-        drop_last: bool = True,
-        persistent_workers: Optional[bool] = None,
-        auto_distributed_partitioning: bool = True,
-        mode: "poptorch.DataLoaderMode" = DataLoaderMode.Sync,
-        async_options: Optional[Dict[str, Any]] = None,
-        rebatched_worker_size: Optional[int] = None,
-        **kwargs
-    ):
-        # TODO: link random seed to transformers seed.
-        worker_init_fn = _WorkerInit(123)
-        auto_distributed_partitioning = not isinstance(dataset, torch.utils.data.IterableDataset)
-        # TODO: check behaviour
-        if mode in [DataLoaderMode.Async, DataLoaderMode.AsyncRebatched]:
-            if drop_last:
-                logger.warning(f"drop_last=True is not a correct value for mode {mode}, setting drop_last to False.")
-                drop_last = False
-        return super().__init__(
-            options,
-            dataset,
-            batch_size=batch_size,
-            shuffle=shuffle,
-            num_workers=num_workers,
-            drop_last=drop_last,
-            persistent_workers=persistent_workers,
-            auto_distributed_partitioning=auto_distributed_partitioning,
-            worker_init_fn=worker_init_fn,
-            mode=mode,
-            async_options=async_options,
-            rebatched_worker_size=rebatched_worker_size,
-            **kwargs,
-        )
+def to_poptorch_dataloader(for_training=False):
+    def method_wrapper(func):
+        def wrapper(*args, **kwargs):
+            self = args[0]
+            poptorch_specific_kwargs = {
+                # Not dropping last will end up causing NaN during training if the combined batch size does not divide the number of steps
+                "drop_last": True if for_training else self.args.dataloader_drop_last,
+                # TODO: how to handle this case
+                # "auto_distributed_partitioning": not isinstance(train_dataset, torch.utils.data.IterableDataset),
+                "mode": self.args.dataloader_mode,
+                "worker_init_fn": _WorkerInit(self.args.seed),
+            }
+            opts = self.opts if for_training else self.eval_opts
+            orig_init = poptorch.DataLoader.__init__
+            partial_init = functools.partialmethod(poptorch.DataLoader.__init__, opts, **poptorch_specific_kwargs)
+            poptorch.DataLoader.__init__ = partial_init
+            orig_dataloader = torch.utils.data.DataLoader
+            torch.utils.data.DataLoader = poptorch.DataLoader
+            res = func(*args, **kwargs)
+            poptorch.DataLoader.__init__ = orig_init
+            torch.utils.data.DataLoader = orig_dataloader
+            return res
 
+        return wrapper
 
-def dataloader_method_wrapper(func):
-
-    # TODO: this is not a good way of doing things, make this better.
-    def wrapper(*args, **kwargs):
-        poptorch_specific_args_and_others = {k: v for k, v in args[0].args.__dict__.items() if k not in signature(DataLoader.__init__).parameters}
-        orig_init = IPUDataLoader.__init__
-        partial_init = functools.partialmethod(IPUDataLoader.__init__, args[0].opts, **poptorch_specific_args_and_others)
-        IPUDataLoader.__init__ = partial_init
-        orig_dataloader = torch.utils.data.DataLoader
-        torch.utils.data.DataLoader = IPUDataLoader
-        res = func(*args, **kwargs)
-        IPUDataLoader.__init__ = orig_init
-        torch.utils.data.DataLoader = orig_dataloader
-        return res
-
-    # TODO: make sure to bind the wrapped method.
-    # wrapper = wrapper.__get__(func.__self__, func.__self__.__class__)
-
-    return wrapper
+    return method_wrapper

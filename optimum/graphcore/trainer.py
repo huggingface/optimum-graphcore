@@ -21,14 +21,14 @@ import time
 import warnings
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
-import horovod.torch as hvd
 import numpy as np
 import optuna
 import poptorch
-from poptorch import PoplarExecutor
 import torch
 # import torch.distributed as dist
 import torch.nn as nn
+from optimum.version import __version__
+from poptorch import PoplarExecutor
 from poptorch.optim import LAMB, AdamW
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch.utils.data.distributed import DistributedSampler
@@ -42,18 +42,13 @@ from transformers import (
     Trainer,
     TrainerCallback,
     TrainingArguments,
+    is_datasets_available,
 )
 from transformers.debug_utils import DebugOption, DebugUnderflowOverflow
-from transformers.file_utils import (
-    CONFIG_NAME,
-    WEIGHTS_NAME,
-)
+from transformers.file_utils import CONFIG_NAME, WEIGHTS_NAME
 from transformers.modeling_utils import unwrap_model
 from transformers.optimization import get_scheduler
-from transformers.trainer import (
-    TRAINER_STATE_NAME,
-    TRAINING_ARGS_NAME,
-)
+from transformers.trainer import TRAINER_STATE_NAME, TRAINING_ARGS_NAME
 from transformers.trainer_callback import TrainerState
 from transformers.trainer_pt_utils import (
     IterableDatasetShard,
@@ -73,12 +68,13 @@ from transformers.trainer_utils import (
 )
 from transformers.utils import logging
 
-from optimum.version import __version__
-
 from .ipu_configuration import IPUConfig
 from .modeling_utils import to_pipelined
-from .models.bert import get_options
-from .trainer_utils import dataloader_method_wrapper
+from .trainer_utils import _WorkerInit, to_poptorch_dataloader
+
+if is_datasets_available():
+    import datasets
+
 
 logger = logging.get_logger(__name__)
 
@@ -115,6 +111,7 @@ class IPUTrainer(Trainer):
         )
 
         self.ipu_config = copy.deepcopy(ipu_config)
+        self.ipu_config.random_seed = self.args.seed
 
         if self.args.output_dir:
             path = os.path.join(self.args.output_dir, "executable_cache")
@@ -123,11 +120,14 @@ class IPUTrainer(Trainer):
                 logger.warning(f"IPUConfig executable_cache_dir was overriden to be: {path}")
             self.ipu_config.executable_cache_dir = path
 
-        if args.compile_only:
-            if not self.ipu_config.compile_only:
-                logger.warning("IPUConfig compile_only was overriden to be set to True")
-            self.ipu_config.compile_only = True
+        # for k, v in self.args.__dict__.items():
+        #     if v is None:
+        #         continue
+        #     if hasattr(self.ipu_config, k) and getattr(self.ipu_config, k) != v:
+        #         logger.warning(f"IPUConfig {k} attribute was overriden from TrainingArguments to {v}")
+        #         setattr(self.ipu_config, k, v)
 
+        # TODO: find a better way to track combinbed batch size instead of setting attributes to self.args
         self.args.__dict__.update(ipu_config.__dict__)
         self.opts = ipu_config.to_options()
         self.eval_opts = ipu_config.to_options(for_inference=True)
@@ -162,11 +162,215 @@ class IPUTrainer(Trainer):
         if log:
             logger.info(f"Compiled/Loaded model in {duration_compilation} secs")
 
-    get_train_dataloader = dataloader_method_wrapper(Trainer.get_train_dataloader)
+    def get_train_dataloader(self) -> poptorch.DataLoader:
+        """
+        Returns the training :class:`~poptorch.DataLoader`.
 
-    get_eval_dataloader = dataloader_method_wrapper(Trainer.get_eval_dataloader)
+        Will use no sampler if :obj:`self.train_dataset` does not implement :obj:`__len__`, a random sampler (adapted
+        to distributed training if necessary) otherwise.
 
-    get_test_dataloader = dataloader_method_wrapper(Trainer.get_test_dataloader)
+        Subclass and override this method if you want to inject some custom behavior.
+        """
+        if self.train_dataset is None:
+            raise ValueError("Trainer: training requires a train_dataset.")
+
+        train_dataset = self.train_dataset
+        if is_datasets_available() and isinstance(train_dataset, datasets.Dataset):
+            train_dataset = self._remove_unused_columns(train_dataset, description="training")
+
+        poptorch_specific_kwargs = {
+            "drop_last": True,  # Not dropping last will end up causing NaN during training if the combined batch size does not divide the number of steps
+            "auto_distributed_partitioning": not isinstance(train_dataset, torch.utils.data.IterableDataset),
+            "mode": self.args.dataloader_mode,
+            "worker_init_fn": _WorkerInit(123),
+        }
+
+        if isinstance(train_dataset, torch.utils.data.IterableDataset):
+            # TODO: add support, should be easy.
+            raise NotImplementedError("Training with IterableDataset not supported yet.")
+
+        #     if self.args.world_size > 1:
+        #         train_dataset = IterableDatasetShard(
+        #             train_dataset,
+        #             batch_size=self.args.train_batch_size,
+        #             drop_last=self.args.dataloader_drop_last,
+        #             num_processes=self.args.world_size,
+        #             process_index=self.args.process_index,
+        #         )
+
+        #     return poptorch.DataLoader(
+        #         self.opts,
+        #         train_dataset,
+        #         batch_size=self.args.train_batch_size,
+        #         collate_fn=self.data_collator,
+        #         num_workers=self.args.dataloader_num_workers,
+        #         pin_memory=self.args.dataloader_pin_memory,
+        #         **poptorch_specific_kwargs,
+        #     )
+
+        train_sampler = self._get_train_sampler()
+
+        return poptorch.DataLoader(
+            self.opts,
+            train_dataset,
+            batch_size=self.args.per_device_train_batch_size,
+            sampler=train_sampler,
+            collate_fn=self.data_collator,
+            # drop_last=self.args.dataloader_drop_last,
+            num_workers=self.args.dataloader_num_workers,
+            pin_memory=self.args.dataloader_pin_memory,
+            **poptorch_specific_kwargs,
+        )
+
+    def get_eval_dataloader(self, eval_dataset: Optional[Dataset] = None) -> poptorch.DataLoader:
+        """
+        Returns the evaluation :class:`~poptorch.DataLoader`.
+
+        Subclass and override this method if you want to inject some custom behavior.
+
+        Args:
+            eval_dataset (:obj:`torch.utils.data.Dataset`, `optional`):
+                If provided, will override :obj:`self.eval_dataset`. If it is an :obj:`datasets.Dataset`, columns not
+                accepted by the ``model.forward()`` method are automatically removed. It must implement :obj:`__len__`.
+        """
+        poptorch_specific_kwargs = {
+            "auto_distributed_partitioning": not isinstance(eval_dataset, torch.utils.data.IterableDataset),
+            "mode": self.args.dataloader_mode,
+            "worker_init_fn": _WorkerInit(123),
+        }
+
+        if eval_dataset is None and self.eval_dataset is None:
+            raise ValueError("Trainer: evaluation requires an eval_dataset.")
+        eval_dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
+
+        if is_datasets_available() and isinstance(eval_dataset, datasets.Dataset):
+            eval_dataset = self._remove_unused_columns(eval_dataset, description="evaluation")
+
+        if isinstance(eval_dataset, torch.utils.data.IterableDataset):
+            # TODO: add support, should be easy.
+            raise NotImplementedError("Evluation with IterableDataset not supported yet.")
+            # if self.args.world_size > 1:
+            #     eval_dataset = IterableDatasetShard(
+            #         eval_dataset,
+            #         batch_size=self.args.eval_batch_size,
+            #         drop_last=self.args.dataloader_drop_last,
+            #         num_processes=self.args.world_size,
+            #         process_index=self.args.process_index,
+            #     )
+            # return DataLoader(
+            #     eval_dataset,
+            #     batch_size=self.args.eval_batch_size,
+            #     collate_fn=self.data_collator,
+            #     num_workers=self.args.dataloader_num_workers,
+            #     pin_memory=self.args.dataloader_pin_memory,
+            # )
+
+        eval_sampler = self._get_eval_sampler(eval_dataset)
+
+        return poptorch.DataLoader(
+            self.eval_opts,
+            eval_dataset,
+            sampler=eval_sampler,
+            batch_size=self.args.per_device_eval_batch_size,
+            collate_fn=self.data_collator,
+            drop_last=self.args.dataloader_drop_last,
+            num_workers=self.args.dataloader_num_workers,
+            pin_memory=self.args.dataloader_pin_memory,
+            **poptorch_specific_kwargs,
+        )
+
+    def get_test_dataloader(self, test_dataset: Dataset) -> poptorch.DataLoader:
+        """
+        Returns the test :class:`~poptorch.DataLoader`.
+
+        Subclass and override this method if you want to inject some custom behavior.
+
+        Args:
+            test_dataset (:obj:`torch.utils.data.Dataset`, `optional`):
+                The test dataset to use. If it is an :obj:`datasets.Dataset`, columns not accepted by the
+                ``model.forward()`` method are automatically removed. It must implement :obj:`__len__`.
+        """
+        poptorch_specific_kwargs = {
+            "auto_distributed_partitioning": not isinstance(test_dataset, torch.utils.data.IterableDataset),
+            "mode": self.args.dataloader_mode,
+            "worker_init_fn": _WorkerInit(123),
+        }
+
+        if is_datasets_available() and isinstance(test_dataset, datasets.Dataset):
+            test_dataset = self._remove_unused_columns(test_dataset, description="test")
+
+        if isinstance(test_dataset, torch.utils.data.IterableDataset):
+            # TODO: add support, should be easy.
+            raise NotImplementedError("Testing with IterableDataset not supported yet.")
+            # if self.args.world_size > 1:
+            #     test_dataset = IterableDatasetShard(
+            #         test_dataset,
+            #         batch_size=self.args.eval_batch_size,
+            #         drop_last=self.args.dataloader_drop_last,
+            #         num_processes=self.args.world_size,
+            #         process_index=self.args.process_index,
+            #     )
+            # return DataLoader(
+            #     test_dataset,
+            #     batch_size=self.args.eval_batch_size,
+            #     collate_fn=self.data_collator,
+            #     num_workers=self.args.dataloader_num_workers,
+            #     pin_memory=self.args.dataloader_pin_memory,
+            # )
+
+        test_sampler = self._get_eval_sampler(test_dataset)
+
+        # We use the same batch_size as for eval.
+        return poptorch.DataLoader(
+            self.eval_opts,
+            test_dataset,
+            sampler=test_sampler,
+            batch_size=self.args.per_device_eval_batch_size,
+            collate_fn=self.data_collator,
+            drop_last=self.args.dataloader_drop_last,
+            pin_memory=self.args.dataloader_pin_memory,
+            **poptorch_specific_kwargs,
+        )
+
+    # @to_poptorch_dataloader(for_training=True)
+    # def get_train_dataloader(self) -> poptorch.DataLoader:
+    #     """
+    #     Returns the training :class:`~poptorch.DataLoader`.
+
+    #     Will use no sampler if :obj:`self.train_dataset` does not implement :obj:`__len__`, a random sampler (adapted
+    #     to distributed training if necessary) otherwise.
+
+    #     Subclass and override this method if you want to inject some custom behavior.
+    #     """
+    #     return super().get_train_dataloader()
+
+    # @to_poptorch_dataloader(for_training=False)
+    # def get_eval_dataloader(self, eval_dataset: Optional[Dataset] = None) -> poptorch.DataLoader:
+    #     """
+    #     Returns the evaluation :class:`~poptorch.DataLoader`.
+
+    #     Subclass and override this method if you want to inject some custom behavior.
+
+    #     Args:
+    #         eval_dataset (:obj:`torch.utils.data.Dataset`, `optional`):
+    #             If provided, will override :obj:`self.eval_dataset`. If it is an :obj:`datasets.Dataset`, columns not
+    #             accepted by the ``model.forward()`` method are automatically removed. It must implement :obj:`__len__`.
+    #     """
+    #     return super().get_eval_dataloader()
+
+    # @to_poptorch_dataloader(for_training=False)
+    # def get_test_dataloader(self, test_dataset: Dataset) -> poptorch.DataLoader:
+    #     """
+    #     Returns the test :class:`~poptorch.DataLoader`.
+
+    #     Subclass and override this method if you want to inject some custom behavior.
+
+    #     Args:
+    #         test_dataset (:obj:`torch.utils.data.Dataset`, `optional`):
+    #             The test dataset to use. If it is an :obj:`datasets.Dataset`, columns not accepted by the
+    #             ``model.forward()`` method are automatically removed. It must implement :obj:`__len__`.
+    #     """
+    #     return super().get_test_dataloader()
 
     def create_optimizer(self):
         """
@@ -251,16 +455,25 @@ class IPUTrainer(Trainer):
         return self.lr_scheduler
 
     def _wrap_model(self, model: Union[PreTrainedModel, PoplarExecutor], training=True):
+        wrapped = None
         if isinstance(model, poptorch.PoplarExecutor):
-            return model
+            wrapped = model
         elif training:
             if self.training_model is None:
-                self.training_model = poptorch.trainingModel(model.train(), options=self.opts, optimizer=self.optimizer)
-            return self.training_model
+                self.training_model = poptorch.trainingModel(
+                    model.train(), options=self.opts, optimizer=self.optimizer
+                )
+            wrapped = self.training_model
         else:
             if self.inference_model is None:
                 self.inference_model = poptorch.inferenceModel(model.eval(), options=self.eval_opts)
-            return self.inference_model
+            wrapped = self.inference_model
+
+        # Attaching to device when the model that is being access was already compiled but detached from previous loop.
+        if wrapped.isCompiled() and not wrapped.isAttachedToDevice():
+            wrapped.attachToDevice()
+
+        return wrapped
 
     def train(
         self,
@@ -307,12 +520,12 @@ class IPUTrainer(Trainer):
 
         # This might change the seed so needs to run first.
         # self._hp_search_setup(trial)
-            # Seed must be set before instantiating the model when using model_init.
-            # set_seed(args.seed)
-            # self.model = self.call_model_init(trial)
-            # model_reloaded = True
-            # # Reinitializes optimizer and scheduler
-            # self.optimizer, self.lr_scheduler = None, None
+        # Seed must be set before instantiating the model when using model_init.
+        # set_seed(args.seed)
+        # self.model = self.call_model_init(trial)
+        # model_reloaded = True
+        # # Reinitializes optimizer and scheduler
+        # self.optimizer, self.lr_scheduler = None, None
 
         # Load potential model checkpoint
         if isinstance(resume_from_checkpoint, bool) and resume_from_checkpoint:
@@ -376,7 +589,6 @@ class IPUTrainer(Trainer):
                 num_train_epochs = args.max_steps // num_update_steps_per_epoch + int(
                     args.max_steps % num_update_steps_per_epoch > 0
                 )
-                remainder = args.max_steps % num_update_steps_per_epoch
 
                 # May be slightly incorrect if the last batch in the training datalaoder has a smaller size but it's
                 # the best we can do.
@@ -628,15 +840,6 @@ class IPUTrainer(Trainer):
             self.control = self.callback_handler.on_epoch_end(args, self.state, self.control)
             self._maybe_log_save_evaluate(tr_loss, model, trial, epoch, ignore_keys_for_eval)
 
-            # if DebugOption.TPU_METRICS_DEBUG in self.args.debug:
-            #     if is_torch_tpu_available():
-            #         # tpu-comment: Logging debug metrics for PyTorch/XLA (compile, execute times, ops, etc.)
-            #         xm.master_print(met.metrics_report())
-            #     else:
-            #         logger.warning(
-            #             "You enabled PyTorch/XLA debug metrics but you don't have a TPU "
-            #             "configured. Check your training configuration if this is unexpected."
-            #         )
             if self.control.should_training_stop:
                 break
 
@@ -668,11 +871,6 @@ class IPUTrainer(Trainer):
                     "on multiple nodes, you should activate `--save_on_each_node`."
                 )
 
-            if self.deepspeed:
-                self.deepspeed.load_checkpoint(
-                    self.state.best_model_checkpoint, load_optimizer_states=False, load_lr_scheduler_states=False
-                )
-
         # add remaining tr_loss
         self._total_loss_scalar += tr_loss.item()
         train_loss = self._total_loss_scalar / self.state.global_step
@@ -689,6 +887,9 @@ class IPUTrainer(Trainer):
         self.log(metrics)
 
         self.control = self.callback_handler.on_train_end(args, self.state, self.control)
+
+        # Detaching model from device to let the inference model attach itself
+        model.detachFromDevice()
 
         return TrainOutput(self.state.global_step, train_loss, metrics)
 
@@ -785,21 +986,6 @@ class IPUTrainer(Trainer):
         prediction_loss_only = (
             prediction_loss_only if prediction_loss_only is not None else self.args.prediction_loss_only
         )
-
-        # if eval is called w/o train init deepspeed here
-        # if self.args.deepspeed and not self.deepspeed:
-
-        #     # XXX: eval doesn't have `resume_from_checkpoint` arg but we should be able to do eval
-        #     # from the checkpoint eventually
-        #     deepspeed_engine, _, _ = deepspeed_init(self, num_training_steps=0, resume_from_checkpoint=None)
-        #     self.model = deepspeed_engine.module
-        #     self.model_wrapped = deepspeed_engine
-        #     self.deepspeed = deepspeed_engine
-        #     # XXX: we don't need optim/sched for inference, but this needs to be sorted out, since
-        #     # for example the Z3-optimizer is a must for zero3 to work even for inference - what we
-        #     # don't need is the deepspeed basic optimizer which is self.optimizer.optimizer
-        #     deepspeed_engine.optimizer.optimizer = None
-        #     deepspeed_engine.lr_scheduler = None
 
         model = self._wrap_model(self.model, training=False)
         self._compile_model(model, next(iter(dataloader)), log=True)
@@ -937,24 +1123,11 @@ class IPUTrainer(Trainer):
             if not key.startswith(f"{metric_key_prefix}_"):
                 metrics[f"{metric_key_prefix}_{key}"] = metrics.pop(key)
 
-        return EvalLoopOutput(predictions=all_preds, label_ids=all_labels, metrics=metrics, num_samples=num_samples)
+        # Detaching model from device to let the training model attach itself
+        if self.args.do_train:
+            model.detachFromDevice()
 
-    # def _nested_gather(self, tensors, name=None):
-    #     """
-    #     Gather value of `tensors` (tensor or list/tuple of nested tensors) and convert them to numpy before
-    #     concatenating them to `gathered`
-    #     """
-    #     if tensors is None:
-    #         return
-    #     if is_torch_tpu_available():
-    #         if name is None:
-    #             name = "nested_gather"
-    #         tensors = nested_xla_mesh_reduce(tensors, name)
-    #     # elif is_sagemaker_mp_enabled():
-    #     #     tensors = smp_gather(tensors)
-    #     elif self.args.local_rank != -1:
-    #         tensors = distributed_concat(tensors)
-    #     return tensors
+        return EvalLoopOutput(predictions=all_preds, label_ids=all_labels, metrics=metrics, num_samples=num_samples)
 
     def save_model(self, output_dir: Optional[str] = None):
         """
@@ -976,7 +1149,8 @@ class IPUTrainer(Trainer):
         logger.info(f"Saving model checkpoint to {output_dir}")
 
         # Updating self.model weights with the weights stored on device.
-        self.model_wrapped.copyWeightsToHost()
+        if self.model_wrapped.isAttachedToDevice():
+            self.model_wrapped.copyWeightsToHost()
 
         # TODO: should we keep the unwrap checks?
         # Save a trained model and configuration using `save_pretrained()`.
@@ -995,6 +1169,8 @@ class IPUTrainer(Trainer):
             # TODO: make this more efficient.
             deparallelized = copy.deepcopy(self.model).deparallelize()
             deparallelized.save_pretrained(output_dir, state_dict=state_dict)
+            # Freeing up memory.
+            del deparallelized
         if self.tokenizer is not None:
             self.tokenizer.save_pretrained(output_dir)
 
