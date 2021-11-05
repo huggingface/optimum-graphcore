@@ -1,25 +1,37 @@
 import re
+
 from setuptools import find_packages, setup
 
 # Ensure we match the version set in optimum/version.py
 try:
-    filepath = 'src/optimum-graphcore/version.py'
+    filepath = "src/optimum-graphcore/version.py"
     with open(filepath) as version_file:
-        __version__, = re.findall('__version__ = "(.*)"', version_file.read())
+        (__version__,) = re.findall('__version__ = "(.*)"', version_file.read())
 except Exception as error:
-    assert False,  "Error: Could not open '%s' due %s\n" % (filepath, error)
+    assert False, "Error: Could not open '%s' due %s\n" % (filepath, error)
 
 
 install_requires = [
-    "optimum"
+    "optimum",
+    "datasets>=1.7.0",
+    "tokenizers>=0.10.3",
+    "scipy>=1.5.4",
+    "pyyaml>=5.4.1",
+    "wandb==0.12.1",
+    "pytest",
+    "pytest-pythonpath",
+    "tfrecord>=1.13",
+    "filelock>=3.0.12",
+    # "mpi4py>=3.0.3",
+    # "horovod>=0.22.0",
 ]
 
 setup(
     name="optimum-graphcore",
     version=__version__,
     description="Optimum Library is an extension of the Hugging Face Transformers library, providing a framework to "
-                "integrate third-party libraries from Hardware Partners and interface with their specific "
-                "functionality.",
+    "integrate third-party libraries from Hardware Partners and interface with their specific "
+    "functionality.",
     long_description=open("README.md", "r", encoding="utf-8").read(),
     long_description_content_type="text/markdown",
     classifiers=[
@@ -41,15 +53,6 @@ setup(
     package_dir={"": "src"},
     packages=find_packages("src"),
     install_requires=install_requires,
-    # TODO: take care of extras_require and entry_points once possible.
-    # extras_require=None,
-    # entry_points={
-    #     "console_scripts": [
-    #         "optimum_export=optimum.onnxruntime.convert:main",
-    #         "optimum_optimize=optimum.onnxruntime.optimize_model:main",
-    #         "optimum_export_optimize=optimum.onnxruntime.convert_and_optimize:main"
-    #     ],
-    # },
     include_package_data=True,
     zip_safe=False,
 )
