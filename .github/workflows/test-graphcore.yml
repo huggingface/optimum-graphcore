@@ -2,7 +2,7 @@ name: run_tests_ipu
 
 on:
   push:
-    branches: [ main, ci_setup_part2 ]
+    branches: [ main ]
   pull_request:
     branches: [ main ]
 

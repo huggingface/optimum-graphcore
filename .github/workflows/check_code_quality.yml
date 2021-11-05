@@ -2,7 +2,7 @@ name: check_code_quality
 
 on:
   push:
-    branches: [ main, ci_setup_part2 ]
+    branches: [ main ]
   pull_request:
     branches: [ main ]
 
