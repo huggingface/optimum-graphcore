@@ -16,9 +16,8 @@ import poptorch
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from scipy.stats import truncnorm
-
 import transformers
+from scipy.stats import truncnorm
 from transformers.utils import logging
 
 from ...modeling_utils import PipelineMixin, register
