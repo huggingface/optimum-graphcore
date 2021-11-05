@@ -1,1 +1,1 @@
-# optimum-graphcore
+# Optimum Graphcore
