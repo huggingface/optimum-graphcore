@@ -23,4 +23,5 @@ To the install the latest release of this package:
 
 ## Supported Models
 Currently only a subset of model architectures are supported:
+
 - BERT
