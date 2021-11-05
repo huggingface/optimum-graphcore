@@ -16,12 +16,15 @@ import poptorch
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import transformers
 from scipy.stats import truncnorm
 
+import transformers
+from transformers.utils import logging
+
 from ...modeling_utils import PipelineMixin, register
-from ...utils import logger
 from .bert_fused_attention import BertFusedSelfAttention
+
+logger = logging.get_logger(__name__)
 
 
 class OnehotGather(nn.Module):
@@ -186,8 +189,8 @@ class PipelinedBertForPretraining(transformers.BertForPreTraining, PipelineMixin
 
         layer_ipu = _get_layer_ipu(self.config.layers_per_ipu)
 
-        logger("-------------------- Device Allocation --------------------")
-        logger("Embedding  --> IPU 0")
+        logger.info("-------------------- Device Allocation --------------------")
+        logger.info("Embedding  --> IPU 0")
         self.bert.embeddings = poptorch.BeginBlock(self.bert.embeddings, "Embedding", ipu_id=0)
         # Preventing the embeddings.LayerNorm from being outlined with the encoder.layer.LayerNorm
         # improves the tile mapping of the pipeline stashes
@@ -198,14 +201,14 @@ class PipelinedBertForPretraining(transformers.BertForPreTraining, PipelineMixin
             if self.config.recompute_checkpoint_every_layer:
                 recomputation_checkpoint(layer)
             self.bert.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
-            logger(f"Encoder {index:<2} --> IPU {ipu}")
+            logger.info(f"Encoder {index:<2} --> IPU {ipu}")
 
-        logger("Pooler     --> IPU 0")
+        logger.info("Pooler     --> IPU 0")
         self.bert.pooler = poptorch.BeginBlock(self.bert.pooler, "Pooler", ipu_id=0)
 
-        logger("Classifier --> IPU 0")
+        logger.info("Classifier --> IPU 0")
         self.cls = poptorch.BeginBlock(self.cls, "Classifier", ipu_id=0)
-        logger("-----------------------------------------------------------")
+        logger.info("-----------------------------------------------------------")
         return self
 
     def _init_weights(self, module):
@@ -357,8 +360,8 @@ class PipelinedBertForQuestionAnswering(transformers.BertForQuestionAnswering, P
 
         layer_ipu = _get_layer_ipu(self.config.layers_per_ipu)
 
-        logger("-------------------- Device Allocation --------------------")
-        logger("Embedding  --> IPU 0")
+        logger.info("-------------------- Device Allocation --------------------")
+        logger.info("Embedding  --> IPU 0")
         if self.config.embedding_serialization_factor > 1:
             self.bert.embeddings.word_embeddings = SerializedEmbedding(
                 self.bert.embeddings.word_embeddings, self.config.embedding_serialization_factor
@@ -371,11 +374,11 @@ class PipelinedBertForQuestionAnswering(transformers.BertForQuestionAnswering, P
             if self.config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
                 recomputation_checkpoint(layer)
             self.bert.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
-            logger(f"Encoder {index:<2} --> IPU {ipu}")
+            logger.info(f"Encoder {index:<2} --> IPU {ipu}")
 
-        logger(f"QA Outputs --> IPU {ipu}")
+        logger.info(f"QA Outputs --> IPU {ipu}")
         self.qa_outputs = poptorch.BeginBlock(self.qa_outputs, "QA Outputs", ipu_id=ipu)
-        logger("-----------------------------------------------------------")
+        logger.info("-----------------------------------------------------------")
         return self
 
     def deparallelize(self):
