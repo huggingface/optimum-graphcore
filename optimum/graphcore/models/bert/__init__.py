@@ -16,7 +16,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .configuration_bert import get_options, parse_bert_args
 from .modeling_bert import (
     PipelinedBertForPretraining,
     PipelinedBertForQuestionAnswering,

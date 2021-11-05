@@ -17,7 +17,7 @@
 
   "replication_factor": 4,
   "gradient_accumulation_steps": 16,
-  "device_iterations": 2,
+  "device_iterations": 4,
   "executable_cache_dir": "./exe_cache",
   "replicated_tensor_sharding": true,
   "dataset": "squad",
