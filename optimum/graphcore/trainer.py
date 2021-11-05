@@ -25,8 +25,6 @@ import numpy as np
 import optuna
 import poptorch
 import torch
-
-# import torch.distributed as dist
 import torch.nn as nn
 from optimum.version import __version__
 from poptorch import PoplarExecutor
