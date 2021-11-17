@@ -210,13 +210,6 @@ class PipelinedBertForPretraining(transformers.BertForPreTraining, PipelineMixin
         logger.info("-----------------------------------------------------------")
         return self
 
-    def deparallelize(self):
-        """
-        Undo the changes to the model done by `parallelize`.
-        You should call this before doing `save_pretrained` so that the `model.state_dict` is
-        fully compatible with `transformers.BertForPreTraining`.
-        """
-        return self
 
     def _init_weights(self, module):
         """Initialize the weights"""
@@ -258,18 +251,9 @@ class PipelinedBertForPretraining(transformers.BertForPreTraining, PipelineMixin
         sequence_output, pooled_output = outputs[:2]
 
         # Select only the masked tokens for the classifier
-        # masked_lm_positions = torch.argsort(labels != -100, descending=True)
-        # _, masked_lm_positions = torch.sort(labels != -100, descending=True)
-        # max_number_of_masked_tokens = (labels != -100).sum(dim=1).max()
-        # masked_lm_labels = labels[labels != -100]
-        # masked_lm_labels, masked_lm_positions = torch.topk(labels, k=max_number_of_masked_tokens, dim=1)
         max_number_of_masked_tokens = int(labels.size(1) * 0.2)
-        topk = torch.topk(labels, k=max_number_of_masked_tokens, dim=1)
-        masked_lm_positions = topk.indices
-        # masked_lm_labels = topk.values
-        masked_lm_labels = torch.ones_like(masked_lm_positions)
+        masked_lm_labels, masked_lm_positions = torch.topk(labels, k=max_number_of_masked_tokens, dim=1)
         masked_output = self.gather_indices(sequence_output, masked_lm_positions)
-        # masked_output = sequence_output.mask
 
         prediction_scores, sequential_relationship_score = self.cls(masked_output, pooled_output)
         outputs = (

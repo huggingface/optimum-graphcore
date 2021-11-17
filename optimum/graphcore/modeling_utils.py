@@ -57,3 +57,15 @@ class PipelineMixin:
         pipelined_model = cls(config)
         pipelined_model.load_state_dict(model.state_dict())
         return pipelined_model
+
+    def parallelize(self):
+        """Transform the model to run in an IPU pipeline."""
+        return self
+
+    def deparallelize(self):
+        """
+        Undo the changes to the model done by `parallelize`.
+        You should call this before doing `save_pretrained` so that the `model.state_dict` is fully compatible with the
+        original model.
+        """
+        return self
