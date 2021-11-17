@@ -150,7 +150,7 @@ def accuracy_masked(out, targ, mask_val):
 
 
 @register(transformers.BertForPreTraining)
-class PipelinedBertForPretraining(transformers.BertForPreTraining, PipelineMixin):
+class PipelinedBertForPreTraining(transformers.BertForPreTraining, PipelineMixin):
     def __init__(self, config):
         super().__init__(config)
         self.gather_indices = OnehotGather()
@@ -209,7 +209,6 @@ class PipelinedBertForPretraining(transformers.BertForPreTraining, PipelineMixin
         self.cls = poptorch.BeginBlock(self.cls, "Classifier", ipu_id=0)
         logger.info("-----------------------------------------------------------")
         return self
-
 
     def _init_weights(self, module):
         """Initialize the weights"""

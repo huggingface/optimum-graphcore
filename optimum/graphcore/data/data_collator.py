@@ -42,7 +42,8 @@ class DataCollatorForLanguageModelingWithMaxTokensMasked(DataCollatorForLanguage
         # Making sure there are at most max_masked_tokens that are masked for each example.
         # torch_mask_tokens is called after padding so labels should be of fixed shape.
         max_masked_tokens = int(self.max_masked_tokens_proportion * labels.size(1))
-        _, indices = torch.topk(-masked_indices, k=labels.size(1) - max_masked_tokens, dim=1)
+        small_noise = torch.rand(masked_indices.size())
+        _, indices = torch.topk(-masked_indices + small_noise, k=labels.size(1) - max_masked_tokens, dim=1)
         masked_indices.scatter_(1, indices, 0)
 
         masked_indices = masked_indices.bool()
