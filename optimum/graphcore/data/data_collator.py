@@ -13,11 +13,12 @@
 # limitations under the License.
 
 from typing import Any, Optional, Tuple
+
 from transformers.data import DataCollatorForLanguageModeling
 
 
 class DataCollatorForLanguageModelingWithMaxTokensMasked(DataCollatorForLanguageModeling):
-    max_masked_tokens_proportion: float = 0.2
+    max_masked_tokens_proportion: float = 0.25
 
     def torch_mask_tokens(self, inputs: Any, special_tokens_mask: Optional[Any] = None) -> Tuple[Any, Any]:
         """

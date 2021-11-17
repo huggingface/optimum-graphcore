@@ -250,7 +250,7 @@ class PipelinedBertForPreTraining(transformers.BertForPreTraining, PipelineMixin
         sequence_output, pooled_output = outputs[:2]
 
         # Select only the masked tokens for the classifier
-        max_number_of_masked_tokens = int(labels.size(1) * 0.2)
+        max_number_of_masked_tokens = int(labels.size(1) * 0.25)
         masked_lm_labels, masked_lm_positions = torch.topk(labels, k=max_number_of_masked_tokens, dim=1)
         masked_output = self.gather_indices(sequence_output, masked_lm_positions)
 
@@ -262,7 +262,9 @@ class PipelinedBertForPreTraining(transformers.BertForPreTraining, PipelineMixin
 
         if labels is not None and next_sentence_label is not None:
             masked_lm_loss = F.cross_entropy(
-                prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1).to(torch.int64), ignore_index=-100
+                prediction_scores.view(-1, self.config.vocab_size),
+                masked_lm_labels.view(-1).to(torch.int64),
+                ignore_index=-100,
             ).float()
             next_sentence_loss = F.cross_entropy(
                 sequential_relationship_score.view(-1, 2), next_sentence_label.view(-1)

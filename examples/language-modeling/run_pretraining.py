@@ -29,16 +29,14 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import datasets
-from datasets import load_dataset
-
 import transformers
-from transformers import (
+from datasets import load_dataset
+from transformers import (  # DataCollatorForLanguageModeling,
     CONFIG_MAPPING,
     MODEL_FOR_MASKED_LM_MAPPING,
     AutoConfig,
     AutoModelForPreTraining,
     AutoTokenizer,
-    # DataCollatorForLanguageModeling,
     HfArgumentParser,
     set_seed,
 )
@@ -48,8 +46,9 @@ from transformers.utils.versions import require_version
 
 from optimum.graphcore import IPUConfig, IPUTrainer
 from optimum.graphcore import IPUTrainingArguments as TrainingArguments
-from optimum.graphcore.data import DataCollatorForLanguageModelingWithMaxTokensMasked
-
+from optimum.graphcore.data import (
+    DataCollatorForLanguageModelingWithMaxTokensMasked,
+)
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.13.0.dev0")
