@@ -79,7 +79,7 @@ class IPUConfig(PretrainedConfig):
         transformers.configuration_utils.CONFIG_NAME = orig_transformers_config_name
         return ipu_config
 
-    def to_options(self, for_inference=False) -> poptorch.Options:
+    def to_options(self, for_inference: bool = False) -> poptorch.Options:
         if not self.compile_only and poptorch.ipuHardwareVersion() != 2:
             raise RuntimeError("This version of BERT requires an IPU Mk2 system to run.")
 
@@ -174,6 +174,6 @@ class IPUConfig(PretrainedConfig):
 
         return opts
 
-    @property
-    def batch_size_factor(self) -> int:
-        return self.replication_factor * self.gradient_accumulation_steps * self.device_iterations
+    def batch_size_factor(self, for_inference: bool = False) -> int:
+        gradient_accumulation_steps = self.gradient_accumulation_steps if not for_inference else 1
+        return self.replication_factor * gradient_accumulation_steps * self.device_iterations
