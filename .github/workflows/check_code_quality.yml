@@ -3,8 +3,17 @@ name: check_code_quality
 on:
   push:
     branches: [ main ]
+    paths:
+      - "src/**.py"
+      - "tests/**.py"
+      - "examples/**.py"
+
   pull_request:
     branches: [ main ]
+    paths:
+      - "src/**.py"
+      - "tests/**.py"
+      - "examples/**.py"
 
 jobs:
   build:
