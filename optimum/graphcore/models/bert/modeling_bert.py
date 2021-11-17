@@ -210,6 +210,14 @@ class PipelinedBertForPretraining(transformers.BertForPreTraining, PipelineMixin
         logger.info("-----------------------------------------------------------")
         return self
 
+    def deparallelize(self):
+        """
+        Undo the changes to the model done by `parallelize`.
+        You should call this before doing `save_pretrained` so that the `model.state_dict` is
+        fully compatible with `transformers.BertForPreTraining`.
+        """
+        return self
+
     def _init_weights(self, module):
         """Initialize the weights"""
 
@@ -234,18 +242,34 @@ class PipelinedBertForPretraining(transformers.BertForPreTraining, PipelineMixin
 
     def forward(
         self,
-        input_ids,
-        attention_mask,
-        token_type_ids,
-        masked_lm_positions,
-        masked_lm_labels=None,
+        input_ids=None,
+        attention_mask=None,
+        token_type_ids=None,
+        labels=None,
         next_sentence_label=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=None,
+        position_ids=None,
+        head_mask=None,
+        inputs_embeds=None,
     ):
         outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
         sequence_output, pooled_output = outputs[:2]
 
         # Select only the masked tokens for the classifier
+        # masked_lm_positions = torch.argsort(labels != -100, descending=True)
+        # _, masked_lm_positions = torch.sort(labels != -100, descending=True)
+        # max_number_of_masked_tokens = (labels != -100).sum(dim=1).max()
+        # masked_lm_labels = labels[labels != -100]
+        # masked_lm_labels, masked_lm_positions = torch.topk(labels, k=max_number_of_masked_tokens, dim=1)
+        max_number_of_masked_tokens = int(labels.size(1) * 0.2)
+        topk = torch.topk(labels, k=max_number_of_masked_tokens, dim=1)
+        masked_lm_positions = topk.indices
+        # masked_lm_labels = topk.values
+        masked_lm_labels = torch.ones_like(masked_lm_positions)
         masked_output = self.gather_indices(sequence_output, masked_lm_positions)
+        # masked_output = sequence_output.mask
 
         prediction_scores, sequential_relationship_score = self.cls(masked_output, pooled_output)
         outputs = (
@@ -253,21 +277,25 @@ class PipelinedBertForPretraining(transformers.BertForPreTraining, PipelineMixin
             sequential_relationship_score,
         ) + outputs[2:]
 
-        if masked_lm_labels is not None and next_sentence_label is not None:
+        if labels is not None and next_sentence_label is not None:
             masked_lm_loss = F.cross_entropy(
-                prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1), ignore_index=0
+                prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1).to(torch.int64), ignore_index=-100
             ).float()
             next_sentence_loss = F.cross_entropy(
                 sequential_relationship_score.view(-1, 2), next_sentence_label.view(-1)
             ).float()
             total_loss = poptorch.identity_loss(masked_lm_loss + next_sentence_loss, reduction="none")
 
-            next_sentence_acc = accuracy(sequential_relationship_score.view([-1, 2]), next_sentence_label.view(-1))
-            # masked_lm_labels: 0 if corresponding token not masked, original value otherwise
-            masked_lm_acc = accuracy_masked(
-                prediction_scores.view([-1, self.config.mask_tokens, self.config.vocab_size]), masked_lm_labels, 0
-            )
-            outputs = (total_loss, masked_lm_loss, next_sentence_loss, masked_lm_acc, next_sentence_acc)
+            # next_sentence_acc = accuracy(sequential_relationship_score.view([-1, 2]), next_sentence_label.view(-1))
+            # labels: 0 if corresponding token not masked, original value otherwise
+            # masked_lm_acc = accuracy_masked(
+            #     prediction_scores.view([-1, self.config.mask_tokens, self.config.vocab_size]), labels, 0
+            # )
+            # masked_lm_acc = accuracy_masked(
+            #     prediction_scores, labels, 0
+            # )
+            # outputs = (total_loss, masked_lm_loss, next_sentence_loss, masked_lm_acc, next_sentence_acc)
+            outputs = (total_loss, masked_lm_loss, next_sentence_loss)
 
         return outputs
 
