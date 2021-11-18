@@ -112,12 +112,12 @@ class IPUTrainer(Trainer):
         self.ipu_config = copy.deepcopy(ipu_config)
         self.ipu_config.random_seed = self.args.seed
 
-        if self.args.output_dir:
-            path = os.path.join(self.args.output_dir, "executable_cache")
-            logger.info(f"Executable caching enabled, cache directory: {path}")
-            if self.ipu_config.executable_cache_dir is not None:
-                logger.warning(f"IPUConfig executable_cache_dir was overriden to be: {path}")
-            self.ipu_config.executable_cache_dir = path
+        # if self.args.output_dir:
+        #     path = os.path.join(self.args.output_dir, "executable_cache")
+        #     logger.info(f"Executable caching enabled, cache directory: {path}")
+        #     if self.ipu_config.executable_cache_dir is not None:
+        #         logger.warning(f"IPUConfig executable_cache_dir was overriden to be: {path}")
+        #     self.ipu_config.executable_cache_dir = path
 
         # for k, v in self.args.__dict__.items():
         #     if v is None:

@@ -18,7 +18,7 @@
 
 from .ipu_configuration import IPUConfig
 from .models.bert import (
-    PipelinedBertForPretraining,
+    PipelinedBertForPreTraining,
     PipelinedBertForQuestionAnswering,
 )
 from .trainer import IPUTrainer
