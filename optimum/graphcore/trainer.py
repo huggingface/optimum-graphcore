@@ -155,6 +155,8 @@ DEFAULT_PROGRESS_CALLBACK = ProgressCallback
 
 
 class IPUTrainer:
+    from transformers.trainer_pt_utils import _get_learning_rate, log_metrics, metrics_format, save_metrics, save_state
+
     def __init__(
         self,
         model: Union[PreTrainedModel, nn.Module] = None,
@@ -1803,16 +1805,19 @@ class IPUTrainer:
         torch.save(self.args, os.path.join(output_dir, TRAINING_ARGS_NAME))
 
     def store_flos(self):
-        # TODO: fix flos computation.
         # Storing the number of floating-point operations that went into the model
-        if self.args.local_rank != -1:
-            self.state.total_flos += (
-                distributed_broadcast_scalars([self.current_flos], device=self.args.device).sum().item()
-            )
-            self.current_flos = 0
-        else:
-            self.state.total_flos += self.current_flos
-            self.current_flos = 0
+        # TODO: Validate that this is right.
+        self.state.total_flos += self.current_flos * self.ipu_config.batch_size_factor()
+        self.current_flos = 0
+        # Original Trainer implementation:
+        # if self.args.local_rank != -1:
+        #     self.state.total_flos += (
+        #         distributed_broadcast_scalars([self.current_flos], device=self.args.device).sum().item()
+        #     )
+        #     self.current_flos = 0
+        # else:
+        #     self.state.total_flos += self.current_flos
+        #     self.current_flos = 0
 
     def _sorted_checkpoints(
         self, output_dir=None, checkpoint_prefix=PREFIX_CHECKPOINT_DIR, use_mtime=False
@@ -1899,8 +1904,7 @@ class IPUTrainer:
         eval_dataloader = self.get_eval_dataloader(eval_dataset)
         start_time = time.time()
 
-        eval_loop = self.prediction_loop if self.args.use_legacy_prediction_loop else self.evaluation_loop
-        output = eval_loop(
+        output = self.evaluation_loop(
             eval_dataloader,
             description="Evaluation",
             # No point gathering the predictions if there are no metrics, otherwise we defer to
@@ -1967,8 +1971,7 @@ class IPUTrainer:
         test_dataloader = self.get_test_dataloader(test_dataset)
         start_time = time.time()
 
-        eval_loop = self.prediction_loop if self.args.use_legacy_prediction_loop else self.evaluation_loop
-        output = eval_loop(
+        output = self.evaluation_loop(
             test_dataloader, description="Prediction", ignore_keys=ignore_keys, metric_key_prefix=metric_key_prefix
         )
         total_batch_size = self.args.eval_batch_size * self.ipu_config.batch_size_factor(for_inference=True)
@@ -2007,8 +2010,8 @@ class IPUTrainer:
 
         # if full fp16 is wanted on eval and this ``evaluation`` or ``predict`` isn't called while
         # ``train`` is running, halve it first and then put on device
-        if not self.is_in_train and self.args.fp16_full_eval:
-            model = model.half().to(self.args.device)
+        # if not self.is_in_train and self.args.fp16_full_eval:
+        #     model = model.half().to(self.args.device)
 
         batch_size = dataloader.batch_size
 

@@ -35,7 +35,7 @@ from transformers.file_utils import (
     is_torch_tpu_available,
     torch_required,
 )
-from transformers.training_args import TrainingArguments, default_logdir
+from transformers.training_args import ParallelMode as OriginalParallelMode, default_logdir
 from transformers.trainer_utils import EvaluationStrategy, HubStrategy, IntervalStrategy, SchedulerType
 from transformers.utils import logging
 
@@ -43,6 +43,10 @@ from transformers.utils import logging
 logger = logging.get_logger(__name__)
 log_levels = logging.get_log_levels_dict().copy()
 trainer_log_levels = dict(**log_levels, passive=-1)
+
+
+class ParallelMode(OriginalParallelMode):
+    IPU = "ipu"
 
 
 @dataclass
@@ -131,19 +135,19 @@ class IPUTrainingArguments:
             "choices": trainer_log_levels.keys(),
         },
     )
-    log_level_replica: Optional[str] = field(
-        default="passive",
-        metadata={
-            "help": "Logger log level to use on replica nodes. Same choices and defaults as ``log_level``",
-            "choices": trainer_log_levels.keys(),
-        },
-    )
-    log_on_each_node: bool = field(
-        default=True,
-        metadata={
-            "help": "When doing a multinode distributed training, whether to log once per node or just once on the main node."
-        },
-    )
+    # log_level_replica: Optional[str] = field(
+    #     default="passive",
+    #     metadata={
+    #         "help": "Logger log level to use on replica nodes. Same choices and defaults as ``log_level``",
+    #         "choices": trainer_log_levels.keys(),
+    #     },
+    # )
+    # log_on_each_node: bool = field(
+    #     default=True,
+    #     metadata={
+    #         "help": "When doing a multinode distributed training, whether to log once per node or just once on the main node."
+    #     },
+    # )
     logging_dir: Optional[str] = field(default=None, metadata={"help": "Tensorboard log dir."})
     logging_strategy: IntervalStrategy = field(
         default="steps",
@@ -166,12 +170,12 @@ class IPUTrainingArguments:
             )
         },
     )
-    save_on_each_node: bool = field(
-        default=False,
-        metadata={
-            "help": "When doing multi-node distributed training, whether to save models and checkpoints on each node, or only on the main one"
-        },
-    )
+    # save_on_each_node: bool = field(
+    #     default=False,
+    #     metadata={
+    #         "help": "When doing multi-node distributed training, whether to save models and checkpoints on each node, or only on the main one"
+    #     },
+    # )
     seed: int = field(default=42, metadata={"help": "Random seed that will be set at the beginning of training."})
 
     # fp16: bool = field(
@@ -307,9 +311,9 @@ class IPUTrainingArguments:
     skip_memory_metrics: bool = field(
         default=True, metadata={"help": "Whether or not to skip adding of memory profiler reports to metrics."}
     )
-    use_legacy_prediction_loop: bool = field(
-        default=False, metadata={"help": "Whether or not to use the legacy prediction_loop in the Trainer."}
-    )
+    # use_legacy_prediction_loop: bool = field(
+    #     default=False, metadata={"help": "Whether or not to use the legacy prediction_loop in the Trainer."}
+    # )
     push_to_hub: bool = field(
         default=False, metadata={"help": "Whether or not to upload the trained model to the model hub after training."}
     )
@@ -339,11 +343,11 @@ class IPUTrainingArguments:
         default=None, metadata={"help": "The name of the organization in with to which push the `Trainer`."}
     )
     push_to_hub_token: str = field(default=None, metadata={"help": "The token to use to push to the Model Hub."})
-    _n_gpu: int = field(init=False, repr=False, default=-1)
-    mp_parameters: str = field(
-        default="",
-        metadata={"help": "Used by the SageMaker launcher to send mp-specific args. Ignored in Trainer"},
-    )
+    # _n_gpu: int = field(init=False, repr=False, default=-1)
+    # mp_parameters: str = field(
+    #     default="",
+    #     metadata={"help": "Used by the SageMaker launcher to send mp-specific args. Ignored in Trainer"},
+    # )
     # IPU Specific arguments
     ipu_config_name: Optional[str] = field(
         default=None, metadata={"help": "Pretrained IPU config name or path if not the same as model_name"}
@@ -381,7 +385,7 @@ class IPUTrainingArguments:
 
         # convert to int
         self.log_level = trainer_log_levels[self.log_level]
-        self.log_level_replica = trainer_log_levels[self.log_level_replica]
+        # self.log_level_replica = trainer_log_levels[self.log_level_replica]
 
         # expand paths, if not os.makedirs("~/bar") will make directory
         # in the current directory instead of the actual home
@@ -667,31 +671,22 @@ class IPUTrainingArguments:
     #     _ = self._setup_devices
     #     return self._n_gpu
 
-    # TODO: define ParallelMode.IPU or not use this at all?
-    # @property
-    # @torch_required
-    # def parallel_mode(self):
-    #     """
-    #     The current mode used for parallelism if multiple GPUs/TPU cores are available. One of:
-
-    #     - :obj:`ParallelMode.NOT_PARALLEL`: no parallelism (CPU or one GPU).
-    #     - :obj:`ParallelMode.NOT_DISTRIBUTED`: several GPUs in one single process (uses :obj:`torch.nn.DataParallel`).
-    #     - :obj:`ParallelMode.DISTRIBUTED`: several GPUs, each having its own process (uses
-    #       :obj:`torch.nn.DistributedDataParallel`).
-    #     - :obj:`ParallelMode.TPU`: several TPU cores.
-    #     """
-    #     if is_torch_tpu_available():
-    #         return ParallelMode.TPU
-    #     elif is_sagemaker_mp_enabled():
-    #         return ParallelMode.SAGEMAKER_MODEL_PARALLEL
-    #     elif is_sagemaker_dp_enabled():
-    #         return ParallelMode.SAGEMAKER_DATA_PARALLEL
-    #     elif self.local_rank != -1:
-    #         return ParallelMode.DISTRIBUTED
-    #     elif self.n_gpu > 1:
-    #         return ParallelMode.NOT_DISTRIBUTED
-    #     else:
-    #         return ParallelMode.NOT_PARALLEL
+    @property
+    @torch_required
+    def parallel_mode(self):
+        return ParallelMode.IPU
+        # if is_torch_tpu_available():
+        #     return ParallelMode.TPU
+        # elif is_sagemaker_mp_enabled():
+        #     return ParallelMode.SAGEMAKER_MODEL_PARALLEL
+        # elif is_sagemaker_dp_enabled():
+        #     return ParallelMode.SAGEMAKER_DATA_PARALLEL
+        # elif self.local_rank != -1:
+        #     return ParallelMode.DISTRIBUTED
+        # elif self.n_gpu > 1:
+        #     return ParallelMode.NOT_DISTRIBUTED
+        # else:
+        #     return ParallelMode.NOT_PARALLEL
 
     @property
     @torch_required
@@ -746,26 +741,28 @@ class IPUTrainingArguments:
         """
         Whether or not the current process should produce log.
         """
-        if self.log_on_each_node:
-            return self.local_process_index == 0
-        else:
-            # if is_sagemaker_mp_enabled():
-            #     return smp.rank() == 0
-            # else:
-            return self.process_index == 0
+        return self.process_index
+        # if self.log_on_each_node:
+        #     return self.local_process_index == 0
+        # else:
+        #     # if is_sagemaker_mp_enabled():
+        #     #     return smp.rank() == 0
+        #     # else:
+        #     return self.process_index == 0
 
     @property
     def should_save(self):
         """
         Whether or not the current process should write to disk, e.g., to save models and checkpoints.
         """
-        if self.save_on_each_node:
-            return self.local_process_index == 0
-        else:
-            if is_sagemaker_mp_enabled():
-                return smp.rank() == 0
-            else:
-                return self.process_index == 0
+        return self.process_index == 0
+        # if self.save_on_each_node:
+        #     return self.local_process_index == 0
+        # else:
+        #     if is_sagemaker_mp_enabled():
+        #         return smp.rank() == 0
+        #     else:
+        #         return self.process_index == 0
 
     def get_process_log_level(self):
         """
@@ -781,8 +778,9 @@ class IPUTrainingArguments:
         ``should_log``.
         """
         log_level_main_node = logging.INFO if self.log_level == -1 else self.log_level
-        log_level_replica_node = logging.WARNING if self.log_level_replica == -1 else self.log_level_replica
-        return log_level_main_node if self.should_log else log_level_replica_node
+        return log_level_main_node
+        # log_level_replica_node = logging.WARNING if self.log_level_replica == -1 else self.log_level_replica
+        # return log_level_main_node if self.should_log else log_level_replica_node
 
     @property
     def place_model_on_device(self):
