@@ -24,10 +24,18 @@ import sys
 import time
 import warnings
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    Union,
+)
 
 from tqdm.auto import tqdm
-
 
 # Integrations must be imported before ML frameworks:
 from transformers.integrations import (  # isort: split
@@ -44,16 +52,28 @@ from transformers.integrations import (  # isort: split
 )
 
 import numpy as np
+import poptorch
 import torch
-from packaging import version
-from torch import nn
-from torch.utils.data import DataLoader, Dataset, IterableDataset, RandomSampler, SequentialSampler
-from torch.utils.data.distributed import DistributedSampler
-
 from huggingface_hub import Repository
-
+from optimum.version import __version__
+from packaging import version
+from poptorch import PoplarExecutor
+from poptorch.optim import LAMB, AdamW
+from torch import nn
+from torch.utils.data import (
+    DataLoader,
+    Dataset,
+    IterableDataset,
+    RandomSampler,
+    SequentialSampler,
+)
+from torch.utils.data.distributed import DistributedSampler
 from transformers.configuration_utils import PretrainedConfig
-from transformers.data.data_collator import DataCollator, DataCollatorWithPadding, default_data_collator
+from transformers.data.data_collator import (
+    DataCollator,
+    DataCollatorWithPadding,
+    default_data_collator,
+)
 from transformers.debug_utils import DebugOption, DebugUnderflowOverflow
 from transformers.deepspeed import deepspeed_init, is_deepspeed_zero3_enabled
 from transformers.dependency_versions_check import dep_version_check
@@ -68,17 +88,19 @@ from transformers.file_utils import (
     is_sagemaker_mp_enabled,
     is_torch_tpu_available,
 )
-from transformers.modelcard import TrainingSummary
+# from transformers.modelcard import TrainingSummary
 from transformers.modeling_utils import PreTrainedModel, unwrap_model
-from transformers.models.auto.modeling_auto import MODEL_FOR_QUESTION_ANSWERING_MAPPING_NAMES
+from transformers.models.auto.modeling_auto import (
+    MODEL_FOR_QUESTION_ANSWERING_MAPPING_NAMES,
+)
 from transformers.optimization import Adafactor, AdamW, get_scheduler
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from transformers.trainer import (
-    TRAINING_ARGS_NAME,
-    TRAINER_STATE_NAME,
     OPTIMIZER_NAME,
-    SCHEDULER_NAME,
     SCALER_NAME,
+    SCHEDULER_NAME,
+    TRAINER_STATE_NAME,
+    TRAINING_ARGS_NAME,
 )
 from transformers.trainer_callback import (
     CallbackHandler,
@@ -132,12 +154,8 @@ from transformers.trainer_utils import (
 from transformers.training_args import ParallelMode, TrainingArguments
 from transformers.utils import logging
 
-import poptorch
-from poptorch import PoplarExecutor
-from poptorch.optim import AdamW, LAMB
-
-from optimum.version import __version__
 from .ipu_configuration import IPUConfig
+from .modelcard import IPUTrainingSummary
 from .modeling_utils import to_pipelined
 from .trainer_utils import _WorkerInit
 from .training_args import IPUTrainingArguments
@@ -155,7 +173,13 @@ DEFAULT_PROGRESS_CALLBACK = ProgressCallback
 
 
 class IPUTrainer:
-    from transformers.trainer_pt_utils import _get_learning_rate, log_metrics, metrics_format, save_metrics, save_state
+    from transformers.trainer_pt_utils import (
+        _get_learning_rate,
+        log_metrics,
+        metrics_format,
+        save_metrics,
+        save_state,
+    )
 
     def __init__(
         self,
@@ -1774,8 +1798,8 @@ class IPUTrainer:
         logger.info(f"Saving model checkpoint to {output_dir}")
 
         # Updating self.model weights with the weights stored on device.
-        if self.model_wrapped.isAttachedToDevice():
-            self.model_wrapped.copyWeightsToHost()
+        # if self.model_wrapped.isAttachedToDevice():
+        #     self.model_wrapped.copyWeightsToHost()
 
         # TODO: should we keep the unwrap checks?
         # Save a trained model and configuration using `save_pretrained()`.
@@ -2367,7 +2391,7 @@ class IPUTrainer:
         dataset: Optional[Union[str, List[str]]] = None,
         dataset_args: Optional[Union[str, List[str]]] = None,
     ):
-        training_summary = TrainingSummary.from_trainer(
+        training_summary = IPUTrainingSummary.from_trainer(
             self,
             language=language,
             license=license,

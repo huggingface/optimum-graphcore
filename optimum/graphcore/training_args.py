@@ -22,9 +22,8 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from poptorch import DataLoaderMode
 import torch
-
+from poptorch import DataLoaderMode
 from transformers.debug_utils import DebugOption
 from transformers.file_utils import (
     cached_property,
@@ -35,8 +34,13 @@ from transformers.file_utils import (
     is_torch_tpu_available,
     torch_required,
 )
-from transformers.training_args import ParallelMode as OriginalParallelMode, default_logdir
-from transformers.trainer_utils import EvaluationStrategy, HubStrategy, IntervalStrategy, SchedulerType
+from transformers.trainer_utils import (
+    EvaluationStrategy,
+    HubStrategy,
+    IntervalStrategy,
+    SchedulerType,
+)
+from transformers.training_args import default_logdir
 from transformers.utils import logging
 
 
@@ -45,7 +49,7 @@ log_levels = logging.get_log_levels_dict().copy()
 trainer_log_levels = dict(**log_levels, passive=-1)
 
 
-class ParallelMode(OriginalParallelMode):
+class ParallelMode(Enum):
     IPU = "ipu"
 
 
@@ -76,12 +80,8 @@ class IPUTrainingArguments:
         metadata={"help": "When performing evaluation and predictions, only returns the loss."},
     )
 
-    per_device_train_batch_size: int = field(
-        default=8, metadata={"help": "Batch size per IPU for training."}
-    )
-    per_device_eval_batch_size: int = field(
-        default=8, metadata={"help": "Batch size per IPU for evaluation."}
-    )
+    per_device_train_batch_size: int = field(default=8, metadata={"help": "Batch size per IPU for training."})
+    per_device_eval_batch_size: int = field(default=8, metadata={"help": "Batch size per IPU for evaluation."})
 
     # per_gpu_train_batch_size: Optional[int] = field(
     #     default=None,
@@ -464,7 +464,9 @@ class IPUTrainingArguments:
             self.report_to = "all"
         if self.report_to == "all" or self.report_to == ["all"]:
             # Import at runtime to avoid a circular import.
-            from transformers.integrations import get_available_reporting_integrations
+            from transformers.integrations import (
+                get_available_reporting_integrations,
+            )
 
             self.report_to = get_available_reporting_integrations()
         elif self.report_to == "none" or self.report_to == ["none"]:
@@ -897,7 +899,12 @@ class IPUTrainingArguments:
         """
         The actual batch size for training (may differ from :obj:`per_gpu_train_batch_size` in distributed training).
         """
-        train_batch_size = self.per_device_train_batch_size * self.replication_factor * self.gradient_accumulation_steps * self.device_iterations
+        train_batch_size = (
+            self.per_device_train_batch_size
+            * self.replication_factor
+            * self.gradient_accumulation_steps
+            * self.device_iterations
+        )
 
         return train_batch_size
 
