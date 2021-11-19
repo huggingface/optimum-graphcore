@@ -15,7 +15,6 @@
 import copy
 
 from torch import nn
-
 from transformers import PreTrainedModel
 
 from .ipu_configuration import IPUConfig
