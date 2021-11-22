@@ -21,13 +21,12 @@ from joblib import Parallel, delayed
 from pathlib import Path
 from typing import Sequence, Union
 
-from datasets import Dataset, concatenate_datasets, load_dataset
+from datasets import Dataset, DatasetDict, concatenate_datasets, load_dataset
 
 
 def prepare_dataset(dataset_name: str, cache_dir: Path, data_dir: Path, data_files: Sequence[str]) -> Dataset:
     raw_dataset = load_dataset(
         dataset_name,
-        data_dir=data_dir,
         data_files=data_files,
         cache_dir=cache_dir,
     )
@@ -43,7 +42,8 @@ def main(num_workers: int, dataset_name: str, data_dir: Union[Path, str], cache_
     num_data_file_per_worker = len(data_files) // num_workers
     data_files_per_worker = [data_files[i * num_data_file_per_worker: (i + 1) * num_data_file_per_worker] for i in range(num_workers)]
     remaining_files = len(data_files) % num_workers
-    data_files_per_worker[-1] += data_files[-remaining_files:]
+    if remaining_files > 0:
+        data_files_per_worker[-1] += data_files[-remaining_files:]
 
     formatted_filenames = "\n".join(data_files)
     print(f"Found {len(data_files)} files:\n{formatted_filenames}")
@@ -52,16 +52,19 @@ def main(num_workers: int, dataset_name: str, data_dir: Union[Path, str], cache_
     print(f"Generating the dataset with {num_workers} workers...")
     start = time.time()
     sub_datasets = Parallel(n_jobs=num_workers)(delayed(prepare_dataset)(dataset_name, cache_dir, data_dir, data_files) for data_files in data_files_per_worker)
-    final_dataset = concatenate_datasets(sub_datasets)
+    final_datasets = DatasetDict()
+    split_names = sub_datasets[0].keys()
+    for split_name in split_names:
+        final_datasets[split_name] = concatenate_datasets([dataset_dict[split_name] for dataset_dict in sub_datasets], split=split_name)
     end = time.time()
     print(f"Dataset generation completed after {end - start}s")
     final_dataset_filename = Path(cache_dir) / dataset_name.replace("/", "_")
-    final_dataset.save_to_disk(final_dataset_filename)
+    final_datasets.save_to_disk(final_dataset_filename)
 
     if remove_intermediate_datasets_from_cache:
         print("*** Cleaning up intermediate dataset cache files ***")
         for dataset in sub_datasets:
-            for (_, cache_files) in dataset.cache_files:
+            for (_, cache_files) in dataset.cache_files.items():
                 for cache_file in cache_files:
                     filename = cache_file.get("filename")
                     if filename is None:
@@ -71,7 +74,7 @@ def main(num_workers: int, dataset_name: str, data_dir: Union[Path, str], cache_
         print("Done!")
 
     print(f"Dataset saved at {final_dataset_filename}")
-    return final_dataset
+    return final_datasets
 
 
 def get_args():
