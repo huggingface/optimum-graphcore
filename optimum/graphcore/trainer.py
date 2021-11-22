@@ -60,6 +60,7 @@ from packaging import version
 from poptorch import PoplarExecutor
 from poptorch.optim import LAMB, AdamW
 from torch import nn
+from torch import optim
 from torch.utils.data import (
     DataLoader,
     Dataset,
@@ -93,7 +94,7 @@ from transformers.modeling_utils import PreTrainedModel, unwrap_model
 from transformers.models.auto.modeling_auto import (
     MODEL_FOR_QUESTION_ANSWERING_MAPPING_NAMES,
 )
-from transformers.optimization import Adafactor, AdamW, get_scheduler
+from transformers.optimization import get_scheduler
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from transformers.trainer import (
     OPTIMIZER_NAME,
@@ -154,7 +155,7 @@ from transformers.trainer_utils import (
 from transformers.training_args import ParallelMode, TrainingArguments
 from transformers.utils import logging
 
-from .ipu_configuration import IPUConfig
+from .ipu_configuration import IPU_CONFIG_NAME, IPUConfig
 from .modelcard import IPUTrainingSummary
 from .modeling_utils import to_pipelined
 from .trainer_utils import _WorkerInit
@@ -194,6 +195,7 @@ class IPUTrainer:
         compute_metrics: Optional[Callable[[EvalPrediction], Dict]] = None,
         callbacks: Optional[List[TrainerCallback]] = None,
         optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (None, None),
+        force_to_pipelined: bool = False,
     ):
         if optimizers != (None, None):
             raise NotImplementedError("providing optimizers to IPUTrainer is not supported yet.")
@@ -300,7 +302,7 @@ class IPUTrainer:
         self.opts = ipu_config.to_options()
         self.eval_opts = ipu_config.to_options(for_inference=True)
 
-        self.original_model = to_pipelined(model, ipu_config)
+        self.original_model = to_pipelined(model, ipu_config, force=force_to_pipelined)
         self.model = copy.deepcopy(self.original_model).parallelize()
         if not self.args.fp32:
             self.model = self.model.half()
@@ -413,15 +415,15 @@ class IPUTrainer:
         # very last
         self._memory_tracker.stop_and_update_metrics()
 
-        # for k, v in self.args.__dict__.items():
-        #     if v is None:
-        #         continue
-        #     if hasattr(self.ipu_config, k) and getattr(self.ipu_config, k) != v:
-        #         logger.warning(f"IPUConfig {k} attribute was overriden from TrainingArguments to {v}")
-        #         setattr(self.ipu_config, k, v)
-
-        # TODO: find a better way to track combinbed batch size instead of setting attributes to self.args
-        self.args.__dict__.update(ipu_config.__dict__)
+    def _pytorch_optimizer_to_poptorch(self, optimizer: optim.Optimizer):
+        # TODO: implement this function
+        pytorch_to_poptorch_mapping = {
+            optim.SGD: poptorch.optim.SGD,
+            optim.Adam: poptorch.optim.Adam,
+            optim.AdamW: poptorch.optim.AdamW,
+            optim.RMSpop: poptorch.optim.RMSprop,
+        }
+        pass
 
     def _compile_model(
         self,
@@ -605,7 +607,7 @@ class IPUTrainer:
 
         if isinstance(train_dataset, torch.utils.data.IterableDataset):
             # TODO: add support, should be easy.
-            raise NotImplementedError("Training with IterableDataset not supported yet.")
+            # raise NotImplementedError("Training with IterableDataset not supported yet.")
 
         #     if self.args.world_size > 1:
         #         train_dataset = IterableDatasetShard(
@@ -616,15 +618,15 @@ class IPUTrainer:
         #             process_index=self.args.process_index,
         #         )
 
-        #     return poptorch.DataLoader(
-        #         self.opts,
-        #         train_dataset,
-        #         batch_size=self.args.train_batch_size,
-        #         collate_fn=self.data_collator,
-        #         num_workers=self.args.dataloader_num_workers,
-        #         pin_memory=self.args.dataloader_pin_memory,
-        #         **poptorch_specific_kwargs,
-        #     )
+            return poptorch.DataLoader(
+                self.opts,
+                train_dataset,
+                batch_size=self.args.train_batch_size,
+                collate_fn=self.data_collator,
+                num_workers=self.args.dataloader_num_workers,
+                pin_memory=self.args.dataloader_pin_memory,
+                **poptorch_specific_kwargs,
+            )
 
         train_sampler = self._get_train_sampler()
 
@@ -678,7 +680,7 @@ class IPUTrainer:
 
         if isinstance(eval_dataset, torch.utils.data.IterableDataset):
             # TODO: add support, should be easy.
-            raise NotImplementedError("Evluation with IterableDataset not supported yet.")
+            # raise NotImplementedError("Evluation with IterableDataset not supported yet.")
             # if self.args.world_size > 1:
             #     eval_dataset = IterableDatasetShard(
             #         eval_dataset,
@@ -687,13 +689,14 @@ class IPUTrainer:
             #         num_processes=self.args.world_size,
             #         process_index=self.args.process_index,
             #     )
-            # return DataLoader(
-            #     eval_dataset,
-            #     batch_size=self.args.eval_batch_size,
-            #     collate_fn=self.data_collator,
-            #     num_workers=self.args.dataloader_num_workers,
-            #     pin_memory=self.args.dataloader_pin_memory,
-            # )
+            return poptorch.DataLoader(
+                self.eval_opts,
+                eval_dataset,
+                batch_size=self.args.per_device_eval_batch_size,
+                collate_fn=self.data_collator,
+                num_workers=self.args.dataloader_num_workers,
+                pin_memory=self.args.dataloader_pin_memory,
+            )
 
         eval_sampler = self._get_eval_sampler(eval_dataset)
 
@@ -798,7 +801,7 @@ class IPUTrainer:
                 optimizer_cls = LAMB
                 optimizer_kwargs = {
                     "max_weight_norm": None,
-                    "bias_correction": self.lamb_no_bias_correction,
+                    "bias_correction": not self.args.lamb_no_bias_correction,
                 }
             else:
                 optimizer_cls = AdamW
@@ -1042,17 +1045,17 @@ class IPUTrainer:
                         "yield to errors or unwanted behaviors."
                     )
 
-            if args.deepspeed:
-                # will be resumed in deepspeed_init
-                pass
-            else:
-                # We load the model state dict on the CPU to avoid an OOM error.
-                state_dict = torch.load(os.path.join(resume_from_checkpoint, WEIGHTS_NAME), map_location="cpu")
-                # If the model is on the GPU, it still works!
-                self._load_state_dict_in_model(state_dict)
+            # if args.deepspeed:
+            #     # will be resumed in deepspeed_init
+            #     pass
+            # else:
+            # We load the model state dict on the CPU to avoid an OOM error.
+            state_dict = torch.load(os.path.join(resume_from_checkpoint, WEIGHTS_NAME), map_location="cpu")
+            # If the model is on the GPU, it still works!
+            self._load_state_dict_in_model(state_dict)
 
-                # release memory
-                del state_dict
+            # release memory
+            del state_dict
 
         # If model was re-initialized, put it on the right device and update self.model_wrapped
         # if model_reloaded:
@@ -1391,10 +1394,10 @@ class IPUTrainer:
         self.model.load_state_dict(model.state_dict())
 
         if self.training_model and self.training_model.isAttachedToDevice():
-            self.training_model.copyWeghtsToDevice()
+            self.training_model.copyWeightsToDevice()
 
         if self.inference_model and self.inference_model.isAttachedToDevice():
-            self.inference_model.copyWeghtsToDevice()
+            self.inference_model.copyWeightsToDevice()
 
         if len(load_result.missing_keys) != 0:
             if self.model._keys_to_ignore_on_save is not None and set(load_result.missing_keys) == set(
@@ -1430,7 +1433,7 @@ class IPUTrainer:
             model.detachFromDevice()
             metrics = self.evaluate(ignore_keys=ignore_keys_for_eval)
             model.attachToDevice()
-            self._report_to_hp_search(trial, epoch, metrics)
+            # self._report_to_hp_search(trial, epoch, metrics)
 
         if self.control.should_save:
             self._save_checkpoint(model, trial, metrics=metrics)
@@ -1441,7 +1444,9 @@ class IPUTrainer:
         if checkpoint is None:
             return
 
-        local_rank = xm.get_local_ordinal() if is_torch_tpu_available() else self.args.local_rank
+        # TODO: validate that.
+        local_rank = - 1
+        # local_rank = xm.get_local_ordinal() if is_torch_tpu_available() else self.args.local_rank
         if local_rank != -1:
             rng_file = os.path.join(checkpoint, f"rng_state_{local_rank}.pth")
             if not os.path.isfile(os.path.join(checkpoint, rng_file)):
@@ -1463,13 +1468,14 @@ class IPUTrainer:
         random.setstate(checkpoint_rng_state["python"])
         np.random.set_state(checkpoint_rng_state["numpy"])
         torch.random.set_rng_state(checkpoint_rng_state["cpu"])
-        if torch.cuda.is_available():
-            if self.args.local_rank != -1:
-                torch.cuda.random.set_rng_state(checkpoint_rng_state["cuda"])
-            else:
-                torch.cuda.random.set_rng_state_all(checkpoint_rng_state["cuda"])
-        if is_torch_tpu_available():
-            xm.set_rng_state(checkpoint_rng_state["xla"])
+        # TODO: set poptorch rng state?
+        # if torch.cuda.is_available():
+        #     if self.args.local_rank != -1:
+        #         torch.cuda.random.set_rng_state(checkpoint_rng_state["cuda"])
+        #     else:
+        #         torch.cuda.random.set_rng_state_all(checkpoint_rng_state["cuda"])
+        # if is_torch_tpu_available():
+        #     xm.set_rng_state(checkpoint_rng_state["xla"])
 
     def _save_checkpoint(self, model, trial, metrics=None):
         # In all cases, including ddp/dp/deepspeed, self.model is always a reference to the model we
@@ -2166,8 +2172,7 @@ class IPUTrainer:
                 metrics[f"{metric_key_prefix}_{key}"] = metrics.pop(key)
 
         # Detaching model from device to let the training model attach itself
-        if self.args.do_train:
-            model.detachFromDevice()
+        model.detachFromDevice()
 
         return EvalLoopOutput(predictions=all_preds, label_ids=all_labels, metrics=metrics, num_samples=num_samples)
 
@@ -2417,7 +2422,7 @@ class IPUTrainer:
 
         output_dir = self.args.output_dir
         # To avoid a new synchronization of all model weights, we just copy the file from the checkpoint folder
-        modeling_files = [CONFIG_NAME, WEIGHTS_NAME]
+        modeling_files = [CONFIG_NAME, WEIGHTS_NAME, IPU_CONFIG_NAME]
         for modeling_file in modeling_files:
             if os.path.isfile(os.path.join(checkpoint_folder, modeling_file)):
                 shutil.copy(os.path.join(checkpoint_folder, modeling_file), os.path.join(output_dir, modeling_file))
