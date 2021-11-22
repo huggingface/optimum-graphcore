@@ -80,7 +80,7 @@ class IPUTrainingArguments:
         metadata={"help": "When performing evaluation and predictions, only returns the loss."},
     )
 
-    per_device_train_batch_size: int = field(default=8, metadata={"help": "Batch size per IPU for training."})
+    per_device_train_batch_size: int = field(default=2, metadata={"help": "Batch size per IPU for training."})
     per_device_eval_batch_size: int = field(default=8, metadata={"help": "Batch size per IPU for evaluation."})
 
     # per_gpu_train_batch_size: Optional[int] = field(
@@ -899,13 +899,7 @@ class IPUTrainingArguments:
         """
         The actual batch size for training (may differ from :obj:`per_gpu_train_batch_size` in distributed training).
         """
-        train_batch_size = (
-            self.per_device_train_batch_size
-            * self.replication_factor
-            * self.gradient_accumulation_steps
-            * self.device_iterations
-        )
-
+        train_batch_size = self.per_device_train_batch_size
         return train_batch_size
 
     @property

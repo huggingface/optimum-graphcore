@@ -16,9 +16,11 @@ import copy
 
 from torch import nn
 from transformers import PreTrainedModel
+from transformers.utils import logging
 
 from .ipu_configuration import IPUConfig
 
+logger = logging.get_logger(__name__)
 
 _PRETRAINED_TO_PIPELINED_REGISTRY = {}
 
@@ -41,12 +43,19 @@ def register(transformers_cls=None):
     return wrapper
 
 
-def to_pipelined(model: PreTrainedModel, ipu_config: IPUConfig):
+def to_pipelined(model: nn.Module, ipu_config: IPUConfig, force: bool = False):
     model_cls = model.__class__
     pipelined_cls = _PRETRAINED_TO_PIPELINED_REGISTRY.get(model_cls, None)
-    if pipelined_cls is None:
-        raise KeyError(f"Pipelined version of {model_cls} not found in registry.")
-    return pipelined_cls.from_transformers(model, ipu_config)
+    if pipelined_cls is not None:
+        return pipelined_cls.from_transformers(model, ipu_config)
+    else:
+        if force:
+            logger.warning(f"No pipelined version exists for {model_cls.__name__}, creating it dynamically, it might not work as expected.")
+            pipelined_cls = type(f"Pipelined{model_cls.__name__}", (model_cls, PipelineMixin), {})
+            return pipelined_cls.from_model(model)
+
+        else:
+            raise KeyError(f"{model_cls.__name__} pipelined version not found in registry.")
 
 
 class PipelineMixin:
@@ -59,6 +68,13 @@ class PipelineMixin:
         pipelined_model = cls(config)
         pipelined_model.load_state_dict(model.state_dict())
         return pipelined_model
+
+    @classmethod
+    def from_model(cls, model: nn.Module):
+        clone = copy.deepcopy(model)
+        # It is fine because PipelineMixin only adds functionality, it does not add any attribute.
+        clone.__class__ = cls
+        return clone
 
     def parallelize(self):
         """Transform the model to run in an IPU pipeline."""

@@ -28,7 +28,7 @@ from transformers.utils import logging
 
 logger = logging.get_logger(__name__)
 
-CONFIG_NAME = "ipu_config.json"
+IPU_CONFIG_NAME = "ipu_config.json"
 
 
 class IPUConfig(PretrainedConfig):
@@ -65,7 +65,7 @@ class IPUConfig(PretrainedConfig):
 
     def save_pretrained(self, save_directory: Union[str, os.PathLike], push_to_hub: bool = False, **kwargs):
         orig_transformers_config_name = transformers.file_utils.CONFIG_NAME
-        transformers.configuration_utils.CONFIG_NAME = CONFIG_NAME
+        transformers.configuration_utils.CONFIG_NAME = IPU_CONFIG_NAME
         super().save_pretrained(save_directory, push_to_hub=push_to_hub, **kwargs)
         transformers.configuration_utils.CONFIG_NAME = orig_transformers_config_name
 
@@ -74,7 +74,7 @@ class IPUConfig(PretrainedConfig):
         cls, pretrained_model_name_or_path: Union[str, os.PathLike], **kwargs
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         orig_transformers_config_name = transformers.file_utils.CONFIG_NAME
-        transformers.configuration_utils.CONFIG_NAME = CONFIG_NAME
+        transformers.configuration_utils.CONFIG_NAME = IPU_CONFIG_NAME
         ipu_config = super().get_config_dict(pretrained_model_name_or_path, **kwargs)
         transformers.configuration_utils.CONFIG_NAME = orig_transformers_config_name
         return ipu_config
