@@ -38,10 +38,12 @@ def main(num_workers: int, dataset_name: str, data_dir: Union[Path, str], cache_
     data_files = list(map(str, Path(data_dir).glob("*.tfrecord")))
     if max_number_of_files > 0:
         data_files = data_files[:max_number_of_files]
+    if num_workers > len(data_files):
+        raise ValueError(f"there are more workers ({num_workers}) than the number of files ({len(data_files)})")
     num_data_file_per_worker = len(data_files) // num_workers
     data_files_per_worker = [data_files[i * num_data_file_per_worker: (i + 1) * num_data_file_per_worker] for i in range(num_workers)]
     remaining_files = len(data_files) % num_workers
-    data_files_per_worker[-1] += data_files[:-remaining_files]
+    data_files_per_worker[-1] += data_files[-remaining_files:]
 
     formatted_filenames = "\n".join(data_files)
     print(f"Found {len(data_files)} files:\n{formatted_filenames}")
