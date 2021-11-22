@@ -43,7 +43,9 @@ def main(num_workers: int, dataset_name: str, data_dir: Union[Path, str], cache_
     data_files_per_worker = [data_files[i * num_data_file_per_worker: (i + 1) * num_data_file_per_worker] for i in range(num_workers)]
     remaining_files = len(data_files) % num_workers
     if remaining_files > 0:
-        data_files_per_worker[-1] += data_files[-remaining_files:]
+        # Dispatching the remaning files to different workers
+        for i in range(1, remaining_files + 1):
+            data_files_per_worker[-i].append(data_files[-i])
 
     formatted_filenames = "\n".join(data_files)
     print(f"Found {len(data_files)} files:\n{formatted_filenames}")
