@@ -23,7 +23,8 @@ import poptorch
 import transformers
 from poptorch import Options
 from transformers import PretrainedConfig
-from transformers.utils import logging
+
+from .utils import logging
 
 
 logger = logging.get_logger(__name__)

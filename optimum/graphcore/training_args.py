@@ -41,7 +41,8 @@ from transformers.trainer_utils import (
     SchedulerType,
 )
 from transformers.training_args import default_logdir
-from transformers.utils import logging
+
+from .utils import logging
 
 
 logger = logging.get_logger(__name__)

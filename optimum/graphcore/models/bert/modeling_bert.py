@@ -19,9 +19,9 @@ import torch.nn.functional as F
 import poptorch
 import transformers
 from scipy.stats import truncnorm
-from transformers.utils import logging
 
 from ...modeling_utils import PipelineMixin, register
+from ...utils import logging
 from .bert_fused_attention import BertFusedSelfAttention
 
 

@@ -59,8 +59,7 @@ from optimum.version import __version__
 from packaging import version
 from poptorch import PoplarExecutor
 from poptorch.optim import LAMB, AdamW
-from torch import nn
-from torch import optim
+from torch import nn, optim
 from torch.utils.data import (
     DataLoader,
     Dataset,
@@ -153,13 +152,13 @@ from transformers.trainer_utils import (
     speed_metrics,
 )
 from transformers.training_args import ParallelMode, TrainingArguments
-from transformers.utils import logging
 
 from .ipu_configuration import IPU_CONFIG_NAME, IPUConfig
 from .modelcard import IPUTrainingSummary
 from .modeling_utils import to_pipelined
 from .trainer_utils import _WorkerInit
 from .training_args import IPUTrainingArguments
+from .utils import logging
 
 if is_datasets_available():
     import datasets
@@ -609,14 +608,14 @@ class IPUTrainer:
             # TODO: add support, should be easy.
             # raise NotImplementedError("Training with IterableDataset not supported yet.")
 
-        #     if self.args.world_size > 1:
-        #         train_dataset = IterableDatasetShard(
-        #             train_dataset,
-        #             batch_size=self.args.train_batch_size,
-        #             drop_last=self.args.dataloader_drop_last,
-        #             num_processes=self.args.world_size,
-        #             process_index=self.args.process_index,
-        #         )
+            #     if self.args.world_size > 1:
+            #         train_dataset = IterableDatasetShard(
+            #             train_dataset,
+            #             batch_size=self.args.train_batch_size,
+            #             drop_last=self.args.dataloader_drop_last,
+            #             num_processes=self.args.world_size,
+            #             process_index=self.args.process_index,
+            #         )
 
             return poptorch.DataLoader(
                 self.opts,
@@ -628,13 +627,14 @@ class IPUTrainer:
                 **poptorch_specific_kwargs,
             )
 
-        train_sampler = self._get_train_sampler()
+        # Slow things down a lot.
+        # train_sampler = self._get_train_sampler()
 
         return poptorch.DataLoader(
             self.opts,
             train_dataset,
             batch_size=self.args.per_device_train_batch_size,
-            sampler=train_sampler,
+            # sampler=train_sampler,
             collate_fn=self.data_collator,
             # drop_last=self.args.dataloader_drop_last,
             num_workers=self.args.dataloader_num_workers,
@@ -698,12 +698,12 @@ class IPUTrainer:
                 pin_memory=self.args.dataloader_pin_memory,
             )
 
-        eval_sampler = self._get_eval_sampler(eval_dataset)
+        # eval_sampler = self._get_eval_sampler(eval_dataset)
 
         return poptorch.DataLoader(
             self.eval_opts,
             eval_dataset,
-            sampler=eval_sampler,
+            # sampler=eval_sampler,
             batch_size=self.args.per_device_eval_batch_size,
             collate_fn=self.data_collator,
             drop_last=self.args.dataloader_drop_last,
@@ -733,8 +733,6 @@ class IPUTrainer:
             test_dataset = self._remove_unused_columns(test_dataset, description="test")
 
         if isinstance(test_dataset, torch.utils.data.IterableDataset):
-            # TODO: add support, should be easy.
-            raise NotImplementedError("Testing with IterableDataset not supported yet.")
             # if self.args.world_size > 1:
             #     test_dataset = IterableDatasetShard(
             #         test_dataset,
@@ -743,21 +741,23 @@ class IPUTrainer:
             #         num_processes=self.args.world_size,
             #         process_index=self.args.process_index,
             #     )
-            # return DataLoader(
-            #     test_dataset,
-            #     batch_size=self.args.eval_batch_size,
-            #     collate_fn=self.data_collator,
-            #     num_workers=self.args.dataloader_num_workers,
-            #     pin_memory=self.args.dataloader_pin_memory,
-            # )
+            return poptorch.DataLoader(
+                self.eval_opts,
+                test_dataset,
+                batch_size=self.args.per_device_eval_batch_size,
+                collate_fn=self.data_collator,
+                num_workers=self.args.dataloader_num_workers,
+                pin_memory=self.args.dataloader_pin_memory,
+            )
 
-        test_sampler = self._get_eval_sampler(test_dataset)
+        # Slow things down.
+        # test_sampler = self._get_eval_sampler(test_dataset)
 
         # We use the same batch_size as for eval.
         return poptorch.DataLoader(
             self.eval_opts,
             test_dataset,
-            sampler=test_sampler,
+            # sampler=test_sampler,
             batch_size=self.args.per_device_eval_batch_size,
             collate_fn=self.data_collator,
             drop_last=self.args.dataloader_drop_last,
@@ -802,6 +802,7 @@ class IPUTrainer:
                 optimizer_kwargs = {
                     "max_weight_norm": None,
                     "bias_correction": not self.args.lamb_no_bias_correction,
+                    "eps": 1e-6,  # TODO: use self.args.adam_epsilon?
                 }
             else:
                 optimizer_cls = AdamW
@@ -1319,6 +1320,7 @@ class IPUTrainer:
 
                 if optimizer_was_run:
                     self.lr_scheduler.step()
+                    self.training_model.setOptimizer(self.optimizer)
 
                 # model.zero_grad()
                 self.state.global_step += 1
@@ -1445,7 +1447,7 @@ class IPUTrainer:
             return
 
         # TODO: validate that.
-        local_rank = - 1
+        local_rank = -1
         # local_rank = xm.get_local_ordinal() if is_torch_tpu_available() else self.args.local_rank
         if local_rank != -1:
             rng_file = os.path.join(checkpoint, f"rng_state_{local_rank}.pth")
