@@ -207,13 +207,15 @@ class IPUTrainer(Trainer):
         #         **poptorch_specific_kwargs,
         #     )
 
+        # TODO: solve issue with sampler.
+        # Slow things down.
         train_sampler = self._get_train_sampler()
 
         return poptorch.DataLoader(
             self.opts,
             train_dataset,
             batch_size=self.args.per_device_train_batch_size,
-            sampler=train_sampler,
+            # sampler=train_sampler,
             collate_fn=self.data_collator,
             # drop_last=self.args.dataloader_drop_last,
             num_workers=self.args.dataloader_num_workers,
@@ -331,46 +333,6 @@ class IPUTrainer(Trainer):
             **poptorch_specific_kwargs,
         )
 
-    # @to_poptorch_dataloader(for_training=True)
-    # def get_train_dataloader(self) -> poptorch.DataLoader:
-    #     """
-    #     Returns the training :class:`~poptorch.DataLoader`.
-
-    #     Will use no sampler if :obj:`self.train_dataset` does not implement :obj:`__len__`, a random sampler (adapted
-    #     to distributed training if necessary) otherwise.
-
-    #     Subclass and override this method if you want to inject some custom behavior.
-    #     """
-    #     return super().get_train_dataloader()
-
-    # @to_poptorch_dataloader(for_training=False)
-    # def get_eval_dataloader(self, eval_dataset: Optional[Dataset] = None) -> poptorch.DataLoader:
-    #     """
-    #     Returns the evaluation :class:`~poptorch.DataLoader`.
-
-    #     Subclass and override this method if you want to inject some custom behavior.
-
-    #     Args:
-    #         eval_dataset (:obj:`torch.utils.data.Dataset`, `optional`):
-    #             If provided, will override :obj:`self.eval_dataset`. If it is an :obj:`datasets.Dataset`, columns not
-    #             accepted by the ``model.forward()`` method are automatically removed. It must implement :obj:`__len__`.
-    #     """
-    #     return super().get_eval_dataloader()
-
-    # @to_poptorch_dataloader(for_training=False)
-    # def get_test_dataloader(self, test_dataset: Dataset) -> poptorch.DataLoader:
-    #     """
-    #     Returns the test :class:`~poptorch.DataLoader`.
-
-    #     Subclass and override this method if you want to inject some custom behavior.
-
-    #     Args:
-    #         test_dataset (:obj:`torch.utils.data.Dataset`, `optional`):
-    #             The test dataset to use. If it is an :obj:`datasets.Dataset`, columns not accepted by the
-    #             ``model.forward()`` method are automatically removed. It must implement :obj:`__len__`.
-    #     """
-    #     return super().get_test_dataloader()
-
     def create_optimizer(self):
         """
         Setup the optimizer.
@@ -383,6 +345,19 @@ class IPUTrainer(Trainer):
             decay_parameters = [name for name in decay_parameters if "bias" not in name]
             # TODO: make sure the same thing is done as in GraphCore example.
             optimizer_grouped_parameters = [
+                # {
+                #     "params": [p for n, p in self.model.named_parameters() if "bias" in n],
+                #     "weight_decay": 0,
+                #     "max_weight_norm": 0,
+                # },
+                # {
+                #     "params": [p for n, p in self.model.named_parameters() if "bias" not in n and len(p.shape) == 1],
+                #     "weight_decay": 0.0,
+                # },
+                # {
+                #     "params": [p for n, p in self.model.named_parameters() if "bias" not in n and len(p.shape) > 1],
+                #     "weight_decay": self.args.weight_decay,
+                # },
                 {
                     "params": [p for n, p in self.model.named_parameters() if n in decay_parameters],
                     "weight_decay": self.args.weight_decay,
@@ -396,7 +371,8 @@ class IPUTrainer(Trainer):
                 optimizer_cls = LAMB
                 optimizer_kwargs = {
                     "max_weight_norm": None,
-                    "bias_correction": self.lamb_no_bias_correction,
+                    "bias_correction": self.args.lamb_no_bias_correction,
+                    "eps": 1e-6,
                 }
             else:
                 optimizer_cls = AdamW
@@ -769,6 +745,7 @@ class IPUTrainer(Trainer):
                 #     with model.no_sync():
                 #         tr_loss_step = self.training_step(model, inputs)
                 # else:
+
                 tr_loss_step = self.training_step(model, inputs)
 
                 # if (
@@ -823,6 +800,7 @@ class IPUTrainer(Trainer):
 
                 if optimizer_was_run and not self.deepspeed:
                     self.lr_scheduler.step()
+                    self.training_model.setOptimizer(self.optimizer)
 
                 # model.zero_grad()
                 self.state.global_step += 1

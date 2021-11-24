@@ -263,14 +263,13 @@ class PipelinedBertForPreTraining(transformers.BertForPreTraining, PipelineMixin
         if labels is not None and next_sentence_label is not None:
             masked_lm_loss = F.cross_entropy(
                 prediction_scores.view(-1, self.config.vocab_size),
-                masked_lm_labels.view(-1).to(torch.int64),
+                masked_lm_labels.view(-1),
                 ignore_index=-100,
             ).float()
             next_sentence_loss = F.cross_entropy(
                 sequential_relationship_score.view(-1, 2), next_sentence_label.view(-1)
             ).float()
             total_loss = poptorch.identity_loss(masked_lm_loss + next_sentence_loss, reduction="none")
-
             # next_sentence_acc = accuracy(sequential_relationship_score.view([-1, 2]), next_sentence_label.view(-1))
             # labels: 0 if corresponding token not masked, original value otherwise
             # masked_lm_acc = accuracy_masked(

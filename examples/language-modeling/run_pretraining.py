@@ -30,8 +30,8 @@ from typing import Optional
 
 import datasets
 import transformers
-from datasets import load_dataset
-from transformers import (  # DataCollatorForLanguageModeling,
+from datasets import load_dataset, load_from_disk
+from transformers import (
     CONFIG_MAPPING,
     MODEL_FOR_MASKED_LM_MAPPING,
     AutoConfig,
@@ -129,6 +129,12 @@ class DataTrainingArguments:
     dataset_config_name: Optional[str] = field(
         default=None, metadata={"help": "The configuration name of the dataset to use (via the datasets library)."}
     )
+    dataset_path: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": "The path to the dataset that was saved using Dataset.save_to_disk(), the dataset will be loaded using datasets.load_from_disk."
+        },
+    )
     train_file: Optional[str] = field(default=None, metadata={"help": "The input training data file (a text file)."})
     validation_file: Optional[str] = field(
         default=None,
@@ -194,7 +200,12 @@ class DataTrainingArguments:
     )
 
     def __post_init__(self):
-        if self.dataset_name is None and self.train_file is None and self.validation_file is None:
+        if (
+            self.dataset_name is None
+            and self.dataset_path is None
+            and self.train_file is None
+            and self.validation_file is None
+        ):
             raise ValueError("Need either a dataset name or a training/validation file.")
         else:
             if self.train_file is not None:
@@ -292,6 +303,11 @@ def main():
                 cache_dir=model_args.cache_dir,
                 data_dir=data_args.data_dir,
             )
+    elif data_args.dataset_path is not None:
+        raw_datasets = load_from_disk(data_args.dataset_path)
+        # TODO: define behaviour when no validation split is provided.
+        # if "validation" not in raw_datasets.keys():
+        #     raw_datasets["validation"] = datasets.Dataset()
     else:
         data_files = {}
         if data_args.train_file is not None:
@@ -391,9 +407,9 @@ def main():
 
     if data_args.is_already_preprocessed:
         logger.warning(
-            "The dataset is already pre-processed, skipping pre-processing. Make sure that you are using the same "
-            "tokenizer as the ones used during the dataset creation."
+            "The dataset is already pre-processed, skipping pre-processing. Make sure that you are using the same tokenizer as the ones used during the dataset creation."
         )
+        tokenized_datasets = raw_datasets
     else:
         if data_args.max_seq_length is None:
             max_seq_length = tokenizer.model_max_length
@@ -493,8 +509,6 @@ def main():
         if "train" not in tokenized_datasets:
             raise ValueError("--do_train requires a train dataset")
         train_dataset = tokenized_datasets["train"]
-        # TODO: delete that, just put it to try things out.
-        train_dataset = train_dataset.add_column("next_sentence_label", [0] * len(train_dataset))
         if data_args.max_train_samples is not None:
             train_dataset = train_dataset.select(range(data_args.max_train_samples))
 
@@ -502,19 +516,21 @@ def main():
         if "validation" not in tokenized_datasets:
             raise ValueError("--do_eval requires a validation dataset")
         eval_dataset = tokenized_datasets["validation"]
-        # TODO: delete that, just put it to try things out.
-        eval_dataset = eval_dataset.add_column("next_sentence_label", [0] * len(eval_dataset))
         if data_args.max_eval_samples is not None:
             eval_dataset = eval_dataset.select(range(data_args.max_eval_samples))
 
-    # Data collator
-    # This one will take care of randomly masking the tokens.
-    pad_to_multiple_of_8 = data_args.line_by_line and training_args.fp16 and not data_args.pad_to_max_length
-    data_collator = DataCollatorForLanguageModelingWithMaxTokensMasked(
-        tokenizer=tokenizer,
-        mlm_probability=data_args.mlm_probability,
-        pad_to_multiple_of=8 if pad_to_multiple_of_8 else None,
-    )
+    if not data_args.is_already_preprocessed:
+        # Data collator
+        # This one will take care of randomly masking the tokens.
+        pad_to_multiple_of_8 = data_args.line_by_line and training_args.fp16 and not data_args.pad_to_max_length
+        data_collator = DataCollatorForLanguageModelingWithMaxTokensMasked(
+            tokenizer=tokenizer,
+            mlm_probability=data_args.mlm_probability,
+            pad_to_multiple_of=8 if pad_to_multiple_of_8 else None,
+        )
+    else:
+        data_collator = None
+    # train_dataset.set_format(type='torch', columns=['input_ids', 'token_type_ids', 'attention_mask', "labels", "next_sentence_label"])
 
     # Initialize our Trainer
     trainer = IPUTrainer(
