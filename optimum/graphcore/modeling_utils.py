@@ -16,9 +16,9 @@ import copy
 
 from torch import nn
 from transformers import PreTrainedModel
-from transformers.utils import logging
 
 from .ipu_configuration import IPUConfig
+from .utils import logging
 
 logger = logging.get_logger(__name__)
 
@@ -50,7 +50,9 @@ def to_pipelined(model: nn.Module, ipu_config: IPUConfig, force: bool = False):
         return pipelined_cls.from_transformers(model, ipu_config)
     else:
         if force:
-            logger.warning(f"No pipelined version exists for {model_cls.__name__}, creating it dynamically, it might not work as expected.")
+            logger.warning(
+                f"No pipelined version exists for {model_cls.__name__}, creating it dynamically, it might not work as expected."
+            )
             pipelined_cls = type(f"Pipelined{model_cls.__name__}", (model_cls, PipelineMixin), {})
             return pipelined_cls.from_model(model)
 
