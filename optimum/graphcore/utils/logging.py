@@ -28,6 +28,7 @@ from logging import WARN  # NOQA
 from logging import WARNING  # NOQA
 from typing import Optional
 
+
 _lock = threading.Lock()
 _default_handler: Optional[logging.Handler] = None
 
