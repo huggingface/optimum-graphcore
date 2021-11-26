@@ -18,6 +18,7 @@ from transformers import PreTrainedModel
 
 from .ipu_configuration import IPUConfig
 
+
 _PRETRAINED_TO_PIPELINED_REGISTRY = {}
 
 

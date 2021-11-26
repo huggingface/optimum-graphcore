@@ -12,16 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import poptorch
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+
+import poptorch
 import transformers
 from scipy.stats import truncnorm
 from transformers.utils import logging
 
 from ...modeling_utils import PipelineMixin, register
 from .bert_fused_attention import BertFusedSelfAttention
+
 
 logger = logging.get_logger(__name__)
 

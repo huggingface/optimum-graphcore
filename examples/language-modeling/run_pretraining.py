@@ -29,8 +29,12 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import datasets
-import transformers
 from datasets import load_dataset, load_from_disk
+
+import transformers
+from optimum.graphcore import IPUConfig, IPUTrainer
+from optimum.graphcore import IPUTrainingArguments as TrainingArguments
+from optimum.graphcore.data import DataCollatorForLanguageModelingWithMaxTokensMasked
 from transformers import (
     CONFIG_MAPPING,
     MODEL_FOR_MASKED_LM_MAPPING,
@@ -44,11 +48,6 @@ from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version
 from transformers.utils.versions import require_version
 
-from optimum.graphcore import IPUConfig, IPUTrainer
-from optimum.graphcore import IPUTrainingArguments as TrainingArguments
-from optimum.graphcore.data import (
-    DataCollatorForLanguageModelingWithMaxTokensMasked,
-)
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.13.0.dev0")

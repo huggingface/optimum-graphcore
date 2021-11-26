@@ -17,10 +17,10 @@ A subclass of `Trainer` specific to Question-Answering tasks
 """
 
 
+from optimum.graphcore import IPUTrainer
 from transformers import is_torch_tpu_available
 from transformers.trainer_utils import PredictionOutput
 
-from optimum.graphcore import IPUTrainer
 
 if is_torch_tpu_available():
     import torch_xla.core.xla_model as xm

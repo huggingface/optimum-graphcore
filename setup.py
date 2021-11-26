@@ -2,6 +2,7 @@ import re
 
 from setuptools import find_namespace_packages, setup
 
+
 # Ensure we match the version set in optimum/version.py
 try:
     filepath = "optimum/graphcore/version.py"

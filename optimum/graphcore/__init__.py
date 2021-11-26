@@ -17,9 +17,6 @@
 #  limitations under the License.
 
 from .ipu_configuration import IPUConfig
-from .models.bert import (
-    PipelinedBertForPreTraining,
-    PipelinedBertForQuestionAnswering,
-)
+from .models.bert import PipelinedBertForPreTraining, PipelinedBertForQuestionAnswering
 from .trainer import IPUTrainer
 from .training_args import IPUTrainingArguments

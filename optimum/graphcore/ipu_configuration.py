@@ -15,14 +15,16 @@
 import os
 from typing import Any, Dict, Tuple, Union
 
+import torch
+
 import popart
 import popdist
 import poptorch
-import torch
 import transformers
 from poptorch import Options
 from transformers import PretrainedConfig
 from transformers.utils import logging
+
 
 logger = logging.get_logger(__name__)
 

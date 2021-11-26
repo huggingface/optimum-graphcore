@@ -22,16 +22,17 @@ import warnings
 from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
-import optuna
-import poptorch
 import torch
 import torch.nn as nn
-from optimum.version import __version__
-from poptorch import PoplarExecutor
-from poptorch.optim import LAMB, AdamW
 from torch.utils.data import DataLoader, Dataset, IterableDataset
 from torch.utils.data.distributed import DistributedSampler
 from tqdm import tqdm
+
+import optuna
+import poptorch
+from optimum.version import __version__
+from poptorch import PoplarExecutor
+from poptorch.optim import LAMB, AdamW
 from transformers import (
     DataCollator,
     EvalPrediction,
@@ -70,6 +71,7 @@ from transformers.utils import logging
 from .ipu_configuration import IPUConfig
 from .modeling_utils import to_pipelined
 from .trainer_utils import _WorkerInit, to_poptorch_dataloader
+
 
 if is_datasets_available():
     import datasets
