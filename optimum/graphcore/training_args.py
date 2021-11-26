@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import torch
+
 from poptorch import DataLoaderMode
 from transformers.debug_utils import DebugOption
 from transformers.file_utils import (
@@ -34,12 +35,7 @@ from transformers.file_utils import (
     is_torch_tpu_available,
     torch_required,
 )
-from transformers.trainer_utils import (
-    EvaluationStrategy,
-    HubStrategy,
-    IntervalStrategy,
-    SchedulerType,
-)
+from transformers.trainer_utils import EvaluationStrategy, HubStrategy, IntervalStrategy, SchedulerType
 from transformers.training_args import default_logdir
 
 from .utils import logging
@@ -465,9 +461,7 @@ class IPUTrainingArguments:
             self.report_to = "all"
         if self.report_to == "all" or self.report_to == ["all"]:
             # Import at runtime to avoid a circular import.
-            from transformers.integrations import (
-                get_available_reporting_integrations,
-            )
+            from transformers.integrations import get_available_reporting_integrations
 
             self.report_to = get_available_reporting_integrations()
         elif self.report_to == "none" or self.report_to == ["none"]:

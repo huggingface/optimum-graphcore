@@ -23,6 +23,7 @@ import subprocess
 import tempfile
 import unittest
 
+
 try:
     from functools import cache
 except ImportError:
@@ -33,14 +34,12 @@ from pathlib import Path
 from typing import Optional, Union
 
 import numpy as np
+
 from huggingface_hub import Repository, delete_repo, login
+from optimum.graphcore import IPUConfig, IPUTrainingArguments
+from optimum.graphcore.utils import logging
 from requests.exceptions import HTTPError
-from transformers import (
-    AutoTokenizer,
-    IntervalStrategy,
-    PretrainedConfig,
-    is_torch_available,
-)
+from transformers import AutoTokenizer, IntervalStrategy, PretrainedConfig, is_torch_available
 from transformers.file_utils import WEIGHTS_NAME
 from transformers.testing_utils import (
     ENDPOINT_STAGING,
@@ -67,14 +66,14 @@ from transformers.testing_utils import (
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
 from transformers.utils.hp_naming import TrialShortNamer
 
-from optimum.graphcore import IPUConfig, IPUTrainingArguments
-from optimum.graphcore.utils import logging
 
 if is_torch_available():
-    import poptorch
     import torch
     from torch import nn
     from torch.utils.data import IterableDataset
+
+    import poptorch
+    from optimum.graphcore import IPUTrainer
     from transformers import (
         AutoModelForSequenceClassification,
         EarlyStoppingCallback,
@@ -87,8 +86,6 @@ if is_torch_available():
         TrainerState,
     )
     from transformers.modeling_utils import unwrap_model
-
-    from optimum.graphcore import IPUTrainer
 
 
 PATH_SAMPLE_TEXT = f"{get_tests_dir()}/fixtures/sample_text.txt"
@@ -522,20 +519,21 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         self.n_epochs = args.num_train_epochs
         self.batch_size = args.train_batch_size
 
-    def test_trainer_works_with_dict(self):
-        # Edge case because Apex with mode O2 will change our models to return dicts. This test checks it doesn't break
-        # anything.
-        train_dataset = RegressionDataset()
-        eval_dataset = RegressionDataset()
-        model = RegressionDictModel()
-        args = IPUTrainingArguments("./regression")
-        ipu_config = get_ipu_config()
-        trainer = IPUTrainer(
-            model, ipu_config, args, train_dataset=train_dataset, eval_dataset=eval_dataset, force_to_pipelined=True
-        )
-        trainer.train()
-        _ = trainer.evaluate()
-        _ = trainer.predict(eval_dataset)
+    # TODO: not supported by poptorch for now.
+    # def test_trainer_works_with_dict(self):
+    #     # Edge case because Apex with mode O2 will change our models to return dicts. This test checks it doesn't break
+    #     # anything.
+    #     train_dataset = RegressionDataset(length=TRAIN_LEN)
+    #     eval_dataset = RegressionDataset(length=EVAL_LEN)
+    #     model = RegressionDictModel()
+    #     args = IPUTrainingArguments("./regression")
+    #     ipu_config = get_ipu_config()
+    #     trainer = IPUTrainer(
+    #         model, ipu_config, args, train_dataset=train_dataset, eval_dataset=eval_dataset, force_to_pipelined=True
+    #     )
+    #     trainer.train()
+    #     _ = trainer.evaluate()
+    #     _ = trainer.predict(eval_dataset)
 
     # TODO: handle this.
     # def test_evaluation_with_keys_to_drop(self):
@@ -980,45 +978,45 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
     #         self.assertEqual(b, b1)
     #         self.check_trainer_state_are_the_same(state, state1)
 
-    @require_torch_up_to_2_gpus
-    def test_resume_training_with_frozen_params(self):
-        # This test will fail for more than 2 GPUs since the batch size will get bigger and with the number of
-        # save_steps, the checkpoint will resume training at epoch 2 or more (so the data seen by the model
-        # won't be the same since the training dataloader is shuffled).
+    # @require_torch_up_to_2_gpus
+    # def test_resume_training_with_frozen_params(self):
+    #     # This test will fail for more than 2 GPUs since the batch size will get bigger and with the number of
+    #     # save_steps, the checkpoint will resume training at epoch 2 or more (so the data seen by the model
+    #     # won't be the same since the training dataloader is shuffled).
 
-        with tempfile.TemporaryDirectory() as tmpdir:
-            trainer = get_regression_trainer(
-                output_dir=tmpdir,
-                train_len=TRAIN_LEN * 2,
-                per_device_train_batch_size=4,
-                save_steps=5,
-                learning_rate=0.1,
-            )
-            trainer.model.a.requires_grad_(False)
-            trainer.train()
-            (a, b) = trainer.model.a.item(), trainer.model.b.item()
-            state = dataclasses.asdict(trainer.state)
+    #     with tempfile.TemporaryDirectory() as tmpdir:
+    #         trainer = get_regression_trainer(
+    #             output_dir=tmpdir,
+    #             train_len=TRAIN_LEN * 2,
+    #             per_device_train_batch_size=4,
+    #             save_steps=5,
+    #             learning_rate=0.1,
+    #         )
+    #         trainer.model.a.requires_grad_(False)
+    #         trainer.train()
+    #         (a, b) = trainer.model.a.item(), trainer.model.b.item()
+    #         state = dataclasses.asdict(trainer.state)
 
-            checkpoint = os.path.join(tmpdir, "checkpoint-5")
+    #         checkpoint = os.path.join(tmpdir, "checkpoint-5")
 
-            # Reinitialize trainer
-            trainer = get_regression_trainer(
-                output_dir=tmpdir,
-                train_len=TRAIN_LEN * 2,
-                per_device_train_batch_size=4,
-                save_steps=5,
-                learning_rate=0.1,
-            )
-            trainer.model.a.requires_grad_(False)
+    #         # Reinitialize trainer
+    #         trainer = get_regression_trainer(
+    #             output_dir=tmpdir,
+    #             train_len=TRAIN_LEN * 2,
+    #             per_device_train_batch_size=4,
+    #             save_steps=5,
+    #             learning_rate=0.1,
+    #         )
+    #         trainer.model.a.requires_grad_(False)
 
-            trainer.train(resume_from_checkpoint=checkpoint)
+    #         trainer.train(resume_from_checkpoint=checkpoint)
 
-            self.assertFalse(trainer.model.a.requires_grad)
-            (a1, b1) = trainer.model.a.item(), trainer.model.b.item()
-            state1 = dataclasses.asdict(trainer.state)
-            self.assertEqual(a, a1)
-            self.assertEqual(b, b1)
-            self.check_trainer_state_are_the_same(state, state1)
+    #         self.assertFalse(trainer.model.a.requires_grad)
+    #         (a1, b1) = trainer.model.a.item(), trainer.model.b.item()
+    #         state1 = dataclasses.asdict(trainer.state)
+    #         self.assertEqual(a, a1)
+    #         self.assertEqual(b, b1)
+    #         self.check_trainer_state_are_the_same(state, state1)
 
     def test_load_best_model_at_end(self):
         combined_batch_size = self.batch_size * get_ipu_config().batch_size_factor()
@@ -1135,67 +1133,67 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         self.assertIsInstance(loader, poptorch.DataLoader)
         self.assertIsInstance(loader.sampler, torch.utils.data.dataloader._InfiniteConstantSampler)
 
-    def test_evaluation_iterable_dataset(self):
-        config = RegressionModelConfig(a=1.5, b=2.5)
-        ipu_config = get_ipu_config()
-        model = RegressionPreTrainedModel(config)
-        eval_dataset = SampleIterableDataset(length=EVAL_LEN)
+    # def test_evaluation_iterable_dataset(self):
+    #     config = RegressionModelConfig(a=1.5, b=2.5)
+    #     ipu_config = get_ipu_config()
+    #     model = RegressionPreTrainedModel(config)
+    #     eval_dataset = SampleIterableDataset(length=EVAL_LEN)
 
-        args = RegressionIPUTrainingArguments(output_dir="./examples")
-        trainer = IPUTrainer(
-            model=model,
-            ipu_config=ipu_config,
-            args=args,
-            eval_dataset=eval_dataset,
-            compute_metrics=AlmostAccuracy(),
-            force_to_pipelined=True,
-        )
-        results = trainer.evaluate()
+    #     args = RegressionIPUTrainingArguments(output_dir="./examples")
+    #     trainer = IPUTrainer(
+    #         model=model,
+    #         ipu_config=ipu_config,
+    #         args=args,
+    #         eval_dataset=eval_dataset,
+    #         compute_metrics=AlmostAccuracy(),
+    #         force_to_pipelined=True,
+    #     )
+    #     results = trainer.evaluate()
 
-        x, y = trainer.eval_dataset.dataset.x, trainer.eval_dataset.dataset.ys[0]
-        pred = 1.5 * x + 2.5
-        expected_loss = ((pred - y) ** 2).mean()
-        self.assertAlmostEqual(results["eval_loss"], expected_loss, delta=1e-7)
-        expected_acc = AlmostAccuracy()((pred, y))["accuracy"]
-        self.assertAlmostEqual(results["eval_accuracy"], expected_acc)
+    #     x, y = trainer.eval_dataset.dataset.x, trainer.eval_dataset.dataset.ys[0]
+    #     pred = 1.5 * x + 2.5
+    #     expected_loss = ((pred - y) ** 2).mean()
+    #     self.assertAlmostEqual(results["eval_loss"], expected_loss, delta=1e-7)
+    #     expected_acc = AlmostAccuracy()((pred, y))["accuracy"]
+    #     self.assertAlmostEqual(results["eval_accuracy"], expected_acc)
 
-        # With a number of elements not a round multiple of the batch size
-        # TODO: not supported for now.
-        # eval_dataset = SampleIterableDataset(length=66)
-        # results = trainer.evaluate(eval_dataset)
+    #     # With a number of elements not a round multiple of the batch size
+    #     # TODO: not supported for now.
+    #     # eval_dataset = SampleIterableDataset(length=66)
+    #     # results = trainer.evaluate(eval_dataset)
 
-        # x, y = eval_dataset.dataset.x, eval_dataset.dataset.ys[0]
-        # pred = 1.5 * x + 2.5
-        # expected_loss = ((pred - y) ** 2).mean()
-        # self.assertAlmostEqual(results["eval_loss"], expected_loss)
-        # expected_acc = AlmostAccuracy()((pred, y))["accuracy"]
-        # self.assertAlmostEqual(results["eval_accuracy"], expected_acc)
+    #     # x, y = eval_dataset.dataset.x, eval_dataset.dataset.ys[0]
+    #     # pred = 1.5 * x + 2.5
+    #     # expected_loss = ((pred - y) ** 2).mean()
+    #     # self.assertAlmostEqual(results["eval_loss"], expected_loss)
+    #     # expected_acc = AlmostAccuracy()((pred, y))["accuracy"]
+    #     # self.assertAlmostEqual(results["eval_accuracy"], expected_acc)
 
-    def test_predict_iterable_dataset(self):
-        config = RegressionModelConfig(a=1.5, b=2.5)
-        model = RegressionPreTrainedModel(config)
-        eval_dataset = SampleIterableDataset(length=EVAL_LEN)
+    # def test_predict_iterable_dataset(self):
+    #     config = RegressionModelConfig(a=1.5, b=2.5)
+    #     model = RegressionPreTrainedModel(config)
+    #     eval_dataset = SampleIterableDataset(length=EVAL_LEN)
 
-        args = RegressionIPUTrainingArguments(output_dir="./examples")
-        ipu_config = get_ipu_config()
-        trainer = IPUTrainer(
-            model=model,
-            ipu_config=ipu_config,
-            args=args,
-            eval_dataset=eval_dataset,
-            compute_metrics=AlmostAccuracy(),
-            force_to_pipelined=True,
-        )
+    #     args = RegressionIPUTrainingArguments(output_dir="./examples")
+    #     ipu_config = get_ipu_config()
+    #     trainer = IPUTrainer(
+    #         model=model,
+    #         ipu_config=ipu_config,
+    #         args=args,
+    #         eval_dataset=eval_dataset,
+    #         compute_metrics=AlmostAccuracy(),
+    #         force_to_pipelined=True,
+    #     )
 
-        preds = trainer.predict(trainer.eval_dataset).predictions
-        x = eval_dataset.dataset.x
-        self.assertTrue(np.allclose(preds, 1.5 * x + 2.5))
+    #     preds = trainer.predict(trainer.eval_dataset).predictions
+    #     x = eval_dataset.dataset.x
+    #     self.assertTrue(np.allclose(preds, 1.5 * x + 2.5))
 
-        # With a number of elements not a round multiple of the batch size
-        test_dataset = SampleIterableDataset(length=EVAL_LEN + 6)
-        preds = trainer.predict(test_dataset).predictions
-        x = test_dataset.dataset.x
-        self.assertTrue(np.allclose(preds, 1.5 * x + 2.5))
+    #     # With a number of elements not a round multiple of the batch size
+    #     test_dataset = SampleIterableDataset(length=EVAL_LEN + 6)
+    #     preds = trainer.predict(test_dataset).predictions
+    #     x = test_dataset.dataset.x
+    #     self.assertTrue(np.allclose(preds, 1.5 * x + 2.5))
 
     # TODO: handle this.
     # def test_num_train_epochs_in_training(self):

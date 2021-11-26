@@ -24,18 +24,10 @@ import sys
 import time
 import warnings
 from pathlib import Path
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Callable,
-    Dict,
-    List,
-    Optional,
-    Tuple,
-    Union,
-)
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
 from tqdm.auto import tqdm
+
 
 # Integrations must be imported before ML frameworks:
 from transformers.integrations import (  # isort: split
@@ -52,28 +44,19 @@ from transformers.integrations import (  # isort: split
 )
 
 import numpy as np
-import poptorch
 import torch
+from packaging import version
+from torch import nn, optim
+from torch.utils.data import DataLoader, Dataset, IterableDataset, RandomSampler, SequentialSampler
+from torch.utils.data.distributed import DistributedSampler
+
+import poptorch
 from huggingface_hub import Repository
 from optimum.version import __version__
-from packaging import version
 from poptorch import PoplarExecutor
 from poptorch.optim import LAMB, AdamW
-from torch import nn, optim
-from torch.utils.data import (
-    DataLoader,
-    Dataset,
-    IterableDataset,
-    RandomSampler,
-    SequentialSampler,
-)
-from torch.utils.data.distributed import DistributedSampler
 from transformers.configuration_utils import PretrainedConfig
-from transformers.data.data_collator import (
-    DataCollator,
-    DataCollatorWithPadding,
-    default_data_collator,
-)
+from transformers.data.data_collator import DataCollator, DataCollatorWithPadding, default_data_collator
 from transformers.debug_utils import DebugOption, DebugUnderflowOverflow
 from transformers.deepspeed import deepspeed_init, is_deepspeed_zero3_enabled
 from transformers.dependency_versions_check import dep_version_check
@@ -88,20 +71,13 @@ from transformers.file_utils import (
     is_sagemaker_mp_enabled,
     is_torch_tpu_available,
 )
+
 # from transformers.modelcard import TrainingSummary
 from transformers.modeling_utils import PreTrainedModel, unwrap_model
-from transformers.models.auto.modeling_auto import (
-    MODEL_FOR_QUESTION_ANSWERING_MAPPING_NAMES,
-)
+from transformers.models.auto.modeling_auto import MODEL_FOR_QUESTION_ANSWERING_MAPPING_NAMES
 from transformers.optimization import get_scheduler
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
-from transformers.trainer import (
-    OPTIMIZER_NAME,
-    SCALER_NAME,
-    SCHEDULER_NAME,
-    TRAINER_STATE_NAME,
-    TRAINING_ARGS_NAME,
-)
+from transformers.trainer import OPTIMIZER_NAME, SCALER_NAME, SCHEDULER_NAME, TRAINER_STATE_NAME, TRAINING_ARGS_NAME
 from transformers.trainer_callback import (
     CallbackHandler,
     DefaultFlowCallback,
@@ -160,6 +136,7 @@ from .trainer_utils import _WorkerInit
 from .training_args import IPUTrainingArguments
 from .utils import logging
 
+
 if is_datasets_available():
     import datasets
 
@@ -173,13 +150,9 @@ DEFAULT_PROGRESS_CALLBACK = ProgressCallback
 
 
 class IPUTrainer:
-    from transformers.trainer_pt_utils import (
-        _get_learning_rate,
-        log_metrics,
-        metrics_format,
-        save_metrics,
-        save_state,
-    )
+    from transformers.trainer_pt_utils import log_metrics, metrics_format, save_metrics, save_state
+
+    from .trainer_pt_utils import _get_learning_rate
 
     def __init__(
         self,
@@ -242,46 +215,6 @@ class IPUTrainer:
         else:
             self.is_model_parallel = False
 
-        # Setup Sharded DDP training
-        # self.sharded_ddp = None
-        # if len(args.sharded_ddp) > 0:
-        #     if args.deepspeed:
-        #         raise ValueError(
-        #             "Using --sharded_ddp xxx together with --deepspeed is not possible, deactivate one of those flags."
-        #         )
-
-        #     if args.local_rank == -1:
-        #         raise ValueError("Using sharded DDP only works in distributed training.")
-        #     elif not is_fairscale_available():
-        #         raise ImportError("Sharded DDP training requires fairscale: `pip install fairscale`.")
-        #     elif ShardedDDPOption.SIMPLE not in args.sharded_ddp and FullyShardedDDP is None:
-        #         raise ImportError(
-        #             "Sharded DDP in a mode other than simple training requires fairscale version >= 0.3, found "
-        #             f"{fairscale.__version__}. Upgrade your fairscale library: `pip install --upgrade fairscale`."
-        #         )
-        #     elif ShardedDDPOption.SIMPLE in args.sharded_ddp:
-        #         self.sharded_ddp = ShardedDDPOption.SIMPLE
-        #     elif ShardedDDPOption.ZERO_DP_2 in args.sharded_ddp:
-        #         self.sharded_ddp = ShardedDDPOption.ZERO_DP_2
-        #     elif ShardedDDPOption.ZERO_DP_3 in args.sharded_ddp:
-        #         self.sharded_ddp = ShardedDDPOption.ZERO_DP_3
-
-        # one place to sort out whether to place the model on device or not
-        # postpone switching model to cuda when:
-        # 1. MP - since we are trying to fit a much bigger than 1 gpu model
-        # 2. fp16-enabled DeepSpeed loads the model in half the size and it doesn't need .to() anyway,
-        #    and we only use deepspeed for training at the moment
-        # 3. full fp16 eval - since the model needs to be half'ed first
-        # 4. Sharded DDP - same as MP
-        # self.place_model_on_device = args.place_model_on_device
-        # if (
-        #     self.is_model_parallel
-        #     or args.deepspeed
-        #     or (args.fp16_full_eval and not args.do_train)
-        #     or (self.sharded_ddp in [ShardedDDPOption.ZERO_DP_2, ShardedDDPOption.ZERO_DP_3])
-        # ):
-        #     self.place_model_on_device = False
-
         default_collator = default_data_collator if tokenizer is None else DataCollatorWithPadding(tokenizer)
         self.data_collator = data_collator if data_collator is not None else default_collator
         self.train_dataset = train_dataset
@@ -290,10 +223,6 @@ class IPUTrainer:
 
         # if self.place_model_on_device:
         #     self._move_model_to_device(model, args.device)
-
-        # Force n_gpu to 1 to avoid DataParallel as MP will manage the GPUs
-        # if self.is_model_parallel:
-        #     self.args._n_gpu = 1
 
         # later use `self.model is self.model_wrapped` to check if it's wrapped or not
         self.ipu_config = copy.deepcopy(ipu_config)
@@ -330,19 +259,14 @@ class IPUTrainer:
         # Create clone of distant repo and output directory if needed
         if self.args.push_to_hub:
             self.init_git_repo()
-            # In case of pull, we need to make sure every process has the latest.
-            # if is_torch_tpu_available():
-            #     xm.rendezvous("init git repo")
-            # elif args.local_rank != -1:
-            #     dist.barrier()
 
-        if self.args.should_save:
-            os.makedirs(self.args.output_dir, exist_ok=True)
-            path = os.path.join(self.args.output_dir, "executable_cache")
-            logger.info(f"Executable caching enabled, cache directory: {path}")
-            if self.ipu_config.executable_cache_dir is not None:
-                logger.warning(f"IPUConfig executable_cache_dir was overriden to be: {path}")
-            self.ipu_config.executable_cache_dir = path
+        # if self.args.should_save:
+        # os.makedirs(self.args.output_dir, exist_ok=True)
+        # path = os.path.join(self.args.output_dir, "executable_cache")
+        # logger.info(f"Executable caching enabled, cache directory: {path}")
+        # if self.ipu_config.executable_cache_dir is not None:
+        #     logger.warning(f"IPUConfig executable_cache_dir was overriden to be: {path}")
+        # self.ipu_config.executable_cache_dir = path
 
         if not callable(self.data_collator) and callable(getattr(self.data_collator, "collate_batch", None)):
             raise ValueError("The `data_collator` should be a simple callable (function, class with `__call__`).")
@@ -354,41 +278,6 @@ class IPUTrainer:
             raise ValueError("train_dataset does not implement __len__, max_steps has to be specified")
 
         self._signature_columns = None
-
-        # Mixed precision setup
-        # self.use_apex = False
-        # self.use_amp = False
-        # self.fp16_backend = None
-
-        # if args.fp16:
-        #     if args.fp16_backend == "auto":
-        #         self.fp16_backend = "amp" if _is_native_amp_available else "apex"
-        #     else:
-        #         self.fp16_backend = args.fp16_backend
-        #     logger.info(f"Using {self.fp16_backend} fp16 backend")
-
-        # if args.fp16 and not args.deepspeed:  # deepspeed manages its own fp16
-        #     if self.fp16_backend == "amp":
-        #         self.use_amp = True
-        #         if is_sagemaker_mp_enabled():
-        #             self.scaler = smp.amp.GradScaler()
-        #         elif self.sharded_ddp is not None:
-        #             self.scaler = ShardedGradScaler()
-        #         else:
-        #             self.scaler = torch.cuda.amp.GradScaler()
-        #     else:
-        #         if not is_apex_available():
-        #             raise ImportError(
-        #                 "Using FP16 with APEX but APEX is not installed, please refer to https://www.github.com/nvidia/apex."
-        #             )
-        #         self.use_apex = True
-
-        # FP16 + model parallelism in SageMaker: gradient clipping does not work for now so we raise a helpful error.
-        # if is_sagemaker_mp_enabled() and self.use_amp and args.max_grad_norm is not None and args.max_grad_norm > 0:
-        #     raise ValueError(
-        #         "SageMaker Model Parallelism in mixed precision mode does not support gradient clipping yet. Pass "
-        #         "along 'max_grad_norm': 0 in your hyperparameters."
-        #     )
 
         # Label smoothing
         if self.args.label_smoothing_factor != 0:
@@ -786,7 +675,6 @@ class IPUTrainer:
         if self.optimizer is None:
             decay_parameters = get_parameter_names(self.model, [nn.LayerNorm])
             decay_parameters = [name for name in decay_parameters if "bias" not in name]
-            # TODO: make sure the same thing is done as in GraphCore example.
             optimizer_grouped_parameters = [
                 {
                     "params": [p for n, p in self.model.named_parameters() if n in decay_parameters],
@@ -843,11 +731,7 @@ class IPUTrainer:
         Args:
             num_training_steps (int): The number of training steps to do.
         """
-
-        num_warmup_steps = self.args.get_warmup_steps(num_training_steps)
         optimizer = self.optimizer if optimizer is None else optimizer
-        if self.args.lr_scheduler_type == "linear":
-            num_warmup_steps *= num_training_steps
         if self.lr_scheduler is None:
             self.lr_scheduler = get_scheduler(
                 self.args.lr_scheduler_type,
@@ -1046,15 +930,10 @@ class IPUTrainer:
                         "yield to errors or unwanted behaviors."
                     )
 
-            # if args.deepspeed:
-            #     # will be resumed in deepspeed_init
-            #     pass
-            # else:
             # We load the model state dict on the CPU to avoid an OOM error.
             state_dict = torch.load(os.path.join(resume_from_checkpoint, WEIGHTS_NAME), map_location="cpu")
             # If the model is on the GPU, it still works!
             self._load_state_dict_in_model(state_dict)
-
             # release memory
             del state_dict
 
@@ -1102,14 +981,8 @@ class IPUTrainer:
             num_train_samples = args.max_steps * total_train_batch_size
 
         if DebugOption.UNDERFLOW_OVERFLOW in self.args.debug:
-            if self.args.n_gpu > 1:
-                # nn.DataParallel(model) replicates the model, creating new variables and module
-                # references registered here no longer work on other gpus, breaking the module
-                raise ValueError(
-                    "Currently --debug underflow_overflow is not supported under DP. Please use DDP (torch.distributed.launch)."
-                )
-            else:
-                debug_overflow = DebugUnderflowOverflow(self.model)  # noqa
+            # TODO: test if this works.
+            debug_overflow = DebugUnderflowOverflow(self.model)  # noqa
 
         self.create_optimizer_and_scheduler(num_training_steps=max_steps)
 
@@ -1148,10 +1021,10 @@ class IPUTrainer:
         logger.info(f"  Num examples = {num_examples}")
         logger.info(f"  Num Epochs = {num_train_epochs}")
         logger.info(f"  Instantaneous batch size per device = {args.per_device_train_batch_size}")
-        logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_train_batch_size}")
         logger.info(f"  Device Iterations = {self.ipu_config.device_iterations}")
         logger.info(f"  Replication Factor = {self.ipu_config.replication_factor}")
-        logger.info(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
+        logger.info(f"  Gradient Accumulation steps = {self.ipu_config.gradient_accumulation_steps}")
+        logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_train_batch_size}")
         logger.info(f"  Total optimization steps = {max_steps}")
 
         self.state.epoch = 0
@@ -1257,46 +1130,24 @@ class IPUTrainer:
                 # if step % args.gradient_accumulation_steps == 0:
                 self.control = self.callback_handler.on_step_begin(args, self.state, self.control)
 
-                # if (
-                #     ((step + 1) % args.gradient_accumulation_steps != 0)
-                #     and args.local_rank != -1
-                #     and args._no_sync_in_gradient_accumulation
-                # ):
-                #     # Avoid unnecessary DDP synchronization since there will be no backward pass on this example.
-                #     with model.no_sync():
-                #         tr_loss_step = self.training_step(model, inputs)
-                # else:
                 tr_loss_step = self.training_step(model, inputs)
 
-                # if (
-                #     args.logging_nan_inf_filter
-                #     and not is_torch_tpu_available()
-                #     and (torch.isnan(tr_loss_step) or torch.isinf(tr_loss_step))
-                # ):
-                #     # if loss is nan or inf simply add the average of previous logged losses
-                #     tr_loss += tr_loss / (1 + self.state.global_step - self._globalstep_last_logged)
-                # else:
-                tr_loss += tr_loss_step
+                if args.logging_nan_inf_filter and (torch.isnan(tr_loss_step) or torch.isinf(tr_loss_step)):
+                    # if loss is nan or inf simply add the average of previous logged losses
+                    tr_loss += tr_loss / (1 + self.state.global_step - self._globalstep_last_logged)
+                else:
+                    tr_loss += tr_loss_step
 
                 # TODO: see how to enable this (if necessary), slows down training a lot.
                 # self.current_flos += float(self.floating_point_ops(inputs))
-
-                # Optimizer step for deepspeed must be called on every step regardless of the value of gradient_accumulation_steps
-                # if self.deepspeed:
-                #     self.deepspeed.step()
 
                 # if (step + 1) % args.gradient_accumulation_steps == 0 or (
                 #     # last step in epoch but step is always smaller than gradient_accumulation_steps
                 #     steps_in_epoch <= args.gradient_accumulation_steps
                 #     and (step + 1) == steps_in_epoch
                 # ):
-                # Gradient clipping
-                # if args.max_grad_norm is not None and args.max_grad_norm > 0 and not self.deepspeed:
-                #    # deepspeed does its own clipping
-                #    if self.use_amp:
-                #        # AMP: gradients need unscaling
-                #        self.scaler.unscale_(self.optimizer)
 
+                # TODO: check how gradient clipping is done with poptorch optimizers.
                 # if hasattr(self.optimizer, "clip_grad_norm"):
                 #     # Some optimizers (like the sharded optimizer) have a specific way to do gradient clipping
                 #     self.optimizer.clip_grad_norm(args.max_grad_norm)
@@ -1309,14 +1160,6 @@ class IPUTrainer:
 
                 # Optimizer step
                 optimizer_was_run = True
-                # elif self.use_amp:
-                #     scale_before = self.scaler.get_scale()
-                #     self.scaler.step(self.optimizer)
-                #     self.scaler.update()
-                #     scale_after = self.scaler.get_scale()
-                #     optimizer_was_run = scale_before <= scale_after
-                # else:
-                # self.optimizer.step()
 
                 if optimizer_was_run:
                     self.lr_scheduler.step()
@@ -1328,8 +1171,6 @@ class IPUTrainer:
                 self.control = self.callback_handler.on_step_end(args, self.state, self.control)
 
                 self._maybe_log_save_evaluate(tr_loss, model, trial, epoch, ignore_keys_for_eval)
-                # else:
-                #     self.control = self.callback_handler.on_substep_end(args, self.state, self.control)
 
                 if self.control.should_epoch_stop or self.control.should_training_stop:
                     break
@@ -1346,12 +1187,6 @@ class IPUTrainer:
 
         logger.info("\n\nTraining completed. Do not forget to share your model on huggingface.co/models =)\n\n")
         if args.load_best_model_at_end and self.state.best_model_checkpoint is not None:
-            # Wait for everyone to get here so we are sur the model has been saved by process 0.
-            # if is_torch_tpu_available():
-            #     xm.rendezvous("load_best_model_at_end")
-            # elif args.local_rank != -1:
-            #     dist.barrier()
-
             logger.info(
                 f"Loading best model from {self.state.best_model_checkpoint} (score: {self.state.best_metric})."
             )
@@ -1395,17 +1230,19 @@ class IPUTrainer:
         model = copy.deepcopy(self.original_model).parallelize()
         self.model.load_state_dict(model.state_dict())
 
-        if self.training_model and self.training_model.isAttachedToDevice():
-            self.training_model.copyWeightsToDevice()
+        # TODO: check if this is needed.
+        # if self.training_model and self.training_model.isAttachedToDevice():
+        #     self.training_model.copyWeightsToDevice()
 
-        if self.inference_model and self.inference_model.isAttachedToDevice():
-            self.inference_model.copyWeightsToDevice()
+        # if self.inference_model and self.inference_model.isAttachedToDevice():
+        #     self.inference_model.copyWeightsToDevice()
 
         if len(load_result.missing_keys) != 0:
             if self.model._keys_to_ignore_on_save is not None and set(load_result.missing_keys) == set(
                 self.model._keys_to_ignore_on_save
             ):
                 self.model.tie_weights()
+                self._wrap_model(self.model, self.is_in_train)
             else:
                 logger.warn(f"There were missing keys in the checkpoint model loaded: {load_result.missing_keys}.")
         if len(load_result.unexpected_keys) != 0:
@@ -1531,29 +1368,16 @@ class IPUTrainer:
             self.state.save_to_json(os.path.join(output_dir, TRAINER_STATE_NAME))
 
         # Save RNG state in non-distributed training
+        # TODO: save IPU RNG state once it is available
         rng_states = {
             "python": random.getstate(),
             "numpy": np.random.get_state(),
             "cpu": torch.random.get_rng_state(),
         }
-        # if torch.cuda.is_available():
-        #     if self.args.local_rank == -1:
-        #         # In non distributed, we save the global CUDA RNG state (will take care of DataParallel)
-        #         rng_states["cuda"] = torch.cuda.random.get_rng_state_all()
-        #     else:
-        #         rng_states["cuda"] = torch.cuda.random.get_rng_state()
-
-        # if is_torch_tpu_available():
-        #     rng_states["xla"] = xm.get_rng_state()
 
         # A process can arrive here before the process 0 has a chance to save the model, in which case output_dir may
         # not yet exist.
         os.makedirs(output_dir, exist_ok=True)
-        # local_rank = xm.get_local_ordinal() if is_torch_tpu_available() else self.args.local_rank
-        # if local_rank == -1:
-        #     torch.save(rng_states, os.path.join(output_dir, "rng_state.pth"))
-        # else:
-        #     torch.save(rng_states, os.path.join(output_dir, f"rng_state_{local_rank}.pth"))
         torch.save(rng_states, os.path.join(output_dir, "rng_state.pth"))
 
         if self.args.push_to_hub:
@@ -1572,10 +1396,7 @@ class IPUTrainer:
             os.path.join(checkpoint, SCHEDULER_NAME)
         ):
             # TODO: make sure the optimizer and scheduler are properly loaded to the IPU.
-            map_location = "cpu" if is_sagemaker_mp_enabled() else self.args.device
-            self.optimizer.load_state_dict(
-                torch.load(os.path.join(checkpoint, OPTIMIZER_NAME), map_location=map_location)
-            )
+            self.optimizer.load_state_dict(torch.load(os.path.join(checkpoint, OPTIMIZER_NAME)))
             with warnings.catch_warnings(record=True) as caught_warnings:
                 self.lr_scheduler.load_state_dict(torch.load(os.path.join(checkpoint, SCHEDULER_NAME)))
             reissue_pt_warnings(caught_warnings)
@@ -1698,13 +1519,10 @@ class IPUTrainer:
         elif isinstance(data, (tuple, list)):
             return type(data)(self._prepare_input(v) for v in data)
         elif isinstance(data, torch.Tensor):
-            kwargs = dict(device=self.args.device)
-            # if self.deepspeed and data.dtype != torch.int64:
-            #     # NLP models inputs are int64 and those get adjusted to the right dtype of the
-            #     # embedding. Other models such as wav2vec2's inputs are already float and thus
-            #     # may need special handling to match the dtypes of the model
-            #     kwargs.update(dict(dtype=self.args.hf_deepspeed_config.dtype()))
-            return data.to(**kwargs)
+            # TODO: check that.
+            # kwargs = dict(device=self.args.device)
+            # return data.to(**kwargs)
+            return data
         return data
 
     def _prepare_inputs(self, inputs: Dict[str, Union[torch.Tensor, Any]]) -> Dict[str, Union[torch.Tensor, Any]]:
@@ -1767,6 +1585,7 @@ class IPUTrainer:
 
         return (loss, outputs) if return_outputs else loss
 
+    # TODO: should we keep this?
     def is_local_process_zero(self) -> bool:
         """
         Whether or not this process is the local (e.g., on one machine if training in a distributed fashion on several
@@ -1774,6 +1593,7 @@ class IPUTrainer:
         """
         return self.args.local_process_index == 0
 
+    # TODO: should we keep this?
     def is_world_process_zero(self) -> bool:
         """
         Whether or not this process is the global main process (when training in a distributed fashion on several
@@ -1781,10 +1601,10 @@ class IPUTrainer:
         """
         # Special case for SageMaker ModelParallel since there process_index is dp_process_index, not the global
         # process index.
-        if is_sagemaker_mp_enabled():
-            return smp.rank() == 0
-        else:
-            return self.args.process_index == 0
+        # if is_sagemaker_mp_enabled():
+        #     return smp.rank() == 0
+        # else:
+        return self.args.process_index == 0
 
     def save_model(self, output_dir: Optional[str] = None):
         """
@@ -1806,28 +1626,21 @@ class IPUTrainer:
         logger.info(f"Saving model checkpoint to {output_dir}")
 
         # Updating self.model weights with the weights stored on device.
-        # if self.model_wrapped.isAttachedToDevice():
-        #     self.model_wrapped.copyWeightsToHost()
+        if self.model_wrapped.isAttachedToDevice():
+            self.model_wrapped.copyWeightsToHost()
 
-        # TODO: should we keep the unwrap checks?
-        # Save a trained model and configuration using `save_pretrained()`.
-        # They can then be reloaded using `from_pretrained()`
         if not isinstance(self.model, PreTrainedModel):
-            if isinstance(unwrap_model(self.model), PreTrainedModel):
-                if state_dict is None:
-                    state_dict = self.model.state_dict()
-                unwrap_model(self.model).save_pretrained(output_dir, state_dict=state_dict)
-            else:
-                logger.info("Trainer.model is not a `PreTrainedModel`, only saving its state dict.")
-                if state_dict is None:
-                    state_dict = self.model.state_dict()
-                torch.save(state_dict, os.path.join(output_dir, WEIGHTS_NAME))
+            logger.info("Trainer.model is not a `PreTrainedModel`, only saving its state dict.")
+            if state_dict is None:
+                state_dict = self.model.state_dict()
+            torch.save(state_dict, os.path.join(output_dir, WEIGHTS_NAME))
         else:
             # TODO: make this more efficient.
             deparallelized = copy.deepcopy(self.model).deparallelize()
             deparallelized.save_pretrained(output_dir, state_dict=state_dict)
             # Freeing up memory.
             del deparallelized
+
         if self.tokenizer is not None:
             self.tokenizer.save_pretrained(output_dir)
 
@@ -2022,7 +1835,7 @@ class IPUTrainer:
 
     def evaluation_loop(
         self,
-        dataloader: DataLoader,
+        dataloader: poptorch.DataLoader,
         description: str,
         prediction_loss_only: Optional[bool] = None,
         ignore_keys: Optional[List[str]] = None,
@@ -2276,44 +2089,23 @@ class IPUTrainer:
             labels = None
 
         with torch.no_grad():
-            # TODO: this can be removed.
-            if is_sagemaker_mp_enabled():
-                raw_outputs = smp_forward_only(model, inputs)
-                if has_labels:
-                    if isinstance(raw_outputs, dict):
-                        loss_mb = raw_outputs["loss"]
-                        logits_mb = tuple(v for k, v in raw_outputs.items() if k not in ignore_keys + ["loss"])
-                    else:
-                        loss_mb = raw_outputs[0]
-                        logits_mb = raw_outputs[1:]
-
-                    loss = loss_mb.reduce_mean().detach().cpu()
-                    logits = smp_nested_concat(logits_mb)
+            if has_labels:
+                loss, outputs = self.compute_loss(model, inputs, return_outputs=True)
+                loss = loss.mean().detach()
+                if isinstance(outputs, dict):
+                    logits = tuple(v for k, v in outputs.items() if k not in ignore_keys + ["loss"])
                 else:
-                    loss = None
-                    if isinstance(raw_outputs, dict):
-                        logits_mb = tuple(v for k, v in raw_outputs.items() if k not in ignore_keys)
-                    else:
-                        logits_mb = raw_outputs
-                    logits = smp_nested_concat(logits_mb)
+                    logits = outputs[1:]
             else:
-                if has_labels:
-                    loss, outputs = self.compute_loss(model, inputs, return_outputs=True)
-                    loss = loss.mean().detach()
-                    if isinstance(outputs, dict):
-                        logits = tuple(v for k, v in outputs.items() if k not in ignore_keys + ["loss"])
-                    else:
-                        logits = outputs[1:]
+                loss = None
+                outputs = model(**inputs)
+                if isinstance(outputs, dict):
+                    logits = tuple(v for k, v in outputs.items() if k not in ignore_keys)
                 else:
-                    loss = None
-                    outputs = model(**inputs)
-                    if isinstance(outputs, dict):
-                        logits = tuple(v for k, v in outputs.items() if k not in ignore_keys)
-                    else:
-                        logits = outputs
-                    # TODO: this needs to be fixed and made cleaner later.
-                    if self.args.past_index >= 0:
-                        self._past = outputs[self.args.past_index - 1]
+                    logits = outputs
+                # TODO: this needs to be fixed and made cleaner later.
+                if self.args.past_index >= 0:
+                    self._past = outputs[self.args.past_index - 1]
 
         if prediction_loss_only:
             return (loss, None, None)
