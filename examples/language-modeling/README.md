@@ -27,7 +27,8 @@ text files for training and validation. We give examples of both below.
 
 ### BERT pretraining
 
-The following example pretrains BERT on Wikipedia English. The model is trained on two tasks:
+The following example pretrains BERT on English Wikipedia. The model is trained on two tasks:
+
     - Masked Language Modeling (MLM)
     - Next Sentence Prediction
 
@@ -35,17 +36,14 @@ You can train BERT on any dataset with `run_pretraining` as long as the dataset 
 
 ```bash
 python run_pretraining.py \
-  --ipu_config_name . \
   --config_name bert-base-uncased \
   --tokenizer_name bert-base-uncased \
+  --ipu_config_name . \
   --dataset_name Graphcore/wikipedia-bert-128 \
   --do_train \
   --do_eval \
   --output_dir /tmp/test-pretraining
 ```
-
-If your dataset is organized with one sample per line, you can use the `--line_by_line` flag (otherwise the script
-concatenates all texts and then splits them in blocks of the same length).
 
 This uses the HugginFace `IPUTrainer` for training, designed to perform training on GraphCore IPUs.
 
