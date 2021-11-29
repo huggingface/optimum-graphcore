@@ -30,7 +30,7 @@ text files for training and validation. We give examples of both below.
 The following example pretrains BERT on English Wikipedia. The model is trained on two tasks:
 
 - Masked Language Modeling (MLM)
-- Next Sentence Prediction
+- Next Sentence Prediction (NSP)
 
 You can train BERT on any dataset with `run_pretraining` as long as the dataset contains a column `next_sentence_label`.
 
