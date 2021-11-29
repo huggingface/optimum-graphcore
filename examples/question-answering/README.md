@@ -28,12 +28,16 @@ Note that if your dataset contains samples with no possible answers (like SQUAD 
 
 ## Fine-tuning BERT on SQuAD1.0
 
-This example code fine-tunes BERT on the SQuAD1.0 dataset. It runs in 24 min (with BERT-base) or 68 min (with BERT-large)
+This example code fine-tunes BERT on the SQuAD1.0 dataset.
+<!-- Add execution time once it is available.
+It runs in 4 min (with BERT-base) or 68 min (with BERT-large)
 on a single tesla V100 16GB.
+-->
 
 ```bash
 python run_qa.py \
   --model_name_or_path bert-base-uncased \
+  --ipu_config_name . \
   --dataset_name squad \
   --do_train \
   --do_eval \
