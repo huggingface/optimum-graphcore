@@ -45,7 +45,7 @@ python run_pretraining.py \
   --output_dir /tmp/test-pretraining
 ```
 
-This uses the HugginFace `IPUTrainer` for training, designed to perform training on GraphCore IPUs.
+This uses the HuggingFace `IPUTrainer` for training, designed to perform training on GraphCore IPUs.
 
 ## Creating a model on the fly
 
@@ -53,6 +53,6 @@ When training a model from scratch, configuration values may be overridden with 
 
 
 ```bash
-python run_pretraining.py --model_type bert-base-uncased --tokenizer_name bert-base-uncased \ --config_overrides="hidden_size=1024,num_attention_heads=16,num_hidden_layers=48" \
+python run_pretraining.py --model_type bert-base-uncased --tokenizer_name bert-base-uncased \ --config_overrides="hidden_size=1024,num_attention_heads=16,num_hidden_layers=24" \
 [...]
 ```
