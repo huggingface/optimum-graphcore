@@ -40,4 +40,4 @@ jobs:
         . ${SDK_PATH}/poplar-ubuntu_18_04-2\.3\.0**/enable.sh
         . ${SDK_PATH}/popart-ubuntu_18_04-*2\.3\.0*/enable.sh
         # TODO: run pytest once tests are added.
-        # pytest
+        pytest tests/
