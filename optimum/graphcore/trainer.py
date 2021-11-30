@@ -150,6 +150,7 @@ DEFAULT_PROGRESS_CALLBACK = ProgressCallback
 
 
 class IPUTrainer:
+
     from transformers.trainer_pt_utils import log_metrics, metrics_format, save_metrics, save_state
 
     from .trainer_pt_utils import _get_learning_rate
@@ -226,7 +227,11 @@ class IPUTrainer:
 
         # later use `self.model is self.model_wrapped` to check if it's wrapped or not
         self.ipu_config = copy.deepcopy(ipu_config)
-        self.ipu_config.random_seed = self.args.seed
+        if self.args.seed != self.ipu_config.random_seed:
+            logger.warning(
+                f"The random seed specified for training, and the one specified for the IPU are not equal ({self.args.seed} and {self.ipu_config.random_seed} respectively)"
+            )
+        # self.ipu_config.random_seed = self.args.seed
         self.opts = ipu_config.to_options()
         self.eval_opts = ipu_config.to_options(for_inference=True)
 
@@ -701,7 +706,7 @@ class IPUTrainer:
                 }
 
             # TODO: update the training args
-            first_order_type = torch.float16 if self.args.enable_half_first_order_momentum else torch.float32
+            first_order_type = torch.float16 if self.ipu_config.enable_half_first_order_momentum else torch.float32
             optimizer_kwargs["lr"] = self.args.learning_rate
             optimizer_kwargs["weight_decay"] = 0
             optimizer_kwargs["loss_scaling"] = self.args.loss_scaling
