@@ -49,9 +49,8 @@ python run_qa.py \
   --output_dir /tmp/debug_squad/
 ```
 
-Training with the previously defined hyper-parameters yields the following results:
-
 <!-- Insert performance on IPU once final values are available.
+Training with the previously defined hyper-parameters yields the following results:
 ```bash
 f1 = 88.52
 exact_match = 81.22
