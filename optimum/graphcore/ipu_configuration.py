@@ -43,8 +43,10 @@ class IPUConfig(PretrainedConfig):
         self.layers_per_ipu = kwargs.pop("layers_per_ipu", 1)
 
         self.replication_factor = kwargs.pop("replication_factor", 1)
+        self.inference_replication_factor = kwargs.pop("inference_replication_factor", 1)
         self.gradient_accumulation_steps = kwargs.pop("gradient_accumulation_steps", 1)
         self.device_iterations = kwargs.pop("device_iterations", 1)
+        self.inference_device_iterations = kwargs.pop("inference_device_iterations", 1)
         self.optimizer_state_offchip = kwargs.pop("optimizer_state_offchip", True)
         self.replicated_tensor_sharding = kwargs.pop("replicated_tensor_sharding", False)
 
@@ -54,6 +56,7 @@ class IPUConfig(PretrainedConfig):
         if len(self.matmul_proportion) == 1:
             self.matmul_proportion = self.matmul_proportion * self.ipus_per_replica
 
+        self.enable_half_first_order_momentum = kwargs.pop("enable_half_first_order_momentum", False)
         self.enable_half_partials = kwargs.pop("enable_half_partials", False)
         self.synthetic_data = kwargs.pop("synthetic_data", False)
 
@@ -88,10 +91,10 @@ class IPUConfig(PretrainedConfig):
             opts = popdist.poptorch.Options(ipus_per_replica=self.ipus_per_replica)
         else:
             opts = Options()
-            opts.replicationFactor(self.replication_factor)
+            opts.replicationFactor(self.inference_replication_factor if for_inference else self.replication_factor)
 
         opts.autoRoundNumIPUs(True)
-        opts.deviceIterations(self.device_iterations)
+        opts.deviceIterations(self.inference_device_iterations if for_inference else self.device_iterations)
 
         if not for_inference:
             # Set gradient accumulation factor
@@ -176,5 +179,7 @@ class IPUConfig(PretrainedConfig):
         return opts
 
     def batch_size_factor(self, for_inference: bool = False) -> int:
-        gradient_accumulation_steps = self.gradient_accumulation_steps if not for_inference else 1
-        return self.replication_factor * gradient_accumulation_steps * self.device_iterations
+        replication_factor = self.inference_replication_factor if for_inference else self.replication_factor
+        gradient_accumulation_steps = 1 if for_inference else self.gradient_accumulation_steps
+        device_iterations = self.inference_device_iterations if for_inference else self.device_iterations
+        return replication_factor * gradient_accumulation_steps * device_iterations

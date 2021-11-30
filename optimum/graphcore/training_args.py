@@ -353,10 +353,6 @@ class IPUTrainingArguments:
         default=False,
         metadata={"help": "Whether to use 32-bit (full) precision instead of 16-bit"},
     )
-    enable_half_first_order_momentum: bool = field(
-        default=False,
-        metadata={"help": "Sets first order momentum type to float16 instead of float32"},
-    )
     lamb: bool = field(default=False, metadata={"help": "Whether or not to replace AdamW by LAMB."})
     lamb_no_bias_correction: bool = field(
         default=False, metadata={"help": "Whether or not to replace AdamW by LAMB without bias correction."}
