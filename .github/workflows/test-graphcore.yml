@@ -38,6 +38,4 @@ jobs:
         export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_18_04-2\.3\.0*
         . ${SDK_PATH}/poplar-ubuntu_18_04-2\.3\.0**/enable.sh
         . ${SDK_PATH}/popart-ubuntu_18_04-*2\.3\.0*/enable.sh
-        pip freeze
-        # TODO: run pytest once tests are added.
-        # pytest tests/
+        pytest tests/

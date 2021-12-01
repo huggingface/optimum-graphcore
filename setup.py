@@ -17,6 +17,7 @@ install_requires = [
     "datasets",
     "tokenizers",
     "torch",
+    "sentencepiece",
     "scipy",
     "pytest",
     "pytest-pythonpath",
