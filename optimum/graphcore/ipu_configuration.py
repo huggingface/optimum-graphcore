@@ -36,7 +36,7 @@ class IPUConfig(PretrainedConfig):
     def __init__(self, **kwargs):
         self.use_popdist = kwargs.pop("use_popdist", False)
         self.compile_only = kwargs.pop("compile_only", False)
-        self.random_seed = kwargs.pop("random_seed", None)
+        self.seed = kwargs.pop("seed", None)
 
         self.ipus_per_replica = kwargs.pop("ipus_per_replica", 1)
         # TODO: invalid value for layers_per_ipu which must be a list.
@@ -104,8 +104,8 @@ class IPUConfig(PretrainedConfig):
         # Return all results from IPU to host
         opts.anchorMode(poptorch.AnchorMode.All)
 
-        if self.random_seed:
-            opts.randomSeed(self.random_seed)
+        if self.seed:
+            opts.randomSeed(self.seed)
 
         # Enable Replicated Tensor Sharding (RTS) of optimizer state
         #  with optimizer state residing either on-chip or in DRAM

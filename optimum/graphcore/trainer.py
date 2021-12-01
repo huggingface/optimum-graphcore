@@ -227,9 +227,9 @@ class IPUTrainer:
 
         # later use `self.model is self.model_wrapped` to check if it's wrapped or not
         self.ipu_config = copy.deepcopy(ipu_config)
-        if self.args.seed != self.ipu_config.random_seed:
+        if self.args.seed != self.ipu_config.seed:
             logger.warning(
-                f"The random seed specified for training, and the one specified for the IPU are not equal ({self.args.seed} and {self.ipu_config.random_seed} respectively)"
+                f"The random seed specified for training, and the one specified for the IPU are not equal ({self.args.seed} and {self.ipu_config.seed} respectively)"
             )
         # self.ipu_config.random_seed = self.args.seed
         self.opts = ipu_config.to_options()
@@ -491,8 +491,11 @@ class IPUTrainer:
         if is_datasets_available() and isinstance(train_dataset, datasets.Dataset):
             train_dataset = self._remove_unused_columns(train_dataset, description="training")
 
+        # TODO: make a better check, any decorator would return True while we really want to test if it was decorated
+        # by pad_on_batch_axis.
+        should_drop_last = not hasattr(self.data_collator, "__wrapped__")
         poptorch_specific_kwargs = {
-            "drop_last": True,  # Not dropping last will end up causing NaN during training if the combined batch size does not divide the number of steps
+            "drop_last": should_drop_last,  # Not dropping last will end up causing NaN during training if the combined batch size does not divide the number of steps
             "auto_distributed_partitioning": not isinstance(train_dataset, torch.utils.data.IterableDataset),
             "mode": self.args.dataloader_mode,
             "worker_init_fn": _WorkerInit(123),
@@ -572,6 +575,10 @@ class IPUTrainer:
         if is_datasets_available() and isinstance(eval_dataset, datasets.Dataset):
             eval_dataset = self._remove_unused_columns(eval_dataset, description="evaluation")
 
+        # self.data_collator can be a data collator that was wrapped by pad_on_batch_axis, retrieving the original
+        # data collator as the wrapped version is only wanted for training.
+        data_collator = getattr(self.data_collator, "__wrapped__", self.data_collator)
+
         if isinstance(eval_dataset, torch.utils.data.IterableDataset):
             # TODO: add support, should be easy.
             # raise NotImplementedError("Evluation with IterableDataset not supported yet.")
@@ -587,7 +594,7 @@ class IPUTrainer:
                 self.eval_opts,
                 eval_dataset,
                 batch_size=self.args.per_device_eval_batch_size,
-                collate_fn=self.data_collator,
+                collate_fn=data_collator,
                 num_workers=self.args.dataloader_num_workers,
                 pin_memory=self.args.dataloader_pin_memory,
             )
@@ -599,7 +606,7 @@ class IPUTrainer:
             eval_dataset,
             # sampler=eval_sampler,
             batch_size=self.args.per_device_eval_batch_size,
-            collate_fn=self.data_collator,
+            collate_fn=data_collator,
             drop_last=self.args.dataloader_drop_last,
             num_workers=self.args.dataloader_num_workers,
             pin_memory=self.args.dataloader_pin_memory,
@@ -626,6 +633,10 @@ class IPUTrainer:
         if is_datasets_available() and isinstance(test_dataset, datasets.Dataset):
             test_dataset = self._remove_unused_columns(test_dataset, description="test")
 
+        # self.data_collator can be a data collator that was wrapped by pad_on_batch_axis, retrieving the original
+        # data collator as the wrapped version is only wanted for training.
+        data_collator = getattr(self.data_collator, "__wrapped__", self.data_collator)
+
         if isinstance(test_dataset, torch.utils.data.IterableDataset):
             # if self.args.world_size > 1:
             #     test_dataset = IterableDatasetShard(
@@ -639,7 +650,7 @@ class IPUTrainer:
                 self.eval_opts,
                 test_dataset,
                 batch_size=self.args.per_device_eval_batch_size,
-                collate_fn=self.data_collator,
+                collate_fn=data_collator,
                 num_workers=self.args.dataloader_num_workers,
                 pin_memory=self.args.dataloader_pin_memory,
             )
@@ -653,7 +664,7 @@ class IPUTrainer:
             test_dataset,
             # sampler=test_sampler,
             batch_size=self.args.per_device_eval_batch_size,
-            collate_fn=self.data_collator,
+            collate_fn=data_collator,
             drop_last=self.args.dataloader_drop_last,
             pin_memory=self.args.dataloader_pin_memory,
             **poptorch_specific_kwargs,

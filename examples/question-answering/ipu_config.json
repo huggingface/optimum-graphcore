@@ -18,5 +18,5 @@
   "layers_per_ipu": [0, 4, 4, 4],
   "matmul_proportion": [0.25],
 
-  "random_seed": 1984
+  "seed": 1984
 }

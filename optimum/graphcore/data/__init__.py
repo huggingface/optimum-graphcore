@@ -16,4 +16,4 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-from .data_collator import DataCollatorForLanguageModelingWithMaxTokensMasked
+from .data_collator import DataCollatorForLanguageModelingWithMaxTokensMasked, pad_on_batch_axis
