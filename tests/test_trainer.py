@@ -271,7 +271,6 @@ if is_torch_available():
             ipu_config_name_or_path = os.path.join("tests", "ipu_config_trainer_test.json")
         return IPUConfig.from_pretrained(ipu_config_name_or_path)
 
-    # @cache
     def get_regression_trainer(
         a=0,
         b=0,

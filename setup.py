@@ -14,17 +14,12 @@ except Exception as error:
 
 install_requires = [
     "optimum",
-    "datasets>=1.7.0",
-    "tokenizers>=0.10.3",
-    "scipy>=1.5.4",
-    "pyyaml>=5.4.1",
-    "wandb==0.12.1",
+    "datasets",
+    "tokenizers",
+    "torch",
+    "scipy",
     "pytest",
     "pytest-pythonpath",
-    "tfrecord>=1.13",
-    "filelock>=3.0.12",
-    # "mpi4py>=3.0.3",
-    # "horovod>=0.22.0",
 ]
 
 setup(
