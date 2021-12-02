@@ -227,11 +227,7 @@ class IPUTrainer:
 
         # later use `self.model is self.model_wrapped` to check if it's wrapped or not
         self.ipu_config = copy.deepcopy(ipu_config)
-        if self.args.seed != self.ipu_config.seed:
-            logger.warning(
-                f"The random seed specified for training, and the one specified for the IPU are not equal ({self.args.seed} and {self.ipu_config.seed} respectively)"
-            )
-        # self.ipu_config.random_seed = self.args.seed
+        self.ipu_config.seed = self.args.seed
         self.opts = ipu_config.to_options()
         self.eval_opts = ipu_config.to_options(for_inference=True)
 
