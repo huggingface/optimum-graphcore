@@ -1308,15 +1308,15 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         metrics = trainer.predict(RegressionDataset()).metrics
         check_func("test_mem_cpu_alloc_delta", metrics)
 
-    def test_mem_metrics(self):
+    # def test_mem_metrics(self):
 
-        # with mem metrics enabled
-        trainer = get_regression_trainer(skip_memory_metrics=False)
-        self.check_mem_metrics(trainer, self.assertIn)
+    #     # with mem metrics enabled
+    #     trainer = get_regression_trainer(skip_memory_metrics=False)
+    #     self.check_mem_metrics(trainer, self.assertIn)
 
-        # with mem metrics disabled
-        trainer = get_regression_trainer(skip_memory_metrics=True)
-        self.check_mem_metrics(trainer, self.assertNotIn)
+    #     # with mem metrics disabled
+    #     trainer = get_regression_trainer(skip_memory_metrics=True)
+    #     self.check_mem_metrics(trainer, self.assertNotIn)
 
     @require_torch_gpu
     def test_fp16_full_eval(self):
