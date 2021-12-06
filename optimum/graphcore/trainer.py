@@ -47,7 +47,15 @@ import numpy as np
 import torch
 from packaging import version
 from torch import nn, optim
-from torch.utils.data import DataLoader, Dataset, IterableDataset, RandomSampler, SequentialSampler
+from torch.utils.data import (
+    BatchSampler,
+    DataLoader,
+    Dataset,
+    IterableDataset,
+    RandomSampler,
+    SequentialSampler,
+    SubsetRandomSampler,
+)
 from torch.utils.data.distributed import DistributedSampler
 
 import poptorch
@@ -406,70 +414,59 @@ class IPUTrainer:
         else:
             return dataset.remove_columns(ignored_columns)
 
-    def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
-        if not isinstance(self.train_dataset, collections.abc.Sized):
-            return None
-        generator = None
-        if self.args.world_size <= 1 and _is_torch_generator_available:
-            generator = torch.Generator()
-            generator.manual_seed(int(torch.empty((), dtype=torch.int64).random_().item()))
+    # def _get_train_sampler(self) -> Optional[torch.utils.data.Sampler]:
+    #     if not isinstance(self.train_dataset, collections.abc.Sized):
+    #         return None
+    #     generator = None
+    #     if self.args.world_size <= 1 and _is_torch_generator_available:
+    #         generator = torch.Generator()
+    #         generator.manual_seed(int(torch.empty((), dtype=torch.int64).random_().item()))
 
-        # Build the sampler.
-        if self.args.group_by_length:
-            if is_datasets_available() and isinstance(self.train_dataset, datasets.Dataset):
-                lengths = (
-                    self.train_dataset[self.args.length_column_name]
-                    if self.args.length_column_name in self.train_dataset.column_names
-                    else None
-                )
-            else:
-                lengths = None
-            model_input_name = self.tokenizer.model_input_names[0] if self.tokenizer is not None else None
-            if self.args.world_size <= 1:
-                return LengthGroupedSampler(
-                    self.args.train_batch_size,
-                    dataset=self.train_dataset,
-                    lengths=lengths,
-                    model_input_name=model_input_name,
-                    generator=generator,
-                )
-            # TODO: can be removed.
-            else:
-                return DistributedLengthGroupedSampler(
-                    self.args.train_batch_size,
-                    dataset=self.train_dataset,
-                    num_replicas=self.args.world_size,
-                    rank=self.args.process_index,
-                    lengths=lengths,
-                    model_input_name=model_input_name,
-                    seed=self.args.seed,
-                )
+    #     # Build the sampler.
+    #     if self.args.group_by_length:
+    #         if is_datasets_available() and isinstance(self.train_dataset, datasets.Dataset):
+    #             lengths = (
+    #                 self.train_dataset[self.args.length_column_name]
+    #                 if self.args.length_column_name in self.train_dataset.column_names
+    #                 else None
+    #             )
+    #         else:
+    #             lengths = None
+    #         model_input_name = self.tokenizer.model_input_names[0] if self.tokenizer is not None else None
+    #         # if self.args.world_size <= 1:
+    #         #     return LengthGroupedSampler(
+    #         #         self.args.train_batch_size,
+    #         #         dataset=self.train_dataset,
+    #         #         lengths=lengths,
+    #         #         model_input_name=model_input_name,
+    #         #         generator=generator,
+    #         #     )
 
-        else:
-            if self.args.world_size <= 1:
-                if _is_torch_generator_available:
-                    return RandomSampler(self.train_dataset, generator=generator)
-                return RandomSampler(self.train_dataset)
-            # TODO: can be removed.
-            elif (
-                self.args.parallel_mode in [ParallelMode.TPU, ParallelMode.SAGEMAKER_MODEL_PARALLEL]
-                and not self.args.dataloader_drop_last
-            ):
-                # Use a loop for TPUs when drop_last is False to have all batches have the same size.
-                return DistributedSamplerWithLoop(
-                    self.train_dataset,
-                    batch_size=self.args.per_device_train_batch_size,
-                    num_replicas=self.args.world_size,
-                    rank=self.args.process_index,
-                    seed=self.args.seed,
-                )
-            else:
-                return DistributedSampler(
-                    self.train_dataset,
-                    num_replicas=self.args.world_size,
-                    rank=self.args.process_index,
-                    seed=self.args.seed,
-                )
+    #     else:
+    #         # if self.args.world_size <= 1:
+    #         #     if _is_torch_generator_available:
+    #         #         return RandomSampler(self.train_dataset, generator=generator)
+    #         #     return RandomSampler(self.train_dataset)
+    #         # TODO: can be removed.
+    #         if (
+    #             # self.args.parallel_mode in [ParallelMode.TPU, ParallelMode.SAGEMAKER_MODEL_PARALLEL]
+    #             not self.args.dataloader_drop_last
+    #         ):
+    #             # Use a loop for TPUs when drop_last is False to have all batches have the same size.
+    #             return DistributedSamplerWithLoop(
+    #                 self.train_dataset,
+    #                 batch_size=self.args.per_device_train_batch_size,
+    #                 num_replicas=self.ipu_config.replication_factor,# self.args.world_size,
+    #                 rank=self.args.process_index,
+    #                 seed=self.args.seed,
+    #             )
+    #         else:
+    #             return DistributedSampler(
+    #                 self.train_dataset,
+    #                 num_replicas=self.ipu_config.replication_factor, # self.args.world_size,
+    #                 rank=self.args.process_index,
+    #                 seed=self.args.seed,
+    #             )
 
     def get_train_dataloader(self) -> poptorch.DataLoader:
         """
@@ -489,7 +486,7 @@ class IPUTrainer:
 
         # TODO: make a better check, any decorator would return True while we really want to test if it was decorated
         # by pad_on_batch_axis.
-        should_drop_last = not hasattr(self.data_collator, "__wrapped__")
+        should_drop_last = not hasattr(self.data_collator, "__wrapped__") and not self.args.complete_last_batch
         poptorch_specific_kwargs = {
             "drop_last": should_drop_last,  # Not dropping last will end up causing NaN during training if the combined batch size does not divide the number of steps
             "auto_distributed_partitioning": not isinstance(train_dataset, torch.utils.data.IterableDataset),
@@ -497,41 +494,45 @@ class IPUTrainer:
             "worker_init_fn": _WorkerInit(123),
         }
 
-        if isinstance(train_dataset, torch.utils.data.IterableDataset):
-            # TODO: add support, should be easy.
-            # raise NotImplementedError("Training with IterableDataset not supported yet.")
+        # TODO: support for iterable dataset
+        # if isinstance(train_dataset, torch.utils.data.IterableDataset):
+        #    self.options.Distributed.setNum,
+        #    return poptorch.DataLoader(
+        #        self.opts,
+        #        train_dataset,
+        #        batch_size=self.args.train_batch_size,
+        #        collate_fn=self.data_collator,
+        #        num_workers=self.args.dataloader_num_workers,
+        #        pin_memory=self.args.dataloader_pin_memory,
+        #        **poptorch_specific_kwargs,
+        #    )
 
-            #     if self.args.world_size > 1:
-            #         train_dataset = IterableDatasetShard(
-            #             train_dataset,
-            #             batch_size=self.args.train_batch_size,
-            #             drop_last=self.args.dataloader_drop_last,
-            #             num_processes=self.args.world_size,
-            #             process_index=self.args.process_index,
-            #         )
+        combined_batch_size = self.args.per_device_train_batch_size * self.ipu_config.batch_size_factor()
+        generator = None
+        if _is_torch_generator_available:
+            generator = torch.Generator()
+            generator.manual_seed(int(torch.empty((), dtype=torch.int64).random_().item()))
+        if self.args.complete_last_batch:
+            num_examples = len(self.train_dataset)
+            num_missing_examples = num_examples % combined_batch_size
+            indices = list(range(num_examples)) + torch.randint(0, num_examples, size=(num_missing_examples,)).tolist()
+            train_sampler = SubsetRandomSampler(indices, generator)
+        else:
+            train_sampler = RandomSampler(self.train_dataset)
 
-            return poptorch.DataLoader(
-                self.opts,
-                train_dataset,
-                batch_size=self.args.train_batch_size,
-                collate_fn=self.data_collator,
-                num_workers=self.args.dataloader_num_workers,
-                pin_memory=self.args.dataloader_pin_memory,
-                **poptorch_specific_kwargs,
-            )
-
-        # Slow things down a lot.
-        # train_sampler = self._get_train_sampler()
+        rebatched_worker_size = (
+            combined_batch_size // self.args.dataloader_num_workers if self.args.dataloader_num_workers else None
+        )
 
         return poptorch.DataLoader(
             self.opts,
             train_dataset,
             batch_size=self.args.per_device_train_batch_size,
-            # sampler=train_sampler,
+            sampler=train_sampler,
             collate_fn=self.data_collator,
-            # drop_last=self.args.dataloader_drop_last,
             num_workers=self.args.dataloader_num_workers,
             pin_memory=self.args.dataloader_pin_memory,
+            rebatched_worker_size=rebatched_worker_size,
             **poptorch_specific_kwargs,
         )
 
@@ -960,6 +961,15 @@ class IPUTrainer:
 
         # Data loader and number of training steps
         train_dataloader = self.get_train_dataloader()
+        it = iter(train_dataloader)
+        import time
+
+        start = time.time()
+        _ = next(it)
+        end = time.time()
+        import pdb
+
+        pdb.set_trace()
 
         # Setting up training control variables:
         # number of training epochs: num_train_epochs
