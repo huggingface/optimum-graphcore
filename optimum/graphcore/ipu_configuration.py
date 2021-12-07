@@ -102,7 +102,9 @@ class IPUConfig(PretrainedConfig):
             opts.Training.accumulationAndReplicationReductionType(poptorch.ReductionType.Mean)
 
         # Return all results from IPU to host
-        opts.outputMode(poptorch.OutputMode.All)
+        # TODO: use this when sdk 2.4 is out.
+        # opts.outputMode(poptorch.OutputMode.All)
+        opts.anchorMode(poptorch.AnchorMode.All)
 
         if self.seed:
             opts.randomSeed(self.seed)
