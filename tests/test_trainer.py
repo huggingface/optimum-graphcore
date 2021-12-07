@@ -22,14 +22,6 @@ import re
 import subprocess
 import tempfile
 import unittest
-
-
-try:
-    from functools import cache
-except ImportError:
-    from functools import lru_cache, partial
-
-    cache = partial(lru_cache, maxsize=128)
 from pathlib import Path
 from typing import Optional, Union
 
@@ -325,6 +317,7 @@ class IPUTrainerIntegrationCommon:
         file_list = [WEIGHTS_NAME, "training_args.bin", "optimizer.pt", "scheduler.pt", "trainer_state.json"]
         if is_pretrained:
             file_list.append("config.json")
+            file_list.append("ipu_config.json")
         for step in range(freq, total, freq):
             checkpoint = os.path.join(output_dir, f"checkpoint-{step}")
             self.assertTrue(os.path.isdir(checkpoint))
@@ -642,23 +635,24 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
             len(trainer.get_eval_dataloader(new_eval_dataset)), (EVAL_LEN * 16) // (32 * eval_batch_size_factor)
         )
 
-    @require_torch_multi_gpu
-    def test_data_is_not_parallelized_when_model_is_parallel(self):
-        model = RegressionModel()
-        # Make the IPUTrainer believe it's a parallelized model
-        model.is_parallelizable = True
-        model.model_parallel = True
-        args = IPUTrainingArguments("./regression", per_device_train_batch_size=16, per_device_eval_batch_size=16)
-        trainer = IPUTrainer(model, args, train_dataset=RegressionDataset(), eval_dataset=RegressionDataset())
-        # Check the IPUTrainer was fooled
-        self.assertTrue(trainer.is_model_parallel)
-        self.assertEqual(trainer.args.n_gpu, 1)
+    # TODO: is this relevant?
+    # @require_torch_multi_gpu
+    # def test_data_is_not_parallelized_when_model_is_parallel(self):
+    #     model = RegressionModel()
+    #     # Make the IPUTrainer believe it's a parallelized model
+    #     model.is_parallelizable = True
+    #     model.model_parallel = True
+    #     args = IPUTrainingArguments("./regression", per_device_train_batch_size=16, per_device_eval_batch_size=16)
+    #     trainer = IPUTrainer(model, args, train_dataset=RegressionDataset(), eval_dataset=RegressionDataset())
+    #     # Check the IPUTrainer was fooled
+    #     self.assertTrue(trainer.is_model_parallel)
+    #     self.assertEqual(trainer.args.n_gpu, 1)
 
-        # The batch size of the training and evaluation dataloaders should be 16, not 16 * n_gpu
-        self.assertEqual(trainer.get_train_dataloader().batch_size, 16)
-        self.assertEqual(len(trainer.get_train_dataloader()), 64 // 16)
-        self.assertEqual(trainer.get_eval_dataloader().batch_size, 16)
-        self.assertEqual(len(trainer.get_eval_dataloader()), 64 // 16)
+    #     # The batch size of the training and evaluation dataloaders should be 16, not 16 * n_gpu
+    #     self.assertEqual(trainer.get_train_dataloader().batch_size, 16)
+    #     self.assertEqual(len(trainer.get_train_dataloader()), 64 // 16)
+    #     self.assertEqual(trainer.get_eval_dataloader().batch_size, 16)
+    #     self.assertEqual(len(trainer.get_eval_dataloader()), 64 // 16)
 
     def test_evaluate(self):
         trainer = get_regression_trainer(a=1.5, b=2.5, compute_metrics=AlmostAccuracy(), half_precision=False)

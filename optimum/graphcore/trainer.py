@@ -48,7 +48,6 @@ import torch
 from packaging import version
 from torch import nn, optim
 from torch.utils.data import (
-    BatchSampler,
     DataLoader,
     Dataset,
     IterableDataset,
@@ -66,22 +65,8 @@ from poptorch.optim import LAMB, AdamW
 from transformers.configuration_utils import PretrainedConfig
 from transformers.data.data_collator import DataCollator, DataCollatorWithPadding, default_data_collator
 from transformers.debug_utils import DebugOption, DebugUnderflowOverflow
-from transformers.deepspeed import deepspeed_init, is_deepspeed_zero3_enabled
-from transformers.dependency_versions_check import dep_version_check
-from transformers.file_utils import (
-    CONFIG_NAME,
-    WEIGHTS_NAME,
-    get_full_repo_name,
-    is_apex_available,
-    is_datasets_available,
-    is_in_notebook,
-    is_sagemaker_dp_enabled,
-    is_sagemaker_mp_enabled,
-    is_torch_tpu_available,
-)
-
-# from transformers.modelcard import TrainingSummary
-from transformers.modeling_utils import PreTrainedModel, unwrap_model
+from transformers.file_utils import CONFIG_NAME, WEIGHTS_NAME, get_full_repo_name, is_datasets_available
+from transformers.modeling_utils import PreTrainedModel
 from transformers.models.auto.modeling_auto import MODEL_FOR_QUESTION_ANSWERING_MAPPING_NAMES
 from transformers.optimization import get_scheduler
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
@@ -112,7 +97,6 @@ from transformers.trainer_pt_utils import (
     nested_detach,
     nested_numpify,
     nested_truncate,
-    nested_xla_mesh_reduce,
     reissue_pt_warnings,
 )
 from transformers.trainer_utils import (
@@ -190,7 +174,6 @@ class IPUTrainer:
         # Seed must be set before instantiating the model when using model
         set_seed(self.args.seed)
         self.hp_name = None
-        # self.deepspeed = None
         self.is_in_train = False
 
         # memory metrics - must set up as early as possible
@@ -449,8 +432,8 @@ class IPUTrainer:
             if self.args.complete_last_batch:
                 num_examples = len(self.train_dataset)
                 num_missing_examples = num_examples % combined_batch_size
-                indices = (
-                    list(range(num_examples)) + torch.randint(0, num_examples, size=(num_missing_examples,)).tolist()
+                indices = torch.cat(
+                    [torch.arange(num_examples), torch.randint(0, num_examples, size=(num_missing_examples,))]
                 )
                 return SubsetRandomSampler(indices, generator)
             else:
@@ -930,15 +913,6 @@ class IPUTrainer:
 
         # Data loader and number of training steps
         train_dataloader = self.get_train_dataloader()
-        it = iter(train_dataloader)
-        import time
-
-        start = time.time()
-        _ = next(it)
-        end = time.time()
-        import pdb
-
-        pdb.set_trace()
 
         # Setting up training control variables:
         # number of training epochs: num_train_epochs

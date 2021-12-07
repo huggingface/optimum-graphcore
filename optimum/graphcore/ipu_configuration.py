@@ -85,7 +85,7 @@ class IPUConfig(PretrainedConfig):
 
     def to_options(self, for_inference: bool = False) -> poptorch.Options:
         if not self.compile_only and poptorch.ipuHardwareVersion() != 2:
-            raise RuntimeError("This version of BERT requires an IPU Mk2 system to run.")
+            raise RuntimeError("This requires an IPU Mk2 system to run.")
 
         if self.use_popdist:
             opts = popdist.poptorch.Options(ipus_per_replica=self.ipus_per_replica)
@@ -102,7 +102,7 @@ class IPUConfig(PretrainedConfig):
             opts.Training.accumulationAndReplicationReductionType(poptorch.ReductionType.Mean)
 
         # Return all results from IPU to host
-        opts.anchorMode(poptorch.AnchorMode.All)
+        opts.outputMode(poptorch.OutputMode.All)
 
         if self.seed:
             opts.randomSeed(self.seed)

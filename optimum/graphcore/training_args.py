@@ -422,7 +422,6 @@ class IPUTrainingArguments:
     @cached_property
     @torch_required
     def _setup_devices(self) -> "torch.device":
-        logger.info("PyTorch: setting up devices")
         device = torch.device("cpu")
         return device
 
