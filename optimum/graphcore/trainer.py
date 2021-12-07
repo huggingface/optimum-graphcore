@@ -481,7 +481,9 @@ class IPUTrainer:
         train_sampler = self._get_train_sampler()
         combined_batch_size = self.args.per_device_train_batch_size * self.ipu_config.batch_size_factor()
         rebatched_worker_size = (
-            combined_batch_size // self.args.dataloader_num_workers if self.args.dataloader_num_workers else None
+            2 * (combined_batch_size // self.args.dataloader_num_workers)
+            if self.args.dataloader_num_workers
+            else combined_batch_size
         )
 
         return poptorch.DataLoader(
@@ -1104,7 +1106,7 @@ class IPUTrainer:
                     tr_loss += tr_loss_step
 
                 # TODO: see how to enable this (if necessary), slows down training a lot.
-                # self.current_flos += float(self.floating_point_ops(inputs))
+                self.current_flos += float(self.floating_point_ops(inputs))
 
                 # if (step + 1) % args.gradient_accumulation_steps == 0 or (
                 #     # last step in epoch but step is always smaller than gradient_accumulation_steps
@@ -2094,8 +2096,10 @@ class IPUTrainer:
         Returns:
             :obj:`int`: The number of floating-point operations.
         """
-        if hasattr(self.model, "floating_point_ops"):
-            return self.model.floating_point_ops(inputs)
+        # Using self.original_model (self.modle deepcopy) because self.model is the underlying model used by the IPUs
+        # and calling floating_point_ops on it slows things down a lot.
+        if hasattr(self.original_model, "floating_point_ops"):
+            return self.original_model.floating_point_ops(inputs)
         else:
             return 0
 
