@@ -28,7 +28,8 @@ import numpy as np
 from datasets import load_dataset, load_metric
 
 import transformers
-from optimum.graphcore import IPUConfig, IPUTrainer, IPUTrainingArguments as TrainingArguments
+from optimum.graphcore import IPUConfig, IPUTrainer
+from optimum.graphcore import IPUTrainingArguments as TrainingArguments
 from transformers import (
     AutoConfig,
     AutoModelForSequenceClassification,

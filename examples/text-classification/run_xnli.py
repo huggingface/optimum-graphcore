@@ -29,6 +29,8 @@ import numpy as np
 from datasets import load_dataset, load_metric
 
 import transformers
+from optimum.graphcore import IPUConfig, IPUTrainer
+from optimum.graphcore import IPUTrainingArguments as TrainingArguments
 from transformers import (
     AutoConfig,
     AutoModelForSequenceClassification,
@@ -36,8 +38,6 @@ from transformers import (
     DataCollatorWithPadding,
     EvalPrediction,
     HfArgumentParser,
-    Trainer,
-    TrainingArguments,
     default_data_collator,
     set_seed,
 )
@@ -242,6 +242,12 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
+    ipu_config = IPUConfig.from_pretrained(
+        training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
+        cache_dir=model_args.cache_dir,
+        revision=model_args.model_revision,
+        use_auth_token=True if model_args.use_auth_token else None,
+    )
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
         do_lower_case=model_args.do_lower_case,
@@ -332,8 +338,9 @@ def main():
         data_collator = None
 
     # Initialize our Trainer
-    trainer = Trainer(
+    trainer = IPUTrainer(
         model=model,
+        ipu_config=ipu_config,
         args=training_args,
         train_dataset=train_dataset if training_args.do_train else None,
         eval_dataset=eval_dataset if training_args.do_eval else None,

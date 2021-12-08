@@ -19,11 +19,11 @@ import torch.nn.functional as F
 import poptorch
 from scipy.stats import truncnorm
 from transformers import (
-    BertForPreTraining,
-    BertForSequenceClassification,
     BertForMultipleChoice,
-    BertForTokenClassification,
+    BertForPreTraining,
     BertForQuestionAnswering,
+    BertForSequenceClassification,
+    BertForTokenClassification,
 )
 
 from ...modeling_utils import PipelineMixin, register
