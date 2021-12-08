@@ -28,8 +28,7 @@ import datasets
 from datasets import load_dataset, load_metric
 
 import transformers
-from optimum.graphcore import IPUConfig
-from optimum.graphcore import IPUTrainingArguments as TrainingArguments
+from optimum.graphcore import IPUConfig, IPUTrainingArguments as TrainingArguments
 from optimum.graphcore.data import pad_on_batch_axis
 from trainer_qa import QuestionAnsweringTrainer
 from transformers import (
@@ -294,7 +293,6 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
-
     ipu_config = IPUConfig.from_pretrained(
         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
         cache_dir=model_args.cache_dir,
