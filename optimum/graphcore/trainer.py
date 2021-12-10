@@ -432,12 +432,12 @@ class IPUTrainer:
             if self.args.complete_last_batch:
                 num_examples = len(self.train_dataset)
                 num_missing_examples = num_examples % combined_batch_size
-                indices = torch.cat(
-                    [torch.arange(num_examples), torch.randint(0, num_examples, size=(num_missing_examples,))]
-                )
+                if num_missing_examples > 0:
+                    indices = torch.cat(
+                        [torch.arange(num_examples), torch.randint(0, num_examples, size=(num_missing_examples,))]
+                    )
                 return SubsetRandomSampler(indices, generator)
-            else:
-                return RandomSampler(self.train_dataset)
+            return RandomSampler(self.train_dataset)
 
     def get_train_dataloader(self) -> poptorch.DataLoader:
         """

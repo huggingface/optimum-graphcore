@@ -28,7 +28,8 @@ import datasets
 from datasets import load_dataset, load_metric
 
 import transformers
-from optimum.graphcore import IPUConfig, IPUTrainingArguments as TrainingArguments
+from optimum.graphcore import IPUConfig
+from optimum.graphcore import IPUTrainingArguments as TrainingArguments
 from optimum.graphcore.data import pad_on_batch_axis
 from trainer_qa import QuestionAnsweringTrainer
 from transformers import (

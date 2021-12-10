@@ -254,8 +254,8 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
         head_mask=None,
         inputs_embeds=None,
     ):
-        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
-        sequence_output, pooled_output = outputs[:2]
+        output = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+        sequence_output, pooled_output = output[:2]
 
         # Select only the masked tokens for the classifier
         max_number_of_masked_tokens = int(labels.size(1) * 0.25)
@@ -263,10 +263,10 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
         masked_output = self.gather_indices(sequence_output, masked_lm_positions)
 
         prediction_scores, sequential_relationship_score = self.cls(masked_output, pooled_output)
-        outputs = (
+        output = (
             prediction_scores,
             sequential_relationship_score,
-        ) + outputs[2:]
+        ) + output[2:]
 
         if labels is not None and next_sentence_label is not None:
             masked_lm_loss = F.cross_entropy(
@@ -278,18 +278,9 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
                 sequential_relationship_score.view(-1, 2), next_sentence_label.view(-1)
             ).float()
             total_loss = poptorch.identity_loss(masked_lm_loss + next_sentence_loss, reduction="none")
-            # next_sentence_acc = accuracy(sequential_relationship_score.view([-1, 2]), next_sentence_label.view(-1))
-            # labels: 0 if corresponding token not masked, original value otherwise
-            # masked_lm_acc = accuracy_masked(
-            #     prediction_scores.view([-1, self.config.mask_tokens, self.config.vocab_size]), labels, 0
-            # )
-            # masked_lm_acc = accuracy_masked(
-            #     prediction_scores, labels, 0
-            # )
-            # outputs = (total_loss, masked_lm_loss, next_sentence_loss, masked_lm_acc, next_sentence_acc)
-            outputs = (total_loss, masked_lm_loss, next_sentence_loss)
+            return (total_loss, masked_lm_loss, next_sentence_loss)
 
-        return outputs
+        return output
 
 
 class SerializedEmbedding(nn.Module):
@@ -417,12 +408,9 @@ class PipelinedBertForSequenceClassification(BertForSequenceClassification, Pipe
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
             labels=labels,
+            return_dict=False,
         )
-        if self.training:
-            final_loss = poptorch.identity_loss(output.loss, reduction="none")
-            return final_loss, output.logits
-        else:
-            return output.logits
+        return output
 
 
 @register(BertForMultipleChoice)
@@ -486,12 +474,9 @@ class PipelinedBertForMultipleChoice(BertForMultipleChoice, PipelineMixin):
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
             labels=labels,
+            return_dict=False,
         )
-        if self.training:
-            final_loss = poptorch.identity_loss(output.loss, reduction="none")
-            return final_loss, output.logits
-        else:
-            return output.logits
+        return output
 
 
 @register(BertForTokenClassification)
@@ -555,12 +540,9 @@ class PipelinedBertForTokenClassification(BertForTokenClassification, PipelineMi
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
             labels=labels,
+            return_dict=False,
         )
-        if self.training:
-            final_loss = poptorch.identity_loss(output.loss, reduction="none")
-            return final_loss, output.logits
-        else:
-            return output.logits
+        return output
 
 
 @register(BertForQuestionAnswering)
@@ -625,9 +607,8 @@ class PipelinedBertForQuestionAnswering(BertForQuestionAnswering, PipelineMixin)
             token_type_ids=token_type_ids,
             start_positions=start_positions,
             end_positions=end_positions,
+            return_dict=False,
         )
-        if self.training:
-            final_loss = poptorch.identity_loss(output.loss, reduction="none")
-            return final_loss, output.start_logits, output.end_logits
-        else:
-            return output.start_logits, output.end_logits
+        if start_positions is not None and end_positions is not None:
+            output[0] = poptorch.identity_loss(output[0], reduction="none")
+        return output
