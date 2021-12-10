@@ -34,7 +34,7 @@ from datasets import load_dataset, load_from_disk
 import transformers
 from optimum.graphcore import IPUConfig, IPUTrainer
 from optimum.graphcore import IPUTrainingArguments as TrainingArguments
-from optimum.graphcore.data import DataCollatorForLanguageModelingWithMaxTokensMasked
+from optimum.graphcore.data import DataCollatorForLanguageModelingWithMaxTokensMasked, pad_on_batch_axis
 from transformers import (
     CONFIG_MAPPING,
     MODEL_FOR_MASKED_LM_MAPPING,
@@ -44,6 +44,7 @@ from transformers import (
     HfArgumentParser,
     set_seed,
 )
+from transformers.data import default_data_collator
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version
 from transformers.utils.versions import require_version
@@ -109,11 +110,11 @@ class ModelArguments:
         },
     )
 
-    def __post_init__(self):
-        if self.config_overrides is not None and (self.config_name is not None or self.model_name_or_path is not None):
-            raise ValueError(
-                "--config_overrides can't be used in combination with --config_name or --model_name_or_path"
-            )
+    # def __post_init__(self):
+    #     if self.config_overrides is not None and (self.config_name is not None or self.model_name_or_path is not None):
+    #         raise ValueError(
+    #             "--config_overrides can't be used in combination with --config_name or --model_name_or_path"
+    #         )
 
 
 @dataclass
@@ -245,10 +246,10 @@ def main():
     transformers.utils.logging.enable_explicit_format()
 
     # Log on each process the small summary:
-    logger.warning(
-        f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
-        + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
-    )
+    # logger.warning(
+    #     f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
+    #     + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
+    # )
     # Set the verbosity to info of the Transformers logger (on main process only):
     logger.info(f"Training/evaluation parameters {training_args}")
 
@@ -354,9 +355,10 @@ def main():
     else:
         config = CONFIG_MAPPING[model_args.model_type]()
         logger.warning("You are instantiating a new config instance from scratch.")
-        if model_args.config_overrides is not None:
-            logger.info(f"Overriding config: {model_args.config_overrides}")
-            config.update_from_string(model_args.config_overrides)
+
+    if model_args.config_overrides is not None:
+        logger.info(f"Overriding config: {model_args.config_overrides}")
+        config.update_from_string(model_args.config_overrides)
 
     if training_args.ipu_config_name:
         ipu_config = IPUConfig.from_pretrained(training_args.ipu_config_name, **config_kwargs)
@@ -364,6 +366,10 @@ def main():
         ipu_config = IPUConfig.from_pretrained(model_args.model_name_or_path, **config_kwargs)
     else:
         raise RuntimeError("You must provide an IPUConfig")
+
+    if training_args.ipu_config_overrides is not None:
+        logger.info(f"Overriding IPU config: {training_args.ipu_config_overrides}")
+        ipu_config.update_from_string(training_args.ipu_config_overrides)
 
     tokenizer_kwargs = {
         "cache_dir": model_args.cache_dir,
@@ -528,7 +534,17 @@ def main():
             pad_to_multiple_of=8 if pad_to_multiple_of_8 else None,
         )
     else:
-        data_collator = None
+        data_collator = default_data_collator
+
+    if training_args.do_train and training_args.pad_on_batch_axis:
+        logger.info(
+            "Padding on batch axis enabled, each batch feeded to the compiled model during training will have the proper size"
+        )
+        data_collator_wrapper = pad_on_batch_axis(
+            training_args.per_device_train_batch_size * ipu_config.batch_size_factor(),
+            {k: -100 if k in ["labels", "next_sentence_label"] else 0 for k in train_dataset.column_names},
+        )
+        data_collator = data_collator_wrapper(data_collator)
 
     # Initialize our Trainer
     trainer = IPUTrainer(

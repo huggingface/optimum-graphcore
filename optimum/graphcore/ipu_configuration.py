@@ -23,27 +23,30 @@ import poptorch
 import transformers
 from poptorch import Options
 from transformers import PretrainedConfig
-from transformers.utils import logging
+
+from .utils import logging
 
 
 logger = logging.get_logger(__name__)
 
-CONFIG_NAME = "ipu_config.json"
+IPU_CONFIG_NAME = "ipu_config.json"
 
 
 class IPUConfig(PretrainedConfig):
     def __init__(self, **kwargs):
         self.use_popdist = kwargs.pop("use_popdist", False)
         self.compile_only = kwargs.pop("compile_only", False)
-        self.random_seed = kwargs.pop("random_seed", None)
+        self.seed = kwargs.pop("seed", None)
 
         self.ipus_per_replica = kwargs.pop("ipus_per_replica", 1)
         # TODO: invalid value for layers_per_ipu which must be a list.
         self.layers_per_ipu = kwargs.pop("layers_per_ipu", 1)
 
         self.replication_factor = kwargs.pop("replication_factor", 1)
+        self.inference_replication_factor = kwargs.pop("inference_replication_factor", 1)
         self.gradient_accumulation_steps = kwargs.pop("gradient_accumulation_steps", 1)
         self.device_iterations = kwargs.pop("device_iterations", 1)
+        self.inference_device_iterations = kwargs.pop("inference_device_iterations", 1)
         self.optimizer_state_offchip = kwargs.pop("optimizer_state_offchip", True)
         self.replicated_tensor_sharding = kwargs.pop("replicated_tensor_sharding", False)
 
@@ -53,6 +56,7 @@ class IPUConfig(PretrainedConfig):
         if len(self.matmul_proportion) == 1:
             self.matmul_proportion = self.matmul_proportion * self.ipus_per_replica
 
+        self.enable_half_first_order_momentum = kwargs.pop("enable_half_first_order_momentum", False)
         self.enable_half_partials = kwargs.pop("enable_half_partials", False)
         self.synthetic_data = kwargs.pop("synthetic_data", False)
 
@@ -65,7 +69,7 @@ class IPUConfig(PretrainedConfig):
 
     def save_pretrained(self, save_directory: Union[str, os.PathLike], push_to_hub: bool = False, **kwargs):
         orig_transformers_config_name = transformers.file_utils.CONFIG_NAME
-        transformers.configuration_utils.CONFIG_NAME = CONFIG_NAME
+        transformers.configuration_utils.CONFIG_NAME = IPU_CONFIG_NAME
         super().save_pretrained(save_directory, push_to_hub=push_to_hub, **kwargs)
         transformers.configuration_utils.CONFIG_NAME = orig_transformers_config_name
 
@@ -74,23 +78,23 @@ class IPUConfig(PretrainedConfig):
         cls, pretrained_model_name_or_path: Union[str, os.PathLike], **kwargs
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         orig_transformers_config_name = transformers.file_utils.CONFIG_NAME
-        transformers.configuration_utils.CONFIG_NAME = CONFIG_NAME
+        transformers.configuration_utils.CONFIG_NAME = IPU_CONFIG_NAME
         ipu_config = super().get_config_dict(pretrained_model_name_or_path, **kwargs)
         transformers.configuration_utils.CONFIG_NAME = orig_transformers_config_name
         return ipu_config
 
-    def to_options(self, for_inference=False) -> poptorch.Options:
+    def to_options(self, for_inference: bool = False) -> poptorch.Options:
         if not self.compile_only and poptorch.ipuHardwareVersion() != 2:
-            raise RuntimeError("This version of BERT requires an IPU Mk2 system to run.")
+            raise RuntimeError("This requires an IPU Mk2 system to run.")
 
         if self.use_popdist:
             opts = popdist.poptorch.Options(ipus_per_replica=self.ipus_per_replica)
         else:
             opts = Options()
-            opts.replicationFactor(self.replication_factor)
+            opts.replicationFactor(self.inference_replication_factor if for_inference else self.replication_factor)
 
         opts.autoRoundNumIPUs(True)
-        opts.deviceIterations(self.device_iterations)
+        opts.deviceIterations(self.inference_device_iterations if for_inference else self.device_iterations)
 
         if not for_inference:
             # Set gradient accumulation factor
@@ -98,10 +102,12 @@ class IPUConfig(PretrainedConfig):
             opts.Training.accumulationAndReplicationReductionType(poptorch.ReductionType.Mean)
 
         # Return all results from IPU to host
+        # TODO: use this when sdk 2.4 is out.
+        # opts.outputMode(poptorch.OutputMode.All)
         opts.anchorMode(poptorch.AnchorMode.All)
 
-        if self.random_seed:
-            opts.randomSeed(self.random_seed)
+        if self.seed:
+            opts.randomSeed(self.seed)
 
         # Enable Replicated Tensor Sharding (RTS) of optimizer state
         #  with optimizer state residing either on-chip or in DRAM
@@ -174,6 +180,8 @@ class IPUConfig(PretrainedConfig):
 
         return opts
 
-    @property
-    def batch_size_factor(self) -> int:
-        return self.replication_factor * self.gradient_accumulation_steps * self.device_iterations
+    def batch_size_factor(self, for_inference: bool = False) -> int:
+        replication_factor = self.inference_replication_factor if for_inference else self.replication_factor
+        gradient_accumulation_steps = 1 if for_inference else self.gradient_accumulation_steps
+        device_iterations = self.inference_device_iterations if for_inference else self.device_iterations
+        return replication_factor * gradient_accumulation_steps * device_iterations

@@ -14,10 +14,15 @@
 
 import copy
 
+from torch import nn
+
 from transformers import PreTrainedModel
 
 from .ipu_configuration import IPUConfig
+from .utils import logging
 
+
+logger = logging.get_logger(__name__)
 
 _PRETRAINED_TO_PIPELINED_REGISTRY = {}
 
@@ -40,12 +45,21 @@ def register(transformers_cls=None):
     return wrapper
 
 
-def to_pipelined(model: PreTrainedModel, ipu_config: IPUConfig):
+def to_pipelined(model: nn.Module, ipu_config: IPUConfig, force: bool = False):
     model_cls = model.__class__
     pipelined_cls = _PRETRAINED_TO_PIPELINED_REGISTRY.get(model_cls, None)
-    if pipelined_cls is None:
-        raise KeyError(f"Pipelined version of {model_cls} not found in registry.")
-    return pipelined_cls.from_transformers(model, ipu_config)
+    if pipelined_cls is not None:
+        return pipelined_cls.from_transformers(model, ipu_config)
+    else:
+        if force:
+            logger.warning(
+                f"No pipelined version exists for {model_cls.__name__}, creating it dynamically, it might not work as expected."
+            )
+            pipelined_cls = type(f"Pipelined{model_cls.__name__}", (model_cls, PipelineMixin), {})
+            return pipelined_cls.from_model(model)
+
+        else:
+            raise KeyError(f"{model_cls.__name__} pipelined version not found in registry.")
 
 
 class PipelineMixin:
@@ -59,6 +73,13 @@ class PipelineMixin:
         pipelined_model.load_state_dict(model.state_dict())
         return pipelined_model
 
+    @classmethod
+    def from_model(cls, model: nn.Module):
+        clone = copy.deepcopy(model)
+        # It is fine because PipelineMixin only adds functionality, it does not add any attribute.
+        clone.__class__ = cls
+        return clone
+
     def parallelize(self):
         """Transform the model to run in an IPU pipeline."""
         return self
@@ -70,3 +91,30 @@ class PipelineMixin:
         original model.
         """
         return self
+
+    def num_parameters(self, only_trainable: bool = False, exclude_embeddings: bool = False) -> int:
+        """
+        Get number of (optionally, trainable or non-embeddings) parameters in the module.
+
+        Args:
+            only_trainable (:obj:`bool`, `optional`, defaults to :obj:`False`):
+                Whether or not to return only the number of trainable parameters
+
+            exclude_embeddings (:obj:`bool`, `optional`, defaults to :obj:`False`):
+                Whether or not to return only the number of non-embeddings parameters
+
+        Returns:
+            :obj:`int`: The number of parameters.
+        """
+
+        # TODO: actually overwrite this to handle SerializedEmbedding.
+        if exclude_embeddings:
+            embedding_param_names = [
+                f"{name}.weight" for name, module_type in self.named_modules() if isinstance(module_type, nn.Embedding)
+            ]
+            non_embedding_parameters = [
+                parameter for name, parameter in self.named_parameters() if name not in embedding_param_names
+            ]
+            return sum(p.numel() for p in non_embedding_parameters if p.requires_grad or not only_trainable)
+        else:
+            return sum(p.numel() for p in self.parameters() if p.requires_grad or not only_trainable)

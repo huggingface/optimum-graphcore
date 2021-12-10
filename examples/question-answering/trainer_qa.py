@@ -41,9 +41,8 @@ class QuestionAnsweringTrainer(IPUTrainer):
         # Temporarily disable metric computation, we will do it in the loop here.
         compute_metrics = self.compute_metrics
         self.compute_metrics = None
-        eval_loop = self.prediction_loop if self.args.use_legacy_prediction_loop else self.evaluation_loop
         try:
-            output = eval_loop(
+            output = self.evaluation_loop(
                 eval_dataloader,
                 description="Evaluation",
                 # No point gathering the predictions if there are no metrics, otherwise we defer to
@@ -67,9 +66,9 @@ class QuestionAnsweringTrainer(IPUTrainer):
         else:
             metrics = {}
 
-        if self.args.tpu_metrics_debug or self.args.debug:
-            # tpu-comment: Logging debug metrics for PyTorch/XLA (compile, execute times, ops, etc.)
-            xm.master_print(met.metrics_report())
+        # if self.args.tpu_metrics_debug or self.args.debug:
+        #     # tpu-comment: Logging debug metrics for PyTorch/XLA (compile, execute times, ops, etc.)
+        #     xm.master_print(met.metrics_report())
 
         self.control = self.callback_handler.on_evaluate(self.args, self.state, self.control, metrics)
         return metrics
@@ -80,9 +79,8 @@ class QuestionAnsweringTrainer(IPUTrainer):
         # Temporarily disable metric computation, we will do it in the loop here.
         compute_metrics = self.compute_metrics
         self.compute_metrics = None
-        eval_loop = self.prediction_loop if self.args.use_legacy_prediction_loop else self.evaluation_loop
         try:
-            output = eval_loop(
+            output = self.evaluation_loop(
                 predict_dataloader,
                 description="Prediction",
                 # No point gathering the predictions if there are no metrics, otherwise we defer to

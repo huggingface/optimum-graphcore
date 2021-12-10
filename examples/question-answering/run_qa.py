@@ -30,6 +30,7 @@ from datasets import load_dataset, load_metric
 import transformers
 from optimum.graphcore import IPUConfig
 from optimum.graphcore import IPUTrainingArguments as TrainingArguments
+from optimum.graphcore.data import pad_on_batch_axis
 from trainer_qa import QuestionAnsweringTrainer
 from transformers import (
     AutoConfig,
@@ -227,10 +228,10 @@ def main():
     transformers.utils.logging.enable_explicit_format()
 
     # Log on each process the small summary:
-    logger.warning(
-        f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
-        + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
-    )
+    # logger.warning(
+    #     f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
+    #     + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
+    # )
     logger.info(f"Training/evaluation parameters {training_args}")
 
     # Detecting last checkpoint.
@@ -300,6 +301,10 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
+
+    if training_args.ipu_config_overrides is not None:
+        logger.info(f"Overriding IPU config: {training_args.ipu_config_overrides}")
+        ipu_config.update_from_string(training_args.ipu_config_overrides)
 
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
@@ -543,6 +548,19 @@ def main():
         if data_args.pad_to_max_length
         else DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None)
     )
+
+    if training_args.do_train and training_args.pad_on_batch_axis:
+        logger.info(
+            "Padding on batch axis enabled, each batch feeded to the compiled model during training will have the proper size"
+        )
+        data_collator_wrapper = pad_on_batch_axis(
+            training_args.per_device_train_batch_size * ipu_config.batch_size_factor(),
+            {
+                k: data_args.max_seq_length if k in ["start_positions", "end_positions"] else 0
+                for k in train_dataset.column_names
+            },
+        )
+        data_collator = data_collator_wrapper(data_collator)
 
     # Post-processing:
     def post_processing_function(examples, features, predictions, stage="eval"):
