@@ -59,7 +59,7 @@ from torch.utils.data.distributed import DistributedSampler
 
 import poptorch
 from huggingface_hub import Repository
-from optimum.version import __version__
+from optimum.graphcore.version import __version__
 from poptorch import DataLoaderMode, PoplarExecutor
 from poptorch.optim import LAMB, AdamW
 from transformers.configuration_utils import PretrainedConfig
