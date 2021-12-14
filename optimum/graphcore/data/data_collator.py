@@ -13,13 +13,14 @@
 # limitations under the License.
 
 from functools import wraps
-from typing import Any, Callable, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
 
 import torch
 from torch import Tensor
 
 from transformers.data import DataCollatorForLanguageModeling
 from transformers.data.data_collator import DataCollator
+from transformers.tokenization_utils_base import BatchEncoding
 
 
 def pad_on_batch_axis(
@@ -50,6 +51,13 @@ def pad_on_batch_axis(
 
 class DataCollatorForLanguageModelingWithMaxTokensMasked(DataCollatorForLanguageModeling):
     max_masked_tokens_proportion: float = 0.25
+
+    def torch_call(self, examples: List[Union[List[int], Any, Dict[str, Any]]]) -> Dict[str, Any]:
+        batch = super().torch_call(examples)
+        # Necessary for poptorch.DataLoaderMode.AsyncRebatched which can handle dictionaries but not BatchEncoding.
+        if isinstance(batch, BatchEncoding):
+            batch = dict(batch)
+        return batch
 
     def torch_mask_tokens(self, inputs: Any, special_tokens_mask: Optional[Any] = None) -> Tuple[Any, Any]:
         """

@@ -18,7 +18,7 @@ import os
 import time
 from argparse import ArgumentError, ArgumentParser
 from pathlib import Path
-from typing import Sequence, Union
+from typing import Optional, Sequence, Union
 
 from datasets import Dataset, DatasetDict, concatenate_datasets, load_dataset
 
@@ -39,6 +39,7 @@ def main(
     dataset_name: str,
     data_dir: Union[Path, str],
     cache_dir: Union[Path, str],
+    output_dataset_name: Optional[str] = None,
     remove_intermediate_datasets_from_cache: bool = True,
     max_number_of_files: int = -1,
 ) -> Dataset:
@@ -74,7 +75,10 @@ def main(
         )
     end = time.time()
     print(f"Dataset generation completed after {end - start}s")
-    final_dataset_filename = Path(cache_dir) / dataset_name.replace("/", "_")
+    if output_dataset_name is None:
+        final_dataset_filename = Path(cache_dir) / dataset_name.replace("/", "_")
+    else:
+        final_dataset_filename = Path(cache_dir) / output_dataset_name
     final_datasets.save_to_disk(final_dataset_filename)
 
     if remove_intermediate_datasets_from_cache:
@@ -104,6 +108,12 @@ def get_args():
     )
     parser.add_argument("--cache_dir", default=None, type=Path, help="The path to the cache directory.")
     parser.add_argument(
+        "--output_dataset_name",
+        default=None,
+        type=str,
+        help="The resulting dataset folder name, --dataset_name is used if this field is None",
+    )
+    parser.add_argument(
         "--keep_intermediate_datasets",
         default=False,
         type=bool,
@@ -129,6 +139,7 @@ if __name__ == "__main__":
         args.dataset_name,
         args.data_dir,
         args.cache_dir,
+        args.output_dataset_name,
         remove_intermediate_datasets_from_cache=not args.keep_intermediate_datasets,
         max_number_of_files=args.max_number_of_files,
     )

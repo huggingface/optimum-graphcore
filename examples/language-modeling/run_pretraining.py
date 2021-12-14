@@ -159,6 +159,17 @@ class DataTrainingArguments:
             "skipped."
         },
     )
+    is_already_preprocessed: Optional[bool] = field(
+        default=False,
+        metadata={
+            "help": "Whether the dataset is already pre-processed or not. If True, all the pre-processing steps will be"
+            "skipped."
+        },
+    )
+    is_already_masked: Optional[bool] = field(
+        default=False,
+        metadata={"help": "Whether the input ids are already (statically) masked in the dataset."},
+    )
     max_seq_length: Optional[int] = field(
         default=None,
         metadata={
@@ -524,14 +535,15 @@ def main():
         if data_args.max_eval_samples is not None:
             eval_dataset = eval_dataset.select(range(data_args.max_eval_samples))
 
-    if not data_args.is_already_preprocessed:
+    if not data_args.is_already_masked:
         # Data collator
         # This one will take care of randomly masking the tokens.
-        pad_to_multiple_of_8 = data_args.line_by_line and training_args.fp16 and not data_args.pad_to_max_length
+        # pad_to_multiple_of_8 = data_args.line_by_line and training_args.fp16 and not data_args.pad_to_max_length
         data_collator = DataCollatorForLanguageModelingWithMaxTokensMasked(
             tokenizer=tokenizer,
             mlm_probability=data_args.mlm_probability,
-            pad_to_multiple_of=8 if pad_to_multiple_of_8 else None,
+            # pad_to_multiple_of=8 if pad_to_multiple_of_8 else None,
+            pad_to_multiple_of=None,
         )
     else:
         data_collator = default_data_collator
