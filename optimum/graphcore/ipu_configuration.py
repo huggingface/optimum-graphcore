@@ -137,7 +137,7 @@ class IPUConfig(PretrainedConfig):
             opts.enableExecutableCaching(self.executable_cache_dir)
 
         # Enable stochastic rounding (recommended for training with FP16)
-        opts.Precision.enableStochasticRounding(True)
+        opts.Precision.enableStochasticRounding(not for_inference)
 
         # Half precision partials for matmuls and convolutions
         if self.enable_half_partials:
@@ -157,6 +157,7 @@ class IPUConfig(PretrainedConfig):
         )
         opts._Popart.set("accumulateOuterFragmentSettings.excludedVirtualGraphs", ["0"])
         # Enable patterns for better throughput and memory reduction
+        opts._Popart.set("outlineThreshold", 10.0)
         opts._Popart.set("subgraphCopyingStrategy", int(popart.SubgraphCopyingStrategy.JustInTime))
         opts._Popart.set("scheduleNonWeightUpdateGradientConsumersEarly", True)
         opts._Popart.setPatterns(
