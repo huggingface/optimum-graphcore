@@ -78,9 +78,12 @@ class IPUConfig(PretrainedConfig):
         cls, pretrained_model_name_or_path: Union[str, os.PathLike], **kwargs
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         orig_transformers_config_name = transformers.file_utils.CONFIG_NAME
+        orig_transformers_full_config_file = transformers.configuration_utils.FULL_CONFIGURATION_FILE
         transformers.configuration_utils.CONFIG_NAME = IPU_CONFIG_NAME
+        transformers.configuration_utils.FULL_CONFIGURATION_FILE = "ipu_config.json"
         ipu_config = super().get_config_dict(pretrained_model_name_or_path, **kwargs)
         transformers.configuration_utils.CONFIG_NAME = orig_transformers_config_name
+        transformers.configuration_utils.FULL_CONFIGURATION_FILE = orig_transformers_full_config_file
         return ipu_config
 
     def to_options(self, for_inference: bool = False) -> poptorch.Options:
