@@ -461,8 +461,6 @@ def main():
     # Data collator will default to DataCollatorWithPadding, so we change it if we already did the padding.
     if data_args.pad_to_max_length:
         data_collator = default_data_collator
-    # elif training_args.fp16:
-    #     data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8)
     else:
         data_collator = None
 

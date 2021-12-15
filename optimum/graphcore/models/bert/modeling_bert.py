@@ -403,14 +403,13 @@ class PipelinedBertForSequenceClassification(BertForSequenceClassification, Pipe
         return self
 
     def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
-        output = super().forward(
+        return super().forward(
             input_ids=input_ids,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
             labels=labels,
             return_dict=False,
         )
-        return output
 
 
 @register(BertForMultipleChoice)
@@ -469,14 +468,13 @@ class PipelinedBertForMultipleChoice(BertForMultipleChoice, PipelineMixin):
         return self
 
     def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
-        output = super().forward(
+        return super().forward(
             input_ids=input_ids,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
             labels=labels,
             return_dict=False,
         )
-        return output
 
 
 @register(BertForTokenClassification)
@@ -535,14 +533,13 @@ class PipelinedBertForTokenClassification(BertForTokenClassification, PipelineMi
         return self
 
     def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
-        output = super().forward(
+        return super().forward(
             input_ids=input_ids,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
             labels=labels,
             return_dict=False,
         )
-        return output
 
 
 @register(BertForQuestionAnswering)
@@ -610,5 +607,5 @@ class PipelinedBertForQuestionAnswering(BertForQuestionAnswering, PipelineMixin)
             return_dict=False,
         )
         if start_positions is not None and end_positions is not None:
-            output[0] = poptorch.identity_loss(output[0], reduction="none")
+            output = (poptorch.identity_loss(output[0], reduction="none"),) + output[1:]
         return output

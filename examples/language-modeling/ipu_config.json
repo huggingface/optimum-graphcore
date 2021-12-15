@@ -1,5 +1,4 @@
 {
-  "async_dataloader": true,
   "embedding_serialization_factor": 1,
   "recompute_checkpoint_every_layer": true,
   "optimizer_state_offchip": true,

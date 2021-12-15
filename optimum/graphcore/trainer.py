@@ -1840,9 +1840,6 @@ class IPUTrainer:
         # Do this before wrapping.
         eval_dataset = dataloader.dataset
 
-        # if is_torch_tpu_available():
-        #     dataloader = pl.ParallelLoader(dataloader, [self.args.device]).per_device_loader(self.args.device)
-
         if self.args.past_index >= 0:
             self._past = None
 
