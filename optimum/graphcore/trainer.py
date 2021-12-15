@@ -1820,11 +1820,6 @@ class IPUTrainer:
         model = self._wrap_model(self.model, training=False)
         self._compile_model(model, next(iter(dataloader)), log=True)
 
-        # if full fp16 is wanted on eval and this ``evaluation`` or ``predict`` isn't called while
-        # ``train`` is running, halve it first and then put on device
-        # if not self.is_in_train and self.args.fp16_full_eval:
-        #     model = model.half().to(self.args.device)
-
         batch_size = dataloader.batch_size
 
         logger.info(f"***** Running {description} *****")
