@@ -13,7 +13,7 @@
 #  limitations under the License.
 
 import os
-from typing import Any, Dict, Tuple, Union
+from typing import Any, Dict, Optional, Tuple, Union
 
 import torch
 
@@ -30,6 +30,7 @@ from .utils import logging
 logger = logging.get_logger(__name__)
 
 IPU_CONFIG_NAME = "ipu_config.json"
+ALLOWED_POD_TYPES = {"pod4", "pod16", "pod64", "pod128", "pod256"}
 
 
 class IPUConfig(PretrainedConfig):
@@ -86,7 +87,43 @@ class IPUConfig(PretrainedConfig):
         transformers.configuration_utils.FULL_CONFIGURATION_FILE = orig_transformers_full_config_file
         return ipu_config
 
-    def to_options(self, for_inference: bool = False) -> poptorch.Options:
+    def _prepare_config_attribute_for_pod_type(
+        config_attribute_name: str, config_attribute: Union[Any, Dict[str, Any]], pod_type: str
+    ) -> Any:
+        """
+        Prepare a config attribute by extracting the proper value for this attribute considering the POD type.
+
+        Args:
+            config_attribute_name: The config attribute name (i.e. the name of the config field).
+            config_attribute: The config attribute to extract the value from.
+            pod_type: The POD type.
+
+        Returns:
+            The extracted config attribute value.
+        """
+        if not isinstance(config_attribute, dict):
+            return config_attribute
+
+        if pod_type is None and "default" not in config_attribute:
+            value = min(config_attribute.values())
+            logger.warning(
+                f"No POD type was specified and no default value was provided for {config_attribute_name}, defaulting to {config_attribute_name} = {value} as it was the smallest provided value, might not work as expected"
+            )
+            return value
+        elif pod_type is None:
+            return config_attribute["default"]
+        elif pod_type not in ALLOWED_POD_TYPES:
+            raise ValueError(
+                f"{pod_type} is not a correct value for a POD type, supported POD types: {', '.join(ALLOWED_POD_TYPES)}"
+            )
+        elif pod_type not in config_attribute:
+            raise KeyError(
+                f"the {config_attribute_name} configuration field does not contain a value for POD type {pod_type}"
+            )
+        else:
+            return config_attribute[pod_type]
+
+    def _to_options(self, for_inference: bool = False) -> poptorch.Options:
         if not self.compile_only and poptorch.ipuHardwareVersion() != 2:
             raise RuntimeError("This requires an IPU Mk2 system to run.")
 
@@ -182,6 +219,11 @@ class IPUConfig(PretrainedConfig):
         opts._Popart.set("engineOptions", engine_options)
 
         return opts
+
+    def to_options(self, for_inference: bool = False, pod_type: Optional[str] = None) -> poptorch.Options:
+        config_dict = self.to_dict()
+        config_dict = {k: self._prepare_config_attribute_for_pod_type(k, v, pod_type) for k, v in config_dict.items()}
+        return IPUConfig(**config_dict)._to_options(self, for_inference=for_inference)
 
     def batch_size_factor(self, for_inference: bool = False) -> int:
         replication_factor = self.inference_replication_factor if for_inference else self.replication_factor
