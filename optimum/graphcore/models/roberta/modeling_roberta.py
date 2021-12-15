@@ -179,9 +179,8 @@ class PipelinedRobertaForQuestionAnswering(transformers.RobertaForQuestionAnswer
             attention_mask=attention_mask,
             start_positions=start_positions,
             end_positions=end_positions,
+            return_dict=False
         )
-        if start_positions is not None and end_positions is not None: 
-            final_loss = poptorch.identity_loss(output.loss, reduction="none")
-            return final_loss, output.start_logits, output.end_logits
-        else:
-            return output.start_logits, output.end_logits
+        if start_positions is not None and end_positions is not None:
+              output = (poptorch.identity_loss(output[0], reduction="none"),) + output[1:]
+        return output
