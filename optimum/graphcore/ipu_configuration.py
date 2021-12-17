@@ -176,7 +176,6 @@ class IPUConfig(PretrainedConfig):
                 **{
                     "debug.allowOutOfMemory": "true",
                     "autoReport.directory": self.profile_dir,
-                    "profiler.format": "v3",
                     "autoReport.all": "true",
                 },
             }

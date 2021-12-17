@@ -35,26 +35,28 @@ def _get_layer_ipu(layers_per_ipu):
 
 def recomputation_checkpoint(module: nn.Module):
     """Annotates the output of a module to be checkpointed instead of
-        recomputed"""
+    recomputed"""
+
     def recompute_outputs(module, inputs, outputs):
         return tuple(poptorch.recomputationCheckpoint(y) for y in outputs)
+
     module.register_forward_hook(recompute_outputs)
 
 
 def outline_attribute(module: nn.Module, value: str):
     """Adds an attribute to a module. This attribute will be used
-        when comparing operation equivalence in outlining. For example:
+    when comparing operation equivalence in outlining. For example:
 
-        layer1 = nn.Linear(...)
-        layer2 = nn.Linear(...)
-        layer3 = nn.Linear(...)
-        layer4 = nn.Linear(...)
-        outline_attribute(layer1, "A")
-        outline_attribute(layer2, "A")
-        outline_attribute(layer3, "B")
+    layer1 = nn.Linear(...)
+    layer2 = nn.Linear(...)
+    layer3 = nn.Linear(...)
+    layer4 = nn.Linear(...)
+    outline_attribute(layer1, "A")
+    outline_attribute(layer2, "A")
+    outline_attribute(layer3, "B")
 
-        The code for layer1 can be reused for layer2.
-        But it can't be used for layer3 or layer4.
+    The code for layer1 can be reused for layer2.
+    But it can't be used for layer3 or layer4.
     """
     context = poptorch.Attribute(__outline={"layer": value})
 
@@ -63,6 +65,7 @@ def outline_attribute(module: nn.Module, value: str):
 
     def disable(*args):
         context.__exit__(None, None, None)
+
     module.register_forward_pre_hook(enable)
     module.register_forward_hook(disable)
 
@@ -77,6 +80,7 @@ class SerializedEmbedding(nn.Module):
         embedding: A `nn.Embedding` to wrap
         serialization_factor: The number of serialized embedding look-ups
     """
+
     def __init__(self, embedding: nn.Embedding, serialization_factor: int):
         super().__init__()
         self.serialization_factor = serialization_factor
@@ -86,10 +90,15 @@ class SerializedEmbedding(nn.Module):
         assert self.num_embeddings % self.serialization_factor == 0
         self.split_size = self.num_embeddings // self.serialization_factor
         self.split_embeddings = nn.ModuleList(
-            [nn.Embedding.from_pretrained(embedding.weight[i*self.split_size:(i+1)*self.split_size, :].detach(),
-                                          freeze=False,
-                                          padding_idx=embedding.padding_idx if i == 0 else None)
-             for i in range(self.serialization_factor)])
+            [
+                nn.Embedding.from_pretrained(
+                    embedding.weight[i * self.split_size : (i + 1) * self.split_size, :].detach(),
+                    freeze=False,
+                    padding_idx=embedding.padding_idx if i == 0 else None,
+                )
+                for i in range(self.serialization_factor)
+            ]
+        )
 
     def deserialize(self):
         """
@@ -179,8 +188,8 @@ class PipelinedRobertaForQuestionAnswering(transformers.RobertaForQuestionAnswer
             attention_mask=attention_mask,
             start_positions=start_positions,
             end_positions=end_positions,
-            return_dict=False
+            return_dict=False,
         )
         if start_positions is not None and end_positions is not None:
-              output = (poptorch.identity_loss(output[0], reduction="none"),) + output[1:]
+            output = (poptorch.identity_loss(output[0], reduction="none"),) + output[1:]
         return output
