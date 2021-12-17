@@ -60,6 +60,7 @@ from torch.utils.data.distributed import DistributedSampler
 import poptorch
 from huggingface_hub import Repository
 from optimum.graphcore.version import __version__
+from optimum.utils import logging
 from poptorch import DataLoaderMode, PoplarExecutor
 from poptorch.optim import LAMB, AdamW
 from transformers.configuration_utils import PretrainedConfig
@@ -126,7 +127,6 @@ from .modelcard import IPUTrainingSummary
 from .modeling_utils import to_pipelined
 from .trainer_utils import _WorkerInit
 from .training_args import IPUTrainingArguments
-from .utils import logging
 
 
 if is_datasets_available():

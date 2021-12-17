@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional
 
 import torch
 
+from optimum.utils import logging
 from poptorch import DataLoaderMode
 from transformers.debug_utils import DebugOption
 from transformers.file_utils import (
@@ -37,8 +38,6 @@ from transformers.file_utils import (
 )
 from transformers.trainer_utils import EvaluationStrategy, HubStrategy, IntervalStrategy, SchedulerType
 from transformers.training_args import default_logdir
-
-from .utils import logging
 
 
 logger = logging.get_logger(__name__)

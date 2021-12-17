@@ -21,10 +21,9 @@ import popart
 import popdist
 import poptorch
 import transformers
+from optimum.configuration_utils import BaseConfig
+from optimum.utils import logging
 from poptorch import Options
-from transformers import PretrainedConfig
-
-from .utils import logging
 
 
 logger = logging.get_logger(__name__)
@@ -33,7 +32,10 @@ IPU_CONFIG_NAME = "ipu_config.json"
 ALLOWED_POD_TYPES = {"pod4", "pod16", "pod64", "pod128", "pod256"}
 
 
-class IPUConfig(PretrainedConfig):
+class IPUConfig(BaseConfig):
+    CONFIG_NAME = "ipu_config.json"
+    FULL_CONFIGURATION_FILE = "ipu_config.json"
+
     def __init__(self, **kwargs):
         self.use_popdist = kwargs.pop("use_popdist", False)
         self.compile_only = kwargs.pop("compile_only", False)
@@ -68,30 +70,11 @@ class IPUConfig(PretrainedConfig):
 
         self.recompute_checkpoint_every_layer = kwargs.pop("recompute_checkpoint_every_layer", False)
 
-    def save_pretrained(self, save_directory: Union[str, os.PathLike], push_to_hub: bool = False, **kwargs):
-        orig_transformers_config_name = transformers.file_utils.CONFIG_NAME
-        transformers.configuration_utils.CONFIG_NAME = IPU_CONFIG_NAME
-        super().save_pretrained(save_directory, push_to_hub=push_to_hub, **kwargs)
-        transformers.configuration_utils.CONFIG_NAME = orig_transformers_config_name
-
-    @classmethod
-    def get_config_dict(
-        cls, pretrained_model_name_or_path: Union[str, os.PathLike], **kwargs
-    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        orig_transformers_config_name = transformers.file_utils.CONFIG_NAME
-        orig_transformers_full_config_file = transformers.configuration_utils.FULL_CONFIGURATION_FILE
-        transformers.configuration_utils.CONFIG_NAME = IPU_CONFIG_NAME
-        transformers.configuration_utils.FULL_CONFIGURATION_FILE = "ipu_config.json"
-        ipu_config = super().get_config_dict(pretrained_model_name_or_path, **kwargs)
-        transformers.configuration_utils.CONFIG_NAME = orig_transformers_config_name
-        transformers.configuration_utils.FULL_CONFIGURATION_FILE = orig_transformers_full_config_file
-        return ipu_config
-
     def _prepare_config_attribute_for_pod_type(
-        config_attribute_name: str, config_attribute: Union[Any, Dict[str, Any]], pod_type: str
+        self, config_attribute_name: str, config_attribute: Union[Any, Dict[str, Any]], pod_type: str
     ) -> Any:
         """
-        Prepare a config attribute by extracting the proper value for this attribute considering the POD type.
+        Prepares a config attribute by extracting the proper value for this attribute considering the POD type.
 
         Args:
             config_attribute_name: The config attribute name (i.e. the name of the config field).
@@ -107,7 +90,9 @@ class IPUConfig(PretrainedConfig):
         if pod_type is None and "default" not in config_attribute:
             value = min(config_attribute.values())
             logger.warning(
-                f"No POD type was specified and no default value was provided for {config_attribute_name}, defaulting to {config_attribute_name} = {value} as it was the smallest provided value, might not work as expected"
+                f"No POD type was specified and no default value was provided for {config_attribute_name}, defaulting "
+                f"to {config_attribute_name} = {value} as it was the smallest provided value, might not work as "
+                "expected"
             )
             return value
         elif pod_type is None:
@@ -122,6 +107,21 @@ class IPUConfig(PretrainedConfig):
             )
         else:
             return config_attribute[pod_type]
+
+    def for_pod_type(self, pod_type: Optional[str] = None) -> "IPUConfig":
+        """
+        Creates an IPUConfig specialized for a POD type.
+
+        Args:
+            pod_type: The POD type. If left to None, either the default value or the lowest value will be used for each
+                configuration field.
+
+        Returns:
+            The IPUConfig instance.
+        """
+        config_dict = self.to_dict()
+        config_dict = {k: self._prepare_config_attribute_for_pod_type(k, v, pod_type) for k, v in config_dict.items()}
+        return IPUConfig(**config_dict)
 
     def _to_options(self, for_inference: bool = False) -> poptorch.Options:
         if not self.compile_only and poptorch.ipuHardwareVersion() != 2:
@@ -221,11 +221,29 @@ class IPUConfig(PretrainedConfig):
         return opts
 
     def to_options(self, for_inference: bool = False, pod_type: Optional[str] = None) -> poptorch.Options:
-        config_dict = self.to_dict()
-        config_dict = {k: self._prepare_config_attribute_for_pod_type(k, v, pod_type) for k, v in config_dict.items()}
-        return IPUConfig(**config_dict)._to_options(self, for_inference=for_inference)
+        """
+        Creates a poptorch.Options from the IPUConfig.
+
+        Args:
+            for_inference: If True, the resulting poptorch.Options will be adapted inference, it will be adapted for
+                training otherwise.
+            pod_type: The POD type to specialize the poptorch.Options for.
+
+        Returns:
+            The poptorch.Options instance.
+        """
+        return self.for_pod_type(pod_type)._to_options(for_inference=for_inference)
 
     def batch_size_factor(self, for_inference: bool = False) -> int:
+        """
+        Computes the factor to apply to the micro batch size to get the combined batch size.
+
+        Args:
+            for_inference: Whether the factor is being use to compute the batch size for inference or not.
+
+        Returns:
+            The batch size factor.
+        """
         replication_factor = self.inference_replication_factor if for_inference else self.replication_factor
         gradient_accumulation_steps = 1 if for_inference else self.gradient_accumulation_steps
         device_iterations = self.inference_device_iterations if for_inference else self.device_iterations
