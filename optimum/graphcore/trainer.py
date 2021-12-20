@@ -432,12 +432,12 @@ class IPUTrainer:
             if self.args.complete_last_batch:
                 num_examples = len(self.train_dataset)
                 num_missing_examples = num_examples % combined_batch_size
-                indices = torch.cat(
-                    [torch.arange(num_examples), torch.randint(0, num_examples, size=(num_missing_examples,))]
-                )
+                if num_missing_examples > 0:
+                    indices = torch.cat(
+                        [torch.arange(num_examples), torch.randint(0, num_examples, size=(num_missing_examples,))]
+                    )
                 return SubsetRandomSampler(indices, generator)
-            else:
-                return RandomSampler(self.train_dataset)
+            return RandomSampler(self.train_dataset)
 
     def get_train_dataloader(self) -> poptorch.DataLoader:
         """
@@ -1820,11 +1820,6 @@ class IPUTrainer:
         model = self._wrap_model(self.model, training=False)
         self._compile_model(model, next(iter(dataloader)), log=True)
 
-        # if full fp16 is wanted on eval and this ``evaluation`` or ``predict`` isn't called while
-        # ``train`` is running, halve it first and then put on device
-        # if not self.is_in_train and self.args.fp16_full_eval:
-        #     model = model.half().to(self.args.device)
-
         batch_size = dataloader.batch_size
 
         logger.info(f"***** Running {description} *****")
@@ -1839,9 +1834,6 @@ class IPUTrainer:
         self.callback_handler.eval_dataloader = dataloader
         # Do this before wrapping.
         eval_dataset = dataloader.dataset
-
-        # if is_torch_tpu_available():
-        #     dataloader = pl.ParallelLoader(dataloader, [self.args.device]).per_device_loader(self.args.device)
 
         if self.args.past_index >= 0:
             self._past = None
@@ -1869,7 +1861,9 @@ class IPUTrainer:
                     batch_size = observed_batch_size
 
             # Prediction step
-            loss, logits, labels = self.prediction_step(model, inputs, prediction_loss_only, ignore_keys=ignore_keys)
+            loss, logits, labels = self.prediction_step(
+                model, inputs, prediction_loss_only, ignore_keys=ignore_keys, is_last_batch=step == len(dataloader) - 1
+            )
 
             # Update containers on host
             if loss is not None:
@@ -2015,6 +2009,7 @@ class IPUTrainer:
         inputs: Dict[str, Union[torch.Tensor, Any]],
         prediction_loss_only: bool,
         ignore_keys: Optional[List[str]] = None,
+        is_last_batch: bool = False,
     ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
         """
         Perform an evaluation step on :obj:`model` using obj:`inputs`.
@@ -2058,6 +2053,10 @@ class IPUTrainer:
         with torch.no_grad():
             if has_labels:
                 loss, outputs = self.compute_loss(model, inputs, return_outputs=True)
+                # If last batch is incomplete, some losses might be NaN because nothing was computed on the
+                # corresponding POD, ignoring them is necessary to not mess up evaluation loss computation
+                if is_last_batch:
+                    loss = loss[~loss.isnan()]
                 loss = loss.mean().detach()
                 if isinstance(outputs, dict):
                     logits = tuple(v for k, v in outputs.items() if k not in ignore_keys + ["loss"])
