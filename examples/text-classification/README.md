@@ -95,6 +95,7 @@ This example code fine-tunes mBERT (multi-lingual BERT) on the XNLI dataset. <!-
 ```bash
 python run_xnli.py \
   --model_name_or_path bert-base-multilingual-cased \
+  --ipu_config_name Graphcore/bert-base \
   --language de \
   --train_language en \
   --do_train \
