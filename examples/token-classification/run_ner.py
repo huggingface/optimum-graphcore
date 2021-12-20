@@ -131,7 +131,7 @@ class DataTrainingArguments:
         },
     )
     pad_to_max_length: bool = field(
-        default=False,
+        default=True,
         metadata={
             "help": "Whether to pad all samples to model maximum sentence length. "
             "If False, will pad the samples dynamically when batching to the maximum length in the batch. More "
@@ -367,6 +367,11 @@ def main():
     # Preprocessing the dataset
     # Padding strategy
     padding = "max_length" if data_args.pad_to_max_length else False
+    if not data_args.pad_to_max_length:
+        logging.warning(
+            "Not padding to max length might lead to batches with difference sequence lengths, which might not work as"
+            "expected on IPUs"
+        )
 
     # Tokenize all texts and align the labels with them.
     def tokenize_and_align_labels(examples):

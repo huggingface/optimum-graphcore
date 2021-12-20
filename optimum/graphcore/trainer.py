@@ -1861,7 +1861,9 @@ class IPUTrainer:
                     batch_size = observed_batch_size
 
             # Prediction step
-            loss, logits, labels = self.prediction_step(model, inputs, prediction_loss_only, ignore_keys=ignore_keys)
+            loss, logits, labels = self.prediction_step(
+                model, inputs, prediction_loss_only, ignore_keys=ignore_keys, is_last_batch=step == len(dataloader) - 1
+            )
 
             # Update containers on host
             if loss is not None:
@@ -2007,6 +2009,7 @@ class IPUTrainer:
         inputs: Dict[str, Union[torch.Tensor, Any]],
         prediction_loss_only: bool,
         ignore_keys: Optional[List[str]] = None,
+        is_last_batch: bool = False,
     ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
         """
         Perform an evaluation step on :obj:`model` using obj:`inputs`.
@@ -2050,6 +2053,10 @@ class IPUTrainer:
         with torch.no_grad():
             if has_labels:
                 loss, outputs = self.compute_loss(model, inputs, return_outputs=True)
+                # If last batch is incomplete, some losses might be NaN because nothing was computed on the
+                # corresponding POD, ignoring them is necessary to not mess up evaluation loss computation
+                if is_last_batch:
+                    loss = loss[~loss.isnan()]
                 loss = loss.mean().detach()
                 if isinstance(outputs, dict):
                     logits = tuple(v for k, v in outputs.items() if k not in ignore_keys + ["loss"])
