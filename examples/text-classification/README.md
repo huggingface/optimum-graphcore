@@ -107,9 +107,9 @@ python run_xnli.py \
   --save_steps -1
 ```
 
+<!-- TODO: insert accuracy
 Training with the previously defined hyper-parameters yields the following results on the **test** set:
 
-<!-- TODO: insert accuracy
 ```bash
 acc = 0.7093812375249501
 ```

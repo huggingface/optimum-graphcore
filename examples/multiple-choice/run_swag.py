@@ -115,7 +115,7 @@ class DataTrainingArguments:
         },
     )
     pad_to_max_length: bool = field(
-        default=False,
+        default=True,
         metadata={
             "help": "Whether to pad all samples to the maximum sentence length. "
             "If False, will pad the samples dynamically when batching to the maximum length in the batch. More "
@@ -383,6 +383,12 @@ def main():
         if data_args.pad_to_max_length
         else DataCollatorForMultipleChoice(tokenizer=tokenizer, pad_to_multiple_of=None)
     )
+
+    if not data_args.pad_to_max_length:
+        logging.warning(
+            "Not padding to max length might lead to batches with difference sequence lengths, which might not work as"
+            "expected on IPUs"
+        )
 
     # Metric
     def compute_metrics(eval_predictions):
