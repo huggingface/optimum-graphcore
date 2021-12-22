@@ -245,7 +245,9 @@ class IPUConfig(BaseConfig):
             The batch size factor.
         """
         ipu_config = self.for_pod_type(pod_type)
-        replication_factor = ipu_config.inference_replication_factor if for_inference else ipu_config.replication_factor
+        replication_factor = (
+            ipu_config.inference_replication_factor if for_inference else ipu_config.replication_factor
+        )
         gradient_accumulation_steps = 1 if for_inference else ipu_config.gradient_accumulation_steps
         device_iterations = ipu_config.inference_device_iterations if for_inference else ipu_config.device_iterations
         return replication_factor * gradient_accumulation_steps * device_iterations

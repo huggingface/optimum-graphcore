@@ -247,7 +247,9 @@ class IPUTrainingArguments:
         default=None, metadata={"help": "Pretrained IPU config name or path if not the same as model_name."}
     )
     pod_type: Optional[str] = field(
-        default=None, metadata={"help": "The POD type to run the `Trainer` on."}, choices=ALLOWED_POD_TYPES,
+        default=None,
+        metadata={"help": "The POD type to run the `Trainer` on."},
+        choices=ALLOWED_POD_TYPES,
     )
     fp32: bool = field(
         default=False,

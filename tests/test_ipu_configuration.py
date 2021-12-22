@@ -17,9 +17,8 @@ import string
 import unittest
 from collections import Iterable
 
-
-from optimum.graphcore import IPUConfig
 from optimu.graphcore.ipu_configuration import ALLOWED_POD_TYPES
+from optimum.graphcore import IPUConfig
 
 
 def random_value_from_initial_value(initial_value):
@@ -39,7 +38,9 @@ def random_value_from_initial_value(initial_value):
         raise TypeError(f"cannot create random value from initial value of type {type(initial_value)}")
 
 
-def create_pod_specific_attribute(initial_value: Any, add_default_value: bool = False, remove_pod_types: Optional[Set[str]] = None) -> Dict[str, Any]:
+def create_pod_specific_attribute(
+    initial_value: Any, add_default_value: bool = False, remove_pod_types: Optional[Set[str]] = None
+) -> Dict[str, Any]:
     p = random.random()
     if p < 0.5:
         return initial_value
@@ -51,12 +52,14 @@ def create_pod_specific_attribute(initial_value: Any, add_default_value: bool = 
 
 def create_ipu_config(with_default_values: bool = False, remove_pod_types: Optional[Set[str]] = None) -> IPUConfig:
     initial_dict = IPUConfig().to_dict()
-    initial_dict = {k: create_pod_specific_attribute(v, add_default_value=with_default_values, remove_pod_types=remove_pod_types) for k, v in initial_dict.items()}
+    initial_dict = {
+        k: create_pod_specific_attribute(v, add_default_value=with_default_values, remove_pod_types=remove_pod_types)
+        for k, v in initial_dict.items()
+    }
     return IPUConfig.from_dict(initial_dict)
 
 
 class IPUConfigTester(unittest.TestCase):
-
     def test_for_pod_type(self):
         ipu_config = create_ipu_config()
         for pod_type in ALLOWED_POD_TYPES:
@@ -104,7 +107,7 @@ class IPUConfigTester(unittest.TestCase):
         batch_size_factor = ipu_config.batch_size_factor(pod_type=pod_type)
         self.assertEqual(
             ipu_config.replication_factor * ipu_config.gradient_accumulation_steps * ipu_config.device_iterations,
-            batch_size_factor
+            batch_size_factor,
         )
 
     def test_batch_size_factor_for_inference(self):
@@ -112,6 +115,8 @@ class IPUConfigTester(unittest.TestCase):
         pod_type = random.choice(ALLOWED_POD_TYPES)
         batch_size_factor = ipu_config.batch_size_factor(for_inference=True, pod_type=pod_type)
         self.assertEqual(
-            ipu_config.inference_replication_factor * ipu_config.gradient_accumulation_steps * ipu_config.inference_device_iterations,
-            batch_size_factor
+            ipu_config.inference_replication_factor
+            * ipu_config.gradient_accumulation_steps
+            * ipu_config.inference_device_iterations,
+            batch_size_factor,
         )
