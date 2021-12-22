@@ -217,7 +217,7 @@ class IPUTrainer:
         #     self._move_model_to_device(model, args.device)
 
         # later use `self.model is self.model_wrapped` to check if it's wrapped or not
-        self.ipu_config = copy.deepcopy(ipu_config)
+        self.ipu_config = copy.deepcopy(ipu_config).for_pod_type(self.args.pod_type)
         self.ipu_config.seed = self.args.seed
         self.opts = ipu_config.to_options()
         self.eval_opts = ipu_config.to_options(for_inference=True)

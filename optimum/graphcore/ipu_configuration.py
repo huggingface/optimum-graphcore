@@ -234,7 +234,7 @@ class IPUConfig(BaseConfig):
         """
         return self.for_pod_type(pod_type)._to_options(for_inference=for_inference)
 
-    def batch_size_factor(self, for_inference: bool = False) -> int:
+    def batch_size_factor(self, for_inference: bool = False, pod_type: Optional[str] = None) -> int:
         """
         Computes the factor to apply to the micro batch size to get the combined batch size.
 
@@ -244,7 +244,8 @@ class IPUConfig(BaseConfig):
         Returns:
             The batch size factor.
         """
-        replication_factor = self.inference_replication_factor if for_inference else self.replication_factor
-        gradient_accumulation_steps = 1 if for_inference else self.gradient_accumulation_steps
-        device_iterations = self.inference_device_iterations if for_inference else self.device_iterations
+        ipu_config = self.for_pod_type(pod_type)
+        replication_factor = ipu_config.inference_replication_factor if for_inference else ipu_config.replication_factor
+        gradient_accumulation_steps = 1 if for_inference else ipu_config.gradient_accumulation_steps
+        device_iterations = ipu_config.inference_device_iterations if for_inference else ipu_config.device_iterations
         return replication_factor * gradient_accumulation_steps * device_iterations

@@ -39,6 +39,8 @@ from transformers.file_utils import (
 from transformers.trainer_utils import EvaluationStrategy, HubStrategy, IntervalStrategy, SchedulerType
 from transformers.training_args import default_logdir
 
+from .ipu_configuration import ALLOWED_POD_TYPES
+
 
 logger = logging.get_logger(__name__)
 log_levels = logging.get_log_levels_dict().copy()
@@ -242,7 +244,10 @@ class IPUTrainingArguments:
     push_to_hub_token: str = field(default=None, metadata={"help": "The token to use to push to the Model Hub."})
     # IPU Specific arguments
     ipu_config_name: Optional[str] = field(
-        default=None, metadata={"help": "Pretrained IPU config name or path if not the same as model_name"}
+        default=None, metadata={"help": "Pretrained IPU config name or path if not the same as model_name."}
+    )
+    pod_type: Optional[str] = field(
+        default=None, metadata={"help": "The POD type to run the `Trainer` on."}, choices=ALLOWED_POD_TYPES,
     )
     fp32: bool = field(
         default=False,
