@@ -47,7 +47,7 @@ setup(
     author="HuggingFace Inc. Special Ops Team",
     author_email="hardware@huggingface.co",
     license="Apache",
-    packages=find_namespace_packages(include=["optimum.*"]),
+    packages=find_namespace_packages(include=["optimum*"]),
     install_requires=install_requires,
     include_package_data=True,
     zip_safe=False,
