@@ -22,9 +22,8 @@ from transformers import (
     RobertaForSequenceClassification,
     RobertaForTokenClassification,
 )
-
+from optimum.utils import logging
 from ...modeling_utils import PipelineMixin, register
-from ...utils import logging
 
 
 logger = logging.get_logger(__name__)

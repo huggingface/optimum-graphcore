@@ -29,7 +29,7 @@ import numpy as np
 
 from huggingface_hub import Repository, delete_repo, login
 from optimum.graphcore import IPUConfig, IPUTrainingArguments
-from optimum.graphcore.utils import logging
+from optimum.utils import logging
 from requests.exceptions import HTTPError
 from transformers import AutoTokenizer, IntervalStrategy, PretrainedConfig, is_torch_available
 from transformers.file_utils import WEIGHTS_NAME
@@ -42,7 +42,6 @@ from transformers.testing_utils import (
     get_gpu_count,
     get_tests_dir,
     is_staging_test,
-    require_datasets,
     require_optuna,
     require_ray,
     require_sentencepiece,
@@ -407,7 +406,6 @@ class IPUTrainerIntegrationPrerunTest(TestCasePlus, IPUTrainerIntegrationCommon)
         trainer.train()
         self.check_trained_model(trainer.model, alternate_seed=True)
 
-    @require_datasets
     def test_trainer_with_datasets(self):
         import datasets
 

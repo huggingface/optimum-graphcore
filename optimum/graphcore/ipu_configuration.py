@@ -12,15 +12,14 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-import os
-from typing import Any, Dict, Optional, Tuple, Union
+import copy
+from typing import Any, Dict, Optional, Union
 
 import torch
 
 import popart
 import popdist
 import poptorch
-import transformers
 from optimum.configuration_utils import BaseConfig
 from optimum.utils import logging
 from poptorch import Options
@@ -29,7 +28,7 @@ from poptorch import Options
 logger = logging.get_logger(__name__)
 
 IPU_CONFIG_NAME = "ipu_config.json"
-ALLOWED_POD_TYPES = {"pod4", "pod16", "pod64", "pod128", "pod256"}
+ALLOWED_POD_TYPES = ["pod4", "pod16", "pod64", "pod128", "pod256"]
 
 
 class IPUConfig(BaseConfig):
@@ -38,7 +37,6 @@ class IPUConfig(BaseConfig):
 
     def __init__(self, **kwargs):
         self.use_popdist = kwargs.pop("use_popdist", False)
-        self.compile_only = kwargs.pop("compile_only", False)
         self.seed = kwargs.pop("seed", None)
 
         self.ipus_per_replica = kwargs.pop("ipus_per_replica", 1)
@@ -54,10 +52,6 @@ class IPUConfig(BaseConfig):
         self.replicated_tensor_sharding = kwargs.pop("replicated_tensor_sharding", False)
 
         self.matmul_proportion = kwargs.pop("matmul_proportion", 0.6)
-        if isinstance(self.matmul_proportion, float):
-            self.matmul_proportion = [self.matmul_proportion]
-        if len(self.matmul_proportion) == 1:
-            self.matmul_proportion = self.matmul_proportion * self.ipus_per_replica
 
         self.enable_half_first_order_momentum = kwargs.pop("enable_half_first_order_momentum", False)
         self.enable_half_partials = kwargs.pop("enable_half_partials", False)
@@ -71,7 +65,7 @@ class IPUConfig(BaseConfig):
         self.recompute_checkpoint_every_layer = kwargs.pop("recompute_checkpoint_every_layer", False)
 
     def _prepare_config_attribute_for_pod_type(
-        self, config_attribute_name: str, config_attribute: Union[Any, Dict[str, Any]], pod_type: str
+        self, config_attribute_name: str, config_attribute: Union[Any, Dict[str, Any]], pod_type: Optional[str]
     ) -> Any:
         """
         Prepares a config attribute by extracting the proper value for this attribute considering the POD type.
@@ -84,17 +78,16 @@ class IPUConfig(BaseConfig):
         Returns:
             The extracted config attribute value.
         """
-        if not isinstance(config_attribute, dict):
+        if not isinstance(config_attribute, dict) or not config_attribute.keys() <= (
+            set(ALLOWED_POD_TYPES) | {"default"}
+        ):
             return config_attribute
 
         if pod_type is None and "default" not in config_attribute:
-            value = min(config_attribute.values())
-            logger.warning(
-                f"No POD type was specified and no default value was provided for {config_attribute_name}, defaulting "
-                f"to {config_attribute_name} = {value} as it was the smallest provided value, might not work as "
-                "expected"
+            raise RuntimeError(
+                f"No POD type was specified and no default value was provided for {config_attribute_name}, cannot infer"
+                " which value to use"
             )
-            return value
         elif pod_type is None:
             return config_attribute["default"]
         elif pod_type not in ALLOWED_POD_TYPES:
@@ -123,8 +116,8 @@ class IPUConfig(BaseConfig):
         config_dict = {k: self._prepare_config_attribute_for_pod_type(k, v, pod_type) for k, v in config_dict.items()}
         return IPUConfig(**config_dict)
 
-    def _to_options(self, for_inference: bool = False) -> poptorch.Options:
-        if not self.compile_only and poptorch.ipuHardwareVersion() != 2:
+    def _to_options(self, for_inference: bool = False, compile_only: bool = False) -> poptorch.Options:
+        if not compile_only and poptorch.ipuHardwareVersion() != 2:
             raise RuntimeError("This requires an IPU Mk2 system to run.")
 
         if self.use_popdist:
@@ -163,10 +156,15 @@ class IPUConfig(BaseConfig):
         opts.setExecutionStrategy(poptorch.PipelinedExecution(poptorch.AutoStage.AutoIncrement))
 
         # Compile offline (no IPUs required)
-        if self.compile_only:
+        if compile_only:
             opts.useOfflineIpuTarget()
 
-        mem_prop = {f"IPU{i}": self.matmul_proportion[i] for i in range(self.ipus_per_replica)}
+        matmul_proportion = copy.deepcopy(self.matmul_proportion)
+        if isinstance(self.matmul_proportion, float):
+            matmul_proportion = [self.matmul_proportion]
+        if len(matmul_proportion) == 1:
+            matmul_proportion = matmul_proportion * self.ipus_per_replica
+        mem_prop = {f"IPU{i}": matmul_proportion[i] for i in range(self.ipus_per_replica)}
         opts.setAvailableMemoryProportion(mem_prop)
 
         # Enable caching the compiled executable to disk
@@ -220,19 +218,22 @@ class IPUConfig(BaseConfig):
 
         return opts
 
-    def to_options(self, for_inference: bool = False, pod_type: Optional[str] = None) -> poptorch.Options:
+    def to_options(
+        self, for_inference: bool = False, compile_only: bool = False, pod_type: Optional[str] = None
+    ) -> poptorch.Options:
         """
         Creates a poptorch.Options from the IPUConfig.
 
         Args:
             for_inference: If True, the resulting poptorch.Options will be adapted inference, it will be adapted for
                 training otherwise.
+            compile_only: If True, compilation will be performed offline, no IPUs required.
             pod_type: The POD type to specialize the poptorch.Options for.
 
         Returns:
             The poptorch.Options instance.
         """
-        return self.for_pod_type(pod_type)._to_options(for_inference=for_inference)
+        return self.for_pod_type(pod_type)._to_options(for_inference=for_inference, compile_only=compile_only)
 
     def batch_size_factor(self, for_inference: bool = False, pod_type: Optional[str] = None) -> int:
         """

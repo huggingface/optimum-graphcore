@@ -17,6 +17,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import poptorch
+from optimum.utils import logging
 from scipy.stats import truncnorm
 from transformers import (
     BertForMultipleChoice,
@@ -27,7 +28,6 @@ from transformers import (
 )
 
 from ...modeling_utils import PipelineMixin, register
-from ...utils import logging
 from .bert_fused_attention import BertFusedSelfAttention
 
 

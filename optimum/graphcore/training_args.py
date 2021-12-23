@@ -248,8 +248,7 @@ class IPUTrainingArguments:
     )
     pod_type: Optional[str] = field(
         default=None,
-        metadata={"help": "The POD type to run the `Trainer` on."},
-        choices=ALLOWED_POD_TYPES,
+        metadata={"help": "The POD type to run the `Trainer` on.", "choices": ALLOWED_POD_TYPES},
     )
     fp32: bool = field(
         default=False,
