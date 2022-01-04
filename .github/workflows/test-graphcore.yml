@@ -38,5 +38,4 @@ jobs:
         export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_18_04-2\.3\.0*
         . ${SDK_PATH}/poplar-ubuntu_18_04-2\.3\.0**/enable.sh
         . ${SDK_PATH}/popart-ubuntu_18_04-*2\.3\.0*/enable.sh
-        # pytest tests/
-        pytest tests/test_ipu_configuration.py
+        pytest tests/
