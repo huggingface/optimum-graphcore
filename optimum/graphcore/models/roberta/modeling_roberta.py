@@ -187,11 +187,10 @@ class PipelinedRobertaForSequenceClassification(RobertaForSequenceClassification
             self.roberta.embeddings.word_embeddings = self.roberta.embeddings.word_embeddings.deserialize()
         return self
 
-    def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
+    def forward(self, input_ids, attention_mask, labels=None):
         return super().forward(
             input_ids=input_ids,
             attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
             labels=labels,
             return_dict=False,
         )
@@ -245,11 +244,10 @@ class PipelinedRobertaForMultipleChoice(RobertaForMultipleChoice, PipelineMixin)
             self.roberta.embeddings.word_embeddings = self.roberta.embeddings.word_embeddings.deserialize()
         return self
 
-    def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
+    def forward(self, input_ids, attention_mask, labels=None):
         return super().forward(
             input_ids=input_ids,
             attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
             labels=labels,
             return_dict=False,
         )
@@ -303,11 +301,10 @@ class PipelinedRobertaForTokenClassification(RobertaForTokenClassification, Pipe
             self.roberta.embeddings.word_embeddings = self.roberta.embeddings.word_embeddings.deserialize()
         return self
 
-    def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
+    def forward(self, input_ids, attention_mask, labels=None):
         return super().forward(
             input_ids=input_ids,
             attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
             labels=labels,
             return_dict=False,
         )
