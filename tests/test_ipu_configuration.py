@@ -91,19 +91,6 @@ class IPUConfigTester(unittest.TestCase):
         with pytest.raises(KeyError):
             ipu_config.for_pod_type(pod_type_to_remove)
 
-    # TODO: test that later, question: how to access poptorch.Options attributes?
-    # def test_to_options(self):
-    #     ipu_config = create_ipu_config()
-    #     pod_type = random.choice(ALLOWED_POD_TYPES)
-    #     options = ipu_config.to_options(pod_type=pod_type)
-
-    # def test_to_options_for_inference(self):
-    #     ipu_config = create_ipu_config()
-    #     pod_type = random.choice(ALLOWED_POD_TYPES)
-    #     options = ipu_config.to_options(for_inference=True, pod_type=pod_type)
-    #     self.assertEqual(options.replicationFactor, ipu_config.inference_replication_factor)
-    #     self.assertEqual(options.deviceIterations, ipu_config.inference_device_iterations)
-
     def _test_batch_size_factor(self, for_inference: bool):
         pod_type = random.choice(ALLOWED_POD_TYPES)
         # Case 1: the IPUConfig is not "specialized" and contains values for many pod types.
