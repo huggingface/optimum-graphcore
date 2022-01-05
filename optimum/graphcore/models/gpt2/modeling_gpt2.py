@@ -98,7 +98,6 @@ class PipelinedGPT2ForSequenceClassification(GPT2ForSequenceClassification, Pipe
         logger.info("Embedding  --> IPU 0")
         self.transformer.wte = poptorch.BeginBlock(self.transformer.wte, "Token embedding", ipu_id=0)
         self.transformer.wpe = poptorch.BeginBlock(self.transformer.wpe, "Position embedding", ipu_id=0)
-        outline_attribute(self.roberta.embeddings.LayerNorm, "embedding")
 
         for index, layer in enumerate(self.transformer.h):
             ipu = layer_ipu[index]

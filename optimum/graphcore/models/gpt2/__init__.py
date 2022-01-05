@@ -16,4 +16,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .modeling_roberta import PipelinedGPT2ForSequenceClassification
+from .modeling_gpt2 import PipelinedGPT2ForSequenceClassification
