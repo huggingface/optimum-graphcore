@@ -16,7 +16,12 @@ import torch
 import torch.nn as nn
 
 import poptorch
-import transformers
+from transformers import (
+    RobertaForMultipleChoice,
+    RobertaForQuestionAnswering,
+    RobertaForSequenceClassification,
+    RobertaForTokenClassification,
+)
 
 from ...modeling_utils import PipelineMixin, register
 from ...utils import logging
@@ -134,8 +139,182 @@ class SerializedEmbedding(nn.Module):
         return x_sum
 
 
-@register(transformers.RobertaForQuestionAnswering)
-class PipelinedRobertaForQuestionAnswering(transformers.RobertaForQuestionAnswering, PipelineMixin):
+@register(RobertaForSequenceClassification)
+class PipelinedRobertaForSequenceClassification(RobertaForSequenceClassification, PipelineMixin):
+    def parallelize(self):
+        """
+        Transform the model to run in an IPU pipeline.
+        - Adds pipeline stages to the model
+        - (If enabled) Replaces the word embedding with a SerializedEmbedding
+        - Adds recomputation checkpoints
+
+        Recommended usage:
+        ```
+        model = PipelinedRobertaForSequenceClassification(config).parallelize().half()
+        ```
+        """
+        layer_ipu = _get_layer_ipu(self.config.layers_per_ipu)
+
+        logger.info("-------------------- Device Allocation --------------------")
+        logger.info("Embedding  --> IPU 0")
+        if self.config.embedding_serialization_factor > 1:
+            self.roberta.embeddings.word_embeddings = SerializedEmbedding(
+                self.roberta.embeddings.word_embeddings, self.config.embedding_serialization_factor
+            )
+        self.roberta.embeddings = poptorch.BeginBlock(self.roberta.embeddings, "Embedding", ipu_id=0)
+        outline_attribute(self.roberta.embeddings.LayerNorm, "embedding")
+
+        for index, layer in enumerate(self.roberta.encoder.layer):
+            ipu = layer_ipu[index]
+            if self.config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
+                recomputation_checkpoint(layer)
+            self.roberta.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
+            logger.info(f"Encoder {index:<2} --> IPU {ipu}")
+
+        logger.info(f"Classifier Output --> IPU {ipu}")
+        self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=ipu)
+        logger.info("-----------------------------------------------------------")
+        return self
+
+    def deparallelize(self):
+        """
+        Undo the changes to the model done by `parallelize`.
+        You should call this before doing `save_pretrained` so that the `model.state_dict` is
+        fully compatible with `transformers.RobertaForSequenceClassification`.
+        """
+        # Deserialize the serialized word embedding
+        if self.config.embedding_serialization_factor > 1:
+            self.roberta.embeddings.word_embeddings = self.roberta.embeddings.word_embeddings.deserialize()
+        return self
+
+    def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
+        return super().forward(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            labels=labels,
+            return_dict=False,
+        )
+
+
+@register(RobertaForMultipleChoice)
+class PipelinedRobertaForMultipleChoice(RobertaForMultipleChoice, PipelineMixin):
+    def parallelize(self):
+        """
+        Transform the model to run in an IPU pipeline.
+        - Adds pipeline stages to the model
+        - (If enabled) Replaces the word embedding with a SerializedEmbedding
+        - Adds recomputation checkpoints
+
+        Recommended usage:
+        ```
+        model = PipelinedRobertaForMultipleChoice(config).parallelize().half()
+        ```
+        """
+        layer_ipu = _get_layer_ipu(self.config.layers_per_ipu)
+
+        logger.info("-------------------- Device Allocation --------------------")
+        logger.info("Embedding  --> IPU 0")
+        if self.config.embedding_serialization_factor > 1:
+            self.roberta.embeddings.word_embeddings = SerializedEmbedding(
+                self.roberta.embeddings.word_embeddings, self.config.embedding_serialization_factor
+            )
+        self.roberta.embeddings = poptorch.BeginBlock(self.roberta.embeddings, "Embedding", ipu_id=0)
+        outline_attribute(self.roberta.embeddings.LayerNorm, "embedding")
+
+        for index, layer in enumerate(self.roberta.encoder.layer):
+            ipu = layer_ipu[index]
+            if self.config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
+                recomputation_checkpoint(layer)
+            self.roberta.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
+            logger.info(f"Encoder {index:<2} --> IPU {ipu}")
+
+        logger.info(f"Classifier Output --> IPU {ipu}")
+        self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=ipu)
+        logger.info("-----------------------------------------------------------")
+        return self
+
+    def deparallelize(self):
+        """
+        Undo the changes to the model done by `parallelize`.
+        You should call this before doing `save_pretrained` so that the `model.state_dict` is
+        fully compatible with `transformers.RobertaForMultipleChoice`.
+        """
+        # Deserialize the serialized word embedding
+        if self.config.embedding_serialization_factor > 1:
+            self.roberta.embeddings.word_embeddings = self.roberta.embeddings.word_embeddings.deserialize()
+        return self
+
+    def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
+        return super().forward(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            labels=labels,
+            return_dict=False,
+        )
+
+
+@register(RobertaForTokenClassification)
+class PipelinedRobertaForTokenClassification(RobertaForTokenClassification, PipelineMixin):
+    def parallelize(self):
+        """
+        Transform the model to run in an IPU pipeline.
+        - Adds pipeline stages to the model
+        - (If enabled) Replaces the word embedding with a SerializedEmbedding
+        - Adds recomputation checkpoints
+
+        Recommended usage:
+        ```
+        model = PipelinedRobertaForTokenClassification(config).parallelize().half()
+        ```
+        """
+        layer_ipu = _get_layer_ipu(self.config.layers_per_ipu)
+
+        logger.info("-------------------- Device Allocation --------------------")
+        logger.info("Embedding  --> IPU 0")
+        if self.config.embedding_serialization_factor > 1:
+            self.roberta.embeddings.word_embeddings = SerializedEmbedding(
+                self.roberta.embeddings.word_embeddings, self.config.embedding_serialization_factor
+            )
+        self.roberta.embeddings = poptorch.BeginBlock(self.roberta.embeddings, "Embedding", ipu_id=0)
+        outline_attribute(self.roberta.embeddings.LayerNorm, "embedding")
+
+        for index, layer in enumerate(self.roberta.encoder.layer):
+            ipu = layer_ipu[index]
+            if self.config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
+                recomputation_checkpoint(layer)
+            self.roberta.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
+            logger.info(f"Encoder {index:<2} --> IPU {ipu}")
+
+        logger.info(f"Classifier Output --> IPU {ipu}")
+        self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=ipu)
+        logger.info("-----------------------------------------------------------")
+        return self
+
+    def deparallelize(self):
+        """
+        Undo the changes to the model done by `parallelize`.
+        You should call this before doing `save_pretrained` so that the `model.state_dict` is
+        fully compatible with `transformers.RobertaForTokenClassification`.
+        """
+        # Deserialize the serialized word embedding
+        if self.config.embedding_serialization_factor > 1:
+            self.roberta.embeddings.word_embeddings = self.roberta.embeddings.word_embeddings.deserialize()
+        return self
+
+    def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
+        return super().forward(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            labels=labels,
+            return_dict=False,
+        )
+
+
+@register(RobertaForQuestionAnswering)
+class PipelinedRobertaForQuestionAnswering(RobertaForQuestionAnswering, PipelineMixin):
     def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.
