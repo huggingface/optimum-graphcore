@@ -387,7 +387,7 @@ class PipelinedBertForSequenceClassification(BertForSequenceClassification, Pipe
             logger.info(f"Encoder {index:<2} --> IPU {ipu}")
 
         logger.info(f"Classifier Output --> IPU {ipu}")
-        self.qa_outputs = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=ipu)
+        self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=ipu)
         logger.info("-----------------------------------------------------------")
         return self
 
@@ -452,7 +452,7 @@ class PipelinedBertForMultipleChoice(BertForMultipleChoice, PipelineMixin):
             logger.info(f"Encoder {index:<2} --> IPU {ipu}")
 
         logger.info(f"Classifier Output --> IPU {ipu}")
-        self.qa_outputs = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=ipu)
+        self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=ipu)
         logger.info("-----------------------------------------------------------")
         return self
 
@@ -517,7 +517,7 @@ class PipelinedBertForTokenClassification(BertForTokenClassification, PipelineMi
             logger.info(f"Encoder {index:<2} --> IPU {ipu}")
 
         logger.info(f"Classifier Output --> IPU {ipu}")
-        self.qa_outputs = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=ipu)
+        self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=ipu)
         logger.info("-----------------------------------------------------------")
         return self
 
