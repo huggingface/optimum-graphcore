@@ -116,11 +116,11 @@ class IPUConfigTester(unittest.TestCase):
         print(options_dict)
         self.assertEqual(ipu_config_dict, options_dict)
 
-        def test_to_options(self):
-            return self._test_to_options(False)
+    def test_to_options(self):
+        return self._test_to_options(False)
 
-        def test_to_options_for_inference(self):
-            return self._test_to_options(True)
+    def test_to_options_for_inference(self):
+        return self._test_to_options(True)
 
     def _test_batch_size_factor(self, for_inference: bool):
         pod_type = random.choice(ALLOWED_POD_TYPES)
