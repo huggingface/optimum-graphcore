@@ -37,7 +37,6 @@ from torchvision.transforms import (
 import transformers
 from optimum.graphcore import IPUTrainer, IPUConfig
 from optimum.graphcore import IPUTrainingArguments as TrainingArguments
-from optimum.graphcore.data import pad_on_batch_axis
 from transformers import (
     MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING,
     AutoConfig,
