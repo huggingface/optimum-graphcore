@@ -91,6 +91,37 @@ class IPUConfigTester(unittest.TestCase):
         with pytest.raises(KeyError):
             ipu_config.for_pod_type(pod_type_to_remove)
 
+    def _test_to_options(self, for_inference: bool):
+        pod_type = random.choice(ALLOWED_POD_TYPES)
+        # Case 1: the IPUConfig is not "specialized" and contains values for many pod types.
+        ipu_config = create_ipu_config()
+        options = ipu_config.to_options(for_inference=for_inference, pod_type=pod_type)
+        ipu_config_dict = ipu_config.to_dict()
+        if for_inference:
+            ipu_config_dict["replication_factor"] = ipu_config_dict["inference_replication_factor"]
+            ipu_config_dict["device_iterations"] = ipu_config_dict["device_iterations"]
+            ipu_config_dict["gradient_accumulation_steps"] = 1
+        options_dict = {k: v for k, v in options.to_dict().items() if k in ipu_config_dict}
+        print(options_dict)
+        self.assertEqual(ipu_config_dict, options_dict)
+        # Case 2: the IPUConfig is specialized, no pod type needs to be specified to create the poptorch.Options.
+        ipu_config = create_ipu_config().for_pod_type(pod_type)
+        options = ipu_config.to_options(for_inference=for_inference)
+        ipu_config_dict = ipu_config.to_dict()
+        if for_inference:
+            ipu_config_dict["replication_factor"] = ipu_config_dict["inference_replication_factor"]
+            ipu_config_dict["device_iterations"] = ipu_config_dict["device_iterations"]
+            ipu_config_dict["gradient_accumulation_steps"] = 1
+        options_dict = {k: v for k, v in options.to_dict().items() if k in ipu_config_dict}
+        print(options_dict)
+        self.assertEqual(ipu_config_dict, options_dict)
+
+        def test_to_options(self):
+            return self._test_to_options(False)
+
+        def test_to_options_for_inference(self):
+            return self._test_to_options(True)
+
     def _test_batch_size_factor(self, for_inference: bool):
         pod_type = random.choice(ALLOWED_POD_TYPES)
         # Case 1: the IPUConfig is not "specialized" and contains values for many pod types.
