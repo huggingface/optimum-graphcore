@@ -20,6 +20,32 @@ The following examples showcase how to fine-tune a `ViT` for image-classificatio
 
 ## Using datasets from 🤗 `datasets`
 
+Here we show how to fine-tune a `ViT` on the [cifar10](https://huggingface.co/datasets/cifar10) dataset.
+
+```
+python examples/image-classification/run_image_classification.py \
+    --dataset_name cifar10 \
+    --output_dir ./cifar10_outputs/ \
+    --ipu_config_name Graphcore/vit-base-ipu \
+    --remove_unused_columns False \
+    --do_train \
+    --do_eval \
+    --learning_rate 2e-3 \
+    --lr_scheduler_type cosine \
+    --weight_decay 0.0 \
+    --warmup_ratio 0.25 \
+    --num_train_epochs 50 \
+    --per_device_train_batch_size 15 \
+    --per_device_eval_batch_size 15 \
+    --logging_strategy steps \
+    --logging_steps 10 \
+    --save_total_limit 3 \
+    --dataloader_num_workers 128 \
+    --dataloader_mode async_rebatched \
+    --dataloader_drop_last \
+    --seed 1337
+```
+
 Here we show how to fine-tune a `ViT` on the [beans](https://huggingface.co/datasets/beans) dataset.
 
 👀 See the results here: [nateraw/vit-base-beans](https://huggingface.co/nateraw/vit-base-beans).
@@ -28,15 +54,14 @@ Here we show how to fine-tune a `ViT` on the [beans](https://huggingface.co/data
 python run_image_classification.py \
     --dataset_name beans \
     --output_dir ./beans_outputs/ \
+    --ipu_config_name Graphcore/vit-base-ipu \
     --remove_unused_columns False \
     --do_train \
     --do_eval \
-    --push_to_hub \
-    --push_to_hub_model_id vit-base-beans \
     --learning_rate 2e-5 \
     --num_train_epochs 5 \
-    --per_device_train_batch_size 8 \
-    --per_device_eval_batch_size 8 \
+    --per_device_train_batch_size 15 \
+    --per_device_eval_batch_size 15 \
     --logging_strategy steps \
     --logging_steps 10 \
     --evaluation_strategy epoch \
@@ -54,6 +79,7 @@ Here we show how to fine-tune a `ViT` on the [cats_vs_dogs](https://huggingface.
 python run_image_classification.py \
     --dataset_name cats_vs_dogs \
     --output_dir ./cats_vs_dogs_outputs/ \
+    --ipu_config_name Graphcore/vit-base-ipu \
     --remove_unused_columns False \
     --do_train \
     --do_eval \
@@ -62,8 +88,8 @@ python run_image_classification.py \
     --fp16 True \
     --learning_rate 2e-4 \
     --num_train_epochs 5 \
-    --per_device_train_batch_size 32 \
-    --per_device_eval_batch_size 32 \
+    --per_device_train_batch_size 15 \
+    --per_device_eval_batch_size 15 \
     --logging_strategy steps \
     --logging_steps 10 \
     --evaluation_strategy epoch \
@@ -92,6 +118,7 @@ Once you've prepared your dataset, you can can run the script like this:
 ```bash
 python run_image_classification.py \
     --dataset_name nateraw/image-folder \
+    --ipu_config_name Graphcore/vit-base-ipu \
     --train_dir <path-to-train-root> \
     --output_dir ./outputs/ \
     --remove_unused_columns False \
