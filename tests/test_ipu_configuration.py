@@ -12,6 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
 import random
 import string
 import unittest
@@ -92,17 +93,67 @@ class IPUConfigTester(unittest.TestCase):
             ipu_config.for_pod_type(pod_type_to_remove)
 
     def _test_to_options(self, for_inference: bool):
+        def make_poptorch_options_comparable_to_ipu_config(options_dict):
+            options_dict = copy.deepcopy(options_dict)
+            mapping = {
+                "gradient_accumulation": "gradient_accumulation_steps",
+                # Seed?
+                "location_optimizer.onChip": lambda d: (
+                    "optimizer_state_offchip",
+                    not d["location_optimizer"]["onChip"],
+                ),
+                "location_optimizer.useReplicatedTensorSharding": lambda d: (
+                    "replicated_tensor_sharding",
+                    bool(d["location_optimizer"]["useReplicatedTensorSharding"]),
+                ),
+                # This works for matmul_proportion because the randomly generated IPUConfig will set matmul_proportion
+                # to some float value, meaning that this value will be replicated for all the IPUs, so there is only
+                # one value in d["available_memory_proportion"].values(), which should be equal to
+                # ipu_config.matmul_proportion
+                "available_memory_proportion": lambda d: (
+                    "matmul_proportion",
+                    set(d["available_memory_proportion"].values()).pop(),
+                ),
+                "cachePath": "executable_cache_dir",
+            }
+            for k, v in mapping.items():
+                try:
+                    if isinstance(v, str):
+                        value = options_dict
+                        keys = k.split(".")
+                        for key in keys:
+                            value = value[key]
+                        options_dict[v] = value
+                    else:
+                        key_name, value = v(options_dict)
+                        options_dict[key_name] = value
+                except KeyError:
+                    continue
+
+            return options_dict
+
+        def intersection_of_dicts(d1, d2):
+            d1 = copy.deepcopy(d1)
+            d2 = copy.deepcopy(d2)
+            d1 = {k: v for k, v in d1.items() if k in d2}
+            d2 = {k: v for k, v in d2.items() if k in d1}
+            return d1, d2
+
         pod_type = random.choice(ALLOWED_POD_TYPES)
         # Case 1: the IPUConfig is not "specialized" and contains values for many pod types.
         ipu_config = create_ipu_config()
         options = ipu_config.to_options(for_inference=for_inference, pod_type=pod_type)
-        ipu_config_dict = ipu_config.to_dict()
+        ipu_config_dict = ipu_config.for_pod_type(pod_type).to_dict()
         if for_inference:
             ipu_config_dict["replication_factor"] = ipu_config_dict["inference_replication_factor"]
             ipu_config_dict["device_iterations"] = ipu_config_dict["device_iterations"]
             ipu_config_dict["gradient_accumulation_steps"] = 1
-        options_dict = {k: v for k, v in options.to_dict().items() if k in ipu_config_dict}
-        print(options_dict)
+        ipu_config_dict, options_dict = intersection_of_dicts(
+            ipu_config_dict, make_poptorch_options_comparable_to_ipu_config(options.toDict())
+        )
+        import pdb
+
+        pdb.set_trace()
         self.assertEqual(ipu_config_dict, options_dict)
         # Case 2: the IPUConfig is specialized, no pod type needs to be specified to create the poptorch.Options.
         ipu_config = create_ipu_config().for_pod_type(pod_type)
@@ -112,8 +163,12 @@ class IPUConfigTester(unittest.TestCase):
             ipu_config_dict["replication_factor"] = ipu_config_dict["inference_replication_factor"]
             ipu_config_dict["device_iterations"] = ipu_config_dict["device_iterations"]
             ipu_config_dict["gradient_accumulation_steps"] = 1
-        options_dict = {k: v for k, v in options.to_dict().items() if k in ipu_config_dict}
-        print(options_dict)
+        ipu_config_dict, options_dict = intersection_of_dicts(
+            ipu_config_dict, make_poptorch_options_comparable_to_ipu_config(options.toDict())
+        )
+        import pdb
+
+        pdb.set_trace()
         self.assertEqual(ipu_config_dict, options_dict)
 
     def test_to_options(self):

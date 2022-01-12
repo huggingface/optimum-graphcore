@@ -120,11 +120,13 @@ class IPUConfig(BaseConfig):
         if not compile_only and poptorch.ipuHardwareVersion() != 2:
             raise RuntimeError("This requires an IPU Mk2 system to run.")
 
-        if self.use_popdist:
-            opts = popdist.poptorch.Options(ipus_per_replica=self.ipus_per_replica)
-        else:
-            opts = Options()
-            opts.replicationFactor(self.inference_replication_factor if for_inference else self.replication_factor)
+        # TODO: fix that with popdist.
+        # if self.use_popdist:
+        #     opts = popdist.poptorch.Options(ipus_per_replica=self.ipus_per_replica)
+        # else:
+
+        opts = Options()
+        opts.replicationFactor(self.inference_replication_factor if for_inference else self.replication_factor)
 
         opts.autoRoundNumIPUs(True)
         opts.deviceIterations(self.inference_device_iterations if for_inference else self.device_iterations)

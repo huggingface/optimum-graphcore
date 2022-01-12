@@ -16,13 +16,14 @@ import torch
 import torch.nn as nn
 
 import poptorch
+from optimum.utils import logging
 from transformers import (
     RobertaForMultipleChoice,
     RobertaForQuestionAnswering,
     RobertaForSequenceClassification,
     RobertaForTokenClassification,
 )
-from optimum.utils import logging
+
 from ...modeling_utils import PipelineMixin, register
 
 
