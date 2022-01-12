@@ -163,7 +163,6 @@ class ApplyTransforms:
         self.transforms = transforms
 
     def __call__(self, example_batch):
-        # example_batch["pixel_values"] = [self.transforms(pil_loader(f)) for f in example_batch["image_file_path"]]
         example_batch["pixel_values"] = [self.transforms(img) for img in example_batch["image"]]
         return example_batch
 
