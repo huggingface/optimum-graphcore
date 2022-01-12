@@ -102,6 +102,12 @@ class DataTrainingArguments:
             "value if set."
         },
     )
+    image_field_name: Optional[str] = field(
+        default="image", metadata={"help": "The name of the column in the dataset containing the image data"}
+    )
+    label_field_name: Optional[str] = field(
+        default="labels", metadata={"help": "The name of the column in the dataset containing the image labels"}
+    )
 
     def __post_init__(self):
         data_files = dict()
@@ -163,7 +169,6 @@ class ApplyTransforms:
         self.transforms = transforms
 
     def __call__(self, example_batch):
-        # example_batch["pixel_values"] = [self.transforms(pil_loader(f)) for f in example_batch["image_file_path"]]
         example_batch["pixel_values"] = [self.transforms(img) for img in example_batch["image"]]
         return example_batch
 
@@ -224,6 +229,15 @@ def main():
         cache_dir=model_args.cache_dir,
         task="image-classification",
     )
+
+    # Rename the image and label columns
+    if data_args.image_field_name != "image":
+        ds["train"] = ds["train"].rename_column(data_args.image_field_name, "image")
+        ds["validation"] = ds["validation"].rename_column(data_args.image_field_name, "image")
+
+    if data_args.label_field_name != "labels":
+        ds["train"] = ds["train"].rename_column(data_args.label_field_name, "labels")
+        ds["validation"] = ds["validation"].rename_column(data_args.label_field_name, "labels")
 
     # If we don't have a validation split, split off a percentage of train as validation.
     data_args.train_val_split = None if "validation" in ds.keys() else data_args.train_val_split
