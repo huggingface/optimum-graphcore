@@ -35,7 +35,7 @@ from torchvision.transforms import (
 )
 
 import transformers
-from optimum.graphcore import IPUTrainer, IPUConfig
+from optimum.graphcore import IPUConfig, IPUTrainer
 from optimum.graphcore import IPUTrainingArguments as TrainingArguments
 from transformers import (
     MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING,
