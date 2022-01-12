@@ -146,14 +146,11 @@ class IPUConfigTester(unittest.TestCase):
         ipu_config_dict = ipu_config.for_pod_type(pod_type).to_dict()
         if for_inference:
             ipu_config_dict["replication_factor"] = ipu_config_dict["inference_replication_factor"]
-            ipu_config_dict["device_iterations"] = ipu_config_dict["device_iterations"]
+            ipu_config_dict["device_iterations"] = ipu_config_dict["inference_device_iterations"]
             ipu_config_dict["gradient_accumulation_steps"] = 1
         ipu_config_dict, options_dict = intersection_of_dicts(
             ipu_config_dict, make_poptorch_options_comparable_to_ipu_config(options.toDict())
         )
-        import pdb
-
-        pdb.set_trace()
         self.assertEqual(ipu_config_dict, options_dict)
         # Case 2: the IPUConfig is specialized, no pod type needs to be specified to create the poptorch.Options.
         ipu_config = create_ipu_config().for_pod_type(pod_type)
@@ -161,14 +158,11 @@ class IPUConfigTester(unittest.TestCase):
         ipu_config_dict = ipu_config.to_dict()
         if for_inference:
             ipu_config_dict["replication_factor"] = ipu_config_dict["inference_replication_factor"]
-            ipu_config_dict["device_iterations"] = ipu_config_dict["device_iterations"]
+            ipu_config_dict["device_iterations"] = ipu_config_dict["inference_device_iterations"]
             ipu_config_dict["gradient_accumulation_steps"] = 1
         ipu_config_dict, options_dict = intersection_of_dicts(
             ipu_config_dict, make_poptorch_options_comparable_to_ipu_config(options.toDict())
         )
-        import pdb
-
-        pdb.set_trace()
         self.assertEqual(ipu_config_dict, options_dict)
 
     def test_to_options(self):
