@@ -82,7 +82,7 @@ class IPUTrainingArguments:
     per_device_eval_batch_size: int = field(default=8, metadata={"help": "Batch size per IPU for evaluation."})
 
     gradient_accumulation_steps: int = field(
-        default=1,
+        default=None,
         metadata={"help": "Number of updates steps to accumulate before performing a backward/update pass."},
     )
     eval_accumulation_steps: Optional[int] = field(
@@ -423,6 +423,15 @@ class IPUTrainingArguments:
         # IPU specific
         dataloader_mode_mapping = {"sync": 0, "async": 1, "async_rebatched": 2}
         self.dataloader_mode = DataLoaderMode(dataloader_mode_mapping[self.dataloader_mode])
+
+        if self.gradient_accumulation_steps is not None:
+            override_str = f"gradient_accumulation_steps={self.gradient_accumulation_steps}"
+            if self.ipu_config_overrides is None:
+                self.ipu_config_overrides = override_str
+            else:
+                self.ipu_config_overrides = ",".join([self.ipu_config_overrides, override_str])
+        else:
+            self.gradient_accumulation_steps = 1
 
     @cached_property
     @torch_required

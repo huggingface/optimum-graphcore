@@ -378,10 +378,6 @@ def main():
     else:
         raise RuntimeError("You must provide an IPUConfig")
 
-    if training_args.ipu_config_overrides is not None:
-        logger.info(f"Overriding IPU config: {training_args.ipu_config_overrides}")
-        ipu_config.update_from_string(training_args.ipu_config_overrides)
-
     tokenizer_kwargs = {
         "cache_dir": model_args.cache_dir,
         "use_fast": model_args.use_fast_tokenizer,
