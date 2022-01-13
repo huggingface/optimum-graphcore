@@ -26,6 +26,7 @@ Here we show how to fine-tune a `ViT` on the [cifar10](https://huggingface.co/da
 python examples/image-classification/run_image_classification.py \
     --dataset_name cifar10 \
     --output_dir ./cifar10_outputs/ \
+    --model_name_or_path google/vit-base-patch16-224-in21k \
     --ipu_config_name Graphcore/vit-base-ipu \
     --remove_unused_columns False \
     --do_train \
@@ -51,23 +52,24 @@ Here we show how to fine-tune a `ViT` on the [beans](https://huggingface.co/data
 👀 See the results here: [nateraw/vit-base-beans](https://huggingface.co/nateraw/vit-base-beans).
 
 ```bash
-python run_image_classification.py \
+python examples/image-classification/run_image_classification.py \
     --dataset_name beans \
     --output_dir ./beans_outputs/ \
+    --model_name_or_path google/vit-base-patch16-224-in21k \
     --ipu_config_name Graphcore/vit-base-ipu \
     --remove_unused_columns False \
     --do_train \
     --do_eval \
-    --learning_rate 2e-5 \
-    --num_train_epochs 5 \
-    --per_device_train_batch_size 15 \
-    --per_device_eval_batch_size 15 \
+    --learning_rate 3e-4 \
+    --num_train_epochs 10 \
+    --per_device_train_batch_size 1 \
+    --per_device_eval_batch_size 1 \
+    --gradient_accumulation_steps 16 \
     --logging_strategy steps \
     --logging_steps 10 \
-    --evaluation_strategy epoch \
-    --save_strategy epoch \
-    --load_best_model_at_end True \
     --save_total_limit 3 \
+    --dataloader_num_workers 8 \
+    --dataloader_drop_last \
     --seed 1337
 ```
 
@@ -79,6 +81,7 @@ Here we show how to fine-tune a `ViT` on the [cats_vs_dogs](https://huggingface.
 python run_image_classification.py \
     --dataset_name cats_vs_dogs \
     --output_dir ./cats_vs_dogs_outputs/ \
+    --model_name_or_path google/vit-base-patch16-224-in21k \
     --ipu_config_name Graphcore/vit-base-ipu \
     --remove_unused_columns False \
     --do_train \
