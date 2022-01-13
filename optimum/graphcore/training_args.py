@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional
 
 import torch
 
+from optimum.utils import logging
 from poptorch import DataLoaderMode
 from transformers.debug_utils import DebugOption
 from transformers.file_utils import (
@@ -38,7 +39,7 @@ from transformers.file_utils import (
 from transformers.trainer_utils import EvaluationStrategy, HubStrategy, IntervalStrategy, SchedulerType
 from transformers.training_args import default_logdir
 
-from .utils import logging
+from .ipu_configuration import ALLOWED_POD_TYPES
 
 
 logger = logging.get_logger(__name__)
@@ -81,7 +82,7 @@ class IPUTrainingArguments:
     per_device_eval_batch_size: int = field(default=8, metadata={"help": "Batch size per IPU for evaluation."})
 
     gradient_accumulation_steps: int = field(
-        default=1,
+        default=None,
         metadata={"help": "Number of updates steps to accumulate before performing a backward/update pass."},
     )
     eval_accumulation_steps: Optional[int] = field(
@@ -243,7 +244,11 @@ class IPUTrainingArguments:
     push_to_hub_token: str = field(default=None, metadata={"help": "The token to use to push to the Model Hub."})
     # IPU Specific arguments
     ipu_config_name: Optional[str] = field(
-        default=None, metadata={"help": "Pretrained IPU config name or path if not the same as model_name"}
+        default=None, metadata={"help": "Pretrained IPU config name or path if not the same as model_name."}
+    )
+    pod_type: Optional[str] = field(
+        default=None,
+        metadata={"help": "The POD type to run the `Trainer` on.", "choices": ALLOWED_POD_TYPES},
     )
     fp32: bool = field(
         default=False,
@@ -418,6 +423,15 @@ class IPUTrainingArguments:
         # IPU specific
         dataloader_mode_mapping = {"sync": 0, "async": 1, "async_rebatched": 2}
         self.dataloader_mode = DataLoaderMode(dataloader_mode_mapping[self.dataloader_mode])
+
+        if self.gradient_accumulation_steps is not None:
+            override_str = f"gradient_accumulation_steps={self.gradient_accumulation_steps}"
+            if self.ipu_config_overrides is None:
+                self.ipu_config_overrides = override_str
+            else:
+                self.ipu_config_overrides = ",".join([self.ipu_config_overrides, override_str])
+        else:
+            self.gradient_accumulation_steps = 1
 
     @cached_property
     @torch_required

@@ -16,10 +16,10 @@ import copy
 
 from torch import nn
 
+from optimum.utils import logging
 from transformers import PreTrainedModel
 
 from .ipu_configuration import IPUConfig
-from .utils import logging
 
 
 logger = logging.get_logger(__name__)

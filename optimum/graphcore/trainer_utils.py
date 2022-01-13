@@ -17,7 +17,7 @@ import functools
 import numpy as np
 import torch
 
-from .utils import logging
+from optimum.utils import logging
 
 
 logger = logging.get_logger(__name__)

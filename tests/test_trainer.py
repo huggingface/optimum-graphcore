@@ -29,7 +29,7 @@ import numpy as np
 
 from huggingface_hub import Repository, delete_repo, login
 from optimum.graphcore import IPUConfig, IPUTrainingArguments
-from optimum.graphcore.utils import logging
+from optimum.utils import logging
 from requests.exceptions import HTTPError
 from transformers import AutoTokenizer, IntervalStrategy, PretrainedConfig, is_torch_available
 from transformers.file_utils import WEIGHTS_NAME

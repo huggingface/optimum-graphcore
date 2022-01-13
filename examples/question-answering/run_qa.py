@@ -301,10 +301,6 @@ def main():
         use_auth_token=True if model_args.use_auth_token else None,
     )
 
-    if training_args.ipu_config_overrides is not None:
-        logger.info(f"Overriding IPU config: {training_args.ipu_config_overrides}")
-        ipu_config.update_from_string(training_args.ipu_config_overrides)
-
     tokenizer = AutoTokenizer.from_pretrained(
         model_args.tokenizer_name if model_args.tokenizer_name else model_args.model_name_or_path,
         cache_dir=model_args.cache_dir,
