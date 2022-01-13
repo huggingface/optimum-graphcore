@@ -17,9 +17,9 @@ import torch.nn as nn
 
 import poptorch
 import transformers
+from optimum.utils import logging
 
 from ...modeling_utils import PipelineMixin, register
-from ...utils import logging
 
 
 logger = logging.get_logger(__name__)
