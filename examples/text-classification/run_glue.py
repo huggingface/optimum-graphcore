@@ -359,10 +359,9 @@ def main():
         use_auth_token=True if model_args.use_auth_token else None,
     )
 
-    # Customize tokenization for GPT2. We will use the last token for classification, so we pad to the
-    # left instead of the right. We reuse the EOS token as the PAD token.
+    # Customize tokenization for GPT2. We reuse the EOS token as the PAD token.
     if config.model_type == "gpt2":
-        tokenizer.padding_side = "left"
+        # tokenizer.padding_side = "left"
         tokenizer.pad_token = tokenizer.eos_token
         # model.resize_token_embeddings(len(tokenizer))
         model.config.pad_token_id = model.config.eos_token_id

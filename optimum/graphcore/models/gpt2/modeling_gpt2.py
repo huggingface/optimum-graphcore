@@ -82,8 +82,6 @@ class PipelinedGPT2ForSequenceClassification(GPT2ForSequenceClassification, Pipe
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model
-        - Replaces self-attention layers with fused-qkv self-attention layers
-        - (If enabled) Replaces the word embedding with a SerializedEmbedding
         - Adds recomputation checkpoints
 
         Recommended usage:
