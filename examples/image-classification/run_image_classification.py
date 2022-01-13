@@ -193,11 +193,6 @@ def main():
     transformers.utils.logging.enable_default_handler()
     transformers.utils.logging.enable_explicit_format()
 
-    # # Log on each process the small summary:
-    # logger.warning(
-    #     f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
-    #     + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
-    # )
     logger.info(f"Training/evaluation parameters {training_args}")
 
     # Detecting last checkpoint.
@@ -265,10 +260,6 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
-
-    if training_args.ipu_config_overrides is not None:
-        logger.info(f"Overriding IPU config: {training_args.ipu_config_overrides}")
-        ipu_config.update_from_string(training_args.ipu_config_overrides)
 
     model = AutoModelForImageClassification.from_pretrained(
         model_args.model_name_or_path,
