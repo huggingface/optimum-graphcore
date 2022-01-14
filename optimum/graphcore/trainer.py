@@ -222,8 +222,8 @@ class IPUTrainer:
             logger.info(f"Overriding IPU config: {args.ipu_config_overrides}")
             self.ipu_config.update_from_string(args.ipu_config_overrides)
         self.ipu_config.seed = self.args.seed
-        self.opts = ipu_config.to_options()
-        self.eval_opts = ipu_config.to_options(for_inference=True)
+        self.opts = self.ipu_config.to_options()
+        self.eval_opts = self.ipu_config.to_options(for_inference=True)
 
         self.original_model = to_pipelined(model, ipu_config, force=force_to_pipelined)
         self.model = copy.deepcopy(self.original_model).parallelize()
