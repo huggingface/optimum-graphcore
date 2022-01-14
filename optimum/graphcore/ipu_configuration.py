@@ -40,8 +40,7 @@ class IPUConfig(BaseConfig):
         self.seed = kwargs.pop("seed", None)
 
         self.ipus_per_replica = kwargs.pop("ipus_per_replica", 1)
-        # TODO: invalid value for layers_per_ipu which must be a list.
-        self.layers_per_ipu = kwargs.pop("layers_per_ipu", 1)
+        self.layers_per_ipu = kwargs.pop("layers_per_ipu", [1])
 
         self.replication_factor = kwargs.pop("replication_factor", 1)
         self.inference_replication_factor = kwargs.pop("inference_replication_factor", 1)
@@ -137,9 +136,7 @@ class IPUConfig(BaseConfig):
             opts.Training.accumulationAndReplicationReductionType(poptorch.ReductionType.Mean)
 
         # Return all results from IPU to host
-        # TODO: use this when sdk 2.4 is out.
-        # opts.outputMode(poptorch.OutputMode.All)
-        opts.anchorMode(poptorch.AnchorMode.All)
+        opts.outputMode(poptorch.OutputMode.All)
 
         if self.seed:
             opts.randomSeed(self.seed)

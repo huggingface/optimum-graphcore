@@ -796,93 +796,95 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
 
     # TODO: handle this as it gets complex with IPUs.
     # @require_torch_up_to_2_gpus
-    # def test_can_resume_training(self):
-    #     # This test will fail for more than 2 GPUs since the batch size will get bigger and with the number of
-    #     # save_steps, the checkpoint will resume training at epoch 2 or more (so the data seen by the model
-    #     # won't be the same since the training dataloader is shuffled).
+    def test_can_resume_training(self):
+        # This test will fail for more than 2 GPUs since the batch size will get bigger and with the number of
+        # save_steps, the checkpoint will resume training at epoch 2 or more (so the data seen by the model
+        # won't be the same since the training dataloader is shuffled).
 
-    #     with tempfile.TemporaryDirectory() as tmpdir:
-    #         # Make sure there are enough samples to end up with at least a checkpoint-15
-    #         kwargs = dict(output_dir=tmpdir, train_len=TRAIN_LEN * 4, save_steps=5, learning_rate=0.1)
-    #         trainer = get_regression_trainer(**kwargs)
-    #         trainer.train()
-    #         (a, b) = trainer.model.a.item(), trainer.model.b.item()
-    #         state = dataclasses.asdict(trainer.state)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Make sure there are enough samples to end up with at least a checkpoint-15
+            kwargs = dict(output_dir=tmpdir, train_len=TRAIN_LEN * 4, save_steps=5, learning_rate=0.1)
+            trainer = get_regression_trainer(**kwargs)
+            trainer.train()
+            (a, b) = trainer.model.a.item(), trainer.model.b.item()
+            state = dataclasses.asdict(trainer.state)
 
-    #         checkpoint = os.path.join(tmpdir, "checkpoint-5")
+            checkpoint = os.path.join(tmpdir, "checkpoint-5")
 
-    #         # Reinitialize trainer
-    #         trainer = get_regression_trainer(**kwargs)
+            # Reinitialize trainer
+            trainer = get_regression_trainer(**kwargs)
 
-    #         trainer.train(resume_from_checkpoint=checkpoint)
-    #         (a1, b1) = trainer.model.a.item(), trainer.model.b.item()
-    #         state1 = dataclasses.asdict(trainer.state)
-    #         self.assertEqual(a, a1)
-    #         self.assertEqual(b, b1)
-    #         self.check_trainer_state_are_the_same(state, state1)
+            trainer.train(resume_from_checkpoint=checkpoint)
+            (a1, b1) = trainer.model.a.item(), trainer.model.b.item()
+            state1 = dataclasses.asdict(trainer.state)
+            self.assertEqual(a, a1)
+            self.assertEqual(b, b1)
+            self.check_trainer_state_are_the_same(state, state1)
 
-    #         # Now check with a later checkpoint that it also works when we span over one epoch
-    #         checkpoint = os.path.join(tmpdir, "checkpoint-15")
+            # Now check with a later checkpoint that it also works when we span over one epoch
+            checkpoint = os.path.join(tmpdir, "checkpoint-15")
 
-    #         # Reinitialize trainer and load model
-    #         trainer = get_regression_trainer(**kwargs)
+            # Reinitialize trainer and load model
+            trainer = get_regression_trainer(**kwargs)
 
-    #         trainer.train(resume_from_checkpoint=checkpoint)
-    #         (a1, b1) = trainer.model.a.item(), trainer.model.b.item()
-    #         state1 = dataclasses.asdict(trainer.state)
-    #         self.assertEqual(a, a1)
-    #         self.assertEqual(b, b1)
-    #         self.check_trainer_state_are_the_same(state, state1)
+            trainer.train(resume_from_checkpoint=checkpoint)
+            (a1, b1) = trainer.model.a.item(), trainer.model.b.item()
+            state1 = dataclasses.asdict(trainer.state)
+            self.assertEqual(a, a1)
+            self.assertEqual(b, b1)
+            self.check_trainer_state_are_the_same(state, state1)
 
-    #     # With a regular model that is not a PreTrainedModel
-    #     with tempfile.TemporaryDirectory() as tmpdir:
-    #         # Make sure there are enough samples to end up with at least a checkpoint-15
-    #         kwargs = dict(output_dir=tmpdir, train_len=TRAIN_LEN * 2, save_steps=5, learning_rate=0.1, pretrained=False)
+        # With a regular model that is not a PreTrainedModel
+        with tempfile.TemporaryDirectory() as tmpdir:
+            # Make sure there are enough samples to end up with at least a checkpoint-15
+            kwargs = dict(
+                output_dir=tmpdir, train_len=TRAIN_LEN * 2, save_steps=5, learning_rate=0.1, pretrained=False
+            )
 
-    #         trainer = get_regression_trainer(**kwargs)
-    #         trainer.train()
-    #         (a, b) = trainer.model.a.item(), trainer.model.b.item()
-    #         state = dataclasses.asdict(trainer.state)
+            trainer = get_regression_trainer(**kwargs)
+            trainer.train()
+            (a, b) = trainer.model.a.item(), trainer.model.b.item()
+            state = dataclasses.asdict(trainer.state)
 
-    #         checkpoint = os.path.join(tmpdir, "checkpoint-5")
+            checkpoint = os.path.join(tmpdir, "checkpoint-5")
 
-    #         # Reinitialize trainer and load model
-    #         trainer = get_regression_trainer(**kwargs)
+            # Reinitialize trainer and load model
+            trainer = get_regression_trainer(**kwargs)
 
-    #         trainer.train(resume_from_checkpoint=checkpoint)
-    #         (a1, b1) = trainer.model.a.item(), trainer.model.b.item()
-    #         state1 = dataclasses.asdict(trainer.state)
-    #         self.assertEqual(a, a1)
-    #         self.assertEqual(b, b1)
-    #         self.check_trainer_state_are_the_same(state, state1)
+            trainer.train(resume_from_checkpoint=checkpoint)
+            (a1, b1) = trainer.model.a.item(), trainer.model.b.item()
+            state1 = dataclasses.asdict(trainer.state)
+            self.assertEqual(a, a1)
+            self.assertEqual(b, b1)
+            self.check_trainer_state_are_the_same(state, state1)
 
-    #         # Now check with a later checkpoint that it also works when we span over one epoch
-    #         checkpoint = os.path.join(tmpdir, "checkpoint-15")
+            # Now check with a later checkpoint that it also works when we span over one epoch
+            checkpoint = os.path.join(tmpdir, "checkpoint-15")
 
-    #         # Reinitialize trainer and load model
-    #         trainer = get_regression_trainer(**kwargs)
+            # Reinitialize trainer and load model
+            trainer = get_regression_trainer(**kwargs)
 
-    #         trainer.train(resume_from_checkpoint=checkpoint)
-    #         (a1, b1) = trainer.model.a.item(), trainer.model.b.item()
-    #         state1 = dataclasses.asdict(trainer.state)
-    #         self.assertEqual(a, a1)
-    #         self.assertEqual(b, b1)
-    #         self.check_trainer_state_are_the_same(state, state1)
+            trainer.train(resume_from_checkpoint=checkpoint)
+            (a1, b1) = trainer.model.a.item(), trainer.model.b.item()
+            state1 = dataclasses.asdict(trainer.state)
+            self.assertEqual(a, a1)
+            self.assertEqual(b, b1)
+            self.check_trainer_state_are_the_same(state, state1)
 
-    #     # Now check failures
+        # Now check failures
 
-    #     # 1. fail to find a bogus checkpoint
-    #     trainer = get_regression_trainer()
-    #     with self.assertRaises(Exception) as context:
-    #         trainer.train(resume_from_checkpoint=f"{checkpoint}-bogus")
-    #     self.assertTrue("Can't find a valid checkpoint at" in str(context.exception))
+        # 1. fail to find a bogus checkpoint
+        trainer = get_regression_trainer()
+        with self.assertRaises(Exception) as context:
+            trainer.train(resume_from_checkpoint=f"{checkpoint}-bogus")
+        self.assertTrue("Can't find a valid checkpoint at" in str(context.exception))
 
-    #     # 2. fail to find any checkpoint - due a fresh output_dir
-    #     output_dir2 = self.get_auto_remove_tmp_dir()
-    #     trainer = get_regression_trainer(output_dir=output_dir2)
-    #     with self.assertRaises(Exception) as context:
-    #         trainer.train(resume_from_checkpoint=True)
-    #     self.assertTrue("No valid checkpoint found in output directory" in str(context.exception))
+        # 2. fail to find any checkpoint - due a fresh output_dir
+        output_dir2 = self.get_auto_remove_tmp_dir()
+        trainer = get_regression_trainer(output_dir=output_dir2)
+        with self.assertRaises(Exception) as context:
+            trainer.train(resume_from_checkpoint=True)
+        self.assertTrue("No valid checkpoint found in output directory" in str(context.exception))
 
     # TODO: check if this is needed too.
     # @require_torch_non_multi_gpu

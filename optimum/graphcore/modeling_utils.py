@@ -16,8 +16,9 @@ import copy
 
 from torch import nn
 
+import poptorch
 from optimum.utils import logging
-from transformers import PreTrainedModel
+from transformers import AutoConfig, PreTrainedModel
 
 from .ipu_configuration import IPUConfig
 
@@ -74,6 +75,12 @@ class PipelineMixin:
         return pipelined_model
 
     @classmethod
+    def from_pretrained_transformers(cls, model_name_or_path: str, ipu_config: IPUConfig):
+        config = AutoConfig.from_pretrained(model_name_or_path)
+        config.update(ipu_config.to_dict())
+        return cls.from_pretrained(model_name_or_path, config=config)
+
+    @classmethod
     def from_model(cls, model: nn.Module):
         clone = copy.deepcopy(model)
         # It is fine because PipelineMixin only adds functionality, it does not add any attribute.
@@ -90,6 +97,14 @@ class PipelineMixin:
         You should call this before doing `save_pretrained` so that the `model.state_dict` is fully compatible with the
         original model.
         """
+        # Remove hooks
+        if hasattr(self, "_hooks"):
+            for h in self._hooks:
+                h.remove()
+        # Remove poptorch Blocks
+        for m in self.modules():
+            if m is not self:
+                poptorch.removeBlocks(m)
         return self
 
     def num_parameters(self, only_trainable: bool = False, exclude_embeddings: bool = False) -> int:
