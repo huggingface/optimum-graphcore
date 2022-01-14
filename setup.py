@@ -21,6 +21,7 @@ install_requires = [
     "scipy",
     "pytest",
     "pytest-pythonpath",
+    "parameterized",
 ]
 
 setup(
