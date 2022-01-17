@@ -15,7 +15,9 @@
 import unittest
 
 import torch
+from PIL import Image
 
+import requests
 from optimum.graphcore import IPUConfig
 from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
 from parameterized import parameterized
@@ -32,6 +34,7 @@ from transformers import (
     MODEL_FOR_SEQUENCE_CLASSIFICATION_MAPPING,
     MODEL_FOR_TOKEN_CLASSIFICATION_MAPPING,
     MODEL_MAPPING,
+    AutoFeatureExtractor,
     AutoTokenizer,
 )
 
@@ -90,20 +93,28 @@ class PipelinedModelsTester(unittest.TestCase):
     def _generate_input_for_model_class(self, model_name_or_path, model_class):
         # TODO: add support for labels.
         inputs = None
-        tokenizer = AutoTokenizer.from_pretrained(model_name_or_path)
+        extractor = None
+        if model_class in [*MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING.values()]:
+            extractor = AutoFeatureExtractor.from_pretrained(model_name_or_path)
+        else:
+            extractor = AutoTokenizer.from_pretrained(model_name_or_path)
         if model_class in MODEL_FOR_SEQ_TO_SEQ_CAUSAL_LM_MAPPING.values():
             raise NotImplementedError
         elif model_class in MODEL_FOR_MULTIPLE_CHOICE_MAPPING.values():
             prompt = "This is a fake prompt."
             choice0 = "Here is the first choice"
             choice1 = "Here is the second choice"
-            inputs = tokenizer([prompt, prompt], [choice0, choice1], return_tensors="pt", padding=True)
+            inputs = extractor([prompt, prompt], [choice0, choice1], return_tensors="pt", padding=True)
             inputs = {k: v.unsqueeze(0) for k, v in inputs.items()}
         # TODO: do we really need this case?
         elif model_class in MODEL_FOR_QUESTION_ANSWERING_MAPPING.values():
-            inputs = tokenizer("Who was Jim Henson?", "Jim Henson was a nice puppet", return_tensors="pt")
+            inputs = extractor("Who was Jim Henson?", "Jim Henson was a nice puppet", return_tensors="pt")
+        elif model_class in MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING.values():
+            url = "http://images.cocodataset.org/val2017/000000039769.jpg"
+            image = Image.open(requests.get(url, stream=True).raw)
+            inputs = extractor(images=image, return_tensors="pt")
         else:
-            inputs = tokenizer(
+            inputs = extractor(
                 "This is a test to check that pretrained and pipeline model outputs match.", return_tensors="pt"
             )
         return inputs
