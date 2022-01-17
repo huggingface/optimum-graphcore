@@ -225,7 +225,7 @@ class IPUTrainer:
         self.opts = self.ipu_config.to_options()
         self.eval_opts = self.ipu_config.to_options(for_inference=True)
 
-        self.original_model = to_pipelined(model, ipu_config, force=force_to_pipelined)
+        self.original_model = to_pipelined(model, self.ipu_config, force=force_to_pipelined)
         self.model = copy.deepcopy(self.original_model).parallelize()
         if not self.args.fp32:
             self.model = self.model.half()
