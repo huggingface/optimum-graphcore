@@ -19,6 +19,7 @@ install_requires = [
     "torch",
     "sentencepiece",
     "scipy",
+    "pillow",
     "pytest",
     "pytest-pythonpath",
     "parameterized",
