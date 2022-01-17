@@ -225,8 +225,11 @@ class IPUTrainer:
         self.opts = self.ipu_config.to_options()
         self.eval_opts = self.ipu_config.to_options(for_inference=True)
 
-        self.original_model = to_pipelined(model, self.ipu_config, force=force_to_pipelined)
-        self.model = copy.deepcopy(self.original_model).parallelize()
+        self.model = to_pipelined(model, self.ipu_config, force=force_to_pipelined)
+        self.model.parallelize()
+
+        self.original_model = model
+
         if not self.args.fp32:
             self.model = self.model.half()
 
@@ -1196,9 +1199,9 @@ class IPUTrainer:
         return TrainOutput(self.state.global_step, train_loss, metrics)
 
     def _load_state_dict_in_model(self, state_dict):
-        load_result = self.original_model.load_state_dict(state_dict, strict=False)
-        model = copy.deepcopy(self.original_model).parallelize()
-        self.model.load_state_dict(model.state_dict())
+        self.model.deparallelize()
+        load_result = self.model.load_state_dict(state_dict)
+        self.model.parallelize()
 
         # TODO: check if this is needed.
         # if self.training_model and self.training_model.isAttachedToDevice():
@@ -1605,11 +1608,9 @@ class IPUTrainer:
                 state_dict = self.model.state_dict()
             torch.save(state_dict, os.path.join(output_dir, WEIGHTS_NAME))
         else:
-            # TODO: make this more efficient.
-            deparallelized = copy.deepcopy(self.model).deparallelize()
-            deparallelized.save_pretrained(output_dir, state_dict=state_dict)
-            # Freeing up memory.
-            del deparallelized
+            self.model.deparallelize()
+            self.model.save_pretrained(output_dir, state_dict=state_dict)
+            self.model.parallelize()
 
         if self.tokenizer is not None:
             self.tokenizer.save_pretrained(output_dir)
@@ -2098,7 +2099,7 @@ class IPUTrainer:
         Returns:
             :obj:`int`: The number of floating-point operations.
         """
-        # Using self.original_model (self.modle deepcopy) because self.model is the underlying model used by the IPUs
+        # Using self.original_model because self.model is the underlying model used by the IPUs
         # and calling floating_point_ops on it slows things down a lot.
         if hasattr(self.original_model, "floating_point_ops"):
             return self.original_model.floating_point_ops(inputs)
