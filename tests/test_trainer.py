@@ -1212,7 +1212,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
                 num_train_epochs=20,
                 gradient_accumulation_steps=1,
                 per_device_train_batch_size=16,
-                train_len=TRAIN_LEN * 16,
+                train_len=TRAIN_LEN,
                 load_best_model_at_end=True,
                 evaluation_strategy=IntervalStrategy.EPOCH,
                 save_strategy=IntervalStrategy.EPOCH,
@@ -1221,7 +1221,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
             )
             trainer.add_callback(EarlyStoppingCallback(1, 0.0001))
             train_output = trainer.train()
-            self.assertLess(train_output.global_step, 20 * 64 / 16)
+            self.assertLess(train_output.global_step, 20 * TRAIN_LEN / (16 * trainer.ipu_config.batch_size_factor()))
 
         # Invalid inputs to trainer with early stopping callback result in assertion error
         with tempfile.TemporaryDirectory() as tmp_dir:
