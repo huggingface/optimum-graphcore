@@ -25,3 +25,5 @@ To the install the latest release of this package:
 Currently only a subset of model architectures are supported:
 
 - BERT
+- RoBERTa
+- ViT
