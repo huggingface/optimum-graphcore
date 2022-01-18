@@ -16,10 +16,10 @@ import torch
 import torch.nn as nn
 
 import poptorch
+from optimum.utils import logging
 from transformers import GPT2ForSequenceClassification, GPT2ForTokenClassification
 
 from ...modeling_utils import PipelineMixin, register
-from ...utils import logging
 
 
 logger = logging.get_logger(__name__)
