@@ -19,4 +19,6 @@
 from .ipu_configuration import IPUConfig
 from .models.bert import PipelinedBertForPreTraining, PipelinedBertForQuestionAnswering
 from .trainer import IPUTrainer
+from .trainer_seq2seq import IPUSeq2SeqTrainer
 from .training_args import IPUTrainingArguments
+from .training_args_seq2seq import IPUSeq2SeqTrainingArguments
