@@ -16,10 +16,7 @@ import torch
 import torch.nn as nn
 
 import poptorch
-from transformers import (
-    GPT2ForSequenceClassification,
-    GPT2ForTokenClassification,
-)
+from transformers import GPT2ForSequenceClassification, GPT2ForTokenClassification
 
 from ...modeling_utils import PipelineMixin, register
 from ...utils import logging
@@ -38,8 +35,8 @@ def _get_layer_ipu(layers_per_ipu):
 
 def recomputation_checkpoint(module: nn.Module) -> torch.utils.hooks.RemovableHandle:
     """Annotates the output of a module to be checkpointed instead of
-        recomputed"""
-        
+    recomputed"""
+
     def recompute_outputs(module, inputs, outputs):
         if type(outputs) is list:
             return list(poptorch.recomputationCheckpoint(y) for y in outputs)
@@ -47,6 +44,7 @@ def recomputation_checkpoint(module: nn.Module) -> torch.utils.hooks.RemovableHa
             return tuple(poptorch.recomputationCheckpoint(y) for y in outputs)
         else:
             return poptorch.recomputationCheckpoint(outputs)
+
     return module.register_forward_hook(recompute_outputs)
 
 
