@@ -131,6 +131,7 @@ class PipelinedGPT2ForSequenceClassification(GPT2ForSequenceClassification, Pipe
             input_ids=input_ids,
             attention_mask=attention_mask,
             labels=labels,
+            use_cache=False,
             return_dict=False,
         )
 
