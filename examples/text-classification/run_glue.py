@@ -361,9 +361,7 @@ def main():
 
     # Customize tokenization for GPT2. We reuse the EOS token as the PAD token.
     if config.model_type == "gpt2":
-        # tokenizer.padding_side = "left"
         tokenizer.pad_token = tokenizer.eos_token
-        # model.resize_token_embeddings(len(tokenizer))
         model.config.pad_token_id = model.config.eos_token_id
 
     # Preprocessing the raw_datasets
