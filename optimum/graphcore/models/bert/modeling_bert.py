@@ -192,7 +192,7 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
         layer_ipu = _get_layer_ipu(self.config.layers_per_ipu)
 
         logger.info("-------------------- Device Allocation --------------------")
-        logger.info("Embedding  --> IPU 0")
+        logger.info("Embedding --> IPU 0")
         self.bert.embeddings = poptorch.BeginBlock(self.bert.embeddings, "Embedding", ipu_id=0)
         # Preventing the embeddings.LayerNorm from being outlined with the encoder.layer.LayerNorm
         # improves the tile mapping of the pipeline stashes
@@ -207,7 +207,7 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
             self.bert.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
             logger.info(f"Encoder {index:<2} --> IPU {ipu}")
 
-        logger.info("Pooler     --> IPU 0")
+        logger.info("Pooler --> IPU 0")
         self.bert.pooler = poptorch.BeginBlock(self.bert.pooler, "Pooler", ipu_id=0)
 
         logger.info("Classifier --> IPU 0")
@@ -368,7 +368,7 @@ class BertPipelineMixin(PipelineMixin):
         layer_ipu = _get_layer_ipu(self.config.layers_per_ipu)
 
         logger.info("-------------------- Device Allocation --------------------")
-        logger.info("Embedding  --> IPU 0")
+        logger.info("Embedding --> IPU 0")
         if self.config.embedding_serialization_factor > 1:
             self.bert.embeddings.word_embeddings = SerializedEmbedding(
                 self.bert.embeddings.word_embeddings, self.config.embedding_serialization_factor

@@ -1,13 +1,13 @@
 {
   "embedding_serialization_factor": 0,
   "recompute_checkpoint_every_layer": true,
-  "optimizer_state_offchip": false,
+  "optimizer_state_offchip": true,
   "replicated_tensor_sharding": true,
   "enable_half_first_order_momentum": true,
   "enable_half_partials": true,
 
-  "device_iterations": 2,
-  "inference_device_iterations": 4,
+  "device_iterations": 5,
+  "inference_device_iterations": 5,
   "replication_factor": 4,
   "inference_replication_factor": 4,
   "gradient_accumulation_steps": 16,

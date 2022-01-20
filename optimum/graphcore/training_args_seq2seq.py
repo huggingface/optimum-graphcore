@@ -15,18 +15,18 @@
 from dataclasses import dataclass, field
 from typing import Optional
 
+from transformers.file_utils import add_start_docstrings
 from optimum.utils import logging
 
-from .file_utils import add_start_docstrings
 from .training_args import IPUTrainingArguments
 
 
-logger = logging.getLogger(__name__)
+logger = logging.get_logger(__name__)
 
 
 @dataclass
 @add_start_docstrings(IPUTrainingArguments.__doc__)
-class Seq2SeqTrainingArguments(IPUTrainingArguments):
+class IPUSeq2SeqTrainingArguments(IPUTrainingArguments):
     """
     sortish_sampler (`bool`, *optional*, defaults to `False`):
         Whether to use a *sortish sampler* or not. Only possible if the underlying datasets are *Seq2SeqDataset* for

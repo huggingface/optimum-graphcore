@@ -18,16 +18,16 @@ import torch
 from torch import nn
 from torch.utils.data import Dataset
 
-from .deepspeed import is_deepspeed_zero3_enabled
-from .trainer import Trainer
-from .trainer_utils import PredictionOutput
-from .utils import logging
+from transformers.trainer_utils import PredictionOutput
+from optimum.utils import logging
+# from .deepspeed import is_deepspeed_zero3_enabled
+from .trainer import IPUTrainer
 
 
 logger = logging.get_logger(__name__)
 
 
-class Seq2SeqTrainer(Trainer):
+class IPUSeq2SeqTrainer(IPUTrainer):
     def evaluate(
         self,
         eval_dataset: Optional[Dataset] = None,
@@ -158,7 +158,7 @@ class Seq2SeqTrainer(Trainer):
         gen_kwargs = {
             "max_length": self._max_length if self._max_length is not None else self.model.config.max_length,
             "num_beams": self._num_beams if self._num_beams is not None else self.model.config.num_beams,
-            "synced_gpus": True if is_deepspeed_zero3_enabled() else False,
+            "synced_gpus": False # True if is_deepspeed_zero3_enabled() else False,
         }
 
         # prepare generation inputs
