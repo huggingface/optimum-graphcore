@@ -182,6 +182,7 @@ class PipelinedRobertaForSequenceClassification(RobertaForSequenceClassification
         You should call this before doing `save_pretrained` so that the `model.state_dict` is
         fully compatible with `transformers.RobertaForSequenceClassification`.
         """
+        super().deparallelize()
         # Deserialize the serialized word embedding
         if self.config.embedding_serialization_factor > 1:
             self.roberta.embeddings.word_embeddings = self.roberta.embeddings.word_embeddings.deserialize()
@@ -239,6 +240,7 @@ class PipelinedRobertaForMultipleChoice(RobertaForMultipleChoice, PipelineMixin)
         You should call this before doing `save_pretrained` so that the `model.state_dict` is
         fully compatible with `transformers.RobertaForMultipleChoice`.
         """
+        super().deparallelize()
         # Deserialize the serialized word embedding
         if self.config.embedding_serialization_factor > 1:
             self.roberta.embeddings.word_embeddings = self.roberta.embeddings.word_embeddings.deserialize()
@@ -296,6 +298,7 @@ class PipelinedRobertaForTokenClassification(RobertaForTokenClassification, Pipe
         You should call this before doing `save_pretrained` so that the `model.state_dict` is
         fully compatible with `transformers.RobertaForTokenClassification`.
         """
+        super().deparallelize()
         # Deserialize the serialized word embedding
         if self.config.embedding_serialization_factor > 1:
             self.roberta.embeddings.word_embeddings = self.roberta.embeddings.word_embeddings.deserialize()
@@ -353,6 +356,7 @@ class PipelinedRobertaForQuestionAnswering(RobertaForQuestionAnswering, Pipeline
         You should call this before doing `save_pretrained` so that the `model.state_dict` is
         fully compatible with `transformers.RobertaForQuestionAnswering`.
         """
+        super().deparallelize()
         # Deserialize the serialized word embedding
         if self.config.embedding_serialization_factor > 1:
             self.roberta.embeddings.word_embeddings = self.roberta.embeddings.word_embeddings.deserialize()

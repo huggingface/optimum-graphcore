@@ -837,7 +837,9 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
     #     # With a regular model that is not a PreTrainedModel
     #     with tempfile.TemporaryDirectory() as tmpdir:
     #         # Make sure there are enough samples to end up with at least a checkpoint-15
-    #         kwargs = dict(output_dir=tmpdir, train_len=TRAIN_LEN * 2, save_steps=5, learning_rate=0.1, pretrained=False)
+    #         kwargs = dict(
+    #             output_dir=tmpdir, train_len=TRAIN_LEN * 2, save_steps=5, learning_rate=0.1, pretrained=False
+    #         )
 
     #         trainer = get_regression_trainer(**kwargs)
     #         trainer.train()
@@ -1210,7 +1212,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
                 num_train_epochs=20,
                 gradient_accumulation_steps=1,
                 per_device_train_batch_size=16,
-                train_len=TRAIN_LEN * 16,
+                train_len=TRAIN_LEN,
                 load_best_model_at_end=True,
                 evaluation_strategy=IntervalStrategy.EPOCH,
                 save_strategy=IntervalStrategy.EPOCH,
@@ -1219,7 +1221,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
             )
             trainer.add_callback(EarlyStoppingCallback(1, 0.0001))
             train_output = trainer.train()
-            self.assertLess(train_output.global_step, 20 * 64 / 16)
+            self.assertLess(train_output.global_step, 20 * TRAIN_LEN / (16 * trainer.ipu_config.batch_size_factor()))
 
         # Invalid inputs to trainer with early stopping callback result in assertion error
         with tempfile.TemporaryDirectory() as tmp_dir:

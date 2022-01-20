@@ -218,6 +218,13 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
         logger.info("-----------------------------------------------------------")
         return self
 
+    def deparallelize(self):
+        super().deparallelize()
+        # Deserialize the serialized word embedding
+        if self.config.embedding_serialization_factor > 1:
+            self.bert.embeddings.word_embeddings = self.bert.embeddings.word_embeddings.deserialize()
+        return self
+
     def _init_weights(self, module):
         """Initialize the weights"""
 
@@ -257,10 +264,14 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
         output = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
         sequence_output, pooled_output = output[:2]
 
-        # Select only the masked tokens for the classifier
-        max_number_of_masked_tokens = int(labels.size(1) * 0.25)
-        masked_lm_labels, masked_lm_positions = torch.topk(labels, k=max_number_of_masked_tokens, dim=1)
-        masked_output = self.gather_indices(sequence_output, masked_lm_positions)
+        if labels is not None:
+            # Select only the masked tokens for the classifier
+            max_number_of_masked_tokens = int(labels.size(1) * 0.25)
+            masked_lm_labels, masked_lm_positions = torch.topk(labels, k=max_number_of_masked_tokens, dim=1)
+            masked_output = self.gather_indices(sequence_output, masked_lm_positions)
+        else:
+            # This case should never happen during training
+            masked_output = sequence_output
 
         prediction_scores, sequential_relationship_score = self.cls(masked_output, pooled_output)
         output = (
@@ -397,6 +408,7 @@ class PipelinedBertForSequenceClassification(BertForSequenceClassification, Pipe
         You should call this before doing `save_pretrained` so that the `model.state_dict` is
         fully compatible with `transformers.BertForSequenceClassification`.
         """
+        super().deparallelize()
         # Deserialize the serialized word embedding
         if self.config.embedding_serialization_factor > 1:
             self.bert.embeddings.word_embeddings = self.bert.embeddings.word_embeddings.deserialize()
@@ -462,6 +474,7 @@ class PipelinedBertForMultipleChoice(BertForMultipleChoice, PipelineMixin):
         You should call this before doing `save_pretrained` so that the `model.state_dict` is
         fully compatible with `transformers.BertForMultipleChoice`.
         """
+        super().deparallelize()
         # Deserialize the serialized word embedding
         if self.config.embedding_serialization_factor > 1:
             self.bert.embeddings.word_embeddings = self.bert.embeddings.word_embeddings.deserialize()
@@ -527,6 +540,7 @@ class PipelinedBertForTokenClassification(BertForTokenClassification, PipelineMi
         You should call this before doing `save_pretrained` so that the `model.state_dict` is
         fully compatible with `transformers.BertForTokenClassification`.
         """
+        super().deparallelize()
         # Deserialize the serialized word embedding
         if self.config.embedding_serialization_factor > 1:
             self.bert.embeddings.word_embeddings = self.bert.embeddings.word_embeddings.deserialize()
@@ -592,6 +606,7 @@ class PipelinedBertForQuestionAnswering(BertForQuestionAnswering, PipelineMixin)
         You should call this before doing `save_pretrained` so that the `model.state_dict` is
         fully compatible with `transformers.BertForQuestionAnswering`.
         """
+        super().deparallelize()
         # Deserialize the serialized word embedding
         if self.config.embedding_serialization_factor > 1:
             self.bert.embeddings.word_embeddings = self.bert.embeddings.word_embeddings.deserialize()
