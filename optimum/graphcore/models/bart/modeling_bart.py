@@ -11,18 +11,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import Optional
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 import poptorch
+import transformers
 from optimum.utils import logging
-from scipy.stats import truncnorm
-from transformers import (
-    BartModel,
-    BartForConditionalGeneration,
-)
+from transformers import BartForConditionalGeneration, BartModel
 from transformers.modeling_outputs import BaseModelOutput, Seq2SeqModelOutput
 from transformers.models.bart.modeling_bart import shift_tokens_right
 
@@ -31,73 +29,7 @@ from ...modeling_utils import PipelineMixin, register
 
 logger = logging.get_logger(__name__)
 
-
-class OnehotGather(nn.Module):
-    """
-    Gathers selected indices from a tensor by transforming the list of indices
-    into a one-hot matrix and then multiplying the tensor by that matrix.
-    """
-
-    def __init__(self):
-        super().__init__()
-        self._is_half = False
-
-    def half(self):
-        super().half()
-        # Tracing is always executed in float as there are missing
-        # implementations of operations in half on the CPU.
-        # So we cannot query the inputs to know if we are running
-        # with a model that has had .half() called on it.
-        # To work around it nn.Module::half is overridden
-        self._is_half = True
-
-    def forward(self, sequence, positions):
-        """
-        Gather the vectors at the specific positions over a batch.
-        """
-        num_classes = int(sequence.shape[1])
-        one_hot_positions = F.one_hot(positions, num_classes)
-        if self._is_half:
-            one_hot_positions = one_hot_positions.half()
-        else:
-            one_hot_positions = one_hot_positions.float()
-        return torch.matmul(one_hot_positions.detach(), sequence)
-
-
-class SerializedLinear(nn.Linear):
-    """
-    Exactly equivalent to `nn.Linear` layer, but with the matrix multiplication replaced with
-    a serialized matrix multiplication: `poptorch.serializedMatMul`.
-    The matrix multiplication is split into separate smaller multiplications, calculated one after the other,
-    to reduce the memory requirements of the multiplication and its gradient calculation.
-
-    Args:
-        in_features: Size of each input sample
-        out_features: Size of each output sample
-        factor: Number of serialized multiplications. Must be a factor of
-            the dimension to serialize on.
-        bias: If set to False, the layer will not learn an additive bias.
-            Default: True
-        mode: Which dimension of the matmul to serialize on:
-            for matrix A (m by n) multiplied by matrix B (n by p).
-            * InputChannels: Split across the input channels (dimension m).
-            * ReducingDim: Split across the reducing dimension (n).
-            * OutputChannels: Split across the output channels (dimension p).
-            * Disabled: Same as an ordinary matrix multiplication.
-    """
-
-    def __init__(
-        self, in_features, out_features, factor, bias=False, mode=poptorch.MatMulSerializationMode.OutputChannels
-    ):
-        super().__init__(in_features, out_features, bias)
-        self.mode = mode
-        self.factor = factor
-
-    def forward(self, x):
-        output = poptorch.serializedMatMul(x, self.weight.t(), self.mode, self.factor)
-        if self.bias is not None:
-            output += self.bias
-        return output
+FLOAT16_LIMIT = 1e4
 
 
 def _get_layer_ipu(layers_per_ipu):
@@ -143,141 +75,6 @@ def outline_attribute(module: nn.Module, value: str):
 
     module.register_forward_pre_hook(enable)
     module.register_forward_hook(disable)
-
-
-def accuracy(out, targ):
-    return (out.argmax(dim=-1) == targ).float().mean()
-
-
-def accuracy_masked(out, targ, mask_val):
-    mask = (targ != mask_val).float()
-    num_unmasked = mask.sum(1).unsqueeze(1)
-    return (out.argmax(dim=-1) == targ).float().mul(mask).div(num_unmasked).sum(1).mean()
-
-
-# class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
-#     def __init__(self, config):
-#         super().__init__(config)
-#         self.gather_indices = OnehotGather()
-#
-#     def parallelize(self):
-#         """
-#         Transform the model to run in an IPU pipeline.
-#         - Adds pipeline stages to the model
-#         - Replaces self-attention layers with fused-qkv self-attention layers
-#         - (If enabled) Replaces the word embedding projection with a SerializedLinear layer
-#         - Adds recomputation checkpoints
-#
-#         Recommended usage:
-#         ```
-#         model = PipelinedBertForPretraining(config).parallelize().half().train()
-#         ```
-#         """
-#         # Use faster fused-qkv self-attention
-#         for layer in self.bert.encoder.layer:
-#             fused = BertFusedSelfAttention(self.config)
-#             fused.load_state_dict(layer.attention.self.state_dict())
-#             layer.attention.self = fused
-#
-#         if self.config.embedding_serialization_factor > 1:
-#             serialized_decoder = SerializedLinear(
-#                 self.config.hidden_size,
-#                 self.config.vocab_size,
-#                 self.config.embedding_serialization_factor,
-#                 bias=True,
-#                 mode=poptorch.MatMulSerializationMode.OutputChannels,
-#             )
-#             serialized_decoder.load_state_dict(self.cls.predictions.decoder.state_dict())
-#             self.cls.predictions.decoder = serialized_decoder
-#             self.tie_weights()
-#
-#         layer_ipu = _get_layer_ipu(self.config.layers_per_ipu)
-#
-#         logger.info("-------------------- Device Allocation --------------------")
-#         logger.info("Embedding  --> IPU 0")
-#         self.bert.embeddings = poptorch.BeginBlock(self.bert.embeddings, "Embedding", ipu_id=0)
-#         # Preventing the embeddings.LayerNorm from being outlined with the encoder.layer.LayerNorm
-#         # improves the tile mapping of the pipeline stashes
-#         outline_attribute(self.bert.embeddings.LayerNorm, "embeddings")
-#
-#         for index, layer in enumerate(self.bert.encoder.layer):
-#             ipu = layer_ipu[index]
-#             if self.config.recompute_checkpoint_every_layer:
-#                 recomputation_checkpoint(layer)
-#             self.bert.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
-#             logger.info(f"Encoder {index:<2} --> IPU {ipu}")
-#
-#         logger.info("Pooler     --> IPU 0")
-#         self.bert.pooler = poptorch.BeginBlock(self.bert.pooler, "Pooler", ipu_id=0)
-#
-#         logger.info("Classifier --> IPU 0")
-#         self.cls = poptorch.BeginBlock(self.cls, "Classifier", ipu_id=0)
-#         logger.info("-----------------------------------------------------------")
-#         return self
-#
-#     def _init_weights(self, module):
-#         """Initialize the weights"""
-#
-#         def truncated_normal_(tensor, mean=0, std=1):
-#             """
-#             Truncated Normal distribution, truncated at 2 sigma
-#             """
-#             r = torch.tensor(truncnorm.rvs(-2, 2, loc=mean, scale=std, size=tensor.shape))
-#             tensor.data.copy_(r)
-#
-#         if isinstance(module, nn.Linear):
-#             truncated_normal_(module.weight, mean=0.0, std=self.config.initializer_range)
-#             if module.bias is not None:
-#                 module.bias.data.zero_()
-#         elif isinstance(module, nn.Embedding):
-#             truncated_normal_(module.weight, mean=0.0, std=self.config.initializer_range)
-#             if module.padding_idx is not None:
-#                 module.weight.data[module.padding_idx].zero_()
-#         elif isinstance(module, nn.LayerNorm):
-#             module.bias.data.zero_()
-#             module.weight.data.fill_(1.0)
-#
-#     def forward(
-#         self,
-#         input_ids=None,
-#         attention_mask=None,
-#         token_type_ids=None,
-#         labels=None,
-#         next_sentence_label=None,
-#         output_attentions=None,
-#         output_hidden_states=None,
-#         return_dict=None,
-#         position_ids=None,
-#         head_mask=None,
-#         inputs_embeds=None,
-#     ):
-#         output = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
-#         sequence_output, pooled_output = output[:2]
-#
-#         # Select only the masked tokens for the classifier
-#         max_number_of_masked_tokens = int(labels.size(1) * 0.25)
-#         masked_lm_labels, masked_lm_positions = torch.topk(labels, k=max_number_of_masked_tokens, dim=1)
-#         masked_output = self.gather_indices(sequence_output, masked_lm_positions)
-#
-#         prediction_scores, sequential_relationship_score = self.cls(masked_output, pooled_output)
-#         output = (
-#             prediction_scores,
-#             sequential_relationship_score,
-#         ) + output[2:]
-#
-#         if labels is not None and next_sentence_label is not None:
-#             masked_lm_loss = F.cross_entropy(
-#                 prediction_scores.view(-1, self.config.vocab_size),
-#                 masked_lm_labels.view(-1),
-#                 ignore_index=-100,
-#             ).float()
-#             next_sentence_loss = F.cross_entropy(
-#                 sequential_relationship_score.view(-1, 2), next_sentence_label.view(-1)
-#             ).float()
-#             total_loss = poptorch.identity_loss(masked_lm_loss + next_sentence_loss, reduction="none")
-#             return (total_loss, masked_lm_loss, next_sentence_loss)
-#
-#         return output
 
 
 class SerializedEmbedding(nn.Module):
@@ -359,7 +156,6 @@ class SharedEmbedding(torch.nn.Module):
 
 
 class BartModelWithInputEmbeds(BartModel):
-
     @property
     def is_encoder_and_decoder_embeddings_computation_shared(self):
         return isinstance(self.shared, SharedEmbedding)
@@ -426,6 +222,12 @@ class BartModelWithInputEmbeds(BartModel):
             input_ids = None
             decoder_input_ids = None
 
+        def contains_nan(tensor):
+            return torch.sum(torch.isnan(tensor))
+
+        # x1 = poptorch.ipu_print_tensor(contains_nan(encoder_inputs_embeds), "encoder_inputs_embeds")
+        # x2 = poptorch.ipu_print_tensor(contains_nan(decoder_inputs_embeds), "decoder_inputs_embeds")
+
         if encoder_outputs is None:
             encoder_outputs = self.encoder(
                 input_ids=input_ids,
@@ -444,6 +246,7 @@ class BartModelWithInputEmbeds(BartModel):
                 attentions=encoder_outputs[2] if len(encoder_outputs) > 2 else None,
             )
 
+        # x3 = poptorch.ipu_print_tensor(contains_nan(encoder_outputs[0]), "encoder_outputs")
         # decoder outputs consists of (dec_features, past_key_value, dec_hidden, dec_attn)
         decoder_outputs = self.decoder(
             # input_ids=decoder_input_ids,
@@ -459,9 +262,10 @@ class BartModelWithInputEmbeds(BartModel):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
+        # x4 = poptorch.ipu_print_tensor(contains_nan(decoder_outputs[0]), "decoder_outputs")
 
         if not return_dict:
-            return decoder_outputs + encoder_outputs
+            return decoder_outputs + encoder_outputs  #  + (x1, x2, x3, x4)
 
         return Seq2SeqModelOutput(
             last_hidden_state=decoder_outputs.last_hidden_state,
@@ -475,19 +279,49 @@ class BartModelWithInputEmbeds(BartModel):
         )
 
 
+def _make_causal_mask(input_ids_shape: torch.Size, dtype: torch.dtype, past_key_values_length: int = 0):
+    """
+    Make causal mask used for bi-directional self-attention.
+    """
+    bsz, tgt_len = input_ids_shape
+    # Using FLOAT16_LIMIT instead of -float("inf") to avoid NaNs on the IPUs.
+    mask = torch.full((tgt_len, tgt_len), -FLOAT16_LIMIT)
+    mask_cond = torch.arange(mask.size(-1))
+    mask.masked_fill_(mask_cond < (mask_cond + 1).view(mask.size(-1), 1), 0)
+    mask = mask.to(dtype)
+
+    if past_key_values_length > 0:
+        mask = torch.cat([torch.zeros(tgt_len, past_key_values_length, dtype=dtype), mask], dim=-1)
+    return mask[None, None, :, :].expand(bsz, 1, tgt_len, tgt_len + past_key_values_length)
+
+
+def _expand_mask(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] = None):
+    """
+    Expands attention_mask from `[bsz, seq_len]` to `[bsz, 1, tgt_seq_len, src_seq_len]`.
+    """
+    bsz, src_len = mask.size()
+    tgt_len = tgt_len if tgt_len is not None else src_len
+
+    expanded_mask = mask[:, None, None, :].expand(bsz, 1, tgt_len, src_len).to(dtype)
+
+    inverted_mask = 1.0 - expanded_mask
+
+    # Using FLOAT16_LIMIT instead of -float("inf") to avoid NaNs on the IPUs.
+    return inverted_mask.masked_fill(inverted_mask.bool(), -FLOAT16_LIMIT)
+
+
 @register(BartForConditionalGeneration)
 class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, PipelineMixin):
     def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model
-        - Replaces self-attention layers with fused-qkv self-attention layers
-        - (If enabled) Replaces the word embedding with a SerializedEmbedding
+        - (If enabled) Replaces the shared embedding with a SerializedEmbedding
         - Adds recomputation checkpoints
 
         Recommended usage:
         ```
-        model = PipelinedBertForSequenceClassification(config).parallelize().half()
+        model = PipelinedBartForConditionalGeneration(config).parallelize().half()
         ```
         """
         # Use faster fused-qkv self-attention
@@ -503,23 +337,20 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
         logger.info("Embedding  --> IPU 0")
 
         if self.config.embedding_serialization_factor > 1:
-            self.model.shared = SerializedEmbedding(
-                self.model.shared, self.config.embedding_serialization_factor
-            )
+            self.model.shared = SerializedEmbedding(self.model.shared, self.config.embedding_serialization_factor)
 
         self.model.__class__ = BartModelWithInputEmbeds
+        # TODO: make sure to restore those functions back in deparallelize
+        transformers.models.bart.modeling_bart._make_causal_mask = _make_causal_mask
+        transformers.models.bart.modeling_bart._expand_mask = _expand_mask
         self.model.encoder_and_decoder_embeddings_computation(True)
         self.model.shared = poptorch.BeginBlock(self.model.shared, "Embedding", ipu_id=0)
 
-        self.model.encoder.embed_positions = poptorch.BeginBlock(
-            self.model.encoder.embed_positions, ipu_id=0
-        )
+        self.model.encoder.embed_positions = poptorch.BeginBlock(self.model.encoder.embed_positions, ipu_id=0)
         # TODO: no LayerNorm in Bart after the embeddings?
         # outline_attribute(self.bert.embeddings.LayerNorm, "embedding")
 
-        self.model.encoder.layernorm_embedding = poptorch.BeginBlock(
-            self.model.encoder.layernorm_embedding, ipu_id=0
-        )
+        self.model.encoder.layernorm_embedding = poptorch.BeginBlock(self.model.encoder.layernorm_embedding, ipu_id=0)
         for index, layer in enumerate(self.model.encoder.layers):
             ipu = layer_ipu[index]
             if self.config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
@@ -550,10 +381,11 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
         """
         Undo the changes to the model done by `parallelize`.
         You should call this before doing `save_pretrained` so that the `model.state_dict` is
-        fully compatible with `transformers.BertForSequenceClassification`.
+        fully compatible with `transformers.BartForConditionalGeneration`.
         """
-        # TODO: implement deparallelize (need rebase)
-
+        super().deparallelize()
+        self.model.encoder_and_decoder_embeddings_computation(False)
+        self.model.__class__ = BartModel
         # Deserialize the serialized word embedding
         if self.config.embedding_serialization_factor > 1:
             self.model.shared = self.model.shared.deserialize()
@@ -568,4 +400,6 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
             # decoder_attention_mask=decoder_attention_mask,
             labels=labels,
             return_dict=False,
+            # TODO: actually find a way to use cache for decoding.
+            use_cache=False,
         )
