@@ -54,35 +54,39 @@ class PipelinedLxmertForQuestionAnswering(transformers.LxmertForQuestionAnswerin
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding  --> IPU 0")
-        self.embeddings = poptorch.BeginBlock(self.embeddings, "Embedding", ipu_id=0)
+        self.lxmert.embeddings = poptorch.BeginBlock(self.lxmert.embeddings, "Embedding", ipu_id=0)
 
         # Language layers
-        for index, layer in enumerate(self.encoder.layer):
+        for index, layer in enumerate(self.lxmert.encoder.layer):
             if self.config.recompute_checkpoint_every_layer:
                 h = recomputation_checkpoint(layer)
                 self._hooks.append(h)
-            self.encoder.layer[index] = poptorch.BeginBlock(layer, f"Language layer{index}", ipu_id=1)
+            self.lxmert.encoder.layer[index] = poptorch.BeginBlock(layer, f"Language layer{index}", ipu_id=1)
             logger.info(f"Language layer {index:<2}   --> IPU {1}")
 
         # Visual layers
-        self.encoder.visn_fc = poptorch.BeginBlock(self.encoder.visn_fc, "Image embedding", ipu_id=2)
-        for index, layer in enumerate(self.encoder.r_layers):
+        self.lxmert.encoder.visn_fc = poptorch.BeginBlock(self.lxmert.encoder.visn_fc, "Image embedding", ipu_id=2)
+        
+        for index, layer in enumerate(self.lxmert.encoder.r_layers):
             if self.config.recompute_checkpoint_every_layer:
                 h = recomputation_checkpoint(layer)
                 self._hooks.append(h)
-            self.encoder.r_layers[index] = poptorch.BeginBlock(layer, f"Visual layer{index}", ipu_id=2)
+            self.lxmert.encoder.r_layers[index] = poptorch.BeginBlock(layer, f"Visual layer{index}", ipu_id=2)
             logger.info(f"Visual layer {index:<2}   --> IPU {2}")
 
         # Cross modality layers
-        for index, layer in enumerate(self.encoder.x_layers):
+        for index, layer in enumerate(self.lxmert.encoder.x_layers):
             if self.config.recompute_checkpoint_every_layer:
                 h = recomputation_checkpoint(layer)
                 self._hooks.append(h)
-            self.encoder.x_layers[index] = poptorch.BeginBlock(layer, f"Cross modality layer{index}", ipu_id=3)
+            self.lxmert.encoder.x_layers[index] = poptorch.BeginBlock(layer, f"Cross modality layer{index}", ipu_id=3)
             logger.info(f"Cross modality layer {index:<2}   --> IPU {3}")
 
-        print(f"Head       --> IPU {0}")
-        self.pooler = poptorch.BeginBlock(self.pooler, "Head", ipu_id=0)
+        logger.info("Pooler     --> IPU {3}")
+        self.lxmert.pooler = poptorch.BeginBlock(self.lxmert.pooler, "Pooler", ipu_id=3)
+
+        print(f"Head       --> IPU {3}")
+        self.answer_head = poptorch.BeginBlock(self.answer_head, "Head", ipu_id=3)
         logger.info("-----------------------------------------------------------")
         return self
 
