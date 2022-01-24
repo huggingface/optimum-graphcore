@@ -101,13 +101,14 @@ class PipelinedLxmertForQuestionAnswering(transformers.LxmertForQuestionAnswerin
                 poptorch.removeBlocks(m)
         return self
 
-    def forward(self, input_ids, visual_feats, visual_pos, attention_mask, visual_attention_mask, labels=None):
+    def forward(self, input_ids, visual_feats, visual_pos, attention_mask, visual_attention_mask, token_type_ids, labels=None):
         return super().forward(
             input_ids=input_ids,
             visual_feats=visual_feats,
             visual_pos=visual_pos,
             attention_mask=attention_mask,
             visual_attention_mask=visual_attention_mask,
+            token_type_ids=token_type_ids,
             labels=labels,
             return_dict=False,
         )
