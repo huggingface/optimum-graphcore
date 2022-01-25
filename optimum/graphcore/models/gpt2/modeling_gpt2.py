@@ -17,7 +17,11 @@ import torch.nn as nn
 
 import poptorch
 from optimum.utils import logging
-from transformers import GPT2ForSequenceClassification, GPT2ForTokenClassification
+from transformers import (
+    GPT2LMHeadModel,
+    GPT2ForSequenceClassification,
+    GPT2ForTokenClassification,
+)
 
 from ...modeling_utils import PipelineMixin, register
 
@@ -73,6 +77,65 @@ def outline_attribute(module: nn.Module, value: str):
 
     module.register_forward_pre_hook(enable)
     module.register_forward_hook(disable)
+
+
+@register(GPT2LMHeadModel)
+class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
+    def parallelize(self):
+        """
+        Transform the model to run in an IPU pipeline.
+        - Adds pipeline stages to the model
+        - Adds recomputation checkpoints
+
+        Recommended usage:
+        ```
+        model = PipelinedGPT2LMHeadModel(config).parallelize().half()
+        ```
+        """
+        self._hooks = []
+        layer_ipu = _get_layer_ipu(self.config.layers_per_ipu)
+
+        logger.info("-------------------- Device Allocation --------------------")
+        logger.info("Embedding  --> IPU 0")
+        self.transformer.wte = poptorch.BeginBlock(self.transformer.wte, "Token embedding", ipu_id=0)
+        self.transformer.wpe = poptorch.BeginBlock(self.transformer.wpe, "Position embedding", ipu_id=0)
+
+        for index, layer in enumerate(self.transformer.h):
+            ipu = layer_ipu[index]
+            if self.config.recompute_checkpoint_every_layer:
+                h = recomputation_checkpoint(layer)
+                self._hooks.append(h)
+            self.transformer.h[index] = poptorch.BeginBlock(layer, f"Layer{index}", ipu_id=ipu)
+            logger.info(f"Layer {index:<2}   --> IPU {ipu}")
+
+        print(f"Head       --> IPU {ipu}")
+        self.lm_head = poptorch.BeginBlock(self.lm_head, "LM head", ipu_id=0)
+        logger.info("-----------------------------------------------------------")
+        return self
+
+    def deparallelize(self):
+        """
+        Undo the changes to the model done by `parallelize`.
+        You should call this before doing `save_pretrained` so that the `model.state_dict` is
+        fully compatible with `transformers.GPT2LMHeadModel`.
+        """
+        # Remove any hooks
+        for h in self._hooks:
+            h.remove()
+        # Remove poptorch Blocks
+        for m in self.modules():
+            if m != self:
+                poptorch.removeBlocks(m)
+        return self
+
+    def forward(self, input_ids, attention_mask, labels=None):
+        return super().forward(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            labels=labels,
+            use_cache=False,
+            return_dict=False,
+        )
 
 
 @register(GPT2ForSequenceClassification)
