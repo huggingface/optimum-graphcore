@@ -29,6 +29,9 @@ from typing import Optional
 
 import datasets
 import transformers
+from optimum.graphcore import IPUConfig, IPUTrainer
+from optimum.graphcore import IPUTrainingArguments as TrainingArguments
+from optimum.graphcore.data import pad_on_batch_axis
 from datasets import load_dataset
 from transformers import (
     CONFIG_MAPPING,
@@ -37,7 +40,6 @@ from transformers import (
     AutoModelForCausalLM,
     AutoTokenizer,
     HfArgumentParser,
-    TrainingArguments,
     default_data_collator,
     set_seed,
 )
@@ -47,24 +49,9 @@ from transformers.utils import check_min_version
 from transformers.utils.fx import symbolic_trace
 from transformers.utils.versions import require_version
 
-import yaml
-from optimum.intel.neural_compressor import (
-    IncOptimizer,
-    IncPruner,
-    IncPruningConfig,
-    IncQuantizationConfig,
-    IncQuantizationMode,
-    IncQuantizer,
-    IncTrainer,
-)
-from optimum.intel.neural_compressor.quantization import IncQuantizedModelForCausalLM
-from optimum.intel.neural_compressor.utils import CONFIG_NAME
-
-
-os.environ["CUDA_VISIBLE_DEVICES"] = ""
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-check_min_version("4.12.0")
+check_min_version("4.12.0.dev0")
 
 require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/language-modeling/requirements.txt")
 
@@ -124,60 +111,11 @@ class ModelArguments:
         },
     )
 
-    def __post_init__(self):
-        if self.config_overrides is not None and (self.config_name is not None or self.model_name_or_path is not None):
-            raise ValueError(
-                "--config_overrides can't be used in combination with --config_name or --model_name_or_path"
-            )
-
-
-@dataclass
-class OptimizationArguments:
-    """
-    Arguments pertaining to what type of optimization we are going to apply on the model.
-    """
-
-    quantize: bool = field(
-        default=False,
-        metadata={"help": "Whether or not to apply quantization."},
-    )
-    quantization_approach: Optional[str] = field(
-        default=None,
-        metadata={"help": "Quantization approach. Supported approach are static, dynamic and aware_training."},
-    )
-    prune: bool = field(
-        default=False,
-        metadata={"help": "Whether or not to apply pruning."},
-    )
-    target_sparsity: Optional[float] = field(
-        default=None,
-        metadata={"help": "Targeted sparsity when pruning the model."},
-    )
-    quantization_config: Optional[str] = field(
-        default=None,
-        metadata={
-            "help": "Path to the directory containing the YAML configuration file used to control the quantization and "
-            "tuning behavior."
-        },
-    )
-    pruning_config: Optional[str] = field(
-        default=None,
-        metadata={
-            "help": "Path to the directory containing the YAML configuration file used to control the pruning behavior."
-        },
-    )
-    tune_metric: str = field(
-        default="eval_loss",
-        metadata={"help": "Metric used for the tuning strategy."},
-    )
-    perf_tol: Optional[float] = field(
-        default=None,
-        metadata={"help": "Performance tolerance when optimizing the model."},
-    )
-    verify_loading: bool = field(
-        default=False,
-        metadata={"help": "Whether or not to verify the loading of the quantized model."},
-    )
+    # def __post_init__(self):
+    #     if self.config_overrides is not None and (self.config_name is not None or self.model_name_or_path is not None):
+    #         raise ValueError(
+    #             "--config_overrides can't be used in combination with --config_name or --model_name_or_path"
+    #         )
 
 
 @dataclass
@@ -256,15 +194,15 @@ def main():
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
 
-    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments, OptimizationArguments))
+    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
         # let's parse it to get our arguments.
-        model_args, data_args, training_args, optim_args = parser.parse_json_file(
+        model_args, data_args, training_args = parser.parse_json_file(
             json_file=os.path.abspath(sys.argv[1])
         )
     else:
-        model_args, data_args, training_args, optim_args = parser.parse_args_into_dataclasses()
+        model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
     # Setup logging
     logging.basicConfig(
@@ -281,10 +219,10 @@ def main():
     transformers.utils.logging.enable_explicit_format()
 
     # Log on each process the small summary:
-    logger.warning(
-        f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
-        + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
-    )
+    # logger.warning(
+    #     f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
+    #     + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
+    # )
     logger.info(f"Training/evaluation parameters {training_args}")
 
     # Detecting last checkpoint.
@@ -389,6 +327,13 @@ def main():
         if model_args.config_overrides is not None:
             logger.info(f"Overriding config: {model_args.config_overrides}")
             config.update_from_string(model_args.config_overrides)
+
+    if training_args.ipu_config_name:
+        ipu_config = IPUConfig.from_pretrained(training_args.ipu_config_name, **config_kwargs)
+    elif model_args.model_name_or_path:
+        ipu_config = IPUConfig.from_pretrained(model_args.model_name_or_path, **config_kwargs)
+    else:
+        raise RuntimeError("You must provide an IPUConfig")
 
     tokenizer_kwargs = {
         "cache_dir": model_args.cache_dir,
@@ -517,8 +462,9 @@ def main():
             eval_dataset = eval_dataset.select(range(data_args.max_eval_samples))
 
     # Initialize our Trainer
-    trainer = IncTrainer(
+    trainer = IPUTrainer(
         model=model,
+        ipu_config=ipu_config,
         args=training_args,
         train_dataset=train_dataset if training_args.do_train else None,
         eval_dataset=eval_dataset if training_args.do_eval else None,
@@ -526,193 +472,56 @@ def main():
         data_collator=default_data_collator,
     )
 
-    eval_dataloader = trainer.get_eval_dataloader()
-    it = iter(eval_dataloader)
-    try:
-        input_names = next(it).keys()
-    except StopIteration:
-        input_names = None
-        logger.warning(
-            "Unable to determine the names of the inputs of the model to trace, input_names is set to None and "
-            "model.dummy_inputs().keys() will be used instead."
+    # Training
+    if training_args.do_train:
+        checkpoint = None
+        if training_args.resume_from_checkpoint is not None:
+            checkpoint = training_args.resume_from_checkpoint
+        elif last_checkpoint is not None:
+            checkpoint = last_checkpoint
+        train_result = trainer.train(resume_from_checkpoint=checkpoint)
+        trainer.save_model()  # Saves the tokenizer too for easy upload
+        metrics = train_result.metrics
+
+        max_train_samples = (
+            data_args.max_train_samples if data_args.max_train_samples is not None else len(train_dataset)
         )
+        metrics["train_samples"] = min(max_train_samples, len(train_dataset))
 
-    resume_from_checkpoint = training_args.resume_from_checkpoint
-    metric_name = optim_args.tune_metric
+        trainer.log_metrics("train", metrics)
+        trainer.save_metrics("train", metrics)
+        trainer.save_state()
 
-    def take_eval_steps(model, trainer, metric_name, save_metrics=False):
-        trainer.model = model
+    # Evaluation
+    if training_args.do_eval:
+        logger.info("*** Evaluate ***")
+
         metrics = trainer.evaluate()
+
+        max_eval_samples = data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)
+        metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
         try:
             perplexity = math.exp(metrics["eval_loss"])
         except OverflowError:
             perplexity = float("inf")
         metrics["perplexity"] = perplexity
-        if save_metrics:
-            trainer.save_metrics("eval", metrics)
-        logger.info("{}: {}".format(metric_name, metrics.get(metric_name)))
-        logger.info("Throughput: {} samples/sec".format(metrics.get("eval_samples_per_second")))
-        return metrics.get(metric_name)
 
-    def eval_func(model):
-        return take_eval_steps(model, trainer, metric_name)
+        trainer.log_metrics("eval", metrics)
+        trainer.save_metrics("eval", metrics)
 
-    def take_train_steps(model, trainer, resume_from_checkpoint, last_checkpoint):
-        trainer.model_wrapped = model
-        trainer.model = model
-        checkpoint = None
-        if resume_from_checkpoint is not None:
-            checkpoint = resume_from_checkpoint
-        elif last_checkpoint is not None:
-            checkpoint = last_checkpoint
-        train_result = trainer.train(pruner, resume_from_checkpoint=checkpoint)
-        metrics = train_result.metrics
-        trainer.save_model()  # Saves the tokenizer too for easy upload
-        trainer.log_metrics("train", metrics)
-        trainer.save_metrics("train", metrics)
-        trainer.save_state()
-        return trainer.model
-
-    def train_func(model):
-        return take_train_steps(model, trainer, resume_from_checkpoint, last_checkpoint)
-
-    quantizer = None
-    pruner = None
-
-    if not optim_args.quantize and not optim_args.prune:
-        raise ValueError("quantize and prune are both set to False.")
-
-    result_baseline_model = take_eval_steps(model, trainer, metric_name)
-
-    default_config = os.path.join(os.path.abspath(os.path.join(__file__, os.path.pardir, os.path.pardir)), "config")
-
-    if optim_args.quantize:
-
-        if not training_args.do_eval:
-            raise ValueError("do_eval must be set to True for quantization.")
-
-        q8_config = IncQuantizationConfig.from_pretrained(
-            optim_args.quantization_config if optim_args.quantization_config is not None else default_config,
-            config_file_name="quantization.yml",
-            cache_dir=model_args.cache_dir,
-        )
-
-        # Set metric tolerance if specified
-        if optim_args.perf_tol is not None:
-            q8_config.set_tolerance(optim_args.perf_tol)
-
-        # Set quantization approach if specified
-        if optim_args.quantization_approach is not None:
-            supported_approach = {"static", "dynamic", "aware_training"}
-            if optim_args.quantization_approach not in supported_approach:
-                raise ValueError(
-                    "Unknown quantization approach. Supported approach are " + ", ".join(supported_approach)
-                )
-            quant_approach = getattr(IncQuantizationMode, optim_args.quantization_approach.upper()).value
-            q8_config.set_config("quantization.approach", quant_approach)
-
-        q8_config.set_config("tuning.accuracy_criterion.higher_is_better", False)
-
-        # torch FX used for post-training quantization and quantization aware training
-        # dynamic quantization will be added when torch FX is more mature
-        if q8_config.get_config("quantization.approach") != IncQuantizationMode.DYNAMIC.value:
-
-            if not training_args.do_train:
-                raise ValueError("do_train must be set to True for static and aware training quantization.")
-
-            # TODO : Remove when dynamic axes support
-            if (
-                not training_args.dataloader_drop_last
-                and eval_dataset.shape[0] % training_args.per_device_eval_batch_size != 0
-            ):
-                raise ValueError(
-                    "The number of samples of the dataset is not a multiple of the batch size."
-                    "Use --dataloader_drop_last to overcome."
-                )
-
-            q8_config.set_config("model.framework", "pytorch_fx")
-            model.config.save_pretrained(training_args.output_dir)
-            model = symbolic_trace(
-                model,
-                input_names=input_names,
-                batch_size=training_args.per_device_eval_batch_size,
-                sequence_length=block_size,
-            )
-
-        calib_dataloader = trainer.get_train_dataloader()
-        inc_quantizer = IncQuantizer(
-            model, q8_config, eval_func=eval_func, train_func=train_func, calib_dataloader=calib_dataloader
-        )
-        quantizer = inc_quantizer.fit()
-
-    if optim_args.prune:
-
-        if not training_args.do_train:
-            raise ValueError("do_train must be set to True for pruning.")
-
-        pruning_config = IncPruningConfig.from_pretrained(
-            optim_args.pruning_config if optim_args.pruning_config is not None else default_config,
-            config_file_name="prune.yml",
-            cache_dir=model_args.cache_dir,
-        )
-
-        # Set targeted sparsity if specified
-        if optim_args.target_sparsity is not None:
-            pruning_config.set_config(
-                "pruning.approach.weight_compression.target_sparsity", optim_args.target_sparsity
-            )
-
-        pruning_start_epoch = pruning_config.get_config("pruning.approach.weight_compression.start_epoch")
-        pruning_end_epoch = pruning_config.get_config("pruning.approach.weight_compression.end_epoch")
-
-        if pruning_start_epoch > training_args.num_train_epochs - 1:
-            logger.warning(
-                f"Pruning end epoch {pruning_start_epoch} is higher than the total number of training epoch "
-                f"{training_args.num_train_epochs}. No pruning will be applied."
-            )
-
-        if pruning_end_epoch > training_args.num_train_epochs - 1:
-            logger.warning(
-                f"Pruning end epoch {pruning_end_epoch} is higher than the total number of training epoch "
-                f"{training_args.num_train_epochs}. The target sparsity will not be reached."
-            )
-
-        inc_pruner = IncPruner(model, pruning_config, eval_func=eval_func, train_func=train_func)
-
-        # Creation Pruning object used for IncTrainer training loop
-        pruner = inc_pruner.fit()
-
-    inc_optimizer = IncOptimizer(model, quantizer=quantizer, pruner=pruner)
-    opt_model = inc_optimizer.fit()
-
-    _, sparsity = opt_model.report_sparsity()
-    result_opt_model = take_eval_steps(opt_model.model, trainer, metric_name, save_metrics=True)
-
-    trainer.save_model(training_args.output_dir)
-    with open(os.path.join(training_args.output_dir, CONFIG_NAME), "w") as f:
-        yaml.dump(opt_model.tune_cfg, f, default_flow_style=False)
-
-    logger.info(
-        f"Optimized model with final sparsity of {sparsity} and {metric_name} of {result_opt_model} saved to: "
-        f"{training_args.output_dir}. Original model had an {metric_name} of {result_baseline_model}"
-    )
-
-    if optim_args.quantize and optim_args.verify_loading:
-
-        # Load the model obtained after Intel Neural Compressor (INC) quantization
-        loaded_model = IncQuantizedModelForCausalLM.from_pretrained(
-            training_args.output_dir,
-            input_names=input_names,
-            batch_size=training_args.per_device_eval_batch_size,
-            sequence_length=block_size,
-        )
-        loaded_model.eval()
-        result_loaded_model = take_eval_steps(loaded_model, trainer, metric_name)
-
-        if result_loaded_model != result_opt_model:
-            raise ValueError("The quantized model was not successfully loaded.")
+    kwargs = {"finetuned_from": model_args.model_name_or_path, "tasks": "fill-mask"}
+    if data_args.dataset_name is not None:
+        kwargs["dataset_tags"] = data_args.dataset_name
+        if data_args.dataset_config_name is not None:
+            kwargs["dataset_args"] = data_args.dataset_config_name
+            kwargs["dataset"] = f"{data_args.dataset_name} {data_args.dataset_config_name}"
         else:
-            logger.info(f"The quantized model was successfully loaded.")
+            kwargs["dataset"] = data_args.dataset_name
+
+    if training_args.push_to_hub:
+        trainer.push_to_hub(**kwargs)
+    else:
+        trainer.create_model_card(**kwargs)
 
 
 def _mp_fn(index):
