@@ -108,7 +108,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
             self.transformer.h[index] = poptorch.BeginBlock(layer, f"Layer{index}", ipu_id=ipu)
             logger.info(f"Layer {index:<2}   --> IPU {ipu}")
 
-        print(f"Head       --> IPU {ipu}")
+        print(f"Head       --> IPU 0")
         self.lm_head = poptorch.BeginBlock(self.lm_head, "LM head", ipu_id=0)
         logger.info("-----------------------------------------------------------")
         return self
@@ -129,13 +129,14 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
         return self
 
     def forward(self, input_ids, attention_mask, labels=None):
-        return super().forward(
+        ret = super().forward(
             input_ids=input_ids,
             attention_mask=attention_mask,
             labels=labels,
             use_cache=False,
             return_dict=False,
         )
+        return ret[0]
 
 
 @register(GPT2ForSequenceClassification)
