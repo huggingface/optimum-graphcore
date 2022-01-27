@@ -15,7 +15,6 @@ from typing import Optional
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 import poptorch
 import transformers
@@ -25,6 +24,7 @@ from transformers.modeling_outputs import BaseModelOutput, Seq2SeqModelOutput
 from transformers.models.bart.modeling_bart import shift_tokens_right
 
 from ...modeling_utils import PipelineMixin, register
+from ...generation_utils import IPUGenerationMixin
 
 
 logger = logging.get_logger(__name__)
@@ -150,8 +150,11 @@ class SharedEmbedding(torch.nn.Module):
         self.shared = nn.Embedding.from_pretrained(shared.weight, freeze=False, padding_idx=shared.padding_idx)
 
     def forward(self, input_ids, encoder_embed_scale, decoder_input_ids, decoder_embed_scale):
-        encoder_inputs_embeds = self.shared(input_ids) * encoder_embed_scale
-        decoder_inputs_embeds = self.shared(decoder_input_ids) * decoder_embed_scale
+        encoder_inputs_embeds, decoder_inputs_embeds = None, None
+        if input_ids is not None and encoder_embed_scale is not None:
+            encoder_inputs_embeds = self.shared(input_ids) * encoder_embed_scale
+        if decoder_input_ids is not None and decoder_embed_scale is not None:
+            decoder_inputs_embeds = self.shared(decoder_input_ids) * decoder_embed_scale
         return encoder_inputs_embeds, decoder_inputs_embeds
 
 
@@ -219,18 +222,14 @@ class BartModelWithInputEmbeds(BartModel):
                 decoder_input_ids=decoder_input_ids,
                 decoder_embed_scale=self.decoder.embed_scale,
             )
-            input_ids = None
-            decoder_input_ids = None
-
-        def contains_nan(tensor):
-            return torch.sum(torch.isnan(tensor))
-
-        # x1 = poptorch.ipu_print_tensor(contains_nan(encoder_inputs_embeds), "encoder_inputs_embeds")
-        # x2 = poptorch.ipu_print_tensor(contains_nan(decoder_inputs_embeds), "decoder_inputs_embeds")
+            if encoder_inputs_embeds is not None:
+                input_ids = None
+            if decoder_inputs_embeds is not None:
+                decoder_input_ids = None
 
         if encoder_outputs is None:
             encoder_outputs = self.encoder(
-                input_ids=input_ids,
+                # input_ids=input_ids,
                 attention_mask=attention_mask,
                 head_mask=head_mask,
                 inputs_embeds=encoder_inputs_embeds,
@@ -246,7 +245,6 @@ class BartModelWithInputEmbeds(BartModel):
                 attentions=encoder_outputs[2] if len(encoder_outputs) > 2 else None,
             )
 
-        # x3 = poptorch.ipu_print_tensor(contains_nan(encoder_outputs[0]), "encoder_outputs")
         # decoder outputs consists of (dec_features, past_key_value, dec_hidden, dec_attn)
         decoder_outputs = self.decoder(
             # input_ids=decoder_input_ids,
@@ -262,10 +260,9 @@ class BartModelWithInputEmbeds(BartModel):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
-        # x4 = poptorch.ipu_print_tensor(contains_nan(decoder_outputs[0]), "decoder_outputs")
 
         if not return_dict:
-            return decoder_outputs + encoder_outputs  #  + (x1, x2, x3, x4)
+            return decoder_outputs + encoder_outputs
 
         return Seq2SeqModelOutput(
             last_hidden_state=decoder_outputs.last_hidden_state,
@@ -311,7 +308,8 @@ def _expand_mask(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] 
 
 
 @register(BartForConditionalGeneration)
-class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, PipelineMixin):
+class PipelinedBartForConditionalGeneration(IPUGenerationMixin, BartForConditionalGeneration, PipelineMixin):
+
     def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.
@@ -392,7 +390,12 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
 
         return self
 
-    def forward(self, input_ids, attention_mask, decoder_input_ids, labels=None):
+    def train(self, mode: bool = True) -> 'PipelinedBartForConditionalGeneration':
+        mod = super(BartForConditionalGeneration, self).train(mode=mode)
+        mod.forward = mod._forward_for_train if mode else mod._forward_for_generate
+        return mod
+
+    def _forward_for_train(self, input_ids, attention_mask, decoder_input_ids, labels=None):
         return super().forward(
             input_ids=input_ids,
             attention_mask=attention_mask,
@@ -401,5 +404,18 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
             labels=labels,
             return_dict=False,
             # TODO: actually find a way to use cache for decoding.
-            use_cache=False,
+            # use_cache=False,
         )
+
+    def _forward_for_generate(self, encoder_outputs, decoder_input_ids, attention_mask):
+        return super().forward(
+            encoder_outputs=encoder_outputs,
+            attention_mask=attention_mask,
+            decoder_input_ids=decoder_input_ids,
+            # decoder_attention_mask=decoder_attention_mask,
+            return_dict=False,
+            # TODO: actually find a way to use cache for decoding.
+            # use_cache=False,
+        )
+
+    forward = _forward_for_train
