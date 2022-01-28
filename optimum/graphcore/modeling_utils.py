@@ -134,3 +134,35 @@ class PipelineMixin:
             return sum(p.numel() for p in non_embedding_parameters if p.requires_grad or not only_trainable)
         else:
             return sum(p.numel() for p in self.parameters() if p.requires_grad or not only_trainable)
+
+    from typing import Any, Dict, Optional
+    from transformers.modeling_outputs import ModelOutput
+    import torch
+    def _prepare_encoder_decoder_kwargs_for_generation(
+        self, inputs_tensor: torch.Tensor, model_kwargs, model_input_name: Optional[str] = None
+    ) -> Dict[str, Any]:
+        # 2. prepare encoder args and encoder kwargs from model kwargs
+        irrelevant_prefix = ["decoder_", "cross_attn", "use_cache"]
+        encoder_kwargs = {
+            argument: value
+            for argument, value in model_kwargs.items()
+            if not any(argument.startswith(p) for p in irrelevant_prefix)
+        }
+        model_input_name = model_input_name if model_input_name is not None else self.main_input_name
+        encoder_kwargs["return_dict"] = True
+        encoder_kwargs[model_input_name] = inputs_tensor
+        # 1. get encoder
+        compiled_encoder = getattr(self, "_compiled_encoder", None)
+        if compiled_encoder is None:
+            encoder = self.get_encoder()
+            # TODO: how to pass the poptorch options?
+            compiled_encoder = poptorch.inferenceModel(encoder.eval())
+            compiled_encoder.compile(**encoder_kwargs)
+
+        # 3. make sure that encoder returns `ModelOutput`
+        model_input_name = model_input_name if model_input_name is not None else self.main_input_name
+        encoder_kwargs["return_dict"] = True
+        encoder_kwargs[model_input_name] = inputs_tensor
+        model_kwargs["encoder_outputs"]: ModelOutput = compiled_encoder(**encoder_kwargs)
+
+        return model_kwargs

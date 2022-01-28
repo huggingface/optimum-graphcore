@@ -18,8 +18,10 @@ import torch
 from torch import nn
 from torch.utils.data import Dataset
 
-from transformers.trainer_utils import PredictionOutput
+import poptorch
 from optimum.utils import logging
+from transformers.trainer_utils import PredictionOutput
+
 # from .deepspeed import is_deepspeed_zero3_enabled
 from .trainer import IPUTrainer
 
@@ -28,6 +30,41 @@ logger = logging.get_logger(__name__)
 
 
 class IPUSeq2SeqTrainer(IPUTrainer):
+    # def __init__(
+    #     self,
+    #     model: Union[PreTrainedModel, nn.Module] = None,
+    #     ipu_config: IPUConfig = None,
+    #     args: TrainingArguments = None,
+    #     data_collator: Optional[DataCollator] = None,
+    #     train_dataset: Optional[Dataset] = None,
+    #     eval_dataset: Optional[Dataset] = None,
+    #     tokenizer: Optional[PreTrainedTokenizerBase] = None,
+    #     model_init: Callable[[], PreTrainedModel] = None,
+    #     compute_metrics: Optional[Callable[[EvalPrediction], Dict]] = None,
+    #     callbacks: Optional[List[TrainerCallback]] = None,
+    #     optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (None, None),
+    #     force_to_pipelined: bool = False,
+    # ):
+    #     super().__init__(
+    #         model,
+    #         ipu_config,
+    #         args,
+    #         data_collator,
+    #         train_dataset,
+    #         eval_dataset,
+    #         tokenizer,
+    #         model_init,
+    #         compute_metrics,
+    #         callbacks,
+    #         optimizers,
+    #         force_to_pipelined,
+    #     )
+    #     self.encoder = model.get_encoder()
+
+    # def _compile_encoder(self, dataloader: poptorch.DataLoader):
+    #     encoder = self._wrap_model(self.model, training=False)
+    #     self._compile_model
+
     def evaluate(
         self,
         eval_dataset: Optional[Dataset] = None,
@@ -124,6 +161,7 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         inputs: Dict[str, Union[torch.Tensor, Any]],
         prediction_loss_only: bool,
         ignore_keys: Optional[List[str]] = None,
+        is_last_batch: bool = False,
     ) -> Tuple[Optional[float], Optional[torch.Tensor], Optional[torch.Tensor]]:
         """
         Perform an evaluation step on `model` using `inputs`.
@@ -148,7 +186,11 @@ class IPUSeq2SeqTrainer(IPUTrainer):
 
         if not self.args.predict_with_generate or prediction_loss_only:
             return super().prediction_step(
-                model, inputs, prediction_loss_only=prediction_loss_only, ignore_keys=ignore_keys
+                model,
+                inputs,
+                prediction_loss_only=prediction_loss_only,
+                ignore_keys=ignore_keys,
+                is_last_batch=is_last_batch,
             )
 
         has_labels = "labels" in inputs
@@ -157,12 +199,13 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         # XXX: adapt synced_gpus for fairscale as well
         gen_kwargs = {
             "max_length": self._max_length if self._max_length is not None else self.model.config.max_length,
-            "num_beams": self._num_beams if self._num_beams is not None else self.model.config.num_beams,
-            "synced_gpus": False # True if is_deepspeed_zero3_enabled() else False,
+            # TODO: disabled beam search for now.
+            # "num_beams": self._num_beams if self._num_beams is not None else self.model.config.num_beams,
+            "synced_gpus": False,  # True if is_deepspeed_zero3_enabled() else False,
         }
 
         # prepare generation inputs
-        # some encoder-decoder models can have varying encder's and thus
+        # some encoder-decoder models can have varying encoder's and thus
         # varying model input names
         if hasattr(self.model, "encoder") and self.model.encoder.main_input_name != self.model.main_input_name:
             generation_inputs = inputs[self.model.encoder.main_input_name]

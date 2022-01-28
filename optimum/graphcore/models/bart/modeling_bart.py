@@ -157,6 +157,41 @@ class SharedEmbedding(torch.nn.Module):
             decoder_inputs_embeds = self.shared(decoder_input_ids) * decoder_embed_scale
         return encoder_inputs_embeds, decoder_inputs_embeds
 
+class SerializedLinear(nn.Linear):
+    """
+    Exactly equivalent to `nn.Linear` layer, but with the matrix multiplication replaced with
+    a serialized matrix multiplication: `poptorch.serializedMatMul`.
+    The matrix multiplication is split into separate smaller multiplications, calculated one after the other,
+    to reduce the memory requirements of the multiplication and its gradient calculation.
+
+    Args:
+        in_features: Size of each input sample
+        out_features: Size of each output sample
+        factor: Number of serialized multiplications. Must be a factor of
+            the dimension to serialize on.
+        bias: If set to False, the layer will not learn an additive bias.
+            Default: True
+        mode: Which dimension of the matmul to serialize on:
+            for matrix A (m by n) multiplied by matrix B (n by p).
+            * InputChannels: Split across the input channels (dimension m).
+            * ReducingDim: Split across the reducing dimension (n).
+            * OutputChannels: Split across the output channels (dimension p).
+            * Disabled: Same as an ordinary matrix multiplication.
+    """
+
+    def __init__(
+        self, in_features, out_features, factor, bias=False, mode=poptorch.MatMulSerializationMode.OutputChannels
+    ):
+        super().__init__(in_features, out_features, bias)
+        self.mode = mode
+        self.factor = factor
+
+    def forward(self, x):
+        output = poptorch.serializedMatMul(x, self.weight.t(), self.mode, self.factor)
+        if self.bias is not None:
+            output += self.bias
+        return output
+
 
 class BartModelWithInputEmbeds(BartModel):
     @property
@@ -169,6 +204,8 @@ class BartModelWithInputEmbeds(BartModel):
                 logger.warning("encoder and decoder embeddings computation is already shared")
             else:
                 self.shared = SharedEmbedding(self.shared)
+                self.encoder.embed_tokens = None
+                self.decoder.embed_tokens = None
         else:
             if isinstance(self.shared, nn.Embedding):
                 logger.warning("encoder and decoder embeddings computation is not shared")
@@ -290,6 +327,7 @@ def _make_causal_mask(input_ids_shape: torch.Size, dtype: torch.dtype, past_key_
     if past_key_values_length > 0:
         mask = torch.cat([torch.zeros(tgt_len, past_key_values_length, dtype=dtype), mask], dim=-1)
     return mask[None, None, :, :].expand(bsz, 1, tgt_len, tgt_len + past_key_values_length)
+    # return torch.broadcast_to(mask[None, None, :, :], (bsz, 1, tgt_len, tgt_len + past_key_values_length))
 
 
 def _expand_mask(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] = None):
@@ -299,7 +337,10 @@ def _expand_mask(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] 
     bsz, src_len = mask.size()
     tgt_len = tgt_len if tgt_len is not None else src_len
 
-    expanded_mask = mask[:, None, None, :].expand(bsz, 1, tgt_len, src_len).to(dtype)
+    # expanded_mask = mask[:, None, None, :].expand(bsz, 1, tgt_len, src_len).to(dtype)
+    expanded_mask = torch.zeros((bsz, 1, tgt_len, src_len), ).to(dtype)
+    # expanded_mask = torch.broadcast_to(mask[:, None, None, :], (bsz, 1, tgt_len, src_len)).to(dtype)
+    # expanded_mask = mask[:, None, None, :].repeat(bsz, 1, tgt_len, 1).to(dtype)
 
     inverted_mask = 1.0 - expanded_mask
 
@@ -335,13 +376,26 @@ class PipelinedBartForConditionalGeneration(IPUGenerationMixin, BartForCondition
         logger.info("Embedding  --> IPU 0")
 
         if self.config.embedding_serialization_factor > 1:
-            self.model.shared = SerializedEmbedding(self.model.shared, self.config.embedding_serialization_factor)
+            serialized_lm_head = SerializedLinear(
+                self.config.d_model,
+                self.model.shared.num_embeddings,
+                self.config.embedding_serialization_factor,
+                bias=False,
+                mode=poptorch.MatMulSerializationMode.OutputChannels,
+            )
+            serialized_lm_head.load_state_dict(self.lm_head.state_dict())
+            self.lm_head = serialized_lm_head
+            self.tie_weights()
+
+            # self.model.shared = SerializedEmbedding(self.model.shared, self.config.embedding_serialization_factor)
 
         self.model.__class__ = BartModelWithInputEmbeds
         # TODO: make sure to restore those functions back in deparallelize
         transformers.models.bart.modeling_bart._make_causal_mask = _make_causal_mask
         transformers.models.bart.modeling_bart._expand_mask = _expand_mask
         self.model.encoder_and_decoder_embeddings_computation(True)
+        # self.model.shared.shared.weight = self.lm_head.weight
+        self.lm_head.weight = self.model.shared.shared.weight
         self.model.shared = poptorch.BeginBlock(self.model.shared, "Embedding", ipu_id=0)
 
         self.model.encoder.embed_positions = poptorch.BeginBlock(self.model.encoder.embed_positions, ipu_id=0)
@@ -370,8 +424,8 @@ class PipelinedBartForConditionalGeneration(IPUGenerationMixin, BartForCondition
             self.model.decoder.layers[index] = poptorch.BeginBlock(layer, f"Decoder{index}", ipu_id=ipu)
             logger.info(f"Decoder {index:<2} --> IPU {ipu}")
 
-        logger.info(f"LM Head Output --> IPU {ipu}")
-        self.lm_head = poptorch.BeginBlock(self.lm_head, "LM Head Output", ipu_id=layer_ipu[-1])
+        logger.info("LM Head Output --> IPU 0")
+        self.lm_head = poptorch.BeginBlock(self.lm_head, "LM Head Output", ipu_id=0)
         logger.info("-----------------------------------------------------------")
         return self
 

@@ -323,9 +323,12 @@ class IPUTrainer:
         if log:
             logger.info("Compiling Model...")
         sample_batch = self._prepare_inputs(sample_batch)
-        sample_batch = {
-            k: torch.ones((320, 24), dtype=torch.long) for k in ["input_ids", "attention_mask", "decoder_input_ids", "labels"]
-        }
+        # sample_batch = {k: v[:, :99] for k, v in sample_batch.items()}
+
+        # sample_batch = {
+        #     k: torch.ones((320, 24), dtype=torch.long)
+        #     for k in ["input_ids", "attention_mask", "decoder_input_ids", "labels"]
+        # }
         start_compile = time.perf_counter()
         if isinstance(sample_batch, tuple):
             model.compile(*sample_batch)
