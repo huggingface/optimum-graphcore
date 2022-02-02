@@ -1,17 +1,18 @@
-# Copyright (c) 2021 Graphcore Ltd. All rights reserved.
+#  Copyright 2021 The HuggingFace Team. All rights reserved.
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
+#  Licensed under the Apache License, Version 2.0 (the "License");
+#  you may not use this file except in compliance with the License.
+#  You may obtain a copy of the License at
 #
 #      http://www.apache.org/licenses/LICENSE-2.0
 #
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-from typing import Optional
+#  Unless required by applicable law or agreed to in writing, software
+#  distributed under the License is distributed on an "AS IS" BASIS,
+#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#  See the License for the specific language governing permissions and
+#  limitations under the License.
+
+from typing import Optional, Tuple
 
 import torch
 import torch.nn as nn
@@ -21,10 +22,19 @@ import transformers
 from optimum.utils import logging
 from transformers import BartForConditionalGeneration, BartModel
 from transformers.modeling_outputs import BaseModelOutput, Seq2SeqModelOutput
+from transformers.models.bart.modeling_bart import _expand_mask as original_expand_mask
+from transformers.models.bart.modeling_bart import _make_causal_mask as original_make_causal_mask
 from transformers.models.bart.modeling_bart import shift_tokens_right
 
-from ...modeling_utils import PipelineMixin, register
 from ...generation_utils import IPUGenerationMixin
+from ...modeling_utils import (
+    PipelineMixin,
+    SerializedLinear,
+    _get_layer_ipu,
+    outline_attribute,
+    recomputation_checkpoint,
+    register,
+)
 
 
 logger = logging.get_logger(__name__)
@@ -32,173 +42,82 @@ logger = logging.get_logger(__name__)
 FLOAT16_LIMIT = 1e4
 
 
-def _get_layer_ipu(layers_per_ipu):
-    # List of the IPU Id for each encoder layer
-    layer_ipu = []
-    for ipu, n_layers in enumerate(layers_per_ipu):
-        layer_ipu += [ipu] * n_layers
-    return layer_ipu
-
-
-def recomputation_checkpoint(module: nn.Module):
-    """Annotates the output of a module to be checkpointed instead of
-    recomputed"""
-
-    def recompute_outputs(module, inputs, outputs):
-        return tuple(poptorch.recomputationCheckpoint(y) for y in outputs)
-
-    module.register_forward_hook(recompute_outputs)
-
-
-def outline_attribute(module: nn.Module, value: str):
-    """Adds an attribute to a module. This attribute will be used
-    when comparing operation equivalence in outlining. For example:
-
-    layer1 = nn.Linear(...)
-    layer2 = nn.Linear(...)
-    layer3 = nn.Linear(...)
-    layer4 = nn.Linear(...)
-    outline_attribute(layer1, "A")
-    outline_attribute(layer2, "A")
-    outline_attribute(layer3, "B")
-
-    The code for layer1 can be reused for layer2.
-    But it can't be used for layer3 or layer4.
-    """
-    context = poptorch.Attribute(__outline={"layer": value})
-
-    def enable(*args):
-        context.__enter__()
-
-    def disable(*args):
-        context.__exit__(None, None, None)
-
-    module.register_forward_pre_hook(enable)
-    module.register_forward_hook(disable)
-
-
-class SerializedEmbedding(nn.Module):
-    """
-    Wrapper for `nn.Embedding` layer that performs the embedding look-up into
-    smaller serialized steps in order to reduce memory in the embedding gradient
-    calculation.
-
-    Args:
-        embedding: A `nn.Embedding` to wrap
-        serialization_factor: The number of serialized embedding look-ups
-    """
-
-    def __init__(self, embedding: nn.Embedding, serialization_factor: int):
-        super().__init__()
-        self.serialization_factor = serialization_factor
-        self.num_embeddings = embedding.num_embeddings
-
-        # Num embeddings should be divisible by the serialization factor
-        assert self.num_embeddings % self.serialization_factor == 0
-        self.split_size = self.num_embeddings // self.serialization_factor
-        self.split_embeddings = nn.ModuleList(
-            [
-                nn.Embedding.from_pretrained(
-                    embedding.weight[i * self.split_size : (i + 1) * self.split_size, :].detach(),
-                    freeze=False,
-                    padding_idx=embedding.padding_idx if i == 0 else None,
-                )
-                for i in range(self.serialization_factor)
-            ]
-        )
-
-    def deserialize(self):
-        """
-        Deserialize the internal wrapped embedding layer and return it as a
-        `nn.Embedding` object.
-
-        Returns:
-            `nn.Embedding` layer
-        """
-        return nn.Embedding.from_pretrained(torch.vstack([l.weight for l in self.split_embeddings]), padding_idx=0)
-
-    def forward(self, indices):
-        # iterate through the splits
-        x_sum = None
-        for i in range(self.serialization_factor):
-            # mask out the indices not in this split
-            split_indices = indices - i * self.split_size
-            mask = (split_indices >= 0) * (split_indices < self.split_size)
-            mask = mask.detach()
-            split_indices *= mask
-
-            # do the embedding lookup
-            x = self.split_embeddings[i](split_indices)
-
-            # multiply the output by mask
-            x *= mask.unsqueeze(-1)
-
-            # add to partial
-            if x_sum is not None:
-                x_sum += x
-            else:
-                x_sum = x
-        return x_sum
-
-
 class SharedEmbedding(torch.nn.Module):
-    def __init__(self, shared):
-        super().__init__()
-        # self.shared = shared
-        # Doing this is necessary to make it work, otherwise an error is thrown:
-        # "In poptorch/python/poptorch.cpp:1319: 'popart_internal_exception': tensor model.model.shared.shared.weight/d"
-        self.shared = nn.Embedding.from_pretrained(shared.weight, freeze=False, padding_idx=shared.padding_idx)
+    """Wrapper around the shared embedding between the encoder and the decoder stacks.
 
-    def forward(self, input_ids, encoder_embed_scale, decoder_input_ids, decoder_embed_scale):
-        encoder_inputs_embeds, decoder_inputs_embeds = None, None
-        if input_ids is not None and encoder_embed_scale is not None:
-            encoder_inputs_embeds = self.shared(input_ids) * encoder_embed_scale
-        if decoder_input_ids is not None and decoder_embed_scale is not None:
-            decoder_inputs_embeds = self.shared(decoder_input_ids) * decoder_embed_scale
+    Attributes:
+        shared: The shared embedding layer.
+    """
+
+    def __init__(self, shared: nn.Embedding):
+        super().__init__()
+        self.shared = shared
+
+    # def _combine_inputs(self, input_ids, decoder_input_ids):
+    #     encoder_seq_length = input_ids.size(1)
+    #     decoder_seq_length = decoder_input_ids.size(1)
+    #     if encoder_seq_length > decoder_seq_length:
+    #         decoder_input_ids = torch.nn.functional.pad(
+    #             decoder_input_ids,
+    #             (0, encoder_seq_length - decoder_seq_length),
+    #             value=self.pad_token_id
+    #         )
+    #     elif encoder_seq_length < decoder_seq_length:
+    #         input_ids = torch.nn.functional.pad(
+    #             input_ids,
+    #             (0, decoder_seq_length - encoder_seq_length),
+    #             value=self.pad_token_id
+    #         )
+    #     combined = torch.stack([input_ids, decoder_input_ids], dim=0)
+    #     return combined, encoder_seq_length, decoder_seq_length
+
+    # def _separate_inputs(self, embeds, encoder_seq_length, decoder_seq_length):
+    #     encoder_embeds, decoder_embeds = embeds
+    #     return encoder_embeds[:, :encoder_seq_length, :], decoder_embeds[:, :decoder_seq_length, :]
+
+    def _combine_inputs(self, input_ids: torch.Tensor, decoder_input_ids: torch.Tensor) -> Tuple[int, torch.Tensor]:
+        idx = input_ids.size(1)
+        return idx, torch.cat([input_ids, decoder_input_ids], dim=1)
+
+    def _separate_inputs(self, idx: int, embeds: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        return embeds[:, :idx, :], embeds[:, idx:, :]
+
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        encoder_embed_scale: float,
+        decoder_input_ids: torch.Tensor,
+        decoder_embed_scale: float,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        # TODO: use this once the TiedGather pattern issue is solved.
+        # encoder_inputs_embeds, decoder_inputs_embeds = None, None
+        # if input_ids is not None and encoder_embed_scale is not None:
+        #     encoder_inputs_embeds = self.shared(input_ids) * encoder_embed_scale
+        # if decoder_input_ids is not None and decoder_embed_scale is not None:
+        #     decoder_inputs_embeds = self.shared(decoder_input_ids) * decoder_embed_scale
+        # combined, n1, n2 = self._combine_inputs(input_ids, decoder_input_ids)
+        # encoder_inputs_embeds, decoder_inputs_embeds = self._separate_inputs(self.shared(combined), n1, n2)
+        idx, combined = self._combine_inputs(input_ids, decoder_input_ids)
+        encoder_inputs_embeds, decoder_inputs_embeds = self._separate_inputs(idx, self.shared(combined))
+
+        encoder_inputs_embeds = encoder_inputs_embeds * encoder_embed_scale
+        decoder_inputs_embeds = decoder_inputs_embeds * decoder_embed_scale
+
         return encoder_inputs_embeds, decoder_inputs_embeds
 
-class SerializedLinear(nn.Linear):
-    """
-    Exactly equivalent to `nn.Linear` layer, but with the matrix multiplication replaced with
-    a serialized matrix multiplication: `poptorch.serializedMatMul`.
-    The matrix multiplication is split into separate smaller multiplications, calculated one after the other,
-    to reduce the memory requirements of the multiplication and its gradient calculation.
 
-    Args:
-        in_features: Size of each input sample
-        out_features: Size of each output sample
-        factor: Number of serialized multiplications. Must be a factor of
-            the dimension to serialize on.
-        bias: If set to False, the layer will not learn an additive bias.
-            Default: True
-        mode: Which dimension of the matmul to serialize on:
-            for matrix A (m by n) multiplied by matrix B (n by p).
-            * InputChannels: Split across the input channels (dimension m).
-            * ReducingDim: Split across the reducing dimension (n).
-            * OutputChannels: Split across the output channels (dimension p).
-            * Disabled: Same as an ordinary matrix multiplication.
-    """
-
-    def __init__(
-        self, in_features, out_features, factor, bias=False, mode=poptorch.MatMulSerializationMode.OutputChannels
-    ):
-        super().__init__(in_features, out_features, bias)
-        self.mode = mode
-        self.factor = factor
-
-    def forward(self, x):
-        output = poptorch.serializedMatMul(x, self.weight.t(), self.mode, self.factor)
-        if self.bias is not None:
-            output += self.bias
-        return output
-
-
-class BartModelWithInputEmbeds(BartModel):
+class BartModelWithSharedEmbedding(BartModel):
     @property
     def is_encoder_and_decoder_embeddings_computation_shared(self):
         return isinstance(self.shared, SharedEmbedding)
 
-    def encoder_and_decoder_embeddings_computation(self, use_shared_embedding):
+    def encoder_and_decoder_embeddings_computation(self, use_shared_embedding: bool):
+        """Sets the BartModel shared embedding layer to SharedEmbedding that combines the computation under one layer.
+
+        Args:
+            use_shared_embedding: whether to use SharedEmbedding or not.
+        """
+
         if use_shared_embedding:
             if isinstance(self.shared, SharedEmbedding):
                 logger.warning("encoder and decoder embeddings computation is already shared")
@@ -266,7 +185,7 @@ class BartModelWithInputEmbeds(BartModel):
 
         if encoder_outputs is None:
             encoder_outputs = self.encoder(
-                # input_ids=input_ids,
+                input_ids=input_ids,
                 attention_mask=attention_mask,
                 head_mask=head_mask,
                 inputs_embeds=encoder_inputs_embeds,
@@ -284,7 +203,7 @@ class BartModelWithInputEmbeds(BartModel):
 
         # decoder outputs consists of (dec_features, past_key_value, dec_hidden, dec_attn)
         decoder_outputs = self.decoder(
-            # input_ids=decoder_input_ids,
+            input_ids=decoder_input_ids,
             attention_mask=decoder_attention_mask,
             encoder_hidden_states=encoder_outputs[0],
             encoder_attention_mask=attention_mask,
@@ -327,7 +246,6 @@ def _make_causal_mask(input_ids_shape: torch.Size, dtype: torch.dtype, past_key_
     if past_key_values_length > 0:
         mask = torch.cat([torch.zeros(tgt_len, past_key_values_length, dtype=dtype), mask], dim=-1)
     return mask[None, None, :, :].expand(bsz, 1, tgt_len, tgt_len + past_key_values_length)
-    # return torch.broadcast_to(mask[None, None, :, :], (bsz, 1, tgt_len, tgt_len + past_key_values_length))
 
 
 def _expand_mask(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] = None):
@@ -337,8 +255,8 @@ def _expand_mask(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] 
     bsz, src_len = mask.size()
     tgt_len = tgt_len if tgt_len is not None else src_len
 
-    # expanded_mask = mask[:, None, None, :].expand(bsz, 1, tgt_len, src_len).to(dtype)
-    expanded_mask = torch.zeros((bsz, 1, tgt_len, src_len), ).to(dtype)
+    expanded_mask = mask[:, None, None, :].expand(bsz, 1, tgt_len, src_len).to(dtype)
+    # expanded_mask = torch.zeros((bsz, 1, tgt_len, src_len), ).to(dtype)
     # expanded_mask = torch.broadcast_to(mask[:, None, None, :], (bsz, 1, tgt_len, src_len)).to(dtype)
     # expanded_mask = mask[:, None, None, :].repeat(bsz, 1, tgt_len, 1).to(dtype)
 
@@ -350,7 +268,6 @@ def _expand_mask(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] 
 
 @register(BartForConditionalGeneration)
 class PipelinedBartForConditionalGeneration(IPUGenerationMixin, BartForConditionalGeneration, PipelineMixin):
-
     def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.
@@ -385,17 +302,14 @@ class PipelinedBartForConditionalGeneration(IPUGenerationMixin, BartForCondition
             )
             serialized_lm_head.load_state_dict(self.lm_head.state_dict())
             self.lm_head = serialized_lm_head
+            self.lm_head.weight
             self.tie_weights()
 
-            # self.model.shared = SerializedEmbedding(self.model.shared, self.config.embedding_serialization_factor)
-
-        self.model.__class__ = BartModelWithInputEmbeds
-        # TODO: make sure to restore those functions back in deparallelize
+        self.model.__class__ = BartModelWithSharedEmbedding
         transformers.models.bart.modeling_bart._make_causal_mask = _make_causal_mask
         transformers.models.bart.modeling_bart._expand_mask = _expand_mask
         self.model.encoder_and_decoder_embeddings_computation(True)
-        # self.model.shared.shared.weight = self.lm_head.weight
-        self.lm_head.weight = self.model.shared.shared.weight
+
         self.model.shared = poptorch.BeginBlock(self.model.shared, "Embedding", ipu_id=0)
 
         self.model.encoder.embed_positions = poptorch.BeginBlock(self.model.encoder.embed_positions, ipu_id=0)
@@ -438,13 +352,11 @@ class PipelinedBartForConditionalGeneration(IPUGenerationMixin, BartForCondition
         super().deparallelize()
         self.model.encoder_and_decoder_embeddings_computation(False)
         self.model.__class__ = BartModel
-        # Deserialize the serialized word embedding
-        if self.config.embedding_serialization_factor > 1:
-            self.model.shared = self.model.shared.deserialize()
-
+        transformers.models.bart.modeling_bart._make_causal_mask = original_make_causal_mask
+        transformers.models.bart.modeling_bart._expand_mask = original_expand_mask
         return self
 
-    def train(self, mode: bool = True) -> 'PipelinedBartForConditionalGeneration':
+    def train(self, mode: bool = True) -> "PipelinedBartForConditionalGeneration":
         mod = super(BartForConditionalGeneration, self).train(mode=mode)
         mod.forward = mod._forward_for_train if mode else mod._forward_for_generate
         return mod

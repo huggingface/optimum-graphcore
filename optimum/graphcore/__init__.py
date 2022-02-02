@@ -17,11 +17,6 @@
 #  limitations under the License.
 
 from .ipu_configuration import IPUConfig
-from .trainer import IPUTrainer
-from .trainer_seq2seq import IPUSeq2SeqTrainer
-from .training_args import IPUTrainingArguments
-from .training_args_seq2seq import IPUSeq2SeqTrainingArguments
-
 from .models.bart import PipelinedBartForConditionalGeneration
 from .models.bert import (
     PipelinedBertForMultipleChoice,
@@ -37,3 +32,7 @@ from .models.roberta import (
     PipelinedRobertaForTokenClassification,
 )
 from .models.vit import PipelinedViTForImageClassification
+from .trainer import IPUTrainer
+from .trainer_seq2seq import IPUSeq2SeqTrainer
+from .training_args import IPUTrainingArguments
+from .training_args_seq2seq import IPUSeq2SeqTrainingArguments

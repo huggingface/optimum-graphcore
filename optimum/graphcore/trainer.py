@@ -672,6 +672,7 @@ class IPUTrainer:
                     "eps": 1e-6,  # TODO: use self.args.adam_epsilon?
                 }
             else:
+                # optimizer_cls = poptorch.optim.SGD
                 optimizer_cls = AdamW
                 optimizer_kwargs = {
                     "betas": (self.args.adam_beta1, self.args.adam_beta2),

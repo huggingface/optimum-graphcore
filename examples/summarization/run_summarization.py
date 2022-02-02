@@ -31,6 +31,8 @@ from datasets import load_dataset, load_metric
 
 import transformers
 from filelock import FileLock
+from optimum.graphcore import IPUConfig, IPUSeq2SeqTrainer
+from optimum.graphcore import IPUSeq2SeqTrainingArguments as Seq2SeqTrainingArguments
 from transformers import (
     AutoConfig,
     AutoModelForSeq2SeqLM,
@@ -47,9 +49,6 @@ from transformers.file_utils import is_offline_mode
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version
 from transformers.utils.versions import require_version
-
-from optimum.graphcore import IPUConfig, IPUSeq2SeqTrainer
-from optimum.graphcore import IPUSeq2SeqTrainingArguments as Seq2SeqTrainingArguments
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
