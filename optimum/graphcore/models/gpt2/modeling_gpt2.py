@@ -111,8 +111,10 @@ def outline_attribute(module: nn.Module, value: str):
     def disable(*args):
         context.__exit__(None, None, None)
 
-    module.register_forward_pre_hook(enable)
-    module.register_forward_hook(disable)
+    h1 = module.register_forward_pre_hook(enable)
+    h2 = module.register_forward_hook(disable)
+
+    return h1, h2
 
 
 @register(GPT2LMHeadModel)
@@ -147,7 +149,8 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
         logger.info("Embedding  --> IPU 0")
         self.transformer.wte = poptorch.BeginBlock(self.transformer.wte, "Token embedding", ipu_id=0)
         self.transformer.wpe = poptorch.BeginBlock(self.transformer.wpe, "Position embedding", ipu_id=1)
-        outline_attribute(self.transformer.ln_f, "LayerNorm")
+        hs = outline_attribute(self.transformer.ln_f, "LayerNorm")
+        self._hooks.extend(hs)
 
         for index, layer in enumerate(self.transformer.h):
             ipu = layer_ipu[index]
@@ -177,62 +180,62 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
                 poptorch.removeBlocks(m)
         return self
 
-    # def forward(self, input_ids, attention_mask, labels=None):
-    #     transformer_outputs = self.transformer(input_ids, attention_mask=attention_mask)
-    #     hidden_states = transformer_outputs[0]
-    #     # hidden_states = poptorch.recomputationCheckpoint(hidden_states)
-    #     lm_logits = self.lm_head(hidden_states)
-
-    #     loss = None
-    #     if labels is not None:
-    #         # Shift so that tokens < n predict n
-    #         labels = torch.roll(labels, -1, 1)
-    #         # By default ignore_index = -100
-    #         labels[:, -1] = -100
-    #         loss_fct = nn.CrossEntropyLoss()
-    #         loss = loss_fct(lm_logits.view(-1, lm_logits.size(-1)), labels.view(-1))
-
-    #     return loss
-
     def forward(self, input_ids, attention_mask, labels=None):
         transformer_outputs = self.transformer(input_ids, attention_mask=attention_mask)
         hidden_states = transformer_outputs[0]
-        hidden_states = poptorch.recomputationCheckpoint(hidden_states)
+        # hidden_states = poptorch.recomputationCheckpoint(hidden_states)
         lm_logits = self.lm_head(hidden_states)
 
-        # Shift so that tokens < n predict n
-        labels = torch.roll(labels, -1, 1)
-        # By default ignore_index = -100
-        labels[:, -1] = -100
+        loss = None
+        if labels is not None:
+            # Shift so that tokens < n predict n
+            labels = torch.roll(labels, -1, 1)
+            # By default ignore_index = -100
+            labels[:, -1] = -100
+            loss_fct = nn.CrossEntropyLoss()
+            loss = loss_fct(lm_logits.view(-1, lm_logits.size(-1)), labels.view(-1))
 
-        enable_sequence_serialized = True
-        serialized_seq_len = 128
-        max_len = 1024
-        if not enable_sequence_serialized:
-            loss = None
-            if labels is not None:
-                loss_fct = nn.CrossEntropyLoss()
-                loss = loss_fct(lm_logits.view(-1, lm_logits.size(-1)), labels.view(-1))
-            return loss
-        else:
-            lm_logits = lm_logits.view(-1, lm_logits.size(-1))
-            labels = labels.view(-1)
-            loss_fct = nn.CrossEntropyLoss(reduction="sum")
-            loss = None
-            loss_weights = torch.sum((labels > -1).to(torch.float), dim=-1)
-            for index, i in enumerate(range(serialized_seq_len, max_len+serialized_seq_len, serialized_seq_len)):
-                logit = lm_logits[i - serialized_seq_len:i, :]
-                label = labels[i - serialized_seq_len:i]
-                if loss is None:
-                    loss = loss_fct(logit, label).to(torch.float32)
-                    loss = poptorch.recomputationCheckpoint(loss)
-                else:
-                    tmp_loss = loss_fct(logit, label).to(torch.float32)
-                    tmp_loss = poptorch.recomputationCheckpoint(tmp_loss)
-                    loss += tmp_loss
-            mean_loss = loss / loss_weights
-            total_loss = poptorch.identity_loss(mean_loss, reduction="none")
-            return total_loss
+        return loss
+
+    # def forward(self, input_ids, attention_mask, labels=None):
+    #     transformer_outputs = self.transformer(input_ids, attention_mask=attention_mask)
+    #     hidden_states = transformer_outputs[0]
+    #     hidden_states = poptorch.recomputationCheckpoint(hidden_states)
+    #     lm_logits = self.lm_head(hidden_states)
+
+    #     # Shift so that tokens < n predict n
+    #     labels = torch.roll(labels, -1, 1)
+    #     # By default ignore_index = -100
+    #     labels[:, -1] = -100
+
+    #     enable_sequence_serialized = True
+    #     serialized_seq_len = 128
+    #     max_len = 1024
+    #     if not enable_sequence_serialized:
+    #         loss = None
+    #         if labels is not None:
+    #             loss_fct = nn.CrossEntropyLoss()
+    #             loss = loss_fct(lm_logits.view(-1, lm_logits.size(-1)), labels.view(-1))
+    #         return loss
+    #     else:
+    #         lm_logits = lm_logits.view(-1, lm_logits.size(-1))
+    #         labels = labels.view(-1)
+    #         loss_fct = nn.CrossEntropyLoss(reduction="sum")
+    #         loss = None
+    #         loss_weights = torch.sum((labels > -1).to(torch.float), dim=-1)
+    #         for index, i in enumerate(range(serialized_seq_len, max_len+serialized_seq_len, serialized_seq_len)):
+    #             logit = lm_logits[i - serialized_seq_len:i, :]
+    #             label = labels[i - serialized_seq_len:i]
+    #             if loss is None:
+    #                 loss = loss_fct(logit, label).to(torch.float32)
+    #                 loss = poptorch.recomputationCheckpoint(loss)
+    #             else:
+    #                 tmp_loss = loss_fct(logit, label).to(torch.float32)
+    #                 tmp_loss = poptorch.recomputationCheckpoint(tmp_loss)
+    #                 loss += tmp_loss
+    #         mean_loss = loss / loss_weights
+    #         total_loss = poptorch.identity_loss(mean_loss, reduction="none")
+    #         return total_loss
 
 
 @register(GPT2ForSequenceClassification)

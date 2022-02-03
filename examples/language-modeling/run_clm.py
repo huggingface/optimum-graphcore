@@ -364,6 +364,7 @@ def main():
         n_params = sum(dict((p.data_ptr(), p.numel()) for p in model.parameters()).values())
         logger.info(f"Training new model from scratch - Total size={n_params/2**20:.2f}M params")
 
+    # Risize to 50272, which has many factors and thus is friendly to SerializedLinear
     model.resize_token_embeddings(50272)
 
     # Preprocessing the datasets.
