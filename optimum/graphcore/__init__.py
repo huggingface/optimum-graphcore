@@ -31,6 +31,7 @@ from .models.roberta import (
     PipelinedRobertaForSequenceClassification,
     PipelinedRobertaForTokenClassification,
 )
+from .models.t5 import PipelinedT5ForConditionalGeneration
 from .models.vit import PipelinedViTForImageClassification
 from .trainer import IPUTrainer
 from .trainer_seq2seq import IPUSeq2SeqTrainer

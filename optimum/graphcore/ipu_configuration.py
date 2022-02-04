@@ -22,7 +22,7 @@ import popdist
 import poptorch
 from optimum.configuration_utils import BaseConfig
 from optimum.utils import logging
-from poptorch import Options
+from poptorch import Options, OutputMode
 
 
 logger = logging.get_logger(__name__)
@@ -54,14 +54,15 @@ class IPUConfig(BaseConfig):
 
         self.enable_half_first_order_momentum = kwargs.pop("enable_half_first_order_momentum", False)
         self.enable_half_partials = kwargs.pop("enable_half_partials", False)
-        self.synthetic_data = kwargs.pop("synthetic_data", False)
 
+        # TODO: is it actually used?
         self.executable_cache_dir = kwargs.pop("executable_cache_dir", None)
         self.profile_dir = kwargs.pop("profile_dir", None)
 
         self.embedding_serialization_factor = kwargs.pop("embedding_serialization_factor", 1)
 
         self.recompute_checkpoint_every_layer = kwargs.pop("recompute_checkpoint_every_layer", False)
+        self.output_mode = kwargs.pop("output_mode", "final")
 
     def _prepare_config_attribute_for_pod_type(
         self, config_attribute_name: str, config_attribute: Union[Any, Dict[str, Any]], pod_type: Optional[str]
@@ -136,7 +137,19 @@ class IPUConfig(BaseConfig):
             opts.Training.accumulationAndReplicationReductionType(poptorch.ReductionType.Mean)
 
         # Return all results from IPU to host
-        opts.outputMode(poptorch.OutputMode.All)
+        output_mode_mapping = {
+            "all": OutputMode.All,
+            "sum": OutputMode.Sum,
+            "final": OutputMode.Final,
+            "default": OutputMode.Default,
+        }
+        training_output_mode = output_mode_mapping.get(self.output_mode, None)
+        if training_output_mode is None:
+            supported_output_modes = ", ".join(output_mode_mapping.keys())
+            raise KeyError(
+                f"{self.output_mode} is not a valid poptorch.OutputMode, supported output modes: {supported_output_modes}"
+            )
+        opts.outputMode(OutputMode.All if for_inference else training_output_mode)
 
         if self.seed:
             opts.randomSeed(self.seed)
@@ -176,10 +189,6 @@ class IPUConfig(BaseConfig):
         # Half precision partials for matmuls and convolutions
         if self.enable_half_partials:
             opts.Precision.setPartialsType(torch.float16)
-
-        # Enable synthetic random data generated on device (so with no I/O)
-        if self.synthetic_data:
-            opts.enableSyntheticData(int(popart.SyntheticDataMode.RandomNormal))
 
         # PopART performance options #
         # Only stream needed tensors back to host

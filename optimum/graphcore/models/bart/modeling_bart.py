@@ -22,6 +22,7 @@ import transformers
 from optimum.utils import logging
 from transformers import BartForConditionalGeneration, BartModel
 from transformers.modeling_outputs import BaseModelOutput, Seq2SeqModelOutput
+from transformers.models.bart.modeling_bart import BartAttention
 from transformers.models.bart.modeling_bart import _expand_mask as original_expand_mask
 from transformers.models.bart.modeling_bart import _make_causal_mask as original_make_causal_mask
 from transformers.models.bart.modeling_bart import shift_tokens_right
@@ -30,6 +31,7 @@ from ...generation_utils import IPUGenerationMixin
 from ...modeling_utils import (
     PipelineMixin,
     SerializedLinear,
+    SharedEmbedding,
     _get_layer_ipu,
     recomputation_checkpoint,
     register,
@@ -41,68 +43,119 @@ logger = logging.get_logger(__name__)
 FLOAT16_LIMIT = 1e4
 
 
-class SharedEmbedding(torch.nn.Module):
-    """Wrapper around the shared embedding between the encoder and the decoder stacks.
+class BartAttentionWithoutException(BartAttention):
+    """The same as BartAttention without the attention mask shape check.
 
-    Attributes:
-        shared: The shared embedding layer.
+    This is needed because the original BartAttention checks that the attention mask shape is [bs, 1, tgt_len, src_len]
+    but the pipelined implementation does not expand the mask, it just inserts dimensions, the shape is then
+    [bs, 1, 1, src_len], and broadcasting does the rest.
     """
-
-    def __init__(self, shared: nn.Embedding):
-        super().__init__()
-        self.shared = shared
-
-    # def _combine_inputs(self, input_ids, decoder_input_ids):
-    #     encoder_seq_length = input_ids.size(1)
-    #     decoder_seq_length = decoder_input_ids.size(1)
-    #     if encoder_seq_length > decoder_seq_length:
-    #         decoder_input_ids = torch.nn.functional.pad(
-    #             decoder_input_ids,
-    #             (0, encoder_seq_length - decoder_seq_length),
-    #             value=self.pad_token_id
-    #         )
-    #     elif encoder_seq_length < decoder_seq_length:
-    #         input_ids = torch.nn.functional.pad(
-    #             input_ids,
-    #             (0, decoder_seq_length - encoder_seq_length),
-    #             value=self.pad_token_id
-    #         )
-    #     combined = torch.stack([input_ids, decoder_input_ids], dim=0)
-    #     return combined, encoder_seq_length, decoder_seq_length
-
-    # def _separate_inputs(self, embeds, encoder_seq_length, decoder_seq_length):
-    #     encoder_embeds, decoder_embeds = embeds
-    #     return encoder_embeds[:, :encoder_seq_length, :], decoder_embeds[:, :decoder_seq_length, :]
-
-    def _combine_inputs(self, input_ids: torch.Tensor, decoder_input_ids: torch.Tensor) -> Tuple[int, torch.Tensor]:
-        idx = input_ids.size(1)
-        return idx, torch.cat([input_ids, decoder_input_ids], dim=1)
-
-    def _separate_inputs(self, idx: int, embeds: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        return embeds[:, :idx, :], embeds[:, idx:, :]
 
     def forward(
         self,
-        input_ids: torch.Tensor,
-        encoder_embed_scale: float,
-        decoder_input_ids: torch.Tensor,
-        decoder_embed_scale: float,
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        # TODO: use this once the TiedGather pattern issue is solved.
-        # encoder_inputs_embeds, decoder_inputs_embeds = None, None
-        # if input_ids is not None and encoder_embed_scale is not None:
-        #     encoder_inputs_embeds = self.shared(input_ids) * encoder_embed_scale
-        # if decoder_input_ids is not None and decoder_embed_scale is not None:
-        #     decoder_inputs_embeds = self.shared(decoder_input_ids) * decoder_embed_scale
-        # combined, n1, n2 = self._combine_inputs(input_ids, decoder_input_ids)
-        # encoder_inputs_embeds, decoder_inputs_embeds = self._separate_inputs(self.shared(combined), n1, n2)
-        idx, combined = self._combine_inputs(input_ids, decoder_input_ids)
-        encoder_inputs_embeds, decoder_inputs_embeds = self._separate_inputs(idx, self.shared(combined))
+        hidden_states: torch.Tensor,
+        key_value_states: Optional[torch.Tensor] = None,
+        past_key_value: Optional[Tuple[torch.Tensor]] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        layer_head_mask: Optional[torch.Tensor] = None,
+        output_attentions: bool = False,
+    ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
+        """Input shape: Batch x Time x Channel"""
 
-        encoder_inputs_embeds = encoder_inputs_embeds * encoder_embed_scale
-        decoder_inputs_embeds = decoder_inputs_embeds * decoder_embed_scale
+        # if key_value_states are provided this layer is used as a cross-attention layer
+        # for the decoder
+        is_cross_attention = key_value_states is not None
 
-        return encoder_inputs_embeds, decoder_inputs_embeds
+        bsz, tgt_len, _ = hidden_states.size()
+
+        # get query proj
+        query_states = self.q_proj(hidden_states) * self.scaling
+        # get key, value proj
+        if is_cross_attention and past_key_value is not None:
+            # reuse k,v, cross_attentions
+            key_states = past_key_value[0]
+            value_states = past_key_value[1]
+        elif is_cross_attention:
+            # cross_attentions
+            key_states = self._shape(self.k_proj(key_value_states), -1, bsz)
+            value_states = self._shape(self.v_proj(key_value_states), -1, bsz)
+        elif past_key_value is not None:
+            # reuse k, v, self_attention
+            key_states = self._shape(self.k_proj(hidden_states), -1, bsz)
+            value_states = self._shape(self.v_proj(hidden_states), -1, bsz)
+            key_states = torch.cat([past_key_value[0], key_states], dim=2)
+            value_states = torch.cat([past_key_value[1], value_states], dim=2)
+        else:
+            # self_attention
+            key_states = self._shape(self.k_proj(hidden_states), -1, bsz)
+            value_states = self._shape(self.v_proj(hidden_states), -1, bsz)
+
+        if self.is_decoder:
+            # if cross_attention save Tuple(torch.Tensor, torch.Tensor) of all cross attention key/value_states.
+            # Further calls to cross_attention layer can then reuse all cross-attention
+            # key/value_states (first "if" case)
+            # if uni-directional self-attention (decoder) save Tuple(torch.Tensor, torch.Tensor) of
+            # all previous decoder key/value_states. Further calls to uni-directional self-attention
+            # can concat previous decoder key/value_states to current projected key/value_states (third "elif" case)
+            # if encoder bi-directional self-attention `past_key_value` is always `None`
+            past_key_value = (key_states, value_states)
+
+        proj_shape = (bsz * self.num_heads, -1, self.head_dim)
+        query_states = self._shape(query_states, tgt_len, bsz).view(*proj_shape)
+        key_states = key_states.view(*proj_shape)
+        value_states = value_states.view(*proj_shape)
+
+        src_len = key_states.size(1)
+        attn_weights = torch.bmm(query_states, key_states.transpose(1, 2))
+
+        if attn_weights.size() != (bsz * self.num_heads, tgt_len, src_len):
+            raise ValueError(
+                f"Attention weights should be of size {(bsz * self.num_heads, tgt_len, src_len)}, but is {attn_weights.size()}"
+            )
+
+        if attention_mask is not None:
+            attn_weights = attn_weights.view(bsz, self.num_heads, tgt_len, src_len) + attention_mask
+            attn_weights = attn_weights.view(bsz * self.num_heads, tgt_len, src_len)
+
+        attn_weights = nn.functional.softmax(attn_weights, dim=-1)
+
+        if layer_head_mask is not None:
+            if layer_head_mask.size() != (self.num_heads,):
+                raise ValueError(
+                    f"Head mask for a single layer should be of size {(self.num_heads,)}, but is {layer_head_mask.size()}"
+                )
+            attn_weights = layer_head_mask.view(1, -1, 1, 1) * attn_weights.view(bsz, self.num_heads, tgt_len, src_len)
+            attn_weights = attn_weights.view(bsz * self.num_heads, tgt_len, src_len)
+
+        if output_attentions:
+            # this operation is a bit awkward, but it's required to
+            # make sure that attn_weights keeps its gradient.
+            # In order to do so, attn_weights have to be reshaped
+            # twice and have to be reused in the following
+            attn_weights_reshaped = attn_weights.view(bsz, self.num_heads, tgt_len, src_len)
+            attn_weights = attn_weights_reshaped.view(bsz * self.num_heads, tgt_len, src_len)
+        else:
+            attn_weights_reshaped = None
+
+        attn_probs = nn.functional.dropout(attn_weights, p=self.dropout, training=self.training)
+
+        attn_output = torch.bmm(attn_probs, value_states)
+
+        if attn_output.size() != (bsz * self.num_heads, tgt_len, self.head_dim):
+            raise ValueError(
+                f"`attn_output` should be of size {(bsz, self.num_heads, tgt_len, self.head_dim)}, but is {attn_output.size()}"
+            )
+
+        attn_output = attn_output.view(bsz, self.num_heads, tgt_len, self.head_dim)
+        attn_output = attn_output.transpose(1, 2)
+
+        # Use the `embed_dim` from the config (stored in the class) rather than `hidden_state` because `attn_output` can be
+        # partitioned aross GPUs when using tensor-parallelism.
+        attn_output = attn_output.reshape(bsz, tgt_len, self.embed_dim)
+
+        attn_output = self.out_proj(attn_output)
+
+        return attn_output, attn_weights_reshaped, past_key_value
 
 
 class BartModelWithSharedEmbedding(BartModel):
@@ -129,6 +182,18 @@ class BartModelWithSharedEmbedding(BartModel):
                 logger.warning("encoder and decoder embeddings computation is not shared")
             else:
                 self.shared = self.shared.shared
+
+    def change_bart_attention_class(self, restore: bool):
+        """Changes the attention layers to either use the original BartAttentionforward or
+        BartAttentionWithoutException forward.
+
+        Args:
+            restore: whether to restore the attention layers forward function to its original value or not.
+        """
+        new_cls = BartAttention if restore else BartAttentionWithoutException
+        for mod in self.modules():
+            if isinstance(mod, BartAttention):
+                mod.__class__ = new_cls
 
     def forward(
         self,
@@ -171,26 +236,23 @@ class BartModelWithSharedEmbedding(BartModel):
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         if self.is_encoder_and_decoder_embeddings_computation_shared:
-            encoder_inputs_embeds, decoder_inputs_embeds = self.shared(
+            inputs_embeds, decoder_inputs_embeds = self.shared(
                 input_ids=input_ids,
-                encoder_embed_scale=self.encoder.embed_scale,
                 decoder_input_ids=decoder_input_ids,
+                encoder_embed_scale=self.encoder.embed_scale,
                 decoder_embed_scale=self.decoder.embed_scale,
             )
-            if encoder_inputs_embeds is not None:
+            if inputs_embeds is not None:
                 input_ids = None
             if decoder_inputs_embeds is not None:
                 decoder_input_ids = None
-
-        if attention_mask is not None:
-            attention_mask = _expand_mask(attention_mask, encoder_inputs_embeds.dtype)
 
         if encoder_outputs is None:
             encoder_outputs = self.encoder(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 head_mask=head_mask,
-                inputs_embeds=encoder_inputs_embeds,
+                inputs_embeds=inputs_embeds,
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
                 return_dict=return_dict,
@@ -295,17 +357,21 @@ class PipelinedBartForConditionalGeneration(IPUGenerationMixin, BartForCondition
             )
             serialized_lm_head.load_state_dict(self.lm_head.state_dict())
             self.lm_head = serialized_lm_head
-            self.lm_head.weight
             self.tie_weights()
 
         self.model.__class__ = BartModelWithSharedEmbedding
         transformers.models.bart.modeling_bart._make_causal_mask = _make_causal_mask
         transformers.models.bart.modeling_bart._expand_mask = _expand_mask
         self.model.encoder_and_decoder_embeddings_computation(True)
+        self.model.change_bart_attention_class(False)
 
         self.model.shared = poptorch.BeginBlock(self.model.shared, "Embedding", ipu_id=0)
-        self.model.encoder.embed_positions = poptorch.BeginBlock(self.model.encoder.embed_positions, "Embedding", ipu_id=0)
-        self.model.encoder.layernorm_embedding = poptorch.BeginBlock(self.model.encoder.layernorm_embedding, "Embedding", ipu_id=0)
+        self.model.encoder.embed_positions = poptorch.BeginBlock(
+            self.model.encoder.embed_positions, "Embedding", ipu_id=0
+        )
+        self.model.encoder.layernorm_embedding = poptorch.BeginBlock(
+            self.model.encoder.layernorm_embedding, "Embedding", ipu_id=0
+        )
         # outline_attribute(self.model.encoder.layernorm_embedding, "Embedding")
 
         for index, layer in enumerate(self.model.encoder.layers):
@@ -348,6 +414,7 @@ class PipelinedBartForConditionalGeneration(IPUGenerationMixin, BartForCondition
         """
         super().deparallelize()
         self.model.encoder_and_decoder_embeddings_computation(False)
+        self.model.change_bart_attention_class(True)
         self.model.__class__ = BartModel
         transformers.models.bart.modeling_bart._make_causal_mask = original_make_causal_mask
         transformers.models.bart.modeling_bart._expand_mask = original_expand_mask
@@ -364,6 +431,7 @@ class PipelinedBartForConditionalGeneration(IPUGenerationMixin, BartForCondition
             attention_mask=attention_mask,
             decoder_input_ids=decoder_input_ids,
             labels=labels,
+            use_cache=False,
             return_dict=False,
         )
         # Only returning the loss to make the communication between the host and the device faster.
