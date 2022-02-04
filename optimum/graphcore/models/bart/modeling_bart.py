@@ -31,7 +31,6 @@ from ...modeling_utils import (
     PipelineMixin,
     SerializedLinear,
     _get_layer_ipu,
-    outline_attribute,
     recomputation_checkpoint,
     register,
 )
@@ -183,6 +182,9 @@ class BartModelWithSharedEmbedding(BartModel):
             if decoder_inputs_embeds is not None:
                 decoder_input_ids = None
 
+        if attention_mask is not None:
+            attention_mask = _expand_mask(attention_mask, encoder_inputs_embeds.dtype)
+
         if encoder_outputs is None:
             encoder_outputs = self.encoder(
                 input_ids=input_ids,
@@ -237,15 +239,9 @@ def _make_causal_mask(input_ids_shape: torch.Size, dtype: torch.dtype, past_key_
     Make causal mask used for bi-directional self-attention.
     """
     bsz, tgt_len = input_ids_shape
-    # Using FLOAT16_LIMIT instead of -float("inf") to avoid NaNs on the IPUs.
     mask = torch.full((tgt_len, tgt_len), -FLOAT16_LIMIT)
-    mask_cond = torch.arange(mask.size(-1))
-    mask.masked_fill_(mask_cond < (mask_cond + 1).view(mask.size(-1), 1), 0)
-    mask = mask.to(dtype)
-
-    if past_key_values_length > 0:
-        mask = torch.cat([torch.zeros(tgt_len, past_key_values_length, dtype=dtype), mask], dim=-1)
-    return mask[None, None, :, :].expand(bsz, 1, tgt_len, tgt_len + past_key_values_length)
+    mask = torch.triu(mask, diagonal=1)
+    return mask[None, None, :, :]
 
 
 def _expand_mask(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] = None):
@@ -255,15 +251,12 @@ def _expand_mask(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] 
     bsz, src_len = mask.size()
     tgt_len = tgt_len if tgt_len is not None else src_len
 
-    expanded_mask = mask[:, None, None, :].expand(bsz, 1, tgt_len, src_len).to(dtype)
-    # expanded_mask = torch.zeros((bsz, 1, tgt_len, src_len), ).to(dtype)
-    # expanded_mask = torch.broadcast_to(mask[:, None, None, :], (bsz, 1, tgt_len, src_len)).to(dtype)
-    # expanded_mask = mask[:, None, None, :].repeat(bsz, 1, tgt_len, 1).to(dtype)
-
+    expanded_mask = mask[:, None, None, :]
     inverted_mask = 1.0 - expanded_mask
 
     # Using FLOAT16_LIMIT instead of -float("inf") to avoid NaNs on the IPUs.
-    return inverted_mask.masked_fill(inverted_mask.bool(), -FLOAT16_LIMIT)
+    inverted_mask = -FLOAT16_LIMIT * inverted_mask
+    return inverted_mask
 
 
 @register(BartForConditionalGeneration)
@@ -311,12 +304,10 @@ class PipelinedBartForConditionalGeneration(IPUGenerationMixin, BartForCondition
         self.model.encoder_and_decoder_embeddings_computation(True)
 
         self.model.shared = poptorch.BeginBlock(self.model.shared, "Embedding", ipu_id=0)
+        self.model.encoder.embed_positions = poptorch.BeginBlock(self.model.encoder.embed_positions, "Embedding", ipu_id=0)
+        self.model.encoder.layernorm_embedding = poptorch.BeginBlock(self.model.encoder.layernorm_embedding, "Embedding", ipu_id=0)
+        # outline_attribute(self.model.encoder.layernorm_embedding, "Embedding")
 
-        self.model.encoder.embed_positions = poptorch.BeginBlock(self.model.encoder.embed_positions, ipu_id=0)
-        # TODO: no LayerNorm in Bart after the embeddings?
-        # outline_attribute(self.bert.embeddings.LayerNorm, "embedding")
-
-        self.model.encoder.layernorm_embedding = poptorch.BeginBlock(self.model.encoder.layernorm_embedding, ipu_id=0)
         for index, layer in enumerate(self.model.encoder.layers):
             ipu = layer_ipu[index]
             if self.config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
@@ -325,11 +316,17 @@ class PipelinedBartForConditionalGeneration(IPUGenerationMixin, BartForCondition
             logger.info(f"Encoder {index:<2} --> IPU {ipu}")
 
         shift = len(self.model.encoder.layers)
+        # self.model.decoder.embed_positions = poptorch.BeginBlock(
+        #     self.model.decoder.embed_positions, ipu_id=layer_ipu[shift]
+        # )
+        # self.model.decoder.layernorm_embedding = poptorch.BeginBlock(
+        #     self.model.decoder.layernorm_embedding, ipu_id=layer_ipu[shift]
+        # )
         self.model.decoder.embed_positions = poptorch.BeginBlock(
-            self.model.decoder.embed_positions, ipu_id=layer_ipu[shift]
+            self.model.decoder.embed_positions, "Embedding", ipu_id=0
         )
         self.model.decoder.layernorm_embedding = poptorch.BeginBlock(
-            self.model.decoder.layernorm_embedding, ipu_id=layer_ipu[shift]
+            self.model.decoder.layernorm_embedding, "Embedding", ipu_id=0
         )
         for index, layer in enumerate(self.model.decoder.layers):
             ipu = layer_ipu[index + shift]
@@ -362,23 +359,21 @@ class PipelinedBartForConditionalGeneration(IPUGenerationMixin, BartForCondition
         return mod
 
     def _forward_for_train(self, input_ids, attention_mask, decoder_input_ids, labels=None):
-        return super().forward(
+        outputs = super().forward(
             input_ids=input_ids,
             attention_mask=attention_mask,
             decoder_input_ids=decoder_input_ids,
-            # decoder_attention_mask=decoder_attention_mask,
             labels=labels,
             return_dict=False,
-            # TODO: actually find a way to use cache for decoding.
-            # use_cache=False,
         )
+        # Only returning the loss to make the communication between the host and the device faster.
+        return outputs[0]
 
     def _forward_for_generate(self, encoder_outputs, decoder_input_ids, attention_mask):
         return super().forward(
             encoder_outputs=encoder_outputs,
             attention_mask=attention_mask,
             decoder_input_ids=decoder_input_ids,
-            # decoder_attention_mask=decoder_attention_mask,
             return_dict=False,
             # TODO: actually find a way to use cache for decoding.
             # use_cache=False,

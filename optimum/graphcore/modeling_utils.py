@@ -13,7 +13,9 @@
 #  limitations under the License.
 
 import copy
+from typing import Optional, Tuple
 
+import torch
 from torch import nn
 
 import poptorch
@@ -186,7 +188,7 @@ def recomputation_checkpoint(module: nn.Module):
     def recompute_outputs(module, inputs, outputs):
         return tuple(poptorch.recomputationCheckpoint(y) for y in outputs)
 
-    module.register_forward_hook(recompute_outputs)
+    return module.register_forward_hook(recompute_outputs)
 
 
 def outline_attribute(module: nn.Module, value: str):
@@ -212,8 +214,10 @@ def outline_attribute(module: nn.Module, value: str):
     def disable(*args):
         context.__exit__(None, None, None)
 
-    module.register_forward_pre_hook(enable)
-    module.register_forward_hook(disable)
+    handles = []
+    handles.append(module.register_forward_pre_hook(enable))
+    handles.append(module.register_forward_hook(disable))
+    return handles
 
 
 class SerializedEmbedding(nn.Module):
@@ -314,3 +318,47 @@ class SerializedLinear(nn.Linear):
         if self.bias is not None:
             output += self.bias
         return output
+
+
+class SharedEmbedding(nn.Module):
+    """Wrapper around the shared embedding between the encoder and the decoder stacks.
+
+    Attributes:
+        shared: The shared embedding layer.
+    """
+
+    def __init__(self, shared: nn.Embedding):
+        super().__init__()
+        self.shared = shared
+
+    def _combine_inputs(self, input_ids: torch.Tensor, decoder_input_ids: torch.Tensor) -> Tuple[int, torch.Tensor]:
+        idx = input_ids.size(1)
+        return idx, torch.cat([input_ids, decoder_input_ids], dim=1)
+
+    def _separate_inputs(self, idx: int, embeds: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        return embeds[:, :idx, :], embeds[:, idx:, :]
+
+    def forward(
+        self,
+        input_ids: torch.Tensor,
+        decoder_input_ids: torch.Tensor,
+        encoder_embed_scale: Optional[float] = None,
+        decoder_embed_scale: Optional[float] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        # TODO: use this once the TiedGather pattern issue is solved.
+        # encoder_inputs_embeds, decoder_inputs_embeds = None, None
+        # if input_ids is not None and encoder_embed_scale is not None:
+        #     encoder_inputs_embeds = self.shared(input_ids) * encoder_embed_scale
+        # if decoder_input_ids is not None and decoder_embed_scale is not None:
+        #     decoder_inputs_embeds = self.shared(decoder_input_ids) * decoder_embed_scale
+        # combined, n1, n2 = self._combine_inputs(input_ids, decoder_input_ids)
+        # encoder_inputs_embeds, decoder_inputs_embeds = self._separate_inputs(self.shared(combined), n1, n2)
+        idx, combined = self._combine_inputs(input_ids, decoder_input_ids)
+        encoder_inputs_embeds, decoder_inputs_embeds = self._separate_inputs(idx, self.shared(combined))
+
+        if encoder_embed_scale:
+            encoder_inputs_embeds = encoder_inputs_embeds * encoder_embed_scale
+        if decoder_embed_scale:
+            decoder_inputs_embeds = decoder_inputs_embeds * decoder_embed_scale
+
+        return encoder_inputs_embeds, decoder_inputs_embeds
