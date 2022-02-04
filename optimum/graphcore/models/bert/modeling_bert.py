@@ -117,7 +117,7 @@ def recomputation_checkpoint(module: nn.Module):
     def recompute_outputs(module, inputs, outputs):
         return tuple(poptorch.recomputationCheckpoint(y) for y in outputs)
 
-    module.register_forward_hook(recompute_outputs)
+    return module.register_forward_hook(recompute_outputs)
 
 
 def outline_attribute(module: nn.Module, value: str):
@@ -143,22 +143,20 @@ def outline_attribute(module: nn.Module, value: str):
     def disable(*args):
         context.__exit__(None, None, None)
 
-    module.register_forward_pre_hook(enable)
-    module.register_forward_hook(disable)
-
-
-def accuracy(out, targ):
-    return (out.argmax(dim=-1) == targ).float().mean()
-
-
-def accuracy_masked(out, targ, mask_val):
-    mask = (targ != mask_val).float()
-    num_unmasked = mask.sum(1).unsqueeze(1)
-    return (out.argmax(dim=-1) == targ).float().mul(mask).div(num_unmasked).sum(1).mean()
+    return module.register_forward_pre_hook(enable), module.register_forward_hook(disable)
 
 
 @register(BertForPreTraining)
 class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
+    """
+    BertForPretraining transformed to run in an IPU pipeline.
+
+    Recommended usage:
+    ```
+    model = PipelinedBertForPretraining(config).parallelize().half().train()
+    ```
+    """
+
     def __init__(self, config):
         super().__init__(config)
         self.gather_indices = OnehotGather()
@@ -170,12 +168,9 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
         - Replaces self-attention layers with fused-qkv self-attention layers
         - (If enabled) Replaces the word embedding projection with a SerializedLinear layer
         - Adds recomputation checkpoints
-
-        Recommended usage:
-        ```
-        model = PipelinedBertForPretraining(config).parallelize().half().train()
-        ```
         """
+        self._hooks = []
+
         # Use faster fused-qkv self-attention
         for layer in self.bert.encoder.layer:
             fused = BertFusedSelfAttention(self.config)
@@ -201,12 +196,14 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
         self.bert.embeddings = poptorch.BeginBlock(self.bert.embeddings, "Embedding", ipu_id=0)
         # Preventing the embeddings.LayerNorm from being outlined with the encoder.layer.LayerNorm
         # improves the tile mapping of the pipeline stashes
-        outline_attribute(self.bert.embeddings.LayerNorm, "embeddings")
+        hs = outline_attribute(self.bert.embeddings.LayerNorm, "embeddings")
+        self._hooks.extend(hs)
 
         for index, layer in enumerate(self.bert.encoder.layer):
             ipu = layer_ipu[index]
             if self.config.recompute_checkpoint_every_layer:
-                recomputation_checkpoint(layer)
+                h = recomputation_checkpoint(layer)
+                self._hooks.append(h)
             self.bert.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
             logger.info(f"Encoder {index:<2} --> IPU {ipu}")
 
@@ -216,13 +213,6 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
         logger.info("Classifier --> IPU 0")
         self.cls = poptorch.BeginBlock(self.cls, "Classifier", ipu_id=0)
         logger.info("-----------------------------------------------------------")
-        return self
-
-    def deparallelize(self):
-        super().deparallelize()
-        # Deserialize the serialized word embedding
-        if self.config.embedding_serialization_factor > 1:
-            self.bert.embeddings.word_embeddings = self.bert.embeddings.word_embeddings.deserialize()
         return self
 
     def _init_weights(self, module):
@@ -358,8 +348,7 @@ class SerializedEmbedding(nn.Module):
         return x_sum
 
 
-@register(BertForSequenceClassification)
-class PipelinedBertForSequenceClassification(BertForSequenceClassification, PipelineMixin):
+class BertPipelineMixin(PipelineMixin):
     def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.
@@ -367,12 +356,10 @@ class PipelinedBertForSequenceClassification(BertForSequenceClassification, Pipe
         - Replaces self-attention layers with fused-qkv self-attention layers
         - (If enabled) Replaces the word embedding with a SerializedEmbedding
         - Adds recomputation checkpoints
-
-        Recommended usage:
-        ```
-        model = PipelinedBertForSequenceClassification(config).parallelize().half()
-        ```
         """
+        super().parallelize()
+        self._hooks = []
+
         # Use faster fused-qkv self-attention
         for layer in self.bert.encoder.layer:
             fused = BertFusedSelfAttention(self.config)
@@ -388,30 +375,48 @@ class PipelinedBertForSequenceClassification(BertForSequenceClassification, Pipe
                 self.bert.embeddings.word_embeddings, self.config.embedding_serialization_factor
             )
         self.bert.embeddings = poptorch.BeginBlock(self.bert.embeddings, "Embedding", ipu_id=0)
-        outline_attribute(self.bert.embeddings.LayerNorm, "embedding")
+        hs = outline_attribute(self.bert.embeddings.LayerNorm, "embedding")
+        self._hooks.extend(hs)
 
         for index, layer in enumerate(self.bert.encoder.layer):
             ipu = layer_ipu[index]
             if self.config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
-                recomputation_checkpoint(layer)
+                h = recomputation_checkpoint(layer)
+                self._hooks.append(h)
             self.bert.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
             logger.info(f"Encoder {index:<2} --> IPU {ipu}")
-
-        logger.info(f"Classifier Output --> IPU {ipu}")
-        self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=ipu)
-        logger.info("-----------------------------------------------------------")
         return self
 
     def deparallelize(self):
         """
         Undo the changes to the model done by `parallelize`.
         You should call this before doing `save_pretrained` so that the `model.state_dict` is
-        fully compatible with `transformers.BertForSequenceClassification`.
+        compatible with the original model.
         """
         super().deparallelize()
         # Deserialize the serialized word embedding
         if self.config.embedding_serialization_factor > 1:
             self.bert.embeddings.word_embeddings = self.bert.embeddings.word_embeddings.deserialize()
+        return self
+
+
+@register(BertForSequenceClassification)
+class PipelinedBertForSequenceClassification(BertForSequenceClassification, BertPipelineMixin):
+    """
+    BertForSequenceClassification transformed to run in an IPU pipeline.
+
+    Recommended usage:
+    ```
+    model = PipelinedBertForSequenceClassification(config).parallelize().half()
+    ```
+    """
+
+    def parallelize(self):
+        super().parallelize()
+        last_ipu = self.config.ipus_per_replica - 1
+        logger.info(f"Classifier Output --> IPU {last_ipu}")
+        self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=last_ipu)
+        logger.info("-----------------------------------------------------------")
         return self
 
     def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
@@ -425,59 +430,22 @@ class PipelinedBertForSequenceClassification(BertForSequenceClassification, Pipe
 
 
 @register(BertForMultipleChoice)
-class PipelinedBertForMultipleChoice(BertForMultipleChoice, PipelineMixin):
+class PipelinedBertForMultipleChoice(BertForMultipleChoice, BertPipelineMixin):
+    """
+    BertForMultipleChoice transformed to run in an IPU pipeline.
+
+    Recommended usage:
+    ```
+    model = PipelinedBertForMultipleChoice(config).parallelize().half()
+    ```
+    """
+
     def parallelize(self):
-        """
-        Transform the model to run in an IPU pipeline.
-        - Adds pipeline stages to the model
-        - Replaces self-attention layers with fused-qkv self-attention layers
-        - (If enabled) Replaces the word embedding with a SerializedEmbedding
-        - Adds recomputation checkpoints
-
-        Recommended usage:
-        ```
-        model = PipelinedBertForMultipleChoice(config).parallelize().half()
-        ```
-        """
-        # Use faster fused-qkv self-attention
-        for layer in self.bert.encoder.layer:
-            fused = BertFusedSelfAttention(self.config)
-            fused.load_state_dict(layer.attention.self.state_dict())
-            layer.attention.self = fused
-
-        layer_ipu = _get_layer_ipu(self.config.layers_per_ipu)
-
-        logger.info("-------------------- Device Allocation --------------------")
-        logger.info("Embedding  --> IPU 0")
-        if self.config.embedding_serialization_factor > 1:
-            self.bert.embeddings.word_embeddings = SerializedEmbedding(
-                self.bert.embeddings.word_embeddings, self.config.embedding_serialization_factor
-            )
-        self.bert.embeddings = poptorch.BeginBlock(self.bert.embeddings, "Embedding", ipu_id=0)
-        outline_attribute(self.bert.embeddings.LayerNorm, "embedding")
-
-        for index, layer in enumerate(self.bert.encoder.layer):
-            ipu = layer_ipu[index]
-            if self.config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
-                recomputation_checkpoint(layer)
-            self.bert.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
-            logger.info(f"Encoder {index:<2} --> IPU {ipu}")
-
-        logger.info(f"Classifier Output --> IPU {ipu}")
-        self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=ipu)
+        super().parallelize()
+        last_ipu = self.config.ipus_per_replica - 1
+        logger.info(f"Classifier Output --> IPU {last_ipu}")
+        self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
-        return self
-
-    def deparallelize(self):
-        """
-        Undo the changes to the model done by `parallelize`.
-        You should call this before doing `save_pretrained` so that the `model.state_dict` is
-        fully compatible with `transformers.BertForMultipleChoice`.
-        """
-        super().deparallelize()
-        # Deserialize the serialized word embedding
-        if self.config.embedding_serialization_factor > 1:
-            self.bert.embeddings.word_embeddings = self.bert.embeddings.word_embeddings.deserialize()
         return self
 
     def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
@@ -491,59 +459,22 @@ class PipelinedBertForMultipleChoice(BertForMultipleChoice, PipelineMixin):
 
 
 @register(BertForTokenClassification)
-class PipelinedBertForTokenClassification(BertForTokenClassification, PipelineMixin):
+class PipelinedBertForTokenClassification(BertForTokenClassification, BertPipelineMixin):
+    """
+    BertForTokenClassification transformed to run in an IPU pipeline.
+
+    Recommended usage:
+    ```
+    model = PipelinedBertForTokenClassification(config).parallelize().half()
+    ```
+    """
+
     def parallelize(self):
-        """
-        Transform the model to run in an IPU pipeline.
-        - Adds pipeline stages to the model
-        - Replaces self-attention layers with fused-qkv self-attention layers
-        - (If enabled) Replaces the word embedding with a SerializedEmbedding
-        - Adds recomputation checkpoints
-
-        Recommended usage:
-        ```
-        model = PipelinedBertForTokenClassification(config).parallelize().half()
-        ```
-        """
-        # Use faster fused-qkv self-attention
-        for layer in self.bert.encoder.layer:
-            fused = BertFusedSelfAttention(self.config)
-            fused.load_state_dict(layer.attention.self.state_dict())
-            layer.attention.self = fused
-
-        layer_ipu = _get_layer_ipu(self.config.layers_per_ipu)
-
-        logger.info("-------------------- Device Allocation --------------------")
-        logger.info("Embedding  --> IPU 0")
-        if self.config.embedding_serialization_factor > 1:
-            self.bert.embeddings.word_embeddings = SerializedEmbedding(
-                self.bert.embeddings.word_embeddings, self.config.embedding_serialization_factor
-            )
-        self.bert.embeddings = poptorch.BeginBlock(self.bert.embeddings, "Embedding", ipu_id=0)
-        outline_attribute(self.bert.embeddings.LayerNorm, "embedding")
-
-        for index, layer in enumerate(self.bert.encoder.layer):
-            ipu = layer_ipu[index]
-            if self.config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
-                recomputation_checkpoint(layer)
-            self.bert.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
-            logger.info(f"Encoder {index:<2} --> IPU {ipu}")
-
-        logger.info(f"Classifier Output --> IPU {ipu}")
-        self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=ipu)
+        super().parallelize()
+        last_ipu = self.config.ipus_per_replica - 1
+        logger.info(f"Classifier Output --> IPU {last_ipu}")
+        self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
-        return self
-
-    def deparallelize(self):
-        """
-        Undo the changes to the model done by `parallelize`.
-        You should call this before doing `save_pretrained` so that the `model.state_dict` is
-        fully compatible with `transformers.BertForTokenClassification`.
-        """
-        super().deparallelize()
-        # Deserialize the serialized word embedding
-        if self.config.embedding_serialization_factor > 1:
-            self.bert.embeddings.word_embeddings = self.bert.embeddings.word_embeddings.deserialize()
         return self
 
     def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
@@ -557,59 +488,22 @@ class PipelinedBertForTokenClassification(BertForTokenClassification, PipelineMi
 
 
 @register(BertForQuestionAnswering)
-class PipelinedBertForQuestionAnswering(BertForQuestionAnswering, PipelineMixin):
+class PipelinedBertForQuestionAnswering(BertForQuestionAnswering, BertPipelineMixin):
+    """
+    BertForQuestionAnswering transformed to run in an IPU pipeline.
+
+    Recommended usage:
+    ```
+    model = PipelinedBertForQuestionAnswering(config).parallelize().half()
+    ```
+    """
+
     def parallelize(self):
-        """
-        Transform the model to run in an IPU pipeline.
-        - Adds pipeline stages to the model
-        - Replaces self-attention layers with fused-qkv self-attention layers
-        - (If enabled) Replaces the word embedding with a SerializedEmbedding
-        - Adds recomputation checkpoints
-
-        Recommended usage:
-        ```
-        model = PipelinedBertForQuestionAnswering(config).parallelize().half()
-        ```
-        """
-        # Use faster fused-qkv self-attention
-        for layer in self.bert.encoder.layer:
-            fused = BertFusedSelfAttention(self.config)
-            fused.load_state_dict(layer.attention.self.state_dict())
-            layer.attention.self = fused
-
-        layer_ipu = _get_layer_ipu(self.config.layers_per_ipu)
-
-        logger.info("-------------------- Device Allocation --------------------")
-        logger.info("Embedding  --> IPU 0")
-        if self.config.embedding_serialization_factor > 1:
-            self.bert.embeddings.word_embeddings = SerializedEmbedding(
-                self.bert.embeddings.word_embeddings, self.config.embedding_serialization_factor
-            )
-        self.bert.embeddings = poptorch.BeginBlock(self.bert.embeddings, "Embedding", ipu_id=0)
-        outline_attribute(self.bert.embeddings.LayerNorm, "embedding")
-
-        for index, layer in enumerate(self.bert.encoder.layer):
-            ipu = layer_ipu[index]
-            if self.config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
-                recomputation_checkpoint(layer)
-            self.bert.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
-            logger.info(f"Encoder {index:<2} --> IPU {ipu}")
-
-        logger.info(f"QA Outputs --> IPU {ipu}")
-        self.qa_outputs = poptorch.BeginBlock(self.qa_outputs, "QA Outputs", ipu_id=ipu)
+        super().parallelize()
+        last_ipu = self.config.ipus_per_replica - 1
+        logger.info(f"QA Outputs --> IPU {last_ipu}")
+        self.qa_outputs = poptorch.BeginBlock(self.qa_outputs, "QA Outputs", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
-        return self
-
-    def deparallelize(self):
-        """
-        Undo the changes to the model done by `parallelize`.
-        You should call this before doing `save_pretrained` so that the `model.state_dict` is
-        fully compatible with `transformers.BertForQuestionAnswering`.
-        """
-        super().deparallelize()
-        # Deserialize the serialized word embedding
-        if self.config.embedding_serialization_factor > 1:
-            self.bert.embeddings.word_embeddings = self.bert.embeddings.word_embeddings.deserialize()
         return self
 
     def forward(self, input_ids, attention_mask, token_type_ids, start_positions=None, end_positions=None):
