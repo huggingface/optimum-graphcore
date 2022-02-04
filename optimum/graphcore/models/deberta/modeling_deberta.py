@@ -12,14 +12,20 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
+
 import torch
 import torch.nn as nn
 
-import math
 import poptorch
 from optimum.utils import logging
 from transformers import DebertaForQuestionAnswering
-from transformers.models.deberta.modeling_deberta import DisentangledSelfAttention, build_relative_position
+from transformers.models.deberta.modeling_deberta import (
+    BaseModelOutput,
+    DebertaEncoder,
+    DisentangledSelfAttention,
+    build_relative_position,
+)
 
 from ...modeling_utils import PipelineMixin, register
 
@@ -76,14 +82,12 @@ def outline_attribute(module: nn.Module, value: str):
 
 
 class XSoftmax(torch.nn.Module):
-
     def __init__(self, dim):
         super().__init__()
         self.dim = dim
 
     def forward(self, input, mask):
-        """
-        """
+        """ """
         rmask = ~(mask.bool())
         output = self.masked_fill_approx(input, rmask, -100000)
         output = torch.softmax(output, self.dim)
@@ -97,6 +101,13 @@ class XSoftmax(torch.nn.Module):
         return output
 
 
+def _get_rel_embedding(self):
+    return self.rel_embeddings.weight + 0.0 if self.relative_attention else None
+
+
+DebertaEncoder.get_rel_embedding = _get_rel_embedding
+
+
 class IPUDisentangledSelfAttention(DisentangledSelfAttention):
     """
     Disentangled self-attention module
@@ -107,6 +118,7 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
             *BertConfig*, for more details, please refer [`DebertaConfig`]
 
     """
+
     def __init__(self, config):
         super().__init__(config)
         self.xsoftmax = XSoftmax(-1)
@@ -132,13 +144,17 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
     #     return out.reshape(size[0], size[1], seq_len, seq_len).transpose(-1, -2)
 
     def index_select_gather(self, t, pos):
+        """
+        Use `index_select` function to gather indices on the last two dimension of the attention tensor
+        shaped [bs, num_attn_heads, seq_len, 2*seq_len]
+        """
         size = t.size()
         seq_len = size[-2]
         indices = ((torch.arange(0, seq_len) * 2 * seq_len).unsqueeze(1) + pos).reshape(-1)
         tf = t.reshape(size[0], size[1], -1)
         out = torch.index_select(tf, -1, indices)
         return out.reshape(size[0], size[1], seq_len, seq_len)
-    
+
     def forward(
         self,
         hidden_states,
@@ -230,33 +246,22 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
         else:
             return context_layer
 
-    def disentangled_att_bias(
-        self, query_layer, key_layer, relative_pos, rel_embeddings, scale_factor
-    ):
+    def disentangled_att_bias(self, query_layer, key_layer, relative_pos, rel_embeddings, scale_factor):
         if relative_pos is None:
             q = query_layer.size(-2)
-            relative_pos = build_relative_position(
-                q, key_layer.size(-2), query_layer.device
-            )
+            relative_pos = build_relative_position(q, key_layer.size(-2), query_layer.device)
         if relative_pos.dim() == 2:
             relative_pos = relative_pos.unsqueeze(0).unsqueeze(0)
         elif relative_pos.dim() == 3:
             relative_pos = relative_pos.unsqueeze(1)
         # bxhxqxk
         elif relative_pos.dim() != 4:
-            raise ValueError(
-                f"Relative position ids must be of dim 2 or 3 or 4. {relative_pos.dim()}"
-            )
+            raise ValueError(f"Relative position ids must be of dim 2 or 3 or 4. {relative_pos.dim()}")
 
-        att_span = min(
-            max(query_layer.size(-2), key_layer.size(-2)), self.max_relative_positions
-        )
+        att_span = min(max(query_layer.size(-2), key_layer.size(-2)), self.max_relative_positions)
         relative_pos = relative_pos.long().to(query_layer.device)
         rel_embeddings = rel_embeddings[
-            self.max_relative_positions
-            - att_span : self.max_relative_positions
-            + att_span,
-            :,
+            self.max_relative_positions - att_span : self.max_relative_positions + att_span, :
         ].unsqueeze(0)
 
         score = 0
@@ -281,9 +286,7 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
             pos_query_layer = self.transpose_for_scores(pos_query_layer)
             pos_query_layer /= math.sqrt(pos_query_layer.size(-1) * scale_factor)
             if query_layer.size(-2) != key_layer.size(-2):
-                r_pos = build_relative_position(
-                    key_layer.size(-2), key_layer.size(-2), query_layer.device
-                )
+                r_pos = build_relative_position(key_layer.size(-2), key_layer.size(-2), query_layer.device)
             else:
                 r_pos = relative_pos
             p2c_pos = torch.clamp(-r_pos + att_span, 0, att_span * 2 - 1)
@@ -298,10 +301,11 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
             # assert (p2c_att == p2c_att2).all(), f"p2c not equal {p2c_pos}"
 
             # TODO When does path this occur and what is the value of index in this case?
-            # if query_layer.size(-2) != key_layer.size(-2):
-            #     pos_index = relative_pos[:, :, :, 0].unsqueeze(-1)
-            #     index = pos_dynamic_expand(pos_index, p2c_att, key_layer)
-            #     p2c_att = torch.gather(p2c_att, dim=-2, index=index)
+            if query_layer.size(-2) != key_layer.size(-2):
+                print("HERE")
+                pos_index = relative_pos[:, :, :, 0].unsqueeze(-1)
+                # index = pos_dynamic_expand(pos_index, p2c_att, key_layer)
+                p2c_att = self.index_select_gather(p2c_att, pos_index)
             score += p2c_att
 
         return score
@@ -311,6 +315,10 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
 class PipelinedDebertaForQuestionAnswering(DebertaForQuestionAnswering, PipelineMixin):
     def __init__(self, config):
         super().__init__(config)
+
+        # enc = self.deberta.encoder
+        # self.deberta.encoder = IPUDebertaEncoder(self.config)
+        # self.deberta.encoder.load_state_dict(enc.state_dict())
 
         # Replace the DisentangledSelfAttention with IPU version
         for layer in self.deberta.encoder.layer:
@@ -323,19 +331,11 @@ class PipelinedDebertaForQuestionAnswering(DebertaForQuestionAnswering, Pipeline
 
         for layer in self.deberta.encoder.layer:
             layer.attention.self.pos_dropout = nn.Dropout(config.hidden_dropout_prob)
-            layer.attention.self.dropout = nn.Dropout(
-                config.attention_probs_dropout_prob
-            )
+            layer.attention.self.dropout = nn.Dropout(config.attention_probs_dropout_prob)
             layer.attention.output.dropout = nn.Dropout(config.hidden_dropout_prob)
             layer.output.dropout = nn.Dropout(config.hidden_dropout_prob)
 
-    def forward(
-        self,
-        input_ids,
-        attention_mask,
-        token_type_ids,
-        start_positions=None,
-        end_positions=None):
+    def forward(self, input_ids, attention_mask, token_type_ids, start_positions=None, end_positions=None):
         r"""
         start_positions (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
             Labels for position (index) of the start of the labelled span for computing the token classification loss.
@@ -381,8 +381,10 @@ class PipelinedDebertaForQuestionAnswering(DebertaForQuestionAnswering, Pipeline
         #         self.deberta.embeddings.word_embeddings, self.config.embedding_serialization_factor
         #     )
         self.deberta.embeddings = poptorch.BeginBlock(self.deberta.embeddings, "Embedding", ipu_id=0)
-        outline_attribute(self.deberta.embeddings.LayerNorm, "embedding")
+        hs = outline_attribute(self.deberta.embeddings.LayerNorm, "embedding")
+        self._hooks.extend(hs)
 
+        self.deberta.encoder = poptorch.BeginBlock(self.deberta.encoder, ipu_id=0)
         self.deberta.encoder.rel_embeddings = poptorch.BeginBlock(self.deberta.encoder.rel_embeddings, ipu_id=0)
 
         for index, layer in enumerate(self.deberta.encoder.layer):
