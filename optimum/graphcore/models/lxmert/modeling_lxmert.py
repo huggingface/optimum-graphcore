@@ -90,21 +90,6 @@ class PipelinedLxmertForQuestionAnswering(transformers.LxmertForQuestionAnswerin
         logger.info("-----------------------------------------------------------")
         return self
 
-    def deparallelize(self):
-        """
-        Undo the changes to the model done by `parallelize`.
-        You should call this before doing `save_pretrained` so that the `model.state_dict` is
-        fully compatible with `transformers.GPT2ForSequenceClassification`.
-        """
-        # Remove any hooks
-        for h in self._hooks:
-            h.remove()
-        # Remove poptorch Blocks
-        for m in self.modules():
-            if m != self:
-                poptorch.removeBlocks(m)
-        return self
-
     def forward(self, input_ids, visual_feats, visual_pos, attention_mask, visual_attention_mask, token_type_ids, labels=None):
         return super().forward(
             input_ids=input_ids,
