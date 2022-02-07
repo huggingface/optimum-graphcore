@@ -49,7 +49,7 @@ def recomputation_checkpoint(module: nn.Module) -> torch.utils.hooks.RemovableHa
 @register(transformers.ViTForImageClassification)
 class PipelinedViTForImageClassification(transformers.ViTForImageClassification, PipelineMixin):
     def parallelize(self):
-        self._hooks = []
+        super().parallelize()
         logger.info("---------- Device Allocation -----------")
         logger.info("Embedding  --> IPU 0")
         self.vit.embeddings = poptorch.BeginBlock(self.vit.embeddings, "Embedding", ipu_id=0)

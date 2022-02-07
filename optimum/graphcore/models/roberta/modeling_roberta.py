@@ -147,7 +147,6 @@ class RobertaPipelineMixin(PipelineMixin):
         - Adds recomputation checkpoints
         """
         super().parallelize()
-        self._hooks = []
         layer_ipu = _get_layer_ipu(self.config.layers_per_ipu)
 
         logger.info("-------------------- Device Allocation --------------------")

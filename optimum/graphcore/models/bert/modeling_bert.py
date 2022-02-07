@@ -169,7 +169,7 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
         - (If enabled) Replaces the word embedding projection with a SerializedLinear layer
         - Adds recomputation checkpoints
         """
-        self._hooks = []
+        super().parallelize()
 
         # Use faster fused-qkv self-attention
         for layer in self.bert.encoder.layer:
@@ -358,7 +358,6 @@ class BertPipelineMixin(PipelineMixin):
         - Adds recomputation checkpoints
         """
         super().parallelize()
-        self._hooks = []
 
         # Use faster fused-qkv self-attention
         for layer in self.bert.encoder.layer:
