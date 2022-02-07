@@ -89,6 +89,7 @@ class PipelineMixin:
 
     def parallelize(self):
         """Transform the model to run in an IPU pipeline."""
+        self._hooks = []
         return self
 
     def deparallelize(self):
