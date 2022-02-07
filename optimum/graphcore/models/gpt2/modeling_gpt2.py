@@ -185,6 +185,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
         hidden_states = transformer_outputs[0]
         # hidden_states = poptorch.recomputationCheckpoint(hidden_states)
         lm_logits = self.lm_head(hidden_states)
+        # lm_logits = lm_logits[:, :, 0:50257]
 
         loss = None
         if labels is not None:
@@ -197,6 +198,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
 
         return loss
 
+    # TODO: Split loss to optimize memory usage
     # def forward(self, input_ids, attention_mask, labels=None):
     #     transformer_outputs = self.transformer(input_ids, attention_mask=attention_mask)
     #     hidden_states = transformer_outputs[0]
