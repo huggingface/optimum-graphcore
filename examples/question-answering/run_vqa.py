@@ -428,22 +428,20 @@ def main():
     #     references = [{"id": ex["id"], "answers": ex[answer_column_name]} for ex in examples]
     #     return EvalPrediction(predictions=formatted_predictions, label_ids=references)
 
-    metric = load_metric("squad_v2" if data_args.version_2_with_negative else "squad")
+    metric = load_metric("accuracy")
 
     def compute_metrics(p: EvalPrediction):
         return metric.compute(predictions=p.predictions, references=p.label_ids)
 
     # Initialize our Trainer
-    trainer = QuestionAnsweringTrainer(
+    trainer = IPUTrainer(
         model=model,
         ipu_config=ipu_config,
         args=training_args,
         train_dataset=train_dataset if training_args.do_train else None,
         eval_dataset=eval_dataset if training_args.do_eval else None,
-        eval_examples=eval_examples if training_args.do_eval else None,
         tokenizer=tokenizer,
         data_collator=data_collator,
-        post_process_function=post_processing_function,
         compute_metrics=compute_metrics,
     )
 
@@ -481,7 +479,7 @@ def main():
     # Prediction
     if training_args.do_predict:
         logger.info("*** Predict ***")
-        results = trainer.predict(predict_dataset, predict_examples)
+        results = trainer.predict(predict_dataset)
         metrics = results.metrics
 
         max_predict_samples = (
