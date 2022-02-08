@@ -39,6 +39,7 @@ from transformers import (
     DataCollatorWithPadding,
     EvalPrediction,
     HfArgumentParser,
+    PreTrainedTokenizerFast,
     default_data_collator,
     set_seed,
 )

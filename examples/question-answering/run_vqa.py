@@ -21,6 +21,7 @@ Fine-tuning the library models for visual question answering.
 import logging
 import os
 import sys
+from unittest import result
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -343,14 +344,22 @@ def main():
     max_seq_length = min(data_args.max_seq_length, tokenizer.model_max_length)
 
     def preprocess_function(examples):
-        tokenized_examples = tokenizer(
+        result = tokenizer(
             examples[question_column_name],
             truncation=True,
             max_length=max_seq_length,
             add_special_tokens=True,
             padding="max_length" if data_args.pad_to_max_length else False,
         )
-        return tokenized_examples
+        result["visual_feats"] = examples[visual_feat_column_name]
+        if answer_column_name in examples:
+            # TODO: Generalize to all VQA v2.0 dataset?
+            if data_args.dataset_name == "Graphcore/vqa-lxmert":
+                # TODO: soft label
+                pass
+            else:
+                result["label"] = examples[answer_column_name]
+        return result
 
     with training_args.main_process_first(desc="dataset map pre-processing"):
         raw_datasets = raw_datasets.map(
