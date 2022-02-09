@@ -53,7 +53,7 @@ class PipelinedLxmertForQuestionAnswering(transformers.LxmertForQuestionAnswerin
         self._hooks = []
 
         logger.info("-------------------- Device Allocation --------------------")
-        logger.info("Embedding  --> IPU 0")
+        logger.info("Embedding               --> IPU 0")
         self.lxmert.embeddings = poptorch.BeginBlock(self.lxmert.embeddings, "Embedding", ipu_id=0)
 
         # Language layers
@@ -62,9 +62,10 @@ class PipelinedLxmertForQuestionAnswering(transformers.LxmertForQuestionAnswerin
                 h = recomputation_checkpoint(layer)
                 self._hooks.append(h)
             self.lxmert.encoder.layer[index] = poptorch.BeginBlock(layer, f"Language layer{index}", ipu_id=1)
-            logger.info(f"Language layer {index:<2}   --> IPU {1}")
+            logger.info(f"Language layer {index:<2}       --> IPU 1")
 
         # Visual layers
+        logger.info("Image embedding         --> IPU 2")
         self.lxmert.encoder.visn_fc = poptorch.BeginBlock(self.lxmert.encoder.visn_fc, "Image embedding", ipu_id=2)
         
         for index, layer in enumerate(self.lxmert.encoder.r_layers):
@@ -72,7 +73,7 @@ class PipelinedLxmertForQuestionAnswering(transformers.LxmertForQuestionAnswerin
                 h = recomputation_checkpoint(layer)
                 self._hooks.append(h)
             self.lxmert.encoder.r_layers[index] = poptorch.BeginBlock(layer, f"Visual layer{index}", ipu_id=2)
-            logger.info(f"Visual layer {index:<2}   --> IPU {2}")
+            logger.info(f"Visual layer {index:<2}         --> IPU 2")
 
         # Cross modality layers
         for index, layer in enumerate(self.lxmert.encoder.x_layers):
@@ -80,17 +81,17 @@ class PipelinedLxmertForQuestionAnswering(transformers.LxmertForQuestionAnswerin
                 h = recomputation_checkpoint(layer)
                 self._hooks.append(h)
             self.lxmert.encoder.x_layers[index] = poptorch.BeginBlock(layer, f"Cross modality layer{index}", ipu_id=3)
-            logger.info(f"Cross modality layer {index:<2}   --> IPU {3}")
+            logger.info(f"Cross modality layer {index:<2} --> IPU 3")
 
-        logger.info("Pooler     --> IPU {3}")
+        logger.info(f"Pooler                  --> IPU 3")
         self.lxmert.pooler = poptorch.BeginBlock(self.lxmert.pooler, "Pooler", ipu_id=3)
 
-        print(f"Head       --> IPU {3}")
+        logger.info(f"Head                    --> IPU 3")
         self.answer_head = poptorch.BeginBlock(self.answer_head, "Head", ipu_id=3)
         logger.info("-----------------------------------------------------------")
         return self
 
-    def forward(self, input_ids, visual_feats, visual_pos, attention_mask, visual_attention_mask, token_type_ids, labels=None):
+    def forward(self, input_ids, visual_feats, visual_pos, attention_mask=None, token_type_ids=None, labels=None, visual_attention_mask=None):
         return super().forward(
             input_ids=input_ids,
             visual_feats=visual_feats,

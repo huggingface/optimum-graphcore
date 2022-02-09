@@ -332,6 +332,7 @@ def main():
     question_column_name = "question"
     visual_feat_column_name = "features"
     answer_column_name = "label"
+    box_column_name = "boxes"
 
     # Padding side determines if we do (question|context) or (context|question).
     pad_on_right = tokenizer.padding_side == "right"
@@ -348,12 +349,13 @@ def main():
             examples[question_column_name],
             truncation=True,
             max_length=max_seq_length,
-            add_special_tokens=True,
             padding="max_length" if data_args.pad_to_max_length else False,
         )
         result["visual_feats"] = examples[visual_feat_column_name]
+        # TODO: Normalize boxes
+        result["visual_pos"] = examples[box_column_name]
         if answer_column_name in examples:
-            # TODO: Generalize to all VQA v2.0 dataset?
+            # TODO: Generalize to all VQA v2.0 dataset? Need to use BCE loss
             if data_args.dataset_name == "Graphcore/vqa-lxmert":
                 # TODO: soft label
                 pass
@@ -398,18 +400,18 @@ def main():
         else DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None)
     )
 
-    if training_args.do_train and training_args.pad_on_batch_axis:
-        logger.info(
-            "Padding on batch axis enabled, each batch feeded to the compiled model during training will have the proper size"
-        )
-        data_collator_wrapper = pad_on_batch_axis(
-            training_args.per_device_train_batch_size * ipu_config.batch_size_factor(),
-            {
-                k: data_args.max_seq_length if k in ["start_positions", "end_positions"] else 0
-                for k in train_dataset.column_names
-            },
-        )
-        data_collator = data_collator_wrapper(data_collator)
+    # if training_args.do_train and training_args.pad_on_batch_axis:
+    #     logger.info(
+    #         "Padding on batch axis enabled, each batch feeded to the compiled model during training will have the proper size"
+    #     )
+    #     data_collator_wrapper = pad_on_batch_axis(
+    #         training_args.per_device_train_batch_size * ipu_config.batch_size_factor(),
+    #         {
+    #             k: data_args.max_seq_length if k in ["start_positions", "end_positions"] else 0
+    #             for k in train_dataset.column_names
+    #         },
+    #     )
+    #     data_collator = data_collator_wrapper(data_collator)
 
     # # Post-processing:
     # def post_processing_function(examples, features, predictions, stage="eval"):
@@ -437,6 +439,7 @@ def main():
     #     references = [{"id": ex["id"], "answers": ex[answer_column_name]} for ex in examples]
     #     return EvalPrediction(predictions=formatted_predictions, label_ids=references)
 
+    # Get the metric function
     metric = load_metric("accuracy")
 
     def compute_metrics(p: EvalPrediction):
