@@ -169,10 +169,6 @@ class DataTrainingArguments:
             "Only useful when `version_2_with_negative=True`."
         },
     )
-    doc_stride: int = field(
-        default=128,
-        metadata={"help": "When splitting up a long document into chunks, how much stride to take between chunks."},
-    )
     n_best_size: int = field(
         default=20,
         metadata={"help": "The total number of n-best predictions to generate when looking for an answer."},
@@ -356,7 +352,7 @@ def main():
         result["visual_pos"] = examples[box_column_name]
         if answer_column_name in examples:
             # TODO: Generalize to all VQA v2.0 dataset? Need to use BCE loss
-            if data_args.dataset_name == "Graphcore/vqa-lxmert" or data_args.dataset_name == "echarlaix/vqa-lxmert":
+            if data_args.dataset_name == "Graphcore/vqa-lxmert":
                 # TODO: soft label
                 result["labels"] = [0 for d in examples[answer_column_name]]
             else:
