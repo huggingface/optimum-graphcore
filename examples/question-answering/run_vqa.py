@@ -21,6 +21,7 @@ Fine-tuning the library models for visual question answering.
 import logging
 import os
 import sys
+import numpy as np
 from unittest import result
 from dataclasses import dataclass, field
 from typing import Optional
@@ -332,7 +333,7 @@ def main():
     question_column_name = "question"
     visual_feat_column_name = "features"
     answer_column_name = "label"
-    box_column_name = "boxes"
+    box_column_name = "normalized_boxes"
 
     # Padding side determines if we do (question|context) or (context|question).
     pad_on_right = tokenizer.padding_side == "right"
@@ -352,21 +353,21 @@ def main():
             padding="max_length" if data_args.pad_to_max_length else False,
         )
         result["visual_feats"] = examples[visual_feat_column_name]
-        # TODO: Normalize boxes
         result["visual_pos"] = examples[box_column_name]
         if answer_column_name in examples:
             # TODO: Generalize to all VQA v2.0 dataset? Need to use BCE loss
-            if data_args.dataset_name == "Graphcore/vqa-lxmert":
+            if data_args.dataset_name == "Graphcore/vqa-lxmert" or data_args.dataset_name == "echarlaix/vqa-lxmert":
                 # TODO: soft label
-                pass
+                result["labels"] = [0 for d in examples[answer_column_name]]
             else:
-                result["label"] = examples[answer_column_name]
+                result["labels"] = examples[answer_column_name]
         return result
 
     with training_args.main_process_first(desc="dataset map pre-processing"):
         raw_datasets = raw_datasets.map(
             preprocess_function,
             batched=True,
+            remove_columns=column_names,
             load_from_cache_file=not data_args.overwrite_cache,
             desc="Running tokenizer on dataset",
         )
@@ -443,7 +444,7 @@ def main():
     metric = load_metric("accuracy")
 
     def compute_metrics(p: EvalPrediction):
-        return metric.compute(predictions=p.predictions, references=p.label_ids)
+        return metric.compute(predictions=np.argmax(p.predictions, axis=1), references=p.label_ids)
 
     # Initialize our Trainer
     trainer = IPUTrainer(
