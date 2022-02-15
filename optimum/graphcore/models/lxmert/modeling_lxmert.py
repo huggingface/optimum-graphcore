@@ -40,6 +40,12 @@ def recomputation_checkpoint(module: nn.Module) -> torch.utils.hooks.RemovableHa
 
 @register(transformers.LxmertForQuestionAnswering)
 class PipelinedLxmertForQuestionAnswering(transformers.LxmertForQuestionAnswering, PipelineMixin):
+    def __init__(self, config):
+        super().__init__(config)
+        self.soft_label = config.soft_label
+        if self.soft_label:
+            self.loss = nn.BCEWithLogitsLoss()
+        
     def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.
@@ -91,13 +97,23 @@ class PipelinedLxmertForQuestionAnswering(transformers.LxmertForQuestionAnswerin
         return self
 
     def forward(self, input_ids, visual_feats, visual_pos, attention_mask=None, token_type_ids=None, labels=None, visual_attention_mask=None):
-        return super().forward(
+        lxmert_output = self.lxmert(
             input_ids=input_ids,
             visual_feats=visual_feats,
             visual_pos=visual_pos,
+            token_type_ids=token_type_ids,
             attention_mask=attention_mask,
             visual_attention_mask=visual_attention_mask,
-            token_type_ids=token_type_ids,
-            labels=labels,
-            return_dict=False,
         )
+
+        pooled_output = lxmert_output[2]
+        answer_score = self.answer_head(pooled_output)
+        loss = None
+        if labels is not None:
+            # Use soft labels for datasets such as VQA v2
+            if self.soft_label:
+                loss = self.loss(answer_score, labels)
+            else:
+                loss = self.loss(answer_score.view(-1, self.num_qa_labels), labels.view(-1))
+
+        return loss, answer_score

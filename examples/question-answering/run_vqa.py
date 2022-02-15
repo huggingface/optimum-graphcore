@@ -123,7 +123,7 @@ class DataTrainingArguments:
         metadata={"help": "The number of processes to use for the preprocessing."},
     )
     max_seq_length: int = field(
-        default=384,
+        default=512,
         metadata={
             "help": "The maximum total input sequence length after tokenization. Sequences longer "
             "than this will be truncated, sequences shorter will be padded."
@@ -179,6 +179,9 @@ class DataTrainingArguments:
             "help": "The maximum length of an answer that can be generated. This is needed because the start "
             "and end predictions are not conditioned on one another."
         },
+    )
+    soft_label: bool = field(
+        default=False, metadata={"help": "If true, the dataset uses soft labels. (e.g. VQA v2)"}
     )
 
     def __post_init__(self):
@@ -295,6 +298,7 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
+    config.update({"soft_label": data_args.soft_label})
     ipu_config = IPUConfig.from_pretrained(
         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
         cache_dir=model_args.cache_dir,
@@ -331,9 +335,6 @@ def main():
     answer_column_name = "label"
     box_column_name = "normalized_boxes"
 
-    # Padding side determines if we do (question|context) or (context|question).
-    pad_on_right = tokenizer.padding_side == "right"
-
     if data_args.max_seq_length > tokenizer.model_max_length:
         logger.warning(
             f"The max_seq_length passed ({data_args.max_seq_length}) is larger than the maximum length for the"
@@ -351,10 +352,16 @@ def main():
         result["visual_feats"] = examples[visual_feat_column_name]
         result["visual_pos"] = examples[box_column_name]
         if answer_column_name in examples:
-            # TODO: Generalize to all VQA v2.0 dataset? Need to use BCE loss
-            if data_args.dataset_name == "Graphcore/vqa-lxmert":
-                # TODO: soft label
-                result["labels"] = [0 for d in examples[answer_column_name]]
+            # Use soft labels
+            if data_args.soft_label:
+                result["labels"] = []
+                for example_answer in examples[answer_column_name]:
+                    # A typical example answer looks like this: {'ids': [3031, 1618, 311, 703], 'weights': [1.0, 0.9, 0.3, 0.3]}
+                    # TODO: Since load from ckpt, num_qa_labels must 9500?
+                    soft_label = [0] * config.num_qa_labels
+                    for i, id in enumerate(example_answer['ids']):
+                        soft_label[id] = example_answer['weights'][i]
+                    result["labels"].append(soft_label)
             else:
                 result["labels"] = examples[answer_column_name]
         return result
@@ -440,7 +447,17 @@ def main():
     metric = load_metric("accuracy")
 
     def compute_metrics(p: EvalPrediction):
-        return metric.compute(predictions=np.argmax(p.predictions, axis=1), references=p.label_ids)
+        if data_args.soft_label:
+            predictions=np.argmax(p.predictions, axis=1)
+            acc_list = [p.label_ids[i][pred] for i, pred in enumerate(predictions)]
+            acc = np.mean(acc_list)
+            return {
+                "accuracy": float(
+                    acc
+                )
+            }
+        else:
+            return metric.compute(predictions=np.argmax(p.predictions, axis=1), references=p.label_ids)
 
     # Initialize our Trainer
     trainer = IPUTrainer(
