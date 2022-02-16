@@ -368,6 +368,8 @@ def main():
     # TODO: Make this a command line option
     if config.model_type == "gpt2":
         model.resize_token_embeddings(50264)
+    else:
+        model.resize_token_embeddings(len(tokenizer))
 
     # Preprocessing the datasets.
     # First we tokenize all the texts.
