@@ -18,6 +18,7 @@ import torch.nn as nn
 import poptorch
 from optimum.utils import logging
 from transformers import (
+    RobertaForMaskedLM,
     RobertaForMultipleChoice,
     RobertaForQuestionAnswering,
     RobertaForSequenceClassification,
@@ -78,6 +79,33 @@ class RobertaPipelineMixin(PipelineMixin):
         if self.config.embedding_serialization_factor > 1:
             self.roberta.embeddings.word_embeddings = self.roberta.embeddings.word_embeddings.deserialize()
         return self
+
+
+@register(RobertaForMaskedLM)
+class PipelinedRobertaForMaskedLM(RobertaForMaskedLM, RobertaPipelineMixin):
+    """
+    RobertaForMaskedLM transformed to run in an IPU pipeline.
+
+    Recommended usage:
+    ```
+    model = PipelinedRobertaForMaskedLM(config).parallelize().half()
+    ```
+    """
+
+    def parallelize(self):
+        super().parallelize()
+        logger.info(f"LM Head --> IPU 0")
+        self.lm_head = poptorch.BeginBlock(self.lm_head, "LM Head", ipu_id=0)
+        logger.info("-----------------------------------------------------------")
+        return self
+
+    def forward(self, input_ids, attention_mask, labels=None):
+        return super().forward(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            labels=labels,
+            return_dict=False,
+        )
 
 
 @register(RobertaForSequenceClassification)
