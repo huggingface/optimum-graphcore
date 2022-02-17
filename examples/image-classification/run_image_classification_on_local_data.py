@@ -23,9 +23,9 @@ from typing import Optional
 import datasets
 import numpy as np
 import torch
-from torchvision.datasets import ImageFolder
-from torch.utils.data import random_split
 from PIL import Image
+from torch.utils.data import random_split
+from torchvision.datasets import ImageFolder
 from torchvision.transforms import (
     CenterCrop,
     Compose,
@@ -298,11 +298,13 @@ def main():
     # If we don't have a validation split, split off a percentage of train as validation.
     data_args.train_val_split = None if "validation" in ds.keys() else data_args.train_val_split
     if isinstance(data_args.train_val_split, float) and data_args.train_val_split > 0.0:
-         ds_validation_size = int(len(ds["train"])*data_args.train_val_split)
-         ds_train_size = len(ds["train"])-ds_validation_size
-         ds["train"], ds["validation"] = random_split(
-                 ds["train"], [ds_train_size, ds_validation_size],
-                 generator=torch.Generator().manual_seed(training_args.seed))
+        ds_validation_size = int(len(ds["train"]) * data_args.train_val_split)
+        ds_train_size = len(ds["train"]) - ds_validation_size
+        ds["train"], ds["validation"] = random_split(
+            ds["train"],
+            [ds_train_size, ds_validation_size],
+            generator=torch.Generator().manual_seed(training_args.seed),
+        )
 
     # Prepare label mappings.
     # We'll include these in the model's config to get human readable labels in the Inference API.
@@ -311,13 +313,13 @@ def main():
         if "train" not in ds:
             raise ValueError("--do_train requires a train dataset")
         if data_args.max_train_samples is not None:
-            ds["train"] = ds["train"].shuffle(seed=training_args.seed)[:data_args.max_train_samples]
+            ds["train"] = ds["train"].shuffle(seed=training_args.seed)[: data_args.max_train_samples]
 
     if training_args.do_eval:
         if "validation" not in ds:
             raise ValueError("--do_eval requires a validation dataset")
         if data_args.max_eval_samples is not None:
-            ds["validation"] = ds["validation"].shuffle(seed=training_args.seed)[:data_args.max_val_samples]
+            ds["validation"] = ds["validation"].shuffle(seed=training_args.seed)[: data_args.max_val_samples]
 
     # Initalize our trainer
     trainer = IPUTrainer(
