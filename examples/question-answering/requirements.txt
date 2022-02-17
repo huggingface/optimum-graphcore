@@ -1,2 +1,4 @@
+transformers
 datasets >= 1.8.0
+optimum[graphcore]
 torch >= 1.3.0
