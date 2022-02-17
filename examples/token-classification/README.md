@@ -30,9 +30,9 @@ The following example fine-tunes BERT on CoNLL-2003:
 ```bash
 python run_ner.py \
   --model_name_or_path bert-base-uncased \
-  --ipu_config_name Graphcore/bert-base-ipu \
+  --ipu_config_name Graphcore/bert-base \
   --dataset_name conll2003 \
-  --output_dir ./output/test-ner \
+  --output_dir /tmp/test-ner \
   --do_train \
   --do_eval
 ```
@@ -44,10 +44,10 @@ To run on your own training and validation files, use the following command:
 ```bash
 python run_ner.py \
   --model_name_or_path bert-base-uncased \
-  --ipu_config_name Graphcore/bert-base-ipu \
+  --ipu_config_name Graphcore/bert-base \
   --train_file path_to_train_file \
   --validation_file path_to_validation_file \
-  --output_dir ./output/test-ner \
+  --output_dir /tmp/test-ner \
   --do_train \
   --do_eval
 ```
