@@ -28,11 +28,11 @@ and can also be used for a dataset hosted on our [hub](https://huggingface.co/da
 GLUE is made up of a total of 9 different tasks. Here is how to run the script on one of them:
 
 ```bash
-export TASK_NAME=mrpc
+export TASK_NAME=sst2
 
 python run_glue.py \
   --model_name_or_path bert-base-cased \
-  --ipu_config_name Graphcore/bert-base \
+  --ipu_config_name Graphcore/bert-base-ipu \
   --task_name $TASK_NAME \
   --do_train \
   --do_eval \
@@ -40,7 +40,7 @@ python run_glue.py \
   --per_device_train_batch_size 32 \
   --learning_rate 2e-5 \
   --num_train_epochs 3 \
-  --output_dir /tmp/$TASK_NAME/
+  --output_dir ./output/$TASK_NAME/
 ```
 
 where task name can be one of cola, sst2, mrpc, stsb, qqp, mnli, qnli, rte, wnli.
@@ -71,7 +71,7 @@ The following example fine-tunes BERT on the `imdb` dataset hosted on our [hub](
 ```bash
 python run_glue.py \
   --model_name_or_path bert-base-cased \
-  --ipu_config_name Graphcore/bert-base \
+  --ipu_config_name Graphcore/bert-base-ipu \
   --dataset_name imdb  \
   --do_train \
   --do_predict \
@@ -79,7 +79,7 @@ python run_glue.py \
   --per_device_train_batch_size 32 \
   --learning_rate 2e-5 \
   --num_train_epochs 3 \
-  --output_dir /tmp/imdb/
+  --output_dir ./output/imdb/
 ```
 
 ## XNLI
@@ -95,7 +95,7 @@ This example code fine-tunes mBERT (multi-lingual BERT) on the XNLI dataset. <!-
 ```bash
 python run_xnli.py \
   --model_name_or_path bert-base-multilingual-cased \
-  --ipu_config_name Graphcore/bert-base \
+  --ipu_config_name Graphcore/bert-base-ipu \
   --language de \
   --train_language en \
   --do_train \
@@ -104,7 +104,7 @@ python run_xnli.py \
   --learning_rate 5e-5 \
   --num_train_epochs 2.0 \
   --max_seq_length 128 \
-  --output_dir /tmp/debug_xnli/ \
+  --output_dir ./output/xnli/ \
   --save_steps -1
 ```
 
