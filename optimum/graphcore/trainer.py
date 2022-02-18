@@ -1203,7 +1203,7 @@ class IPUTrainer:
 
     def _load_state_dict_in_model(self, state_dict):
         self.model.deparallelize()
-        load_result = self.model.load_state_dict(state_dict)
+        load_result = self.model.load_state_dict(state_dict, strict=False)
         self.model.parallelize()
 
         # TODO: check if this is needed.
