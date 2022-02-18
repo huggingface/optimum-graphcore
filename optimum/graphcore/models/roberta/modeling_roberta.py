@@ -195,6 +195,7 @@ class PipelinedRobertaForMaskedLM(RobertaForMaskedLM, PipelineMixin):
 
         return outputs
 
+
 @register(RobertaForSequenceClassification)
 class PipelinedRobertaForSequenceClassification(RobertaForSequenceClassification, RobertaPipelineMixin):
     """
