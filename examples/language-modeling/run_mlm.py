@@ -32,7 +32,7 @@ import torch
 import transformers
 from optimum.graphcore import IPUConfig, IPUTrainer
 from optimum.graphcore import IPUTrainingArguments as TrainingArguments
-from optimum.graphcore.data import pad_on_batch_axis
+from optimum.graphcore.data import DataCollatorForLanguageModelingWithMaxTokensMasked, pad_on_batch_axis
 from datasets import load_dataset
 from transformers import (
     CONFIG_MAPPING,
@@ -486,11 +486,12 @@ def main():
 
     # Data collator
     # This one will take care of randomly masking the tokens.
-    pad_to_multiple_of_8 = data_args.line_by_line and training_args.fp16 and not data_args.pad_to_max_length
-    data_collator = DataCollatorForLanguageModeling(
+    # pad_to_multiple_of_8 = data_args.line_by_line and training_args.fp16 and not data_args.pad_to_max_length
+    data_collator = DataCollatorForLanguageModelingWithMaxTokensMasked(
         tokenizer=tokenizer,
         mlm_probability=data_args.mlm_probability,
-        pad_to_multiple_of=8 if pad_to_multiple_of_8 else None,
+        # pad_to_multiple_of=8 if pad_to_multiple_of_8 else None,
+        pad_to_multiple_of=None,
     )
 
     # Initialize our Trainer

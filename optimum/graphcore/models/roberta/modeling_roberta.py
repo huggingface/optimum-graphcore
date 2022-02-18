@@ -14,6 +14,7 @@
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 import poptorch
 from optimum.utils import logging
@@ -36,6 +37,38 @@ from ...modeling_utils import (
 
 
 logger = logging.get_logger(__name__)
+
+
+class OnehotGather(nn.Module):
+    """
+    Gathers selected indices from a tensor by transforming the list of indices
+    into a one-hot matrix and then multiplying the tensor by that matrix.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._is_half = False
+
+    def half(self):
+        super().half()
+        # Tracing is always executed in float as there are missing
+        # implementations of operations in half on the CPU.
+        # So we cannot query the inputs to know if we are running
+        # with a model that has had .half() called on it.
+        # To work around it nn.Module::half is overridden
+        self._is_half = True
+
+    def forward(self, sequence, positions):
+        """
+        Gather the vectors at the specific positions over a batch.
+        """
+        num_classes = int(sequence.shape[1])
+        one_hot_positions = F.one_hot(positions, num_classes)
+        if self._is_half:
+            one_hot_positions = one_hot_positions.half()
+        else:
+            one_hot_positions = one_hot_positions.float()
+        return torch.matmul(one_hot_positions.detach(), sequence)
 
 
 class RobertaPipelineMixin(PipelineMixin):
@@ -82,7 +115,7 @@ class RobertaPipelineMixin(PipelineMixin):
 
 
 @register(RobertaForMaskedLM)
-class PipelinedRobertaForMaskedLM(RobertaForMaskedLM, RobertaPipelineMixin):
+class PipelinedRobertaForMaskedLM(RobertaForMaskedLM, PipelineMixin):
     """
     RobertaForMaskedLM transformed to run in an IPU pipeline.
 
@@ -92,21 +125,75 @@ class PipelinedRobertaForMaskedLM(RobertaForMaskedLM, RobertaPipelineMixin):
     ```
     """
 
+    def __init__(self, config):
+        super().__init__(config)
+        self.gather_indices = OnehotGather()
+
     def parallelize(self):
+        """
+        Transform the model to run in an IPU pipeline.
+        - Adds pipeline stages to the model
+        - (If enabled) Replaces the word embedding projection with a SerializedLinear layer
+        - Adds recomputation checkpoints
+        """
         super().parallelize()
-        logger.info(f"LM Head --> IPU 0")
+
+        if self.config.embedding_serialization_factor > 1:
+            serialized_decoder = SerializedLinear(
+                self.config.hidden_size,
+                self.config.vocab_size,
+                self.config.embedding_serialization_factor,
+                bias=True,
+                mode=poptorch.MatMulSerializationMode.OutputChannels,
+            )
+            serialized_decoder.load_state_dict(self.lm_head.decoder.state_dict())
+            self.lm_head.decoder = serialized_decoder
+            self.tie_weights()
+
+        layer_ipu = _get_layer_ipu(self.config.layers_per_ipu)
+
+        logger.info("-------------------- Device Allocation --------------------")
+        logger.info("Embedding  --> IPU 0")
+        self.roberta.embeddings = poptorch.BeginBlock(self.roberta.embeddings, "Embedding", ipu_id=0)
+        hs = outline_attribute(self.roberta.embeddings.LayerNorm, "embedding")
+        self._hooks.extend(hs)
+
+        for index, layer in enumerate(self.roberta.encoder.layer):
+            ipu = layer_ipu[index]
+            if self.config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
+                h = recomputation_checkpoint(layer)
+                self._hooks.append(h)
+            self.roberta.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
+            logger.info(f"Encoder {index:<2} --> IPU {ipu}")
+
+        logger.info(f"LM Head    --> IPU 0")
         self.lm_head = poptorch.BeginBlock(self.lm_head, "LM Head", ipu_id=0)
         logger.info("-----------------------------------------------------------")
         return self
 
     def forward(self, input_ids, attention_mask, labels=None):
-        return super().forward(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            labels=labels,
-            return_dict=False,
-        )
+        outputs = self.roberta(input_ids, attention_mask=attention_mask)
+        sequence_output = outputs[0]
 
+        if labels is not None:
+            # Select only the masked tokens for the classifier
+            max_number_of_masked_tokens = int(labels.size(1) * 0.25)
+            masked_lm_labels, masked_lm_positions = torch.topk(labels, k=max_number_of_masked_tokens, dim=1)
+            masked_output = self.gather_indices(sequence_output, masked_lm_positions)
+        else:
+            # This case should never happen during training
+            masked_output = sequence_output
+
+        prediction_scores = self.lm_head(masked_output)
+        outputs = (prediction_scores,) + outputs[2:]
+
+        masked_lm_loss = None
+        if labels is not None:
+            loss_fct = nn.CrossEntropyLoss()
+            masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1))
+            return masked_lm_loss
+
+        return outputs
 
 @register(RobertaForSequenceClassification)
 class PipelinedRobertaForSequenceClassification(RobertaForSequenceClassification, RobertaPipelineMixin):
