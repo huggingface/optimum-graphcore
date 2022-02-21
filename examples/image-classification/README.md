@@ -23,7 +23,7 @@ The following examples showcase how to fine-tune a `ViT` for image-classificatio
 Here we show how to fine-tune a `ViT` on the [cifar10](https://huggingface.co/datasets/cifar10) dataset.
 
 ```
-python examples/image-classification/run_image_classification.py \
+python run_image_classification.py \
     --dataset_name cifar10 \
     --output_dir ./cifar10_outputs/ \
     --model_name_or_path google/vit-base-patch16-224-in21k \
@@ -52,7 +52,7 @@ Here we show how to fine-tune a `ViT` on the [beans](https://huggingface.co/data
 👀 See the results here: [nateraw/vit-base-beans](https://huggingface.co/nateraw/vit-base-beans).
 
 ```bash
-python examples/image-classification/run_image_classification.py \
+python run_image_classification.py \
     --dataset_name beans \
     --output_dir ./beans_outputs/ \
     --model_name_or_path google/vit-base-patch16-224-in21k \
@@ -119,20 +119,25 @@ root/cat/[...]/asd932_.png
 Once you've prepared your dataset, you can can run the script like this:
 
 ```bash
-python run_image_classification.py \
-    --dataset_name nateraw/image-folder \
+python run_image_classification_on_local_data.py \
     --ipu_config_name Graphcore/vit-base-ipu \
     --train_dir <path-to-train-root> \
+    --train_val_split 0.1 \
     --output_dir ./outputs/ \
-    --remove_unused_columns False \
     --do_train \
-    --do_eval
+    --do_eval \
+    --num_train_epochs 3 \
+    --learning_rate 3e-4 \
+    --per_device_train_batch_size 1 \
+    --per_device_eval_batch_size 1 \
+    --dataloader_num_workers 8 \
+    --dataloader_drop_last \
+    --seed 1337
 ```
 
 ### 💡 The above will split the train dir into training and evaluation sets
   - To control the split amount, use the `--train_val_split` flag.
   - To provide your own validation split in its own directory, you can pass the `--validation_dir <path-to-val-root>` flag.
-
 
 ## Sharing your model on 🤗 Hub
 
