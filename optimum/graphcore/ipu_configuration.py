@@ -15,6 +15,7 @@
 import copy
 from typing import Any, Dict, Optional, Union
 
+import json
 import torch
 
 import popart
@@ -266,3 +267,44 @@ class IPUConfig(BaseConfig):
         gradient_accumulation_steps = 1 if for_inference else ipu_config.gradient_accumulation_steps
         device_iterations = ipu_config.inference_device_iterations if for_inference else ipu_config.device_iterations
         return replication_factor * gradient_accumulation_steps * device_iterations
+
+    def update_from_string(self, update_str: str):
+        """
+        Updates attributes of this class with attributes from `update_str`.
+
+        The expected format is ints, floats and strings as is, and for booleans use `true` or `false`, and for lists
+        use `[a b c d]`. For example: "n_embd=10,resid_pdrop=0.2,scale_attn_weights=false,summary_type=cls_index,
+        matmul_proportion=[0.08 0.2 0.25 0.25]"
+
+        The keys to change have to already exist in the config object.
+
+        Args:
+            update_str (`str`): String with attributes that should be updated for this class.
+
+        """
+
+        d = dict(x.split("=") for x in update_str.split(","))
+        for k, v in d.items():
+            if not hasattr(self, k):
+                raise ValueError(f"key {k} isn't in the original config dict")
+
+            old_v = getattr(self, k)
+            if isinstance(old_v, bool):
+                if v.lower() in ["true", "1", "y", "yes"]:
+                    v = True
+                elif v.lower() in ["false", "0", "n", "no"]:
+                    v = False
+                else:
+                    raise ValueError(f"can't derive true or false from {v} (key {k})")
+            elif isinstance(old_v, int):
+                v = int(v)
+            elif isinstance(old_v, float):
+                v = float(v)
+            elif isinstance(old_v, list):
+                v = json.loads(v.replace(' ', ','))
+            elif not isinstance(old_v, str):
+                raise ValueError(
+                    f"You can only update int, float, bool, list or string values in the config, got {v} for key {k}"
+                )
+
+            setattr(self, k, v)
