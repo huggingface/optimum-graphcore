@@ -13,9 +13,9 @@
 #  limitations under the License.
 
 import copy
+import json
 from typing import Any, Dict, Optional, Union
 
-import json
 import torch
 
 import popart
@@ -301,7 +301,7 @@ class IPUConfig(BaseConfig):
             elif isinstance(old_v, float):
                 v = float(v)
             elif isinstance(old_v, list):
-                v = json.loads(v.replace(' ', ','))
+                v = json.loads(v.replace(" ", ","))
             elif not isinstance(old_v, str):
                 raise ValueError(
                     f"You can only update int, float, bool, list or string values in the config, got {v} for key {k}"
