@@ -37,7 +37,7 @@ on a single tesla V100 16GB.
 ```bash
 python run_qa.py \
   --model_name_or_path bert-base-uncased \
-  --ipu_config_name . \
+  --ipu_config_name Graphcore/bert-base-ipu \
   --dataset_name squad \
   --do_train \
   --do_eval \
@@ -46,7 +46,7 @@ python run_qa.py \
   --num_train_epochs 2 \
   --max_seq_length 384 \
   --doc_stride 128 \
-  --output_dir /tmp/debug_squad/
+  --output_dir ./output/debug_squad/
 ```
 
 <!-- Insert performance on IPU once final values are available.
