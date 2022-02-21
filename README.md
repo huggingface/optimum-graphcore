@@ -16,14 +16,22 @@ Quote from the Hugging Face [blog post](https://huggingface.co/blog/graphcore#wh
 > Making Poplar compatible with these widely used, third-party systems allows developers to easily port their models from their other compute platforms and start taking advantage of the IPU’s advanced AI capabilities.
 
 ## Install
-To the install the latest release of this package:
+To install the latest release of this package:
 
 `pip install optimum[graphcore]`
 
+Optimum Graphcore is a fast-moving project, and you may want to install from source:
+
+`pip install git+https://github.com/huggingface/optimum-graphcore.git`
+
+Last but not least, don't forget to install requirements for every example:
+
+`cd <example-folder>
+pip install -r requirements.txt`
 
 ## Supported Models
-Currently only a subset of model architectures are supported:
+Currently the following model architectures are supported:
 
-- BERT
-- RoBERTa
-- ViT
+- BERT (base and large)
+- RoBERTa (base and large)
+- Vision Transformer
