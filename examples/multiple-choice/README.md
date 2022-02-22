@@ -23,13 +23,13 @@ limitations under the License.
 ```bash
 python examples/multiple-choice/run_swag.py \
 --model_name_or_path roberta-base \
---ipu_config_name Graphcore/roberta-base \
+--ipu_config_name Graphcore/roberta-base-ipu \
 --do_train \
 --do_eval \
 --learning_rate 5e-5 \
 --num_train_epochs 3 \
---output_dir /tmp/swag_base \
---per_gpu_eval_batch_size=16 \
+--output_dir ./output/swag_base \
+--per_device_eval_batch_size=16 \
 --per_device_train_batch_size=16 \
 --overwrite_output
 ```

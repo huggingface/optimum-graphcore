@@ -1,3 +1,5 @@
 seqeval
 datasets >= 1.8.0
+transformers
+optimum[graphcore]
 torch >= 1.3

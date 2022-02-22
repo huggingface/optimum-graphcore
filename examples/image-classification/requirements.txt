@@ -1,4 +1,6 @@
 --find-links https://download.pytorch.org/whl/torch_stable.html
+transformers
 datasets>=1.15.0
 torchvision==0.11.1+cpu
 scikit-learn==0.24.2
+optimum[graphcore]
