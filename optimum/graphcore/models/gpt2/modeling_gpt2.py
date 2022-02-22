@@ -165,21 +165,6 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
         logger.info("-----------------------------------------------------------")
         return self
 
-    def deparallelize(self):
-        """
-        Undo the changes to the model done by `parallelize`.
-        You should call this before doing `save_pretrained` so that the `model.state_dict` is
-        fully compatible with `transformers.GPT2LMHeadModel`.
-        """
-        # Remove any hooks
-        for h in self._hooks:
-            h.remove()
-        # Remove poptorch Blocks
-        for m in self.modules():
-            if m != self:
-                poptorch.removeBlocks(m)
-        return self
-
     def forward(self, input_ids, attention_mask, labels=None):
         transformer_outputs = self.transformer(input_ids, attention_mask=attention_mask)
         hidden_states = transformer_outputs[0]
@@ -274,21 +259,6 @@ class PipelinedGPT2ForSequenceClassification(GPT2ForSequenceClassification, Pipe
         logger.info("-----------------------------------------------------------")
         return self
 
-    def deparallelize(self):
-        """
-        Undo the changes to the model done by `parallelize`.
-        You should call this before doing `save_pretrained` so that the `model.state_dict` is
-        fully compatible with `transformers.GPT2ForSequenceClassification`.
-        """
-        # Remove any hooks
-        for h in self._hooks:
-            h.remove()
-        # Remove poptorch Blocks
-        for m in self.modules():
-            if m != self:
-                poptorch.removeBlocks(m)
-        return self
-
     def forward(self, input_ids, attention_mask, labels=None):
         return super().forward(
             input_ids=input_ids,
@@ -331,21 +301,6 @@ class PipelinedGPT2ForTokenClassification(GPT2ForTokenClassification, PipelineMi
         print(f"Head       --> IPU {ipu}")
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier", ipu_id=ipu)
         logger.info("-----------------------------------------------------------")
-        return self
-
-    def deparallelize(self):
-        """
-        Undo the changes to the model done by `parallelize`.
-        You should call this before doing `save_pretrained` so that the `model.state_dict` is
-        fully compatible with `transformers.GPT2ForTokenClassification`.
-        """
-        # Remove any hooks
-        for h in self._hooks:
-            h.remove()
-        # Remove poptorch Blocks
-        for m in self.modules():
-            if m != self:
-                poptorch.removeBlocks(m)
         return self
 
     def forward(self, input_ids, attention_mask, labels=None):
