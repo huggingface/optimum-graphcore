@@ -88,7 +88,6 @@ python run_image_classification.py \
     --do_eval \
     --push_to_hub \
     --push_to_hub_model_id vit-base-cats-vs-dogs \
-    --fp16 True \
     --learning_rate 2e-4 \
     --num_train_epochs 5 \
     --per_device_train_batch_size 15 \
