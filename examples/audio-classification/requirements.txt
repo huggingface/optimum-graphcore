@@ -1,4 +1,5 @@
 datasets>=1.14.0
 librosa
 torchaudio
+sklearn
 torch>=1.6
