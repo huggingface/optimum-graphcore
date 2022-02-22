@@ -17,11 +17,7 @@ import torch.nn as nn
 
 import poptorch
 from optimum.utils import logging
-from transformers import (
-    GPT2LMHeadModel,
-    GPT2ForSequenceClassification,
-    GPT2ForTokenClassification,
-)
+from transformers import GPT2ForSequenceClassification, GPT2ForTokenClassification, GPT2LMHeadModel
 
 from ...modeling_utils import PipelineMixin, register
 

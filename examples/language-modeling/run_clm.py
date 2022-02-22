@@ -28,11 +28,12 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import datasets
+from datasets import load_dataset
+
 import transformers
 from optimum.graphcore import IPUConfig, IPUTrainer
 from optimum.graphcore import IPUTrainingArguments as TrainingArguments
 from optimum.graphcore.data import pad_on_batch_axis
-from datasets import load_dataset
 from transformers import (
     CONFIG_MAPPING,
     MODEL_FOR_CAUSAL_LM_MAPPING,
@@ -197,9 +198,7 @@ def main():
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
         # let's parse it to get our arguments.
-        model_args, data_args, training_args = parser.parse_json_file(
-            json_file=os.path.abspath(sys.argv[1])
-        )
+        model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
