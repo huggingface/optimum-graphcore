@@ -366,7 +366,7 @@ def main():
     # Risize to 50264, which has many factors and thus is friendly to SerializedLinear
     # TODO: Make this a command line option
     if config.model_type == "gpt2":
-        model.resize_token_embeddings(50264)
+        model.resize_token_embeddings(50268)
     else:
         model.resize_token_embeddings(len(tokenizer))
 

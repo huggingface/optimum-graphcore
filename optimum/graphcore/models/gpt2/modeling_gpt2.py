@@ -164,7 +164,6 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
     def forward(self, input_ids, attention_mask, labels=None):
         transformer_outputs = self.transformer(input_ids, attention_mask=attention_mask)
         hidden_states = transformer_outputs[0]
-        # hidden_states = poptorch.recomputationCheckpoint(hidden_states)
         lm_logits = self.lm_head(hidden_states)
         # lm_logits = lm_logits[:, :, 0:50257]
 
@@ -178,47 +177,6 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
             loss = loss_fct(lm_logits.view(-1, lm_logits.size(-1)), labels.view(-1))
 
         return loss
-
-    # TODO: Split loss to optimize memory usage
-    # def forward(self, input_ids, attention_mask, labels=None):
-    #     transformer_outputs = self.transformer(input_ids, attention_mask=attention_mask)
-    #     hidden_states = transformer_outputs[0]
-    #     hidden_states = poptorch.recomputationCheckpoint(hidden_states)
-    #     lm_logits = self.lm_head(hidden_states)
-
-    #     # Shift so that tokens < n predict n
-    #     labels = torch.roll(labels, -1, 1)
-    #     # By default ignore_index = -100
-    #     labels[:, -1] = -100
-
-    #     enable_sequence_serialized = True
-    #     serialized_seq_len = 128
-    #     max_len = 1024
-    #     if not enable_sequence_serialized:
-    #         loss = None
-    #         if labels is not None:
-    #             loss_fct = nn.CrossEntropyLoss()
-    #             loss = loss_fct(lm_logits.view(-1, lm_logits.size(-1)), labels.view(-1))
-    #         return loss
-    #     else:
-    #         lm_logits = lm_logits.view(-1, lm_logits.size(-1))
-    #         labels = labels.view(-1)
-    #         loss_fct = nn.CrossEntropyLoss(reduction="sum")
-    #         loss = None
-    #         loss_weights = torch.sum((labels > -1).to(torch.float), dim=-1)
-    #         for index, i in enumerate(range(serialized_seq_len, max_len+serialized_seq_len, serialized_seq_len)):
-    #             logit = lm_logits[i - serialized_seq_len:i, :]
-    #             label = labels[i - serialized_seq_len:i]
-    #             if loss is None:
-    #                 loss = loss_fct(logit, label).to(torch.float32)
-    #                 loss = poptorch.recomputationCheckpoint(loss)
-    #             else:
-    #                 tmp_loss = loss_fct(logit, label).to(torch.float32)
-    #                 tmp_loss = poptorch.recomputationCheckpoint(tmp_loss)
-    #                 loss += tmp_loss
-    #         mean_loss = loss / loss_weights
-    #         total_loss = poptorch.identity_loss(mean_loss, reduction="none")
-    #         return total_loss
 
 
 @register(GPT2ForSequenceClassification)
