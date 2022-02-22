@@ -39,13 +39,14 @@ python examples/audio-classification/run_audio_classification.py \
     --remove_unused_columns False \
     --do_train \
     --do_eval \
-    --learning_rate 1e-4 \
+    --learning_rate 3e-5 \
     --max_length_seconds 1 \
     --attention_mask False \
     --warmup_ratio 0.1 \
+    --lr_schedule linear \
     --weight_decay 0.01 \
     --num_train_epochs 5 \
-    --per_device_train_batch_size 4 \
+    --per_device_train_batch_size 2 \
     --gradient_accumulation_steps 16 \
     --per_device_eval_batch_size 8 \
     --pod_type pod16 \
