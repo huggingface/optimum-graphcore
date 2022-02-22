@@ -61,7 +61,7 @@ python examples/audio-classification/run_audio_classification.py \
 
 👀 See the results here: [anton-l/wav2vec2-base-ft-keyword-spotting](https://huggingface.co/anton-l/wav2vec2-base-ft-keyword-spotting) -->
 
-## Multi-GPU 
+## Common Language
 
 The following command shows how to fine-tune [hubert-base-ls960](https://huggingface.co/facebook/hubert-base-ls960) for 🌎 **Language Identification** on the [CommonLanguage dataset](https://huggingface.co/datasets/anton-l/common_language).
 
@@ -78,16 +78,15 @@ python examples/audio-classification/run_audio_classification.py \
     --do_train \
     --do_eval \
     --learning_rate 3e-5 \
-    --loss_scaling 1024.0 \
+    --loss_scaling 1.0 \
     --max_length_seconds 16 \
     --attention_mask True \
     --warmup_ratio 0.1 \
     --num_train_epochs 10 \
     --per_device_train_batch_size 1 \
-    --gradient_accumulation_steps 16 \
+    --gradient_accumulation_steps 32 \
     --per_device_eval_batch_size 4 \
     --dataloader_num_workers 0 \
-    --dataloader_drop_last True \
     --pod_type pod4 \
     --logging_strategy steps \
     --logging_steps 10 \
