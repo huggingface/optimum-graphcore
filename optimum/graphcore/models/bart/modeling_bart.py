@@ -443,8 +443,7 @@ class PipelinedBartForConditionalGeneration(IPUGenerationMixin, BartForCondition
             attention_mask=attention_mask,
             decoder_input_ids=decoder_input_ids,
             return_dict=False,
-            # TODO: actually find a way to use cache for decoding.
-            # use_cache=False,
+            use_cache=False,
         )
 
     forward = _forward_for_train
