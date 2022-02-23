@@ -24,6 +24,8 @@ from transformers.models.deberta.modeling_deberta import (
     DebertaEncoder,
     DisentangledSelfAttention,
     build_relative_position,
+    DebertaLayerNorm,
+    StableDropout,
 )
 
 from ...modeling_utils import PipelineMixin, register
@@ -77,100 +79,6 @@ def outline_attribute(module: nn.Module, value: str):
         context.__exit__(None, None, None)
 
     return module.register_forward_pre_hook(enable), module.register_forward_hook(disable)
-
-
-class DropoutContext(object):
-  def __init__(self):
-    self.dropout = 0
-    self.mask = None
-    self.scale = 1
-    self.reuse_mask = True
-
-def get_mask(input, local_context):
-  if not isinstance(local_context, DropoutContext):
-    dropout = local_context
-    mask = None
-  else:
-    dropout = local_context.dropout
-    dropout *= local_context.scale
-    mask = local_context.mask if local_context.reuse_mask else None
-
-  if dropout>0 and mask is None:
-    mask=(1-torch.empty_like(input).bernoulli_(1-dropout)).bool()
-  
-  if isinstance(local_context, DropoutContext):
-    if local_context.mask is None:
-      local_context.mask = mask
-
-  return mask, dropout
-
-class XDropout(torch.nn.Module):
-
-    def __init__(self):
-        super().__init__()
-    
-    def masked_fill_approx(self, input, mask, value):
-        mask_int = mask.to(torch.int)
-        mask_ = value * mask_int
-        output = input + mask_
-        return output
-
-    def forward(self, input, local_ctx):
-        mask, dropout = get_mask(input, local_ctx)
-        scale=1.0/(1-dropout)
-        if dropout>0:
-            ans = self.masked_fill_approx(input, mask, 0)*scale
-            return ans
-            # return input.masked_fill(mask, 0)*ctx.scale
-        else:
-            return input
-
-class StableDropout(torch.nn.Module):
-  """ Optimized dropout module for stabilizing the training
-  Args:
-    drop_prob (float): the dropout probabilities
-  """
-
-  def __init__(self, drop_prob):
-    super().__init__()
-    self.drop_prob = drop_prob
-    self.count = 0
-    self.context_stack = None
-    self.dropout = XDropout()
-
-  def forward(self, x):
-    """ Call the module
-    Args:
-      
-      x (:obj:`torch.tensor`): The input tensor to apply dropout
-    """
-    if self.training and self.drop_prob>0:
-        ans = self.dropout(x, self.get_context())
-        return ans
-    return x
-
-  def clear_context(self):
-    self.count = 0
-    self.context_stack = None
-
-  def init_context(self, reuse_mask=True, scale = 1):
-    if self.context_stack is None:
-      self.context_stack = []
-    self.count = 0
-    for c in self.context_stack:
-      c.reuse_mask = reuse_mask
-      c.scale = scale
-
-  def get_context(self):
-    if self.context_stack is not None:
-      if self.count >= len(self.context_stack):
-        self.context_stack.append(DropoutContext())
-      ctx = self.context_stack[self.count]
-      ctx.dropout = self.drop_prob
-      self.count += 1
-      return ctx
-    else:
-      return self.drop_prob
 
 
 class XSoftmax(torch.nn.Module):
@@ -249,7 +157,7 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
         seq_len = size[-2]
         indices = ((torch.arange(0, seq_len) * 2 * seq_len).unsqueeze(1) + pos).reshape(-1)
         tf = t.reshape(size[0], size[1], -1)
-        
+
         out = []
         chunk_size = indices.shape[-1] // 4
         for i in range(0, indices.shape[-1], chunk_size):
@@ -404,7 +312,6 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
 
             # TODO When does path this occur and what is the value of index in this case?
             if query_layer.size(-2) != key_layer.size(-2):
-                print("HERE")
                 pos_index = relative_pos[:, :, :, 0].unsqueeze(-1)
                 # index = pos_dynamic_expand(pos_index, p2c_att, key_layer)
                 p2c_att = self.index_select_gather(p2c_att, pos_index)
@@ -424,14 +331,24 @@ class PipelinedDebertaForQuestionAnswering(DebertaForQuestionAnswering, Pipeline
             self_attn.load_state_dict(layer.attention.self.state_dict())
             layer.attention.self = self_attn
 
-        # Replace the StableDropout layers with Dropout
-        self.deberta.embeddings.dropout = StableDropout(config.hidden_dropout_prob)
+        for mod in self.modules():
+            if isinstance(mod, StableDropout):
+                mod.__class__ = nn.Dropout
+                mod.p = mod.drop_prob
+                mod.inplace = False
+            if isinstance(mod, DebertaLayerNorm):
+                mod.__class__ = nn.LayerNorm
+                mod.normalized_shape = mod.weight.shape
+                mod.eps = mod.variance_epsilon
 
-        for layer in self.deberta.encoder.layer:
-            layer.attention.self.pos_dropout = StableDropout(config.hidden_dropout_prob)
-            layer.attention.self.dropout = StableDropout(config.attention_probs_dropout_prob)
-            layer.attention.output.dropout = StableDropout(config.hidden_dropout_prob)
-            layer.output.dropout = StableDropout(config.hidden_dropout_prob)
+        # Replace the StableDropout layers with Dropout
+        # self.deberta.embeddings.dropout = StableDropout(config.hidden_dropout_prob)
+
+        # for layer in self.deberta.encoder.layer:
+        #     layer.attention.self.pos_dropout = StableDropout(config.hidden_dropout_prob)
+        #     layer.attention.self.dropout = StableDropout(config.attention_probs_dropout_prob)
+        #     layer.attention.output.dropout = StableDropout(config.hidden_dropout_prob)
+        #     layer.output.dropout = StableDropout(config.hidden_dropout_prob)
 
     def forward(self, input_ids, attention_mask, token_type_ids, start_positions=None, end_positions=None):
         r"""
@@ -460,13 +377,12 @@ class PipelinedDebertaForQuestionAnswering(DebertaForQuestionAnswering, Pipeline
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model
-        - Replaces self-attention layers with fused-qkv self-attention layers
         - (If enabled) Replaces the word embedding with a SerializedEmbedding
         - Adds recomputation checkpoints
 
         Recommended usage:
         ```
-        model = PipelinedBertForQuestionAnswering(config).parallelize().half()
+        model = PipelinedDebertaForQuestionAnswering(config).parallelize().half()
         ```
         """
         self._hooks = []
