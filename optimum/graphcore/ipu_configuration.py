@@ -16,6 +16,7 @@ import copy
 import json
 from typing import Any, Dict, Optional, Union
 
+import json
 import torch
 
 import popart
