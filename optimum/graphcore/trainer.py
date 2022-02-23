@@ -323,12 +323,6 @@ class IPUTrainer:
         if log:
             logger.info("Compiling Model...")
         sample_batch = self._prepare_inputs(sample_batch)
-        # sample_batch = {k: v[:, :99] for k, v in sample_batch.items()}
-
-        # sample_batch = {
-        #     k: torch.ones((320, 24), dtype=torch.long)
-        #     for k in ["input_ids", "attention_mask", "decoder_input_ids", "labels"]
-        # }
         start_compile = time.perf_counter()
         if isinstance(sample_batch, tuple):
             model.compile(*sample_batch)
@@ -686,7 +680,9 @@ class IPUTrainer:
             optimizer_kwargs["lr"] = self.args.learning_rate
             # optimizer_kwargs["weight_decay"] = 0
             optimizer_kwargs["loss_scaling"] = self.args.loss_scaling
-            optimizer_kwargs["accum_type"] = torch.float16 # TODO: should take into account if the model is in full or half precision.
+            optimizer_kwargs[
+                "accum_type"
+            ] = torch.float16  # TODO: should take into account if the model is in full or half precision.
             optimizer_kwargs["first_order_momentum_accum_type"] = first_order_type
             optimizer_kwargs["second_order_momentum_accum_type"] = torch.float32
 

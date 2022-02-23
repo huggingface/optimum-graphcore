@@ -13,7 +13,7 @@
 #  limitations under the License.
 
 import copy
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import torch
 from torch import nn
@@ -137,10 +137,6 @@ class PipelineMixin:
         else:
             return sum(p.numel() for p in self.parameters() if p.requires_grad or not only_trainable)
 
-    from typing import Any, Dict, Optional
-
-    import torch
-
     from transformers.modeling_outputs import ModelOutput
 
     def _prepare_encoder_decoder_kwargs_for_generation(
@@ -168,7 +164,7 @@ class PipelineMixin:
         model_input_name = model_input_name if model_input_name is not None else self.main_input_name
         encoder_kwargs["return_dict"] = True
         encoder_kwargs[model_input_name] = inputs_tensor
-        model_kwargs["encoder_outputs"]: ModelOutput = compiled_encoder(**encoder_kwargs)
+        model_kwargs["encoder_outputs"]: "ModelOutput" = compiled_encoder(**encoder_kwargs)
 
         return model_kwargs
 

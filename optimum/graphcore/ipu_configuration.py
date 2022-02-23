@@ -129,11 +129,8 @@ class IPUConfig(BaseConfig):
 
         # Define a policy to make sure LayerNorm related ops are computed in fp32
         fp32 = [torch.mean, torch.rsqrt, torch.pow, torch.add]
-        # promote = [torch.mean, torch.rsqrt, torch.pow, torch.add]
-        promote = []
-        policy = poptorch.autocasting.Policy([], fp32, promote, [])
+        policy = poptorch.autocasting.Policy([], fp32, [], [])
         opts.Precision.autocastPolicy(policy)
-        # opts.Precision.autocastEnabled(True)
 
         opts.replicationFactor(self.inference_replication_factor if for_inference else self.replication_factor)
 

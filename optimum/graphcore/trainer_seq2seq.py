@@ -18,11 +18,8 @@ import torch
 from torch import nn
 from torch.utils.data import Dataset
 
-import poptorch
 from optimum.utils import logging
-from transformers.trainer_utils import PredictionOutput
 
-# from .deepspeed import is_deepspeed_zero3_enabled
 from .trainer import IPUTrainer
 
 
@@ -30,41 +27,6 @@ logger = logging.get_logger(__name__)
 
 
 class IPUSeq2SeqTrainer(IPUTrainer):
-    # def __init__(
-    #     self,
-    #     model: Union[PreTrainedModel, nn.Module] = None,
-    #     ipu_config: IPUConfig = None,
-    #     args: TrainingArguments = None,
-    #     data_collator: Optional[DataCollator] = None,
-    #     train_dataset: Optional[Dataset] = None,
-    #     eval_dataset: Optional[Dataset] = None,
-    #     tokenizer: Optional[PreTrainedTokenizerBase] = None,
-    #     model_init: Callable[[], PreTrainedModel] = None,
-    #     compute_metrics: Optional[Callable[[EvalPrediction], Dict]] = None,
-    #     callbacks: Optional[List[TrainerCallback]] = None,
-    #     optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (None, None),
-    #     force_to_pipelined: bool = False,
-    # ):
-    #     super().__init__(
-    #         model,
-    #         ipu_config,
-    #         args,
-    #         data_collator,
-    #         train_dataset,
-    #         eval_dataset,
-    #         tokenizer,
-    #         model_init,
-    #         compute_metrics,
-    #         callbacks,
-    #         optimizers,
-    #         force_to_pipelined,
-    #     )
-    #     self.encoder = model.get_encoder()
-
-    # def _compile_encoder(self, dataloader: poptorch.DataLoader):
-    #     encoder = self._wrap_model(self.model, training=False)
-    #     self._compile_model
-
     def evaluate(
         self,
         eval_dataset: Optional[Dataset] = None,
@@ -113,7 +75,7 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         metric_key_prefix: str = "test",
         max_length: Optional[int] = None,
         num_beams: Optional[int] = None,
-    ) -> PredictionOutput:
+    ) -> "PredictionOutput":
         """
         Run prediction and returns predictions and potential metrics.
 

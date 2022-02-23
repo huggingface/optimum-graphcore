@@ -16,14 +16,14 @@ import warnings
 
 import torch
 import torch.nn as nn
-from torch.utils.checkpoint import checkpoint
 from torch import Tensor
+from torch.utils.checkpoint import checkpoint
 
 import poptorch
 from optimum.utils import logging
 from transformers import T5ForConditionalGeneration
 from transformers.modeling_outputs import BaseModelOutput, BaseModelOutputWithPastAndCrossAttentions, Seq2SeqLMOutput
-from transformers.models.t5.modeling_t5 import __HEAD_MASK_WARNING_MSG, T5Stack, T5LayerNorm
+from transformers.models.t5.modeling_t5 import __HEAD_MASK_WARNING_MSG, T5LayerNorm, T5Stack
 
 from ...generation_utils import IPUGenerationMixin
 from ...modeling_utils import (
@@ -379,7 +379,9 @@ class PipelinedT5ForConditionalGeneration(IPUGenerationMixin, T5ForConditionalGe
             self.encoder.block[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
             logger.info(f"Encoder {index:<2} --> IPU {ipu}")
 
-        self.encoder.final_layer_norm = poptorch.BeginBlock(self.encoder.final_layer_norm, "Encoder Stack Final LayerNorm", ipu_id=ipu)
+        self.encoder.final_layer_norm = poptorch.BeginBlock(
+            self.encoder.final_layer_norm, "Encoder Stack Final LayerNorm", ipu_id=ipu
+        )
 
         shift = len(self.encoder.block)
         for index, layer in enumerate(self.decoder.block):
@@ -389,7 +391,9 @@ class PipelinedT5ForConditionalGeneration(IPUGenerationMixin, T5ForConditionalGe
             self.decoder.block[index] = poptorch.BeginBlock(layer, f"Decoder{index}", ipu_id=ipu)
             logger.info(f"Decoder {index:<2} --> IPU {ipu}")
 
-        self.decoder.final_layer_norm = poptorch.BeginBlock(self.decoder.final_layer_norm, "Decoder Stack Final LayerNorm", ipu_id=ipu)
+        self.decoder.final_layer_norm = poptorch.BeginBlock(
+            self.decoder.final_layer_norm, "Decoder Stack Final LayerNorm", ipu_id=ipu
+        )
 
         logger.info("LM Head Output --> IPU 0")
         self.lm_head = poptorch.BeginBlock(self.lm_head, "LM Head Output", ipu_id=0)
@@ -532,7 +536,7 @@ class PipelinedT5ForConditionalGeneration(IPUGenerationMixin, T5ForConditionalGe
         if labels is not None:
             loss_fct = nn.CrossEntropyLoss(ignore_index=-100)
             loss = loss_fct(lm_logits.view(-1, lm_logits.size(-1)), labels.view(-1))
-           # TODO(thom): Add z_loss https://github.com/tensorflow/mesh/blob/fa19d69eafc9a482aff0b59ddd96b025c0cb207d/mesh_tensorflow/layers.py#L666
+        # TODO(thom): Add z_loss https://github.com/tensorflow/mesh/blob/fa19d69eafc9a482aff0b59ddd96b025c0cb207d/mesh_tensorflow/layers.py#L666
 
         if not return_dict:
             output = (lm_logits,) + decoder_outputs[1:] + encoder_outputs
