@@ -110,6 +110,10 @@ class ModelArguments:
             "with private models)."
         },
     )
+    resize_embeddings: Optional[int] = field(
+        default=None,
+        metadata={"help": "Resize token embeddings to this number by adding newly initialized vectors at the end."},
+    )
 
     # def __post_init__(self):
     #     if self.config_overrides is not None and (self.config_name is not None or self.model_name_or_path is not None):
@@ -363,11 +367,12 @@ def main():
         n_params = sum(dict((p.data_ptr(), p.numel()) for p in model.parameters()).values())
         logger.info(f"Training new model from scratch - Total size={n_params/2**20:.2f}M params")
 
-    # Risize to 50264, which has many factors and thus is friendly to SerializedLinear
-    # TODO: Make this a command line option
-    if config.model_type == "gpt2":
-        model.resize_token_embeddings(50268)
+    # Risize token embeddings and save the old embedding size
+    if model_args.resize_embeddings:
+        model.config.update({"old_embedding_size": len(tokenizer)})
+        model.resize_token_embeddings(model_args.resize_embeddings)
     else:
+        model.config.update({"old_embedding_size": None})
         model.resize_token_embeddings(len(tokenizer))
 
     # Preprocessing the datasets.

@@ -271,7 +271,8 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
         transformer_outputs = self.transformer(input_ids, attention_mask=attention_mask)
         hidden_states = transformer_outputs[0]
         lm_logits = self.lm_head(hidden_states)
-        # lm_logits = lm_logits[:, :, 0:50257]
+        # if self.config.old_embedding_size:
+        #     lm_logits = lm_logits[:, :, 0:50257]
 
         loss = None
         if labels is not None:
