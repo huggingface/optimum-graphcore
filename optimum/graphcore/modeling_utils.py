@@ -21,6 +21,7 @@ from torch import nn
 import poptorch
 from optimum.utils import logging
 from transformers import AutoConfig, PreTrainedModel
+from transformers.modeling_outputs import ModelOutput
 
 from .ipu_configuration import IPUConfig
 
@@ -136,8 +137,6 @@ class PipelineMixin:
             return sum(p.numel() for p in non_embedding_parameters if p.requires_grad or not only_trainable)
         else:
             return sum(p.numel() for p in self.parameters() if p.requires_grad or not only_trainable)
-
-    from transformers.modeling_outputs import ModelOutput
 
     def _prepare_encoder_decoder_kwargs_for_generation(
         self, inputs_tensor: torch.Tensor, model_kwargs, model_input_name: Optional[str] = None
