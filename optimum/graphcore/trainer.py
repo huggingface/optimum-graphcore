@@ -661,7 +661,7 @@ class IPUTrainer:
             if self.args.lamb or self.args.lamb_no_bias_correction:
                 optimizer_cls = LAMB
                 optimizer_kwargs = {
-                    "max_grad_norm": self.args.max_grad_norm,
+                    # "max_grad_norm": self.args.max_grad_norm,
                     "max_weight_norm": None,
                     "bias_correction": not self.args.lamb_no_bias_correction,
                     "eps": 1e-6,  # TODO: use self.args.adam_epsilon?
@@ -669,7 +669,7 @@ class IPUTrainer:
             else:
                 optimizer_cls = AdamW
                 optimizer_kwargs = {
-                    "max_grad_norm": self.args.max_grad_norm,
+                    # "max_grad_norm": self.args.max_grad_norm,
                     "betas": (self.args.adam_beta1, self.args.adam_beta2),
                     "eps": self.args.adam_epsilon,
                     "bias_correction": False,
@@ -680,9 +680,7 @@ class IPUTrainer:
             optimizer_kwargs["lr"] = self.args.learning_rate
             # optimizer_kwargs["weight_decay"] = 0
             optimizer_kwargs["loss_scaling"] = self.args.loss_scaling
-            optimizer_kwargs[
-                "accum_type"
-            ] = torch.float16  # TODO: should take into account if the model is in full or half precision.
+            optimizer_kwargs["accum_type"] = torch.float16  # TODO: should take into account if the model is in full or half precision.
             optimizer_kwargs["first_order_momentum_accum_type"] = first_order_type
             optimizer_kwargs["second_order_momentum_accum_type"] = torch.float32
 
