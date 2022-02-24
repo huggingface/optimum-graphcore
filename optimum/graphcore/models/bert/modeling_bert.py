@@ -20,6 +20,7 @@ import poptorch
 from optimum.utils import logging
 from scipy.stats import truncnorm
 from transformers import (
+    BertForMaskedLM,
     BertForMultipleChoice,
     BertForPreTraining,
     BertForQuestionAnswering,
@@ -172,12 +173,6 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
         token_type_ids=None,
         labels=None,
         next_sentence_label=None,
-        output_attentions=None,
-        output_hidden_states=None,
-        return_dict=None,
-        position_ids=None,
-        head_mask=None,
-        inputs_embeds=None,
     ):
         output = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
         sequence_output, pooled_output = output[:2]
@@ -208,6 +203,97 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
             ).float()
             total_loss = poptorch.identity_loss(masked_lm_loss + next_sentence_loss, reduction="none")
             return (total_loss, masked_lm_loss, next_sentence_loss)
+
+        return output
+
+
+@register(BertForMaskedLM)
+class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
+    """
+    BertForMaskedLM transformed to run in an IPU pipeline.
+
+    Recommended usage:
+    ```
+    model = PipelinedBertForMaskedLM(config).parallelize().half().train()
+    ```
+    """
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.gather_indices = OnehotGather()
+
+    def parallelize(self):
+        """
+        Transform the model to run in an IPU pipeline.
+        - Adds pipeline stages to the model
+        - Replaces self-attention layers with fused-qkv self-attention layers
+        - (If enabled) Replaces the word embedding projection with a SerializedLinear layer
+        - Adds recomputation checkpoints
+        """
+        super().parallelize()
+
+        # Use faster fused-qkv self-attention
+        for layer in self.bert.encoder.layer:
+            fused = BertFusedSelfAttention(self.config)
+            fused.load_state_dict(layer.attention.self.state_dict())
+            layer.attention.self = fused
+
+        if self.config.embedding_serialization_factor > 1:
+            serialized_decoder = SerializedLinear(
+                self.config.hidden_size,
+                self.config.vocab_size,
+                self.config.embedding_serialization_factor,
+                bias=True,
+                mode=poptorch.MatMulSerializationMode.OutputChannels,
+            )
+            serialized_decoder.load_state_dict(self.cls.predictions.decoder.state_dict())
+            self.cls.predictions.decoder = serialized_decoder
+            self.tie_weights()
+
+        layer_ipu = _get_layer_ipu(self.config.layers_per_ipu)
+
+        logger.info("-------------------- Device Allocation --------------------")
+        logger.info("Embedding  --> IPU 0")
+        self.bert.embeddings = poptorch.BeginBlock(self.bert.embeddings, "Embedding", ipu_id=0)
+        # Preventing the embeddings.LayerNorm from being outlined with the encoder.layer.LayerNorm
+        # improves the tile mapping of the pipeline stashes
+        hs = outline_attribute(self.bert.embeddings.LayerNorm, "embeddings")
+        self._hooks.extend(hs)
+
+        for index, layer in enumerate(self.bert.encoder.layer):
+            ipu = layer_ipu[index]
+            if self.config.recompute_checkpoint_every_layer:
+                h = recomputation_checkpoint(layer)
+                self._hooks.append(h)
+            self.bert.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
+            logger.info(f"Encoder {index:<2} --> IPU {ipu}")
+
+        logger.info("Classifier --> IPU 0")
+        self.cls = poptorch.BeginBlock(self.cls, "Classifier", ipu_id=0)
+        logger.info("-----------------------------------------------------------")
+        return self
+
+    def forward(self, input_ids, attention_mask, labels=None):
+        output = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+        sequence_output = output[0]
+
+        if labels is not None:
+            # Select only the masked tokens for the classifier
+            max_number_of_masked_tokens = int(labels.size(1) * 0.25)
+            masked_lm_labels, masked_lm_positions = torch.topk(labels, k=max_number_of_masked_tokens, dim=1)
+            masked_output = self.gather_indices(sequence_output, masked_lm_positions)
+        else:
+            # This case should never happen during training
+            masked_output = sequence_output
+
+        prediction_scores = self.cls(masked_output)
+        output = (prediction_scores,) + output[2:]
+
+        if labels is not None:
+            masked_lm_loss = F.cross_entropy(
+                prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1)
+            ).float()
+            return masked_lm_loss
 
         return output
 
