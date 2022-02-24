@@ -1204,7 +1204,8 @@ class IPUTrainer:
     def _load_state_dict_in_model(self, state_dict):
         self.model.deparallelize()
         load_result = self.model.load_state_dict(state_dict, strict=False)
-        self.model.parallelize()
+        if not self.args.fp32:
+            self.model.parallelize().half()
 
         # TODO: check if this is needed.
         # if self.training_model and self.training_model.isAttachedToDevice():
