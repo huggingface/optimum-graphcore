@@ -43,7 +43,7 @@ python run_glue.py \
   --output_dir ./output/$TASK_NAME/
 ```
 
-where task name can be one of cola, sst2, mrpc, stsb, qqp, mnli, qnli, rte, wnli. All tasks should work correctly with a batch size of 32, expect mrpc and rte (16) and wnli (4).
+where task name can be one of cola, sst2, mrpc, stsb, qqp, mnli, qnli, rte, wnli. All tasks should work correctly with a batch size of 32, except mrpc and rte (16) and wnli (4).
 
 We get the following results on the dev set of the benchmark with the previous commands (with an exception for MRPC and
 WNLI which are tiny and where we used 5 epochs instead of 3). <!-- TODO: perform experiments on the PODs -> Trainings are seeded so you should obtain the same
