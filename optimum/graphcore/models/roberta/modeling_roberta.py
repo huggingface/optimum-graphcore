@@ -191,7 +191,7 @@ class PipelinedRobertaForMaskedLM(RobertaForMaskedLM, PipelineMixin):
         if labels is not None:
             masked_lm_loss = F.cross_entropy(
                 prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1)
-            )
+            ).float()
             return masked_lm_loss
 
         return outputs
