@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import math
+
 import torch
 import torch.nn as nn
 
@@ -233,6 +235,15 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
         ```
         """
         if self.config.embedding_serialization_factor > 1:
+            # Resize token embedding using padding if vocab_size is not a multiple of embedding_serialization_factor
+            self.actual_vocab_size = self.config.vocab_size
+            new_vocab_size = (
+                math.ceil(self.config.vocab_size / self.config.embedding_serialization_factor)
+                * self.config.embedding_serialization_factor
+            )
+            if self.config.vocab_size % self.config.embedding_serialization_factor == 0:
+                assert self.actual_vocab_size == new_vocab_size
+            self.resize_token_embeddings(new_vocab_size)
             serialized_decoder = SerializedLinear(
                 self.config.n_embd,
                 self.config.vocab_size,
@@ -267,12 +278,16 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
         logger.info("-----------------------------------------------------------")
         return self
 
+    def deparallelize(self):
+        PipelineMixin.deparallelize(self)
+        # Resize token embeddings back to origianl vocab_size
+        self.resize_token_embeddings(self.actual_vocab_size)
+
     def forward(self, input_ids, attention_mask, labels=None):
         transformer_outputs = self.transformer(input_ids, attention_mask=attention_mask)
         hidden_states = transformer_outputs[0]
         lm_logits = self.lm_head(hidden_states)
-        # if self.config.actual_vocab_size:
-        #     lm_logits = lm_logits[:, :, 0:self.config.actual_vocab_size]
+        # lm_logits = lm_logits[:, :, 0 : self.actual_vocab_size]
 
         loss = None
         if labels is not None:
