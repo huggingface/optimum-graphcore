@@ -14,6 +14,7 @@
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 import poptorch
 import transformers
@@ -40,12 +41,6 @@ def recomputation_checkpoint(module: nn.Module) -> torch.utils.hooks.RemovableHa
 
 @register(transformers.LxmertForQuestionAnswering)
 class PipelinedLxmertForQuestionAnswering(transformers.LxmertForQuestionAnswering, PipelineMixin):
-    def __init__(self, config):
-        super().__init__(config)
-        self.soft_label = config.soft_label
-        if self.soft_label:
-            self.loss = nn.BCEWithLogitsLoss()
-        
     def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.
@@ -110,10 +105,10 @@ class PipelinedLxmertForQuestionAnswering(transformers.LxmertForQuestionAnswerin
         answer_score = self.answer_head(pooled_output)
         loss = None
         if labels is not None:
-            # Use soft labels for datasets such as VQA v2
-            if self.soft_label:
-                loss = self.loss(answer_score, labels)
+            if labels.dim() == 1:
+                loss = F.cross_entropy(answer_score.view(-1, self.num_qa_labels), labels.view(-1))
+            # Soft labels for datasets such as VQA v2
             else:
-                loss = self.loss(answer_score.view(-1, self.num_qa_labels), labels.view(-1))
+                loss = F.binary_cross_entropy_with_logits(answer_score.view(-1, self.num_qa_labels), labels.view(-1, self.num_qa_labels))
 
         return loss, answer_score
