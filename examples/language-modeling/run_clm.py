@@ -367,12 +367,12 @@ def main():
         n_params = sum(dict((p.data_ptr(), p.numel()) for p in model.parameters()).values())
         logger.info(f"Training new model from scratch - Total size={n_params/2**20:.2f}M params")
 
-    # Risize token embeddings and save the old embedding size
+    # Risize token embeddings and save the actual vocab size
     if model_args.resize_embeddings:
-        model.config.update({"old_embedding_size": len(tokenizer)})
+        model.config.update({"actual_vocab_size": len(tokenizer)})
         model.resize_token_embeddings(model_args.resize_embeddings)
     else:
-        model.config.update({"old_embedding_size": None})
+        model.config.update({"actual_vocab_size": None})
         model.resize_token_embeddings(len(tokenizer))
 
     # Preprocessing the datasets.

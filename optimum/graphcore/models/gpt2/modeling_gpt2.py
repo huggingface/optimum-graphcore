@@ -256,7 +256,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
 
         for index, layer in enumerate(self.transformer.h):
             ipu = layer_ipu[index]
-            if self.config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
+            if self.config.recompute_checkpoint_every_layer:
                 h = recomputation_checkpoint(layer)
                 self._hooks.append(h)
             self.transformer.h[index] = poptorch.BeginBlock(layer, f"Layer{index}", ipu_id=ipu)
@@ -271,8 +271,8 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
         transformer_outputs = self.transformer(input_ids, attention_mask=attention_mask)
         hidden_states = transformer_outputs[0]
         lm_logits = self.lm_head(hidden_states)
-        # if self.config.old_embedding_size:
-        #     lm_logits = lm_logits[:, :, 0:50257]
+        # if self.config.actual_vocab_size:
+        #     lm_logits = lm_logits[:, :, 0:self.config.actual_vocab_size]
 
         loss = None
         if labels is not None:
