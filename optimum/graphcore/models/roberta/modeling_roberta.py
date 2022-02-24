@@ -160,7 +160,7 @@ class PipelinedRobertaForMaskedLM(RobertaForMaskedLM, PipelineMixin):
 
         for index, layer in enumerate(self.roberta.encoder.layer):
             ipu = layer_ipu[index]
-            if self.config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
+            if self.config.recompute_checkpoint_every_layer:
                 h = recomputation_checkpoint(layer)
                 self._hooks.append(h)
             self.roberta.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
@@ -187,7 +187,6 @@ class PipelinedRobertaForMaskedLM(RobertaForMaskedLM, PipelineMixin):
         prediction_scores = self.lm_head(masked_output)
         outputs = (prediction_scores,) + outputs[2:]
 
-        masked_lm_loss = None
         if labels is not None:
             masked_lm_loss = F.cross_entropy(
                 prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1)
