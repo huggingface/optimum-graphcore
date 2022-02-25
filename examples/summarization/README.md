@@ -17,31 +17,22 @@ limitations under the License.
 ## Summarization
 
 This directory contains examples for finetuning and evaluating transformers on summarization  tasks.
-Please tag @patil-suraj with any issues/unexpected behaviors, or send a PR!
-For deprecated `bertabs` instructions, see [`bertabs/README.md`](https://github.com/huggingface/transformers/blob/master/examples/research_projects/bertabs/README.md).
-For the old `finetune_trainer.py` and related utils, see [`examples/legacy/seq2seq`](https://github.com/huggingface/transformers/blob/master/examples/legacy/seq2seq).
 
 ### Supported Architectures
 
 - `BartForConditionalGeneration`
-- `FSMTForConditionalGeneration` (translation only)
-- `MBartForConditionalGeneration`
-- `MarianMTModel`
-- `PegasusForConditionalGeneration`
 - `T5ForConditionalGeneration`
-- `MT5ForConditionalGeneration`
 
 `run_summarization.py` is a lightweight example of how to download and preprocess a dataset from the [🤗 Datasets](https://github.com/huggingface/datasets) library or use your own files (jsonlines or csv), then fine-tune one of the architectures above on it.
 
 For custom datasets in `jsonlines` format please see: https://huggingface.co/docs/datasets/loading_datasets.html#json-files
 and you also will find examples of these below.
 
-## With Trainer
-
 Here is an example on a summarization task:
 ```bash
-python examples/pytorch/summarization/run_summarization.py \
+python examples/summarization/run_summarization.py \
     --model_name_or_path t5-small \
+    --ipu_config_name Graphcore/t5-small-ipu \
     --do_train \
     --do_eval \
     --dataset_name cnn_dailymail \
@@ -64,8 +55,9 @@ And here is how you would use it on your own files, after adjusting the values f
 `--train_file`, `--validation_file`, `--text_column` and `--summary_column` to match your setup:
 
 ```bash
-python examples/pytorch/summarization/run_summarization.py \
+python examples/summarization/run_summarization.py \
     --model_name_or_path t5-small \
+    --ipu_config_name Graphcore/t5-small-ipu \
     --do_train \
     --do_eval \
     --train_file path_to_csv_or_jsonlines_file \
@@ -134,65 +126,3 @@ And as with the CSV files, you can specify which values to select from the file,
     --text_column text \
     --summary_column summary \
 ```
-
-## With Accelerate
-
-Based on the script [`run_summarization_no_trainer.py`](https://github.com/huggingface/transformers/blob/master/examples/pytorch/summarization/run_summarization_no_trainer.py).
-
-Like `run_summarization.py`, this script allows you to fine-tune any of the models supported on a
-summarization task, the main difference is that this
-script exposes the bare training loop, to allow you to quickly experiment and add any customization you would like.
-
-It offers less options than the script with `Trainer` (for instance you can easily change the options for the optimizer
-or the dataloaders directly in the script) but still run in a distributed setup, on TPU and supports mixed precision by
-the mean of the [🤗 `Accelerate`](https://github.com/huggingface/accelerate) library. You can use the script normally
-after installing it:
-
-```bash
-pip install accelerate
-```
-
-then
-
-```bash
-python run_summarization_no_trainer.py \
-    --model_name_or_path t5-small \
-    --dataset_name cnn_dailymail \
-    --dataset_config "3.0.0" \
-    --source_prefix "summarize: " \
-    --output_dir ~/tmp/tst-summarization
-```
-
-You can then use your usual launchers to run in it in a distributed environment, but the easiest way is to run
-
-```bash
-accelerate config
-```
-
-and reply to the questions asked. Then
-
-```bash
-accelerate test
-```
-
-that will check everything is ready for training. Finally, you can launch training with
-
-```bash
-export TASK_NAME=mrpc
-
-accelerate launch run_summarization_no_trainer.py \
-    --model_name_or_path t5-small \
-    --dataset_name cnn_dailymail \
-    --dataset_config "3.0.0" \
-    --source_prefix "summarize: " \
-    --output_dir ~/tmp/tst-summarization
-```
-
-This command is the same and will work for:
-
-- a CPU-only setup
-- a setup with one GPU
-- a distributed training with several GPUs (single or multi node)
-- a training on TPUs
-
-Note that this library is in alpha release so your feedback is more than welcome if you encounter any problem using it.

@@ -32,7 +32,7 @@ and you also will find examples of these below.
 Here is an example of a translation fine-tuning with a Bart model:
 
 ```bash
-python examples/pytorch/translation/run_translation.py \
+python examples/translation/run_translation.py \
     --model_name_or_path facebook/bart-base \
     --ipu_config_name Graphcore/bart-base-ipu \
     --do_train \
@@ -53,7 +53,7 @@ Some T5 models require special handling.
 T5 models `t5-small`, `t5-base`, `t5-large`, `t5-3b` and `t5-11b` must use an additional argument: `--source_prefix "translate {source_lang} to {target_lang}"`. For example:
 
 ```bash
-python examples/pytorch/translation/run_translation.py \
+python examples/translation/run_translation.py \
     --model_name_or_path t5-small \
     --ipu_config_name Graphcore/t5-small-ipu \
     --do_train \
@@ -78,7 +78,7 @@ And here is how you would use the translation finetuning on your own files, afte
 values for the arguments `--train_file`, `--validation_file` to match your setup:
 
 ```bash
-python examples/pytorch/translation/run_translation.py \
+python examples/translation/run_translation.py \
     --model_name_or_path t5-small \
     --ipu_config_name Graphcore/t5-small-ipu \
     --do_train \
@@ -108,7 +108,7 @@ Here the languages are Romanian (`ro`) and English (`en`).
 If you want to use a pre-processed dataset that leads to high BLEU scores, but for the `en-de` language pair, you can use `--dataset_name stas/wmt14-en-de-pre-processed`, as following:
 
 ```bash
-python examples/pytorch/translation/run_translation.py \
+python examples/translation/run_translation.py \
     --model_name_or_path t5-small \
     --ipu_config_name Graphcore/t5-small-ipu \
     --do_train \
