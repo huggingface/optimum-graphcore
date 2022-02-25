@@ -255,7 +255,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
             self.lm_head = serialized_decoder
             self.tie_weights()
 
-        self._hooks = []
+        super().parallelize()
         layer_ipu = _get_layer_ipu(self.config.layers_per_ipu)
 
         logger.info("-------------------- Device Allocation --------------------")
@@ -280,8 +280,9 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
 
     def deparallelize(self):
         PipelineMixin.deparallelize(self)
-        # Resize token embeddings back to origianl vocab_size
-        self.resize_token_embeddings(self.actual_vocab_size)
+        if self.config.embedding_serialization_factor > 1:
+            # Resize token embeddings back to origianl vocab_size
+            self.resize_token_embeddings(self.actual_vocab_size)
 
     def forward(self, input_ids, attention_mask, labels=None):
         transformer_outputs = self.transformer(input_ids, attention_mask=attention_mask)
