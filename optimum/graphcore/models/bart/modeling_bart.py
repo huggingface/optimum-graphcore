@@ -656,7 +656,6 @@ class PipelinedBartForConditionalGeneration(IPUGenerationMixin, BartForCondition
         self.model.encoder.layernorm_embedding = poptorch.BeginBlock(
             self.model.encoder.layernorm_embedding, "Embedding", ipu_id=0
         )
-        # outline_attribute(self.model.encoder.layernorm_embedding, "Embedding")
 
         for index, layer in enumerate(self.model.encoder.layers):
             ipu = layer_ipu[index]
@@ -665,19 +664,13 @@ class PipelinedBartForConditionalGeneration(IPUGenerationMixin, BartForCondition
             self.model.encoder.layers[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
             logger.info(f"Encoder {index:<2} --> IPU {ipu}")
 
-        shift = len(self.model.encoder.layers)
-        # self.model.decoder.embed_positions = poptorch.BeginBlock(
-        #     self.model.decoder.embed_positions, ipu_id=layer_ipu[shift]
-        # )
-        # self.model.decoder.layernorm_embedding = poptorch.BeginBlock(
-        #     self.model.decoder.layernorm_embedding, ipu_id=layer_ipu[shift]
-        # )
         self.model.decoder.embed_positions = poptorch.BeginBlock(
             self.model.decoder.embed_positions, "Embedding", ipu_id=0
         )
         self.model.decoder.layernorm_embedding = poptorch.BeginBlock(
             self.model.decoder.layernorm_embedding, "Embedding", ipu_id=0
         )
+        shift = len(self.model.encoder.layers)
         for index, layer in enumerate(self.model.decoder.layers):
             ipu = layer_ipu[index + shift]
             if self.config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
