@@ -82,8 +82,10 @@ def _get_models_to_test(model_to_test_names):
 
 
 MODELS_TO_TEST_NAMES = {
+    "bart": ("facebook/bart-base", "Graphcore/bart-base-ipu"),
     "bert": ("bert-base-uncased", "Graphcore/bert-base-ipu"),
     "roberta": ("roberta-base", "Graphcore/roberta-base-ipu"),
+    "t5": ("t5-small", "Graphcore/t5-small-ipu"),
     "vit": ("google/vit-base-patch16-224", "Graphcore/vit-base-ipu"),
 }
 MODELS_TO_TEST = _get_models_to_test(MODELS_TO_TEST_NAMES)
@@ -99,7 +101,11 @@ class PipelinedModelsTester(unittest.TestCase):
         else:
             extractor = AutoTokenizer.from_pretrained(model_name_or_path)
         if model_class in MODEL_FOR_SEQ_TO_SEQ_CAUSAL_LM_MAPPING.values():
-            raise NotImplementedError
+            encoder_input_text = "This is the text that is going to be fed to the encoder."
+            decoder_input_text = "This is part, on the other end, will be fed to the decoder."
+            inputs = extractor(encoder_input_text, return_tensors="pt")
+            decoder_inputs = extractor(decoder_input_text, return_tensors="pt")
+            inputs["decoder_input_ids"] = decoder_inputs["input_ids"]
         elif model_class in MODEL_FOR_MULTIPLE_CHOICE_MAPPING.values():
             prompt = "This is a fake prompt."
             choice0 = "Here is the first choice"
@@ -130,10 +136,17 @@ class PipelinedModelsTester(unittest.TestCase):
 
         inputs = self._generate_input_for_model_class(model_name_or_path, pretrained_class)
         pretrained_model_outputs = pretrained_model(**inputs, return_dict=False)
-        pipelined_model_outputs = pipelined_model(**inputs)
+        # The forward method can be different in train and eval mode for some models (seq2seq for instance), so we make
+        # sure to use the proper one.
+        pipelined_forward_function = getattr(pipelined_model, "_forward_for_train", pipelined_model.forward)
+        pipelined_model_outputs = pipelined_forward_function(**inputs)
 
-        for pretrained_output, pipelined_output in zip(pretrained_model_outputs, pipelined_model_outputs):
-            self.assertTrue(torch.allclose(pretrained_output, pipelined_output))
+        for idx, t in enumerate(zip(pretrained_model_outputs, pipelined_model_outputs)):
+            pretrained_output, pipelined_output = t
+            self.assertTrue(
+                torch.allclose(pretrained_output, pipelined_output),
+                f"Pretrained and pipelined model {idx}th outputs do not match, max difference = {(pretrained_output - pipelined_output).abs().max()}",
+            )
 
     @parameterized.expand(MODELS_TO_TEST)
     def test_parallelize_deparallelize(

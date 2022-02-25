@@ -16,9 +16,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .modeling_roberta import (
-    PipelinedRobertaForMultipleChoice,
-    PipelinedRobertaForQuestionAnswering,
-    PipelinedRobertaForSequenceClassification,
-    PipelinedRobertaForTokenClassification,
-)
+from .modeling_t5 import PipelinedT5ForConditionalGeneration

@@ -668,6 +668,8 @@ class IPUTrainer:
             else:
                 optimizer_cls = AdamW
                 optimizer_kwargs = {
+                    # Makes test_trainer.py fail but should be added
+                    # "max_grad_norm": self.args.max_grad_norm,
                     "betas": (self.args.adam_beta1, self.args.adam_beta2),
                     "eps": self.args.adam_epsilon,
                     "bias_correction": False,
@@ -676,9 +678,10 @@ class IPUTrainer:
             # TODO: update the training args
             first_order_type = torch.float16 if self.ipu_config.enable_half_first_order_momentum else torch.float32
             optimizer_kwargs["lr"] = self.args.learning_rate
-            optimizer_kwargs["weight_decay"] = 0
             optimizer_kwargs["loss_scaling"] = self.args.loss_scaling
-            optimizer_kwargs["accum_type"] = torch.float16
+            optimizer_kwargs[
+                "accum_type"
+            ] = torch.float16  # TODO: should take into account if the model is in full or half precision.
             optimizer_kwargs["first_order_momentum_accum_type"] = first_order_type
             optimizer_kwargs["second_order_momentum_accum_type"] = torch.float32
 

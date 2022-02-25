@@ -23,6 +23,7 @@ import pytest
 
 from optimum.graphcore import IPUConfig
 from optimum.graphcore.ipu_configuration import ALLOWED_POD_TYPES
+from poptorch import OutputMode
 
 
 def random_value_from_initial_value(initial_value):
@@ -62,6 +63,11 @@ def create_ipu_config(with_default_values: bool = False, remove_pod_types: Optio
         k: create_pod_specific_attribute(v, add_default_value=with_default_values, remove_pod_types=remove_pod_types)
         for k, v in initial_dict.items()
     }
+    allowed_output_modes = ["all", "sum", "final"]
+    if isinstance(initial_dict["output_mode"], dict):
+        initial_dict["output_mode"] = {k: random.choice(allowed_output_modes) for k in initial_dict["output_mode"]}
+    else:
+        initial_dict["output_mode"] = random.choice(allowed_output_modes)
     return IPUConfig.from_dict(initial_dict)
 
 
@@ -95,6 +101,12 @@ class IPUConfigTester(unittest.TestCase):
     def _test_to_options(self, for_inference: bool):
         def make_poptorch_options_comparable_to_ipu_config(options_dict):
             options_dict = copy.deepcopy(options_dict)
+            # mapping specifies how to transform an options dict entry to something that can be compared to an IPUConfig.
+            # It maps a string to either another string or a function:
+            #   1. String -> string: it specifies how to align values for attribute names that differ between
+            #       poptorch.Options and IPUConfig.
+            #   2. String -> function: the function must return a tuple of type (str, Any), the first element being the
+            #       name of the attribute to update, and the second one being the actual value to use for the update.
             mapping = {
                 "gradient_accumulation": "gradient_accumulation_steps",
                 # Seed?
@@ -115,6 +127,7 @@ class IPUConfigTester(unittest.TestCase):
                     set(d["available_memory_proportion"].values()).pop(),
                 ),
                 "cachePath": "executable_cache_dir",
+                "output_mode": lambda d: ("output_mode", OutputMode(d["output_mode"]).name.lower()),
             }
             for k, v in mapping.items():
                 try:
@@ -148,6 +161,7 @@ class IPUConfigTester(unittest.TestCase):
             ipu_config_dict["replication_factor"] = ipu_config_dict["inference_replication_factor"]
             ipu_config_dict["device_iterations"] = ipu_config_dict["inference_device_iterations"]
             ipu_config_dict["gradient_accumulation_steps"] = 1
+            ipu_config_dict["output_mode"] = "all"
         ipu_config_dict, options_dict = intersection_of_dicts(
             ipu_config_dict, make_poptorch_options_comparable_to_ipu_config(options.toDict())
         )
@@ -160,6 +174,7 @@ class IPUConfigTester(unittest.TestCase):
             ipu_config_dict["replication_factor"] = ipu_config_dict["inference_replication_factor"]
             ipu_config_dict["device_iterations"] = ipu_config_dict["inference_device_iterations"]
             ipu_config_dict["gradient_accumulation_steps"] = 1
+            ipu_config_dict["output_mode"] = "all"
         ipu_config_dict, options_dict = intersection_of_dicts(
             ipu_config_dict, make_poptorch_options_comparable_to_ipu_config(options.toDict())
         )
