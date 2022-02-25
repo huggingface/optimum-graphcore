@@ -19,11 +19,7 @@ import torch.nn as nn
 
 import poptorch
 from optimum.utils import logging
-from transformers import (
-    DebertaForQuestionAnswering,
-    DebertaForSequenceClassification,
-    DebertaForTokenClassification,
-)
+from transformers import DebertaForQuestionAnswering, DebertaForSequenceClassification, DebertaForTokenClassification
 from transformers.models.deberta.modeling_deberta import (
     DebertaEncoder,
     DebertaLayerNorm,
@@ -32,57 +28,10 @@ from transformers.models.deberta.modeling_deberta import (
     build_relative_position,
 )
 
-from ...modeling_utils import PipelineMixin, register
+from ...modeling_utils import PipelineMixin, _get_layer_ipu, outline_attribute, recomputation_checkpoint, register
 
 
 logger = logging.get_logger(__name__)
-
-
-def _get_layer_ipu(layers_per_ipu):
-    # List of the IPU Id for each encoder layer
-    layer_ipu = []
-    for ipu, n_layers in enumerate(layers_per_ipu):
-        layer_ipu += [ipu] * n_layers
-    return layer_ipu
-
-
-def recomputation_checkpoint(module: nn.Module) -> torch.utils.hooks.RemovableHandle:
-    """Annotates the output of a module to be checkpointed instead of
-    recomputed"""
-
-    def recompute_outputs(module, inputs, outputs):
-        if type(outputs) is tuple:
-            return tuple(poptorch.recomputationCheckpoint(y) for y in outputs)
-        else:
-            return poptorch.recomputationCheckpoint(outputs)
-
-    return module.register_forward_hook(recompute_outputs)
-
-
-def outline_attribute(module: nn.Module, value: str):
-    """Adds an attribute to a module. This attribute will be used
-    when comparing operation equivalence in outlining. For example:
-
-    layer1 = nn.Linear(...)
-    layer2 = nn.Linear(...)
-    layer3 = nn.Linear(...)
-    layer4 = nn.Linear(...)
-    outline_attribute(layer1, "A")
-    outline_attribute(layer2, "A")
-    outline_attribute(layer3, "B")
-
-    The code for layer1 can be reused for layer2.
-    But it can't be used for layer3 or layer4.
-    """
-    context = poptorch.Attribute(__outline={"layer": value})
-
-    def enable(*args):
-        context.__enter__()
-
-    def disable(*args):
-        context.__exit__(None, None, None)
-
-    return module.register_forward_pre_hook(enable), module.register_forward_hook(disable)
 
 
 class XSoftmax(torch.nn.Module):
@@ -453,16 +402,6 @@ class PipelinedDebertaForQuestionAnswering(DebertaForQuestionAnswering, DebertaP
         return self
 
     def forward(self, input_ids, attention_mask, token_type_ids, start_positions=None, end_positions=None):
-        r"""
-        start_positions (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
-            Labels for position (index) of the start of the labelled span for computing the token classification loss.
-            Positions are clamped to the length of the sequence (`sequence_length`). Position outside of the sequence
-            are not taken into account for computing the loss.
-        end_positions (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
-            Labels for position (index) of the end of the labelled span for computing the token classification loss.
-            Positions are clamped to the length of the sequence (`sequence_length`). Position outside of the sequence
-            are not taken into account for computing the loss.
-        """
         output = super().forward(
             input_ids=input_ids,
             attention_mask=attention_mask,
