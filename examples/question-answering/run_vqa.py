@@ -21,18 +21,19 @@ Fine-tuning the library models for visual question answering.
 import logging
 import os
 import sys
-import numpy as np
-from unittest import result
 from dataclasses import dataclass, field
 from typing import Optional
+from unittest import result
 
 import datasets
+import numpy as np
 from datasets import load_dataset, load_metric
 
 import transformers
 from optimum.graphcore import IPUConfig, IPUTrainer
 from optimum.graphcore import IPUTrainingArguments as TrainingArguments
 from optimum.graphcore.data import pad_on_batch_axis
+
 # from trainer_qa import QuestionAnsweringTrainer
 from transformers import (
     AutoConfig,
@@ -47,6 +48,8 @@ from transformers import (
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version
 from transformers.utils.versions import require_version
+
+
 # from utils_qa import postprocess_qa_predictions
 
 
@@ -180,9 +183,7 @@ class DataTrainingArguments:
             "and end predictions are not conditioned on one another."
         },
     )
-    soft_label: bool = field(
-        default=False, metadata={"help": "If true, the dataset uses soft labels. (e.g. VQA v2)"}
-    )
+    soft_label: bool = field(default=False, metadata={"help": "If true, the dataset uses soft labels. (e.g. VQA v2)"})
 
     def __post_init__(self):
         if (
@@ -358,8 +359,8 @@ def main():
                     # A typical example answer looks like this: {'ids': [3031, 1618, 311, 703], 'weights': [1.0, 0.9, 0.3, 0.3]}
                     # TODO: Since load from ckpt, num_qa_labels must 9500?
                     soft_label = [0] * config.num_qa_labels
-                    for i, id in enumerate(example_answer['ids']):
-                        soft_label[id] = example_answer['weights'][i]
+                    for i, id in enumerate(example_answer["ids"]):
+                        soft_label[id] = example_answer["weights"][i]
                     result["labels"].append(soft_label)
             else:
                 result["labels"] = examples[answer_column_name]
@@ -447,14 +448,10 @@ def main():
 
     def compute_metrics(p: EvalPrediction):
         if data_args.soft_label:
-            predictions=np.argmax(p.predictions, axis=1)
+            predictions = np.argmax(p.predictions, axis=1)
             acc_list = [p.label_ids[i][pred] for i, pred in enumerate(predictions)]
             acc = np.mean(acc_list)
-            return {
-                "accuracy": float(
-                    acc
-                )
-            }
+            return {"accuracy": float(acc)}
         else:
             return metric.compute(predictions=np.argmax(p.predictions, axis=1), references=p.label_ids)
 

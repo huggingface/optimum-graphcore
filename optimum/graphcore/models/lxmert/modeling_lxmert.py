@@ -91,7 +91,16 @@ class PipelinedLxmertForQuestionAnswering(transformers.LxmertForQuestionAnswerin
         logger.info("-----------------------------------------------------------")
         return self
 
-    def forward(self, input_ids, visual_feats, visual_pos, attention_mask=None, token_type_ids=None, labels=None, visual_attention_mask=None):
+    def forward(
+        self,
+        input_ids,
+        visual_feats,
+        visual_pos,
+        attention_mask=None,
+        token_type_ids=None,
+        labels=None,
+        visual_attention_mask=None,
+    ):
         lxmert_output = self.lxmert(
             input_ids=input_ids,
             visual_feats=visual_feats,
@@ -109,6 +118,8 @@ class PipelinedLxmertForQuestionAnswering(transformers.LxmertForQuestionAnswerin
                 loss = F.cross_entropy(answer_score.view(-1, self.num_qa_labels), labels.view(-1))
             # Soft labels for datasets such as VQA v2
             else:
-                loss = F.binary_cross_entropy_with_logits(answer_score.view(-1, self.num_qa_labels), labels.view(-1, self.num_qa_labels))
+                loss = F.binary_cross_entropy_with_logits(
+                    answer_score.view(-1, self.num_qa_labels), labels.view(-1, self.num_qa_labels)
+                )
 
         return loss, answer_score
