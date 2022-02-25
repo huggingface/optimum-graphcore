@@ -680,7 +680,9 @@ class IPUTrainer:
             optimizer_kwargs["lr"] = self.args.learning_rate
             # optimizer_kwargs["weight_decay"] = 0
             optimizer_kwargs["loss_scaling"] = self.args.loss_scaling
-            optimizer_kwargs["accum_type"] = torch.float16  # TODO: should take into account if the model is in full or half precision.
+            optimizer_kwargs[
+                "accum_type"
+            ] = torch.float16  # TODO: should take into account if the model is in full or half precision.
             optimizer_kwargs["first_order_momentum_accum_type"] = first_order_type
             optimizer_kwargs["second_order_momentum_accum_type"] = torch.float32
 
