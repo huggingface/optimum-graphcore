@@ -158,12 +158,11 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         has_labels = "labels" in inputs
         inputs = self._prepare_inputs(inputs)
 
-        # XXX: adapt synced_gpus for fairscale as well
         gen_kwargs = {
             "max_length": self._max_length if self._max_length is not None else self.model.config.max_length,
             # TODO: disabled beam search for now.
             # "num_beams": self._num_beams if self._num_beams is not None else self.model.config.num_beams,
-            "synced_gpus": False,  # True if is_deepspeed_zero3_enabled() else False,
+            "synced_gpus": False,
         }
 
         # prepare generation inputs
