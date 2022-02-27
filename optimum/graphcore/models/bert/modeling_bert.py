@@ -26,6 +26,7 @@ from transformers import (
     BertForSequenceClassification,
     BertForTokenClassification,
 )
+from transformers.models.bert.modeling_bert import BertSelfAttention
 
 from ...modeling_utils import (
     PipelineMixin,
@@ -101,9 +102,7 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
 
         # Use faster fused-qkv self-attention
         for layer in self.bert.encoder.layer:
-            fused = BertFusedSelfAttention(self.config)
-            fused.load_state_dict(layer.attention.self.state_dict())
-            layer.attention.self = fused
+            layer.attention.self.__class__ = BertFusedSelfAttention
 
         if self.config.embedding_serialization_factor > 1:
             serialized_decoder = SerializedLinear(
@@ -141,6 +140,28 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
         logger.info("Classifier --> IPU 0")
         self.cls = poptorch.BeginBlock(self.cls, "Classifier", ipu_id=0)
         logger.info("-----------------------------------------------------------")
+        return self
+
+    def deparallelize(self):
+        """
+        Undo the changes to the model done by `parallelize`.
+        You should call this before doing `save_pretrained` so that the `model.state_dict` is
+        compatible with the original model.
+        """
+        super().deparallelize()
+
+        for layer in self.bert.encoder.layer:
+            layer.attention.self.__class__ = BertSelfAttention
+
+        if self.config.embedding_serialization_factor > 1:
+            decoder = nn.Linear(
+                self.config.hidden_size,
+                self.config.vocab_size,
+                bias=True,
+            )
+            decoder.load_state_dict(self.cls.predictions.decoder.state_dict())
+            self.cls.predictions.decoder = decoder
+            self.tie_weights()
         return self
 
     def _init_weights(self, module):
@@ -225,9 +246,7 @@ class BertPipelineMixin(PipelineMixin):
 
         # Use faster fused-qkv self-attention
         for layer in self.bert.encoder.layer:
-            fused = BertFusedSelfAttention(self.config)
-            fused.load_state_dict(layer.attention.self.state_dict())
-            layer.attention.self = fused
+            layer.attention.self.__class__ = BertFusedSelfAttention
 
         layer_ipu = _get_layer_ipu(self.config.layers_per_ipu)
 
@@ -257,6 +276,10 @@ class BertPipelineMixin(PipelineMixin):
         compatible with the original model.
         """
         super().deparallelize()
+
+        for layer in self.bert.encoder.layer:
+            layer.attention.self.__class__ = BertSelfAttention
+
         # Deserialize the serialized word embedding
         if self.config.embedding_serialization_factor > 1:
             self.bert.embeddings.word_embeddings = self.bert.embeddings.word_embeddings.deserialize()
