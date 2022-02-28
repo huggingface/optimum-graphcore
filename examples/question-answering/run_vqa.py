@@ -467,6 +467,13 @@ def main():
         compute_metrics=compute_metrics,
     )
 
+    # Resize num_qa_labels to number of labels in the dataset
+    # TODO: Get number of labels from dataests
+    if data_args.dataset_name == "Graphcore/vqa-lxmert":
+        model.resize_num_qa_labels(3129)
+    if data_args.dataset_name == "Graphcore/gqa-lxmert":
+        model.resize_num_qa_labels(1842)
+
     # Training
     if training_args.do_train:
         checkpoint = None
