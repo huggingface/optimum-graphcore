@@ -56,3 +56,22 @@ f1 = 88.52
 exact_match = 81.22
 ```
 -->
+
+# Visual question answering
+
+`run_vqa.py` allows you to fine-tune the LXMERT model for visual question answering datasets such as VQA v2 and GQA, which are available on our [hub](https://huggingface.co/datasets).
+
+## Fine-tuning LXMERT on GQA
+
+```bash
+python run_vqa.py \
+  --model_name_or_path unc-nlp/lxmert-base-uncased \
+  --ipu_config_name ipu_config_lxmert \
+  --dataset_name Graphcore/gqa-lxmert \
+  --do_train \
+  --do_eval \
+  --per_device_train_batch_size 1 \
+  --num_train_epochs 4 \
+  --learning_rate 5e-5 \
+  --output_dir /tmp/lxmert_gqa/ \
+```
