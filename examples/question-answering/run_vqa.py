@@ -335,6 +335,11 @@ def main():
     answer_column_name = "label"
     box_column_name = "normalized_boxes"
 
+    if data_args.soft_label:
+        num_classes = raw_datasets["train"].features["label"].feature["ids"].num_classes
+    else:
+        num_classes = raw_datasets["train"].features["label"].num_classes
+
     if data_args.max_seq_length > tokenizer.model_max_length:
         logger.warning(
             f"The max_seq_length passed ({data_args.max_seq_length}) is larger than the maximum length for the"
@@ -357,7 +362,7 @@ def main():
                 result["labels"] = []
                 for example_answer in examples[answer_column_name]:
                     # A typical example answer looks like this: {'ids': [3031, 1618, 311, 703], 'weights': [1.0, 0.9, 0.3, 0.3]}
-                    soft_label = [0] * config.num_qa_labels
+                    soft_label = [0] * num_classes
                     for i, id in enumerate(example_answer["ids"]):
                         soft_label[id] = example_answer["weights"][i]
                     result["labels"].append(soft_label)
@@ -467,10 +472,7 @@ def main():
     )
 
     # Resize num_qa_labels to number of classes in the dataset
-    if data_args.soft_label:
-        model.resize_num_qa_labels(raw_datasets.features["label"].feature["ids"].num_classes)
-    else:
-        model.resize_num_qa_labels(raw_datasets.features["label"].num_classes)
+    trainer.model.resize_num_qa_labels(num_classes)
 
     # Training
     if training_args.do_train:

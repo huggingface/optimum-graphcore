@@ -524,7 +524,7 @@ class PipelinedT5ForConditionalGeneration(IPUGenerationMixin, T5ForConditionalGe
         if self.config.tie_word_embeddings:
             # Rescale output before projecting on vocab
             # See https://github.com/tensorflow/mesh/blob/fa19d69eafc9a482aff0b59ddd96b025c0cb207d/mesh_tensorflow/transformer/transformer.py#L586
-            sequence_output = sequence_output * (self.model_dim**-0.5)
+            sequence_output = sequence_output * (self.model_dim ** -0.5)
 
         lm_scale_modifier = getattr(self, "lm_scale_modifier", None)
         if lm_scale_modifier is not None:
