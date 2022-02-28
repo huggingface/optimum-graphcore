@@ -20,23 +20,10 @@ import poptorch
 import transformers
 from optimum.utils import logging
 
-from ...modeling_utils import PipelineMixin, register
+from ...modeling_utils import PipelineMixin, recomputation_checkpoint, register
 
 
 logger = logging.get_logger(__name__)
-
-
-def recomputation_checkpoint(module: nn.Module) -> torch.utils.hooks.RemovableHandle:
-    """Annotates the output of a module to be checkpointed instead of
-    recomputed"""
-
-    def recompute_outputs(module, inputs, outputs):
-        if type(outputs) is tuple:
-            return tuple(poptorch.recomputationCheckpoint(y) for y in outputs)
-        else:
-            return poptorch.recomputationCheckpoint(outputs)
-
-    return module.register_forward_hook(recompute_outputs)
 
 
 @register(transformers.LxmertForQuestionAnswering)
