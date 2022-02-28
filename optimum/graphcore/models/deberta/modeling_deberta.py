@@ -28,7 +28,7 @@ from transformers.models.deberta.modeling_deberta import (
     build_relative_position,
 )
 
-from ...modeling_utils import PipelineMixin, _get_layer_ipu, outline_attribute, recomputation_checkpoint, register
+from ...modeling_utils import PipelineMixin, SerializedEmbedding, _get_layer_ipu, outline_attribute, recomputation_checkpoint, register
 
 
 logger = logging.get_logger(__name__)
@@ -277,10 +277,10 @@ class DebertaPipelineMixin(PipelineMixin):
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding  --> IPU 0")
-        # if self.config.embedding_serialization_factor > 1:
-        #     self.deberta.embeddings.word_embeddings = SerializedEmbedding(
-        #         self.deberta.embeddings.word_embeddings, self.config.embedding_serialization_factor
-        #     )
+        if self.config.embedding_serialization_factor > 1:
+            self.deberta.embeddings.word_embeddings = SerializedEmbedding(
+                self.deberta.embeddings.word_embeddings, self.config.embedding_serialization_factor
+            )
 
         self.change_modules_for_ipu(False)
 
