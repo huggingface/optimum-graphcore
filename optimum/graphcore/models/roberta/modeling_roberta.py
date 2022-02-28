@@ -29,6 +29,7 @@ from transformers import (
 from ...modeling_utils import (
     PipelineMixin,
     SerializedEmbedding,
+    SerializedLinear,
     _get_layer_ipu,
     outline_attribute,
     recomputation_checkpoint,
