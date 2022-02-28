@@ -315,7 +315,7 @@ class DebertaPipelineMixin(PipelineMixin):
 
 
 @register(DebertaForSequenceClassification)
-class PipelinedDebertaForSequenceClassification(DebertaEncoder, DebertaPipelineMixin):
+class PipelinedDebertaForSequenceClassification(DebertaForSequenceClassification, DebertaPipelineMixin):
     """
     DebertaForSequenceClassification transformed to run in an IPU pipeline.
 
