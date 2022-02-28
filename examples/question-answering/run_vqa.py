@@ -357,7 +357,6 @@ def main():
                 result["labels"] = []
                 for example_answer in examples[answer_column_name]:
                     # A typical example answer looks like this: {'ids': [3031, 1618, 311, 703], 'weights': [1.0, 0.9, 0.3, 0.3]}
-                    # TODO: Since load from ckpt, num_qa_labels must 9500?
                     soft_label = [0] * config.num_qa_labels
                     for i, id in enumerate(example_answer["ids"]):
                         soft_label[id] = example_answer["weights"][i]
@@ -467,12 +466,11 @@ def main():
         compute_metrics=compute_metrics,
     )
 
-    # Resize num_qa_labels to number of labels in the dataset
-    # TODO: Get number of labels from dataests
-    if data_args.dataset_name == "Graphcore/vqa-lxmert":
-        model.resize_num_qa_labels(3129)
-    if data_args.dataset_name == "Graphcore/gqa-lxmert":
-        model.resize_num_qa_labels(1842)
+    # Resize num_qa_labels to number of classes in the dataset
+    if data_args.soft_label:
+        model.resize_num_qa_labels(raw_datasets.features["label"].feature["ids"].num_classes)
+    else:
+        model.resize_num_qa_labels(raw_datasets.features["label"].num_classes)
 
     # Training
     if training_args.do_train:
