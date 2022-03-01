@@ -130,7 +130,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
                 h = recomputation_checkpoint(layer)
                 self._hooks.append(h)
             self.transformer.h[index] = poptorch.BeginBlock(layer, f"Layer{index}", ipu_id=ipu)
-            logger.info(f"Layer {index:<2}   --> IPU {ipu}")
+            logger.info(f"Layer {index:<2}            --> IPU {ipu}")
 
         logger.info("Head                --> IPU 0")
         self.lm_head = poptorch.BeginBlock(self.lm_head, "LM head", ipu_id=0)
