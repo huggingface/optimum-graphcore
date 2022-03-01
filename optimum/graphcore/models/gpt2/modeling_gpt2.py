@@ -117,8 +117,9 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
         layer_ipu = _get_layer_ipu(self.config.layers_per_ipu)
 
         logger.info("-------------------- Device Allocation --------------------")
-        logger.info("Embedding  --> IPU 0 & 1")
+        logger.info("Token Embedding     --> IPU 0")
         self.transformer.wte = poptorch.BeginBlock(self.transformer.wte, "Token embedding", ipu_id=0)
+        logger.info("Position Embedding  --> IPU 1")
         self.transformer.wpe = poptorch.BeginBlock(self.transformer.wpe, "Position embedding", ipu_id=1)
         hs = outline_attribute(self.transformer.ln_f, "LayerNorm")
         self._hooks.extend(hs)
@@ -131,7 +132,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
             self.transformer.h[index] = poptorch.BeginBlock(layer, f"Layer{index}", ipu_id=ipu)
             logger.info(f"Layer {index:<2}   --> IPU {ipu}")
 
-        print(f"Head       --> IPU 0")
+        logger.info("Head                --> IPU 0")
         self.lm_head = poptorch.BeginBlock(self.lm_head, "LM head", ipu_id=0)
         logger.info("-----------------------------------------------------------")
         return self
@@ -146,7 +147,8 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
         transformer_outputs = self.transformer(input_ids, attention_mask=attention_mask)
         hidden_states = transformer_outputs[0]
         lm_logits = self.lm_head(hidden_states)
-        lm_logits = lm_logits[:, :, 0 : self.actual_vocab_size]
+        if self.config.embedding_serialization_factor > 1:
+            lm_logits = lm_logits[:, :, 0 : self.actual_vocab_size]
 
         loss = None
         if labels is not None:
@@ -165,7 +167,7 @@ class PipelinedGPT2ForSequenceClassification(GPT2ForSequenceClassification, GPT2
     def parallelize(self):
         super().parallelize()
         last_ipu = self.config.ipus_per_replica - 1
-        print(f"Head       --> IPU {last_ipu}")
+        logger.info(f"Head       --> IPU {last_ipu}")
         self.score = poptorch.BeginBlock(self.score, "Score", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
         return self
@@ -185,7 +187,7 @@ class PipelinedGPT2ForTokenClassification(GPT2ForTokenClassification, GPT2Pipeli
     def parallelize(self):
         super().parallelize()
         last_ipu = self.config.ipus_per_replica - 1
-        print(f"Head       --> IPU {last_ipu}")
+        logger.info(f"Head       --> IPU {last_ipu}")
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
         return self
