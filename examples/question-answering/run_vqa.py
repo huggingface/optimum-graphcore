@@ -183,7 +183,6 @@ class DataTrainingArguments:
             "and end predictions are not conditioned on one another."
         },
     )
-    soft_label: bool = field(default=False, metadata={"help": "If true, the dataset uses soft labels. (e.g. VQA v2)"})
 
     def __post_init__(self):
         if (
@@ -335,10 +334,13 @@ def main():
     answer_column_name = "label"
     box_column_name = "normalized_boxes"
 
-    if data_args.soft_label:
+    # If the label is a dict, then it is a soft label
+    try:
         num_classes = raw_datasets["train"].features["label"].feature["ids"].num_classes
-    else:
+        use_soft_label = True
+    except AttributeError:
         num_classes = raw_datasets["train"].features["label"].num_classes
+        use_soft_label = False
 
     if data_args.max_seq_length > tokenizer.model_max_length:
         logger.warning(
@@ -358,7 +360,7 @@ def main():
         result["visual_pos"] = examples[box_column_name]
         if answer_column_name in examples:
             # Use soft labels
-            if data_args.soft_label:
+            if use_soft_label:
                 result["labels"] = []
                 for example_answer in examples[answer_column_name]:
                     # A typical example answer looks like this: {'ids': [3031, 1618, 311, 703], 'weights': [1.0, 0.9, 0.3, 0.3]}
@@ -451,7 +453,7 @@ def main():
     metric = load_metric("accuracy")
 
     def compute_metrics(p: EvalPrediction):
-        if data_args.soft_label:
+        if use_soft_label:
             predictions = np.argmax(p.predictions, axis=1)
             acc_list = [p.label_ids[i][pred] for i, pred in enumerate(predictions)]
             acc = np.mean(acc_list)
