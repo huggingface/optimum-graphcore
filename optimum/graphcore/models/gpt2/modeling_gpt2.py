@@ -113,11 +113,11 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
             self.lm_head = serialized_decoder
             self.tie_weights()
 
-        super().parallelize()
+        PipelineMixin.parallelize(self)
         layer_ipu = _get_layer_ipu(self.config.layers_per_ipu)
 
         logger.info("-------------------- Device Allocation --------------------")
-        logger.info("Embedding  --> IPU 0")
+        logger.info("Embedding  --> IPU 0 & 1")
         self.transformer.wte = poptorch.BeginBlock(self.transformer.wte, "Token embedding", ipu_id=0)
         self.transformer.wpe = poptorch.BeginBlock(self.transformer.wpe, "Position embedding", ipu_id=1)
         hs = outline_attribute(self.transformer.ln_f, "LayerNorm")
@@ -146,7 +146,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
         transformer_outputs = self.transformer(input_ids, attention_mask=attention_mask)
         hidden_states = transformer_outputs[0]
         lm_logits = self.lm_head(hidden_states)
-        # lm_logits = lm_logits[:, :, 0 : self.actual_vocab_size]
+        lm_logits = lm_logits[:, :, 0 : self.actual_vocab_size]
 
         loss = None
         if labels is not None:
