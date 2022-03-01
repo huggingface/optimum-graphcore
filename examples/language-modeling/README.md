@@ -58,7 +58,7 @@ python run_pretraining.py --config_overrides="hidden_size=1024,num_attention_hea
 
 ## RoBERTa and masked language modeling
 
-The following example fine-tunes RoBERTa-base on WikiText-2. We're using the raw WikiText-2. Note the some IPU configurations are overridden.
+The following example fine-tunes RoBERTa-base on WikiText-2. We're using the raw WikiText-2. Note that some IPU configurations are overridden.
 
 ```bash
 python run_mlm.py \
