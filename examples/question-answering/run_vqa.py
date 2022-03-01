@@ -449,6 +449,8 @@ def main():
 
     # Resize num_qa_labels to number of classes in the dataset
     trainer.model.resize_num_qa_labels(num_classes)
+    if not training_args.fp32:
+        trainer.model = trainer.model.half()
 
     # Training
     if training_args.do_train:
