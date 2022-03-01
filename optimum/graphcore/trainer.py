@@ -1215,10 +1215,7 @@ class IPUTrainer:
         # if self.inference_model and self.inference_model.isAttachedToDevice():
         #     self.inference_model.copyWeightsToDevice()
         if len(load_result.missing_keys) != 0:
-            if self.model._keys_to_ignore_on_save is not None and set(load_result.missing_keys) != set(
-                self.model._keys_to_ignore_on_save
-            ):
-                logger.warn(f"There were missing keys in the checkpoint model loaded: {load_result.missing_keys}.")
+            logger.warn(f"There were missing keys in the checkpoint model loaded: {load_result.missing_keys}.")
         if len(load_result.unexpected_keys) != 0:
             logger.warn(f"There were unexpected keys in the checkpoint model loaded: {load_result.unexpected_keys}.")
 
