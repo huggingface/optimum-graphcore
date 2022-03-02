@@ -43,15 +43,26 @@ class GPT2PipelineMixin(PipelineMixin):
         - (If enabled) Replaces the word embedding with a SerializedEmbedding
         - Adds recomputation checkpoints
         """
+        if self.config.embedding_serialization_factor > 1:
+            # Resize token embedding using padding if vocab_size is not a multiple of embedding_serialization_factor
+            self.actual_vocab_size = self.config.vocab_size
+            new_vocab_size = (
+                math.ceil(self.config.vocab_size / self.config.embedding_serialization_factor)
+                * self.config.embedding_serialization_factor
+            )
+            if self.config.vocab_size % self.config.embedding_serialization_factor == 0:
+                assert self.actual_vocab_size == new_vocab_size
+            self.resize_token_embeddings(new_vocab_size)
+
+            self.transformer.wte = SerializedEmbedding(
+                self.transformer.wte, self.config.embedding_serialization_factor
+            )
+
         super().parallelize()
         layer_ipu = _get_layer_ipu(self.config.layers_per_ipu)
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding  --> IPU 0")
-        if self.config.embedding_serialization_factor > 1:
-            self.transformer.wte = SerializedEmbedding(
-                self.transformer.wte, self.config.embedding_serialization_factor
-            )
         self.transformer.wte = poptorch.BeginBlock(self.transformer.wte, "Token embedding", ipu_id=0)
         self.transformer.wpe = poptorch.BeginBlock(self.transformer.wpe, "Position embedding", ipu_id=0)
         hs = outline_attribute(self.transformer.ln_f, "LayerNorm")
@@ -76,6 +87,8 @@ class GPT2PipelineMixin(PipelineMixin):
         # Deserialize the serialized word embedding
         if self.config.embedding_serialization_factor > 1:
             self.transformer.wte = self.transformer.wte.deserialize()
+            # Resize token embeddings back to origianl vocab_size
+            self.resize_token_embeddings(self.actual_vocab_size)
         return self
 
 
@@ -102,6 +115,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
             if self.config.vocab_size % self.config.embedding_serialization_factor == 0:
                 assert self.actual_vocab_size == new_vocab_size
             self.resize_token_embeddings(new_vocab_size)
+
             serialized_decoder = SerializedLinear(
                 self.config.n_embd,
                 self.config.vocab_size,
