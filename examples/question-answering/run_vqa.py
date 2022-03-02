@@ -416,10 +416,8 @@ def main():
     #     )
     #     data_collator_wrapper = pad_on_batch_axis(
     #         training_args.per_device_train_batch_size * ipu_config.batch_size_factor(),
-    #         {
-    #             k: data_args.max_seq_length if k in ["start_positions", "end_positions"] else 0
-    #             for k in train_dataset.column_names
-    #         },
+    #         # This cannot handle soft label
+    #         {k: -100 if k in ["labels"] else 0 for k in train_dataset.column_names},
     #     )
     #     data_collator = data_collator_wrapper(data_collator)
 
