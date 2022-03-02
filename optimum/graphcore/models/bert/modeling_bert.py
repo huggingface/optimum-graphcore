@@ -242,8 +242,8 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
         logger.info("-----------------------------------------------------------")
         return self
 
-    def forward(self, input_ids, attention_mask, labels=None):
-        output = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+    def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
+        output = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
         sequence_output = output[0]
 
         if labels is not None:
