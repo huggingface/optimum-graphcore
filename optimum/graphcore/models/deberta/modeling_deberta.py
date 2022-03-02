@@ -16,6 +16,7 @@ import math
 
 import torch
 import torch.nn as nn
+from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 
 import poptorch
 from optimum.utils import logging
@@ -28,7 +29,14 @@ from transformers.models.deberta.modeling_deberta import (
     build_relative_position,
 )
 
-from ...modeling_utils import PipelineMixin, SerializedEmbedding, _get_layer_ipu, outline_attribute, recomputation_checkpoint, register
+from ...modeling_utils import (
+    PipelineMixin,
+    SerializedEmbedding,
+    _get_layer_ipu,
+    outline_attribute,
+    recomputation_checkpoint,
+    register,
+)
 
 
 logger = logging.get_logger(__name__)
@@ -258,8 +266,14 @@ class DebertaPipelineMixin(PipelineMixin):
                 mod.p = mod.drop_prob
                 mod.inplace = False
             if isinstance(mod, DebertaLayerNorm):
-                mod.forward = DebertaLayerNorm.forward if restore else poptorch.autocast(enabled=True)(mod.forward)
-
+                mod.forward = (
+                    DebertaLayerNorm.forward.__get__(mod, DebertaLayerNorm)
+                    if restore
+                    else poptorch.autocast(enabled=True)(mod.forward)
+                )
+            # if isinstance(mod, DebertaLayerNorm):
+            #     enabled = not restore
+            #     mod.forward = poptorch.autocast(enabled=enabled)(mod.forward)
             if isinstance(mod, DebertaEncoder):
                 func = DebertaEncoder.get_rel_embedding if restore else _get_rel_embedding
                 mod.get_rel_embedding = func.__get__(mod, DebertaEncoder)
@@ -289,7 +303,8 @@ class DebertaPipelineMixin(PipelineMixin):
         self._hooks.extend(hs)
 
         self.deberta.encoder = poptorch.BeginBlock(self.deberta.encoder, ipu_id=0)
-        self.deberta.encoder.rel_embeddings = poptorch.BeginBlock(self.deberta.encoder.rel_embeddings, ipu_id=0)
+        if self.deberta.encoder.relative_attention:
+            self.deberta.encoder.rel_embeddings = poptorch.BeginBlock(self.deberta.encoder.rel_embeddings, ipu_id=0)
 
         for index, layer in enumerate(self.deberta.encoder.layer):
             ipu = layer_ipu[index]
@@ -334,13 +349,49 @@ class PipelinedDebertaForSequenceClassification(DebertaForSequenceClassification
         return self
 
     def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
-        return super().forward(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
+        return_dict = False
+
+        outputs = self.deberta(
+            input_ids,
             token_type_ids=token_type_ids,
-            labels=labels,
-            return_dict=False,
+            attention_mask=attention_mask,
+            position_ids=None,
+            inputs_embeds=None,
+            output_attentions=None,
+            output_hidden_states=None,
+            return_dict=return_dict,
         )
+
+        encoder_layer = outputs[0]
+        pooled_output = self.pooler(encoder_layer)
+        pooled_output = self.dropout(pooled_output)
+        logits = self.classifier(pooled_output)
+
+        loss = None
+        if labels is not None:
+            if self.config.problem_type is None:
+                if self.num_labels == 1:
+                    self.config.problem_type = "regression"
+                elif self.num_labels > 1 and (labels.dtype == torch.long or labels.dtype == torch.int):
+                    self.config.problem_type = "single_label_classification"
+                else:
+                    self.config.problem_type = "multi_label_classification"
+
+            if self.config.problem_type == "regression":
+                loss_fct = MSELoss()
+                if self.num_labels == 1:
+                    loss = loss_fct(logits.squeeze(), labels.squeeze())
+                else:
+                    loss = loss_fct(logits, labels)
+            elif self.config.problem_type == "single_label_classification":
+                loss_fct = CrossEntropyLoss()
+                loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
+            elif self.config.problem_type == "multi_label_classification":
+                loss_fct = BCEWithLogitsLoss()
+                loss = loss_fct(logits, labels)
+
+        output = (logits,) + outputs[1:]
+        return ((loss,) + output) if loss is not None else output
 
 
 @register(DebertaForTokenClassification)
@@ -374,24 +425,14 @@ class PipelinedDebertaForTokenClassification(DebertaForTokenClassification, Debe
 
 @register(DebertaForQuestionAnswering)
 class PipelinedDebertaForQuestionAnswering(DebertaForQuestionAnswering, DebertaPipelineMixin):
-    # def __init__(self, config):
-    #     super().__init__(config)
+    """
+    DebertaForQuestionAnswering transformed to run in an IPU pipeline.
 
-    #     # Replace the DisentangledSelfAttention with IPU version
-    #     # for layer in self.deberta.encoder.layer:
-    #     #     self_attn = IPUDisentangledSelfAttention(self.config)
-    #     #     self_attn.load_state_dict(layer.attention.self.state_dict())
-    #     #     layer.attention.self = self_attn
-
-    #     # for mod in self.modules():
-    #     #     # if isinstance(mod, StableDropout):
-    #     #     #     mod.__class__ = nn.Dropout
-    #     #     #     mod.p = mod.drop_prob
-    #     #     #     mod.inplace = False
-    #     #     if isinstance(mod, DebertaLayerNorm):
-    #     #         mod.__class__ = nn.LayerNorm
-    #     #         mod.normalized_shape = mod.weight.shape
-    #     #         mod.eps = mod.variance_epsilon
+    Recommended usage:
+    ```
+    model = PipelinedDebertaForQuestionAnswering(config).parallelize().half()
+    ```
+    """
 
     def parallelize(self):
         super().parallelize()

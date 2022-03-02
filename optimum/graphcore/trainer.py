@@ -866,7 +866,16 @@ class IPUTrainer:
             trial = None
         self.state.is_hyper_param_search = trial is not None
 
+        # Activate gradient checkpointing if needed
+        if args.gradient_checkpointing:
+            self.model.gradient_checkpointing_enable()
+
         model = self._wrap_model(self.model)
+        self.model_wrapped = model
+
+        # TODO: handle optimizer and scheduler creation
+        # if delay_optimizer_creation:
+        #     self.create_optimizer_and_scheduler(num_training_steps=max_steps)
 
         # Check if saved optimizer or scheduler states exist
         self._load_optimizer_and_scheduler(resume_from_checkpoint)
@@ -1067,7 +1076,10 @@ class IPUTrainer:
             self.model.half()
 
         if len(load_result.missing_keys) != 0:
-            logger.warn(f"There were missing keys in the checkpoint model loaded: {load_result.missing_keys}.")
+            if self.model._keys_to_ignore_on_save is not None and set(load_result.missing_keys) != set(
+                self.model._keys_to_ignore_on_save
+            ):
+                logger.warn(f"There were missing keys in the checkpoint model loaded: {load_result.missing_keys}.")
         if len(load_result.unexpected_keys) != 0:
             logger.warn(f"There were unexpected keys in the checkpoint model loaded: {load_result.unexpected_keys}.")
 
@@ -1317,10 +1329,13 @@ class IPUTrainer:
         os.makedirs(output_dir, exist_ok=True)
         logger.info(f"Saving model checkpoint to {output_dir}")
 
+<<<<<<< HEAD
         # Updating self.model weights with the weights stored on device.
         if self.training_model is not None and self.training_model.isAttachedToDevice():
             self.training_model.copyWeightsToHost()
 
+=======
+>>>>>>> Fix parallelize
         if not isinstance(self.model, PreTrainedModel):
             logger.info("Trainer.model is not a `PreTrainedModel`, only saving its state dict.")
             if state_dict is None:
