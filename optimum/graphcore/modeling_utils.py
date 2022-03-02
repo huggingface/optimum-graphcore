@@ -16,6 +16,7 @@ import copy
 from typing import Any, Dict, Optional, Tuple
 
 import torch
+import torch.nn.functional as F
 from torch import nn
 
 import poptorch
