@@ -340,16 +340,16 @@ class PipelinedT5ForConditionalGeneration(IPUGenerationMixin, T5ForConditionalGe
         model = PipelinedT5ForConditionalGeneration(config).parallelize().half()
         ```
         """
-        layer_ipu = get_layer_ipu(self.config.layers_per_ipu)
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding  --> IPU 0")
 
-        if self.config.embedding_serialization_factor > 1:
+        if self.ipu_config.embedding_serialization_factor > 1:
             serialized_lm_head = SerializedLinear(
                 self.config.d_model,
                 self.shared.num_embeddings,
-                self.config.embedding_serialization_factor,
+                self.ipu_config.embedding_serialization_factor,
                 bias=False,
                 mode=poptorch.MatMulSerializationMode.OutputChannels,
             )
@@ -374,7 +374,7 @@ class PipelinedT5ForConditionalGeneration(IPUGenerationMixin, T5ForConditionalGe
 
         for index, layer in enumerate(self.encoder.block):
             ipu = layer_ipu[index]
-            if self.config.recompute_checkpoint_every_layer and index != self.config.num_layers - 1:
+            if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_layers - 1:
                 recomputation_checkpoint(layer)
             self.encoder.block[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
             logger.info(f"Encoder {index:<2} --> IPU {ipu}")
@@ -386,7 +386,7 @@ class PipelinedT5ForConditionalGeneration(IPUGenerationMixin, T5ForConditionalGe
         shift = len(self.encoder.block)
         for index, layer in enumerate(self.decoder.block):
             ipu = layer_ipu[index + shift]
-            if self.config.recompute_checkpoint_every_layer and index != self.config.num_layers - 1:
+            if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_layers - 1:
                 recomputation_checkpoint(layer)
             self.decoder.block[index] = poptorch.BeginBlock(layer, f"Decoder{index}", ipu_id=ipu)
             logger.info(f"Decoder {index:<2} --> IPU {ipu}")
@@ -524,7 +524,7 @@ class PipelinedT5ForConditionalGeneration(IPUGenerationMixin, T5ForConditionalGe
         if self.config.tie_word_embeddings:
             # Rescale output before projecting on vocab
             # See https://github.com/tensorflow/mesh/blob/fa19d69eafc9a482aff0b59ddd96b025c0cb207d/mesh_tensorflow/transformer/transformer.py#L586
-            sequence_output = sequence_output * (self.model_dim**-0.5)
+            sequence_output = sequence_output * (self.model_dim ** -0.5)
 
         lm_scale_modifier = getattr(self, "lm_scale_modifier", None)
         if lm_scale_modifier is not None:

@@ -627,16 +627,18 @@ class PipelinedBartForConditionalGeneration(IPUGenerationMixin, BartForCondition
         model = PipelinedBartForConditionalGeneration(config).parallelize().half()
         ```
         """
-        layer_ipu = get_layer_ipu(self.config.layers_per_ipu)
+        super().parallelize()
+
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding  --> IPU 0")
 
-        if self.config.embedding_serialization_factor > 1:
+        if self.ipu_config.embedding_serialization_factor > 1:
             serialized_lm_head = SerializedLinear(
                 self.config.d_model,
                 self.model.shared.num_embeddings,
-                self.config.embedding_serialization_factor,
+                self.ipu_config.embedding_serialization_factor,
                 bias=False,
                 mode=poptorch.MatMulSerializationMode.OutputChannels,
             )
@@ -659,7 +661,7 @@ class PipelinedBartForConditionalGeneration(IPUGenerationMixin, BartForCondition
 
         for index, layer in enumerate(self.model.encoder.layers):
             ipu = layer_ipu[index]
-            if self.config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
+            if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
                 recomputation_checkpoint(layer)
             self.model.encoder.layers[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
             logger.info(f"Encoder {index:<2} --> IPU {ipu}")
@@ -673,7 +675,7 @@ class PipelinedBartForConditionalGeneration(IPUGenerationMixin, BartForCondition
         shift = len(self.model.encoder.layers)
         for index, layer in enumerate(self.model.decoder.layers):
             ipu = layer_ipu[index + shift]
-            if self.config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
+            if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
                 recomputation_checkpoint(layer)
             self.model.decoder.layers[index] = poptorch.BeginBlock(layer, f"Decoder{index}", ipu_id=ipu)
             logger.info(f"Decoder {index:<2} --> IPU {ipu}")
