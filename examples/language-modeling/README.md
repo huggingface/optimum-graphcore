@@ -25,27 +25,76 @@ objectives in our [model summary](https://huggingface.co/transformers/model_summ
 The following examples, will run on datasets hosted on our [hub](https://huggingface.co/datasets) or with your own
 text files for training and validation. We give examples of both below.
 
-## BERT pretraining
+## BERT pre-training
 
-The following example pretrains BERT on English Wikipedia. The model is trained on two tasks:
+The following example pre-trains BERT-base on English Wikipedia *from scratch*. This uses the HuggingFace `IPUTrainer` for training, designed to perform training on GraphCore IPUs. The model is trained on two tasks:
 
 - Masked Language Modeling (MLM)
 - Next Sentence Prediction (NSP)
 
 You can train BERT on any dataset with `run_pretraining` as long as the dataset contains a column `next_sentence_label`.
 
+BERT Pre-training is done in two phases - the first is with sequence length 128 for 10500 steps, and the second is with sequence length 512 for 2038 steps.
+
+
+Phase 1: 
 ```bash
-python run_pretraining.py \
+python examples/language-modeling/run_pretraining.py \
   --config_name bert-base-uncased \
   --tokenizer_name bert-base-uncased \
-  --ipu_config_name . \
+  --ipu_config_name Graphcore/bert-base-ipu \
   --dataset_name Graphcore/wikipedia-bert-128 \
   --do_train \
-  --do_eval \
-  --output_dir /tmp/test-pretraining
+  --logging_steps 5 \
+  --max_seq_length 128 \
+  --max_steps 10500 \
+  --is_already_preprocessed \
+  --dataloader_num_workers 64 \
+  --dataloader_mode async_rebatched \
+  --lamb \
+  --lamb_no_bias_correction \
+  --per_device_train_batch_size 32 \
+  --gradient_accumulation_steps 512 \
+  --learning_rate 0.006 \
+  --lr_scheduler_type linear \
+  --loss_scaling 16384 \
+  --weight_decay 0.01 \
+  --warmup_ratio 0.28 \
+  --config_overrides "layer_norm_eps=0.001" \
+  --ipu_config_overrides "device_iterations=1" \
+  --output_dir output-pretrain-bert-base-phase1
 ```
 
-This uses the HuggingFace `IPUTrainer` for training, designed to perform training on GraphCore IPUs.
+Phase 2:
+```bash
+python examples/language-modeling/run_pretraining.py \
+  --config_name bert-base-uncased \
+  --tokenizer_name bert-base-uncased \
+  --model_name_or_path ./output-pretrain-bert-base-phase1 \
+  --ipu_config_name Graphcore/bert-base-ipu \
+  --dataset_path_name Graphcore/wikipedia-bert-512 \
+  --do_train \
+  --logging_steps 5 \
+  --max_seq_length 512 \
+  --max_steps 2038 \
+  --is_already_preprocessed \
+  --dataloader_num_workers 128 \
+  --dataloader_mode async_rebatched \
+  --lamb \
+  --lamb_no_bias_correction \
+  --per_device_train_batch_size 8 \
+  --gradient_accumulation_steps 512 \
+  --learning_rate 0.002828 \
+  --lr_scheduler_type linear \
+  --loss_scaling 128.0 \
+  --weight_decay 0.01 \
+  --warmup_ratio 0.128 \
+  --config_overrides "layer_norm_eps=0.001" \
+  --ipu_config_overrides "device_iterations=1,embedding_serialization_factor=2,matmul_proportion=0.22" \
+  --output_dir output-pretrain-bert-base-phase2
+```
+
+
 
 ### Creating a model on the fly
 
