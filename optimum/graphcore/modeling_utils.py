@@ -91,12 +91,15 @@ class PipelineMixin:
         clone.ipu_config = IPUConfig()
         return clone
 
-    @property
-    def ipu_config(self):
+    def _has_ipu_config_check(self):
         _ipu_config = getattr(self, "_ipu_config", None)
         if _ipu_config is None:
             raise AttributeError("No IPUConfig was found, please set the ipu_config attribute")
-        return _ipu_config
+
+    @property
+    def ipu_config(self):
+        self._has_ipu_config_check()
+        return self._ipu_config
 
     @ipu_config.setter
     def ipu_config(self, value: IPUConfig):
@@ -107,7 +110,7 @@ class PipelineMixin:
     def parallelize(self):
         """Transform the model to run in an IPU pipeline."""
         self._hooks = []
-        _ = self.ipu_config  # Just test that the ipu_config was set before calling parallelize
+        self._has_ipu_config_check()
         return self
 
     def deparallelize(self):
