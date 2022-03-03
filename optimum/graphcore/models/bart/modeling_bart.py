@@ -29,7 +29,7 @@ from ...modeling_utils import (
     PipelineMixin,
     SerializedLinear,
     SharedEmbedding,
-    _get_layer_ipu,
+    get_layer_ipu,
     recomputation_checkpoint,
     register,
 )
@@ -627,7 +627,7 @@ class PipelinedBartForConditionalGeneration(IPUGenerationMixin, BartForCondition
         model = PipelinedBartForConditionalGeneration(config).parallelize().half()
         ```
         """
-        layer_ipu = _get_layer_ipu(self.config.layers_per_ipu)
+        layer_ipu = get_layer_ipu(self.config.layers_per_ipu)
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding  --> IPU 0")

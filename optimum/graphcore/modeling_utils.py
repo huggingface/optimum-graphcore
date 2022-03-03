@@ -169,7 +169,7 @@ class PipelineMixin:
         return model_kwargs
 
 
-def _get_layer_ipu(layers_per_ipu):
+def get_layer_ipu(layers_per_ipu):
     # List of the IPU Id for each encoder layer
     layer_ipu = []
     for ipu, n_layers in enumerate(layers_per_ipu):

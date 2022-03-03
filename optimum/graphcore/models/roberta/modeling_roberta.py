@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
 import poptorch
@@ -31,7 +30,7 @@ from ...modeling_utils import (
     PipelineMixin,
     SerializedEmbedding,
     SerializedLinear,
-    _get_layer_ipu,
+    get_layer_ipu,
     outline_attribute,
     recomputation_checkpoint,
     register,
@@ -50,7 +49,7 @@ class RobertaPipelineMixin(PipelineMixin):
         - Adds recomputation checkpoints
         """
         super().parallelize()
-        layer_ipu = _get_layer_ipu(self.config.layers_per_ipu)
+        layer_ipu = get_layer_ipu(self.config.layers_per_ipu)
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding  --> IPU 0")
@@ -120,7 +119,7 @@ class PipelinedRobertaForMaskedLM(RobertaForMaskedLM, PipelineMixin):
             self.lm_head.decoder = serialized_decoder
             self.tie_weights()
 
-        layer_ipu = _get_layer_ipu(self.config.layers_per_ipu)
+        layer_ipu = get_layer_ipu(self.config.layers_per_ipu)
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding  --> IPU 0")
