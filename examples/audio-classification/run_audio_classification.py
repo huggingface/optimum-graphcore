@@ -333,13 +333,30 @@ def main():
     if model_args.freeze_feature_encoder:
         model.freeze_feature_encoder()
 
+    def preprocess_function(examples):
+        audio = examples[data_args.audio_column_name]
+        # output["input_values"] = random_subsample(
+        #     audio["array"], max_length=data_args.max_length_seconds, sample_rate=feature_extractor.sampling_rate
+        # )
+        subsampled_audio = random_subsample(audio["array"], max_length=data_args.max_length_seconds, sample_rate=feature_extractor.sampling_rate)
+        max_length = int(round(feature_extractor.sampling_rate * data_args.max_length_seconds))
+        inputs = feature_extractor(
+            subsampled_audio, max_length=max_length, sampling_rate=feature_extractor.sampling_rate, padding="max_length"
+        )
+        examples.update(inputs)
+        examples["input_values"] = examples["input_values"][0]
+        examples["labels"] = examples[data_args.label_column_name]
+        return examples
+
     if training_args.do_train:
         if data_args.max_train_samples is not None:
             raw_datasets["train"] = (
                 raw_datasets["train"].shuffle(seed=training_args.seed).select(range(data_args.max_train_samples))
             )
         # Set the training transforms
-        raw_datasets["train"].set_transform(train_transforms, output_all_columns=False)
+        # raw_datasets["train"].set_transform(train_transforms, output_all_columns=False)
+
+        raw_datasets["train"] = raw_datasets["train"].map(preprocess_function, remove_columns=raw_datasets["train"].column_names)
 
     if training_args.do_eval:
         if data_args.max_eval_samples is not None:
@@ -347,7 +364,8 @@ def main():
                 raw_datasets["eval"].shuffle(seed=training_args.seed).select(range(data_args.max_eval_samples))
             )
         # Set the validation transforms
-        raw_datasets["eval"].set_transform(val_transforms, output_all_columns=False)
+        # raw_datasets["eval"].set_transform(val_transforms, output_all_columns=False)
+        raw_datasets["eval"] = raw_datasets["eval"].map(preprocess_function, remove_columns=raw_datasets["eval"].column_names)
 
     # Initialize our trainer
     trainer = IPUTrainer(
@@ -359,6 +377,10 @@ def main():
         compute_metrics=compute_metrics,
         tokenizer=feature_extractor,
     )
+
+    # dl = trainer.get_train_dataloader()
+    # for x in dl:
+    #     print(x["input_values"].shape)
 
     # Training
     if training_args.do_train:

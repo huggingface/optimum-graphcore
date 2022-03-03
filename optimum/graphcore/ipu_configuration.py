@@ -134,7 +134,7 @@ class IPUConfig(BaseConfig):
         opts = Options()
 
         # Define a policy to make sure LayerNorm related ops are computed in fp32
-        fp32 = [torch.mean, torch.rsqrt, torch.pow, torch.add]
+        fp32 = [torch.mean, torch.rsqrt, torch.pow, torch.add, torch.sum]
         policy = poptorch.autocasting.Policy([], fp32, [], [])
         opts.Precision.autocastPolicy(policy)
 

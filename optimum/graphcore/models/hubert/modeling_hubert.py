@@ -59,6 +59,10 @@ class PipelinedHubertForSequenceClassification(HubertForSequenceClassification, 
         self.hubert.feature_projection = poptorch.BeginBlock(self.hubert.feature_projection, ipu_id=0)
         self.hubert.encoder = poptorch.BeginBlock(self.hubert.encoder, ipu_id=0)
 
+        # for mod in self.modules():
+        #     if isinstance(mod, nn.GroupNorm):
+        #         mod.forward = poptorch.autocast(enabled=True)(mod.forward)
+
         # for layer in self.hubert.feature_extractor.conv_layers[2:]:
         #     h = recomputation_checkpoint(layer)
         #     self._hooks.append(h)
@@ -81,6 +85,7 @@ class PipelinedHubertForSequenceClassification(HubertForSequenceClassification, 
         self.classifier = poptorch.BeginBlock(self.classifier, ipu_id=3)
         return self
 
+    @poptorch.autocast(enabled=True)
     def forward(
         self,
         input_values,

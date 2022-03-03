@@ -4,17 +4,17 @@
     "replicated_tensor_sharding": true,
     "enable_half_first_order_momentum": true,
     "enable_half_partials": true,
-  
+
     "replication_factor": {"pod4": 1, "pod16": 4, "pod64": 16, "pod128": 32, "pod256": 64, "default": 1},
-    "gradient_accumulation_steps": 16,
+    "gradient_accumulation_steps": 512,
     "device_iterations": 1,
     "executable_cache_dir": "./exe_cache",
 
     "inference_device_iterations": 4,
     "inference_replication_factor": {"pod4": 1, "pod16": 4, "pod64": 16, "pod128": 32, "pod256": 64, "default": 1},
-  
+
     "ipus_per_replica": 4,
     "layers_per_ipu": [0, 4, 4, 4],
     "matmul_proportion": [0.1, 0.1, 0.1, 0.1]
   }
-  
+
