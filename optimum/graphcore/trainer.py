@@ -1203,8 +1203,10 @@ class IPUTrainer:
 
     def _load_state_dict_in_model(self, state_dict):
         self.model.deparallelize()
-        load_result = self.model.load_state_dict(state_dict)
+        load_result = self.model.load_state_dict(state_dict, strict=False)
         self.model.parallelize()
+        if not self.args.fp32:
+            self.model.half()
 
         # TODO: check if this is needed.
         # if self.training_model and self.training_model.isAttachedToDevice():
@@ -1212,15 +1214,8 @@ class IPUTrainer:
 
         # if self.inference_model and self.inference_model.isAttachedToDevice():
         #     self.inference_model.copyWeightsToDevice()
-
         if len(load_result.missing_keys) != 0:
-            if self.model._keys_to_ignore_on_save is not None and set(load_result.missing_keys) == set(
-                self.model._keys_to_ignore_on_save
-            ):
-                self.model.tie_weights()
-                self._wrap_model(self.model, self.is_in_train)
-            else:
-                logger.warn(f"There were missing keys in the checkpoint model loaded: {load_result.missing_keys}.")
+            logger.warn(f"There were missing keys in the checkpoint model loaded: {load_result.missing_keys}.")
         if len(load_result.unexpected_keys) != 0:
             logger.warn(f"There were unexpected keys in the checkpoint model loaded: {load_result.unexpected_keys}.")
 

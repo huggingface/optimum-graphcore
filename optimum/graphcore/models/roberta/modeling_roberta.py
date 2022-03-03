@@ -13,11 +13,12 @@
 # limitations under the License.
 
 import torch
-import torch.nn as nn
+import torch.nn.functional as F
 
 import poptorch
 from optimum.utils import logging
 from transformers import (
+    RobertaForMaskedLM,
     RobertaForMultipleChoice,
     RobertaForQuestionAnswering,
     RobertaForSequenceClassification,
@@ -25,9 +26,11 @@ from transformers import (
 )
 
 from ...modeling_utils import (
+    OnehotGather,
     PipelineMixin,
     SerializedEmbedding,
-    _get_layer_ipu,
+    SerializedLinear,
+    get_layer_ipu,
     outline_attribute,
     recomputation_checkpoint,
     register,
@@ -46,7 +49,7 @@ class RobertaPipelineMixin(PipelineMixin):
         - Adds recomputation checkpoints
         """
         super().parallelize()
-        layer_ipu = _get_layer_ipu(self.config.layers_per_ipu)
+        layer_ipu = get_layer_ipu(self.config.layers_per_ipu)
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding  --> IPU 0")
@@ -78,6 +81,88 @@ class RobertaPipelineMixin(PipelineMixin):
         if self.config.embedding_serialization_factor > 1:
             self.roberta.embeddings.word_embeddings = self.roberta.embeddings.word_embeddings.deserialize()
         return self
+
+
+@register(RobertaForMaskedLM)
+class PipelinedRobertaForMaskedLM(RobertaForMaskedLM, PipelineMixin):
+    """
+    RobertaForMaskedLM transformed to run in an IPU pipeline.
+
+    Recommended usage:
+    ```
+    model = PipelinedRobertaForMaskedLM(config).parallelize().half()
+    ```
+    """
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.gather_indices = OnehotGather()
+
+    def parallelize(self):
+        """
+        Transform the model to run in an IPU pipeline.
+        - Adds pipeline stages to the model
+        - (If enabled) Replaces the word embedding projection with a SerializedLinear layer
+        - Adds recomputation checkpoints
+        """
+        super().parallelize()
+
+        if self.config.embedding_serialization_factor > 1:
+            serialized_decoder = SerializedLinear(
+                self.config.hidden_size,
+                self.config.vocab_size,
+                self.config.embedding_serialization_factor,
+                bias=True,
+                mode=poptorch.MatMulSerializationMode.OutputChannels,
+            )
+            serialized_decoder.load_state_dict(self.lm_head.decoder.state_dict())
+            self.lm_head.decoder = serialized_decoder
+            self.tie_weights()
+
+        layer_ipu = get_layer_ipu(self.config.layers_per_ipu)
+
+        logger.info("-------------------- Device Allocation --------------------")
+        logger.info("Embedding  --> IPU 0")
+        self.roberta.embeddings = poptorch.BeginBlock(self.roberta.embeddings, "Embedding", ipu_id=0)
+        hs = outline_attribute(self.roberta.embeddings.LayerNorm, "embedding")
+        self._hooks.extend(hs)
+
+        for index, layer in enumerate(self.roberta.encoder.layer):
+            ipu = layer_ipu[index]
+            if self.config.recompute_checkpoint_every_layer:
+                h = recomputation_checkpoint(layer)
+                self._hooks.append(h)
+            self.roberta.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
+            logger.info(f"Encoder {index:<2} --> IPU {ipu}")
+
+        logger.info(f"LM Head    --> IPU 0")
+        self.lm_head = poptorch.BeginBlock(self.lm_head, "LM Head", ipu_id=0)
+        logger.info("-----------------------------------------------------------")
+        return self
+
+    def forward(self, input_ids, attention_mask, labels=None):
+        outputs = self.roberta(input_ids, attention_mask=attention_mask)
+        sequence_output = outputs[0]
+
+        if labels is not None:
+            # Select only the masked tokens for the classifier
+            max_number_of_masked_tokens = int(labels.size(1) * 0.25)
+            masked_lm_labels, masked_lm_positions = torch.topk(labels, k=max_number_of_masked_tokens, dim=1)
+            masked_output = self.gather_indices(sequence_output, masked_lm_positions)
+        else:
+            # This case should never happen during training
+            masked_output = sequence_output
+
+        prediction_scores = self.lm_head(masked_output)
+        outputs = (prediction_scores,) + outputs[2:]
+
+        if labels is not None:
+            masked_lm_loss = F.cross_entropy(
+                prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1)
+            ).float()
+            return masked_lm_loss
+
+        return outputs
 
 
 @register(RobertaForSequenceClassification)
