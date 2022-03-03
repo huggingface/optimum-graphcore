@@ -74,11 +74,11 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
         for layer in self.bert.encoder.layer:
             layer.attention.self.__class__ = BertFusedSelfAttention
 
-        if self.config.embedding_serialization_factor > 1:
+        if self.ipu_config.embedding_serialization_factor > 1:
             serialized_decoder = SerializedLinear(
                 self.config.hidden_size,
                 self.config.vocab_size,
-                self.config.embedding_serialization_factor,
+                self.ipu_config.embedding_serialization_factor,
                 bias=True,
                 mode=poptorch.MatMulSerializationMode.OutputChannels,
             )
@@ -98,7 +98,7 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
 
         for index, layer in enumerate(self.bert.encoder.layer):
             ipu = layer_ipu[index]
-            if self.config.recompute_checkpoint_every_layer:
+            if self.ipu_config.recompute_checkpoint_every_layer:
                 h = recomputation_checkpoint(layer)
                 self._hooks.append(h)
             self.bert.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
@@ -123,7 +123,7 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
         for layer in self.bert.encoder.layer:
             layer.attention.self.__class__ = BertSelfAttention
 
-        if self.config.embedding_serialization_factor > 1:
+        if self.ipu_config.embedding_serialization_factor > 1:
             decoder = nn.Linear(
                 self.config.hidden_size,
                 self.config.vocab_size,
