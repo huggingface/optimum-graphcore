@@ -93,16 +93,16 @@ class PipelineMixin:
 
     @property
     def ipu_config(self):
-        ipu_config_ = getattr(self, "ipu_config", None)
-        if ipu_config_ is None:
+        _ipu_config = getattr(self, "_ipu_config", None)
+        if _ipu_config is None:
             raise AttributeError("No IPUConfig was found, please set the ipu_config attribute")
-        return ipu_config_
+        return _ipu_config
 
-    @property.setter
+    @ipu_config.setter
     def ipu_config(self, value: IPUConfig):
         if not isinstance(value, IPUConfig):
             raise TypeError(f"ipu_config must be an instance of IPUConfig, but {type(value)} was provided")
-        self.ipu_config = value
+        self._ipu_config = value
 
     def parallelize(self):
         """Transform the model to run in an IPU pipeline."""
