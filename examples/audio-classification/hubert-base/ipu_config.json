@@ -17,4 +17,3 @@
     "layers_per_ipu": [0, 4, 4, 4],
     "matmul_proportion": [0.1, 0.1, 0.1, 0.1]
   }
-

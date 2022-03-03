@@ -17,12 +17,8 @@ import torch.nn as nn
 
 import poptorch
 from optimum.utils import logging
-from transformers import (
-    HubertForSequenceClassification,
-)
-from transformers.models.hubert.modeling_hubert import (
-    HubertForSequenceClassification,
-)
+from transformers import HubertForSequenceClassification
+from transformers.models.hubert.modeling_hubert import HubertForSequenceClassification
 
 from ...modeling_utils import PipelineMixin, register
 

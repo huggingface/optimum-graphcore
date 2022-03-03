@@ -29,13 +29,7 @@ from datasets import DatasetDict, load_dataset
 import transformers
 from optimum.graphcore import IPUConfig, IPUTrainer
 from optimum.graphcore import IPUTrainingArguments as TrainingArguments
-from transformers import (
-    AutoConfig,
-    AutoFeatureExtractor,
-    AutoModelForAudioClassification,
-    HfArgumentParser,
-    set_seed,
-)
+from transformers import AutoConfig, AutoFeatureExtractor, AutoModelForAudioClassification, HfArgumentParser, set_seed
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version
 from transformers.utils.versions import require_version
@@ -338,13 +332,18 @@ def main():
         # output["input_values"] = random_subsample(
         #     audio["array"], max_length=data_args.max_length_seconds, sample_rate=feature_extractor.sampling_rate
         # )
-        subsampled_audio = random_subsample(audio["array"], max_length=data_args.max_length_seconds, sample_rate=feature_extractor.sampling_rate)
+        subsampled_audio = random_subsample(
+            audio["array"], max_length=data_args.max_length_seconds, sample_rate=feature_extractor.sampling_rate
+        )
         max_length = int(round(feature_extractor.sampling_rate * data_args.max_length_seconds))
         inputs = feature_extractor(
-            subsampled_audio, max_length=max_length, sampling_rate=feature_extractor.sampling_rate, padding="max_length"
+            subsampled_audio,
+            max_length=max_length,
+            sampling_rate=feature_extractor.sampling_rate,
+            padding="max_length",
         )
-        examples.update(inputs)
-        examples["input_values"] = examples["input_values"][0]
+        # examples.update(inputs)
+        examples["input_values"] = inputs["input_values"][0]
         examples["labels"] = examples[data_args.label_column_name]
         return examples
 
@@ -356,7 +355,9 @@ def main():
         # Set the training transforms
         # raw_datasets["train"].set_transform(train_transforms, output_all_columns=False)
 
-        raw_datasets["train"] = raw_datasets["train"].map(preprocess_function, remove_columns=raw_datasets["train"].column_names)
+        raw_datasets["train"] = raw_datasets["train"].map(
+            preprocess_function, remove_columns=raw_datasets["train"].column_names
+        )
 
     if training_args.do_eval:
         if data_args.max_eval_samples is not None:
@@ -365,7 +366,9 @@ def main():
             )
         # Set the validation transforms
         # raw_datasets["eval"].set_transform(val_transforms, output_all_columns=False)
-        raw_datasets["eval"] = raw_datasets["eval"].map(preprocess_function, remove_columns=raw_datasets["eval"].column_names)
+        raw_datasets["eval"] = raw_datasets["eval"].map(
+            preprocess_function, remove_columns=raw_datasets["eval"].column_names
+        )
 
     # Initialize our trainer
     trainer = IPUTrainer(
@@ -377,10 +380,6 @@ def main():
         compute_metrics=compute_metrics,
         tokenizer=feature_extractor,
     )
-
-    # dl = trainer.get_train_dataloader()
-    # for x in dl:
-    #     print(x["input_values"].shape)
 
     # Training
     if training_args.do_train:
