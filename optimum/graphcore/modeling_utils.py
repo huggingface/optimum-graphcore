@@ -67,38 +67,6 @@ def to_pipelined(model: nn.Module, ipu_config: IPUConfig, force: bool = False):
             raise KeyError(f"{model_cls.__name__} pipelined version not found in registry.")
 
 
-class OnehotGather(nn.Module):
-    """
-    Gathers selected indices from a tensor by transforming the list of indices
-    into a one-hot matrix and then multiplying the tensor by that matrix.
-    """
-
-    def __init__(self):
-        super().__init__()
-        self._is_half = False
-
-    def half(self):
-        super().half()
-        # Tracing is always executed in float as there are missing
-        # implementations of operations in half on the CPU.
-        # So we cannot query the inputs to know if we are running
-        # with a model that has had .half() called on it.
-        # To work around it nn.Module::half is overridden
-        self._is_half = True
-
-    def forward(self, sequence, positions):
-        """
-        Gather the vectors at the specific positions over a batch.
-        """
-        num_classes = int(sequence.shape[1])
-        one_hot_positions = F.one_hot(positions, num_classes)
-        if self._is_half:
-            one_hot_positions = one_hot_positions.half()
-        else:
-            one_hot_positions = one_hot_positions.float()
-        return torch.matmul(one_hot_positions.detach(), sequence)
-
-
 class PipelineMixin:
     @classmethod
     def from_transformers(cls, model: PreTrainedModel, ipu_config: IPUConfig):
@@ -390,3 +358,35 @@ class SharedEmbedding(nn.Module):
             decoder_inputs_embeds = decoder_inputs_embeds * decoder_embed_scale
 
         return encoder_inputs_embeds, decoder_inputs_embeds
+
+
+class OnehotGather(nn.Module):
+    """
+    Gathers selected indices from a tensor by transforming the list of indices
+    into a one-hot matrix and then multiplying the tensor by that matrix.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._is_half = False
+
+    def half(self):
+        super().half()
+        # Tracing is always executed in float as there are missing
+        # implementations of operations in half on the CPU.
+        # So we cannot query the inputs to know if we are running
+        # with a model that has had .half() called on it.
+        # To work around it nn.Module::half is overridden
+        self._is_half = True
+
+    def forward(self, sequence, positions):
+        """
+        Gather the vectors at the specific positions over a batch.
+        """
+        num_classes = int(sequence.shape[1])
+        one_hot_positions = F.one_hot(positions, num_classes)
+        if self._is_half:
+            one_hot_positions = one_hot_positions.half()
+        else:
+            one_hot_positions = one_hot_positions.float()
+        return torch.matmul(one_hot_positions.detach(), sequence)
