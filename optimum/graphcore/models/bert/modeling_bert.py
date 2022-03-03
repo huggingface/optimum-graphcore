@@ -228,11 +228,11 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
             fused.load_state_dict(layer.attention.self.state_dict())
             layer.attention.self = fused
 
-        if self.config.embedding_serialization_factor > 1:
+        if self.ipu_config.embedding_serialization_factor > 1:
             serialized_decoder = SerializedLinear(
                 self.config.hidden_size,
                 self.config.vocab_size,
-                self.config.embedding_serialization_factor,
+                self.ipu_config.embedding_serialization_factor,
                 bias=True,
                 mode=poptorch.MatMulSerializationMode.OutputChannels,
             )
@@ -240,7 +240,7 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
             self.cls.predictions.decoder = serialized_decoder
             self.tie_weights()
 
-        layer_ipu = get_layer_ipu(self.config.layers_per_ipu)
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding  --> IPU 0")
@@ -252,7 +252,7 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
 
         for index, layer in enumerate(self.bert.encoder.layer):
             ipu = layer_ipu[index]
-            if self.config.recompute_checkpoint_every_layer:
+            if self.ipu_config.recompute_checkpoint_every_layer:
                 h = recomputation_checkpoint(layer)
                 self._hooks.append(h)
             self.bert.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
