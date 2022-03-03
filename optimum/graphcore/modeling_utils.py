@@ -70,30 +70,44 @@ def to_pipelined(model: nn.Module, ipu_config: IPUConfig, force: bool = False):
 class PipelineMixin:
     @classmethod
     def from_transformers(cls, model: PreTrainedModel, ipu_config: IPUConfig):
-        # TODO: make this cleaner.
-        # For now, everything is put in the model config to make things simpler.
         config = copy.deepcopy(model.config)
-        config.update(ipu_config.to_dict())
         pipelined_model = cls(config)
         pipelined_model.load_state_dict(model.state_dict())
+        pipelined_model.ipu_config = copy.deepcopy(ipu_config)
         return pipelined_model
 
     @classmethod
     def from_pretrained_transformers(cls, model_name_or_path: str, ipu_config: IPUConfig):
         config = AutoConfig.from_pretrained(model_name_or_path)
-        config.update(ipu_config.to_dict())
-        return cls.from_pretrained(model_name_or_path, config=config)
+        pipelined_model = cls.from_pretrained(model_name_or_path, config=config)
+        pipelined_model.ipu_config = copy.deepcopy(ipu_config)
+        return pipelined_model
 
     @classmethod
     def from_model(cls, model: nn.Module):
         clone = copy.deepcopy(model)
-        # It is fine because PipelineMixin only adds functionality, it does not add any attribute.
         clone.__class__ = cls
+        # Just needed so that .parallelize() does not throw an error
+        clone.ipu_config = IPUConfig()
         return clone
+
+    @property
+    def ipu_config(self):
+        _ipu_config = getattr(self, "_ipu_config", None)
+        if _ipu_config is None:
+            raise AttributeError("No IPUConfig was found, please set the ipu_config attribute")
+        return _ipu_config
+
+    @ipu_config.setter
+    def ipu_config(self, value: IPUConfig):
+        if not isinstance(value, IPUConfig):
+            raise TypeError(f"ipu_config must be an instance of IPUConfig, but {type(value)} was provided")
+        self._ipu_config = value
 
     def parallelize(self):
         """Transform the model to run in an IPU pipeline."""
         self._hooks = []
+        _ = self.ipu_config  # Just test that the ipu_config was set before calling parallelize
         return self
 
     def deparallelize(self):

@@ -30,9 +30,9 @@ class PipelinedViTForImageClassification(transformers.ViTForImageClassification,
         logger.info("Embedding  --> IPU 0")
         self.vit.embeddings = poptorch.BeginBlock(self.vit.embeddings, "Embedding", ipu_id=0)
 
-        layer_ipu = get_layer_ipu(self.config.layers_per_ipu)
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
         for index, layer in enumerate(self.vit.encoder.layer):
-            if self.config.recompute_checkpoint_every_layer:
+            if self.ipu_config.recompute_checkpoint_every_layer:
                 # Put checkpoints on every encoder layer
                 h = recomputation_checkpoint(layer)
                 self._hooks.append(h)
