@@ -86,9 +86,9 @@ class PipelineMixin:
     @classmethod
     def from_model(cls, model: nn.Module):
         clone = copy.deepcopy(model)
-        # It is fine because PipelineMixin only adds functionality, it does not add any attribute.
-        # (The only attribute it adds is not used here)
         clone.__class__ = cls
+        # Just needed so that .parallelize() does not throw an error
+        clone.ipu_config = IPUConfig()
         return clone
 
     @property
