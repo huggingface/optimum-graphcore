@@ -461,7 +461,7 @@ def main():
         # resize_num_qa_labels retains the weights of the qa head from the checkpoint, so we erase the weights by reinitialization
         trainer.model._init_weights(trainer.model.answer_head.logit_fc[-1])
         if not training_args.fp32:
-            trainer.model = trainer.model.half()
+            trainer.model.answer_head.logit_fc[-1] = trainer.model.answer_head.logit_fc[-1].half()
 
     # Training
     if training_args.do_train:
