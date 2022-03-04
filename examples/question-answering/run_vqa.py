@@ -70,6 +70,13 @@ class ModelArguments:
     model_name_or_path: str = field(
         metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
     )
+    replace_qa_head: bool = field(
+        default=False,
+        metadata={
+            "help": "Whether to replace the qa head after loading the model weights. This is necessary if the pretrained "
+            "qa head is not suitable for the fine-tuning task."
+        },
+    )
     config_name: Optional[str] = field(
         default=None, metadata={"help": "Pretrained config name or path if not the same as model_name"}
     )
@@ -445,10 +452,13 @@ def main():
         compute_metrics=compute_metrics,
     )
 
-    # Resize num_qa_labels to number of classes in the dataset
-    trainer.model.resize_num_qa_labels(num_classes)
-    if not training_args.fp32:
-        trainer.model = trainer.model.half()
+    # Replace the qa head according to the fine-tuning task
+    if model_args.replace_qa_head:
+        trainer.model.resize_num_qa_labels(num_classes)
+        # resize_num_qa_labels retains the weights of the qa head from the checkpoint, so we erase the weights by reinitialization
+        trainer.model._init_weights(trainer.model.answer_head.logit_fc[-1])
+        if not training_args.fp32:
+            trainer.model = trainer.model.half()
 
     # Training
     if training_args.do_train:
