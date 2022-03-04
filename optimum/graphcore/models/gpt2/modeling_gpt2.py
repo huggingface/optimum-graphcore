@@ -43,23 +43,23 @@ class GPT2PipelineMixin(PipelineMixin):
         - (If enabled) Replaces the word embedding with a SerializedEmbedding
         - Adds recomputation checkpoints
         """
-        if self.config.embedding_serialization_factor > 1:
+        if self.ipu_config.embedding_serialization_factor > 1:
             # Resize token embedding using padding if vocab_size is not a multiple of embedding_serialization_factor
             self.actual_vocab_size = self.config.vocab_size
             new_vocab_size = (
-                math.ceil(self.config.vocab_size / self.config.embedding_serialization_factor)
-                * self.config.embedding_serialization_factor
+                math.ceil(self.config.vocab_size / self.ipu_config.embedding_serialization_factor)
+                * self.ipu_config.embedding_serialization_factor
             )
-            if self.config.vocab_size % self.config.embedding_serialization_factor == 0:
+            if self.config.vocab_size % self.ipu_config.embedding_serialization_factor == 0:
                 assert self.actual_vocab_size == new_vocab_size
             self.resize_token_embeddings(new_vocab_size)
 
             self.transformer.wte = SerializedEmbedding(
-                self.transformer.wte, self.config.embedding_serialization_factor
+                self.transformer.wte, self.ipu_config.embedding_serialization_factor
             )
 
         super().parallelize()
-        layer_ipu = get_layer_ipu(self.config.layers_per_ipu)
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding  --> IPU 0")
@@ -70,7 +70,7 @@ class GPT2PipelineMixin(PipelineMixin):
 
         for index, layer in enumerate(self.transformer.h):
             ipu = layer_ipu[index]
-            if self.config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
+            if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
                 h = recomputation_checkpoint(layer)
                 self._hooks.append(h)
             self.transformer.h[index] = poptorch.BeginBlock(layer, f"Layer{index}", ipu_id=ipu)
@@ -85,7 +85,7 @@ class GPT2PipelineMixin(PipelineMixin):
         """
         super().deparallelize()
         # Deserialize the serialized word embedding
-        if self.config.embedding_serialization_factor > 1:
+        if self.ipu_config.embedding_serialization_factor > 1:
             self.transformer.wte = self.transformer.wte.deserialize()
             # Resize token embeddings back to origianl vocab_size
             self.resize_token_embeddings(self.actual_vocab_size)
@@ -105,21 +105,21 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
         model = PipelinedGPT2LMHeadModel(config).parallelize().half()
         ```
         """
-        if self.config.embedding_serialization_factor > 1:
+        if self.ipu_config.embedding_serialization_factor > 1:
             # Resize token embedding using padding if vocab_size is not a multiple of embedding_serialization_factor
             self.actual_vocab_size = self.config.vocab_size
             new_vocab_size = (
-                math.ceil(self.config.vocab_size / self.config.embedding_serialization_factor)
-                * self.config.embedding_serialization_factor
+                math.ceil(self.config.vocab_size / self.ipu_config.embedding_serialization_factor)
+                * self.ipu_config.embedding_serialization_factor
             )
-            if self.config.vocab_size % self.config.embedding_serialization_factor == 0:
+            if self.config.vocab_size % self.ipu_config.embedding_serialization_factor == 0:
                 assert self.actual_vocab_size == new_vocab_size
             self.resize_token_embeddings(new_vocab_size)
 
             serialized_decoder = SerializedLinear(
                 self.config.n_embd,
                 self.config.vocab_size,
-                self.config.embedding_serialization_factor,
+                self.ipu_config.embedding_serialization_factor,
                 bias=False,
                 mode=poptorch.MatMulSerializationMode.OutputChannels,
             )
@@ -128,7 +128,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
             self.tie_weights()
 
         PipelineMixin.parallelize(self)
-        layer_ipu = get_layer_ipu(self.config.layers_per_ipu)
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Token Embedding     --> IPU 0")
@@ -140,7 +140,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
 
         for index, layer in enumerate(self.transformer.h):
             ipu = layer_ipu[index]
-            if self.config.recompute_checkpoint_every_layer:
+            if self.ipu_config.recompute_checkpoint_every_layer:
                 h = recomputation_checkpoint(layer)
                 self._hooks.append(h)
             self.transformer.h[index] = poptorch.BeginBlock(layer, f"Layer{index}", ipu_id=ipu)
@@ -153,7 +153,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
 
     def deparallelize(self):
         PipelineMixin.deparallelize(self)
-        if self.config.embedding_serialization_factor > 1:
+        if self.ipu_config.embedding_serialization_factor > 1:
             # Resize token embeddings back to origianl vocab_size
             self.resize_token_embeddings(self.actual_vocab_size)
 
@@ -161,7 +161,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
         transformer_outputs = self.transformer(input_ids, attention_mask=attention_mask)
         hidden_states = transformer_outputs[0]
         lm_logits = self.lm_head(hidden_states)
-        if self.config.embedding_serialization_factor > 1:
+        if self.ipu_config.embedding_serialization_factor > 1:
             lm_logits = lm_logits[:, :, 0 : self.actual_vocab_size]
 
         loss = None
@@ -180,7 +180,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
 class PipelinedGPT2ForSequenceClassification(GPT2ForSequenceClassification, GPT2PipelineMixin):
     def parallelize(self):
         super().parallelize()
-        last_ipu = self.config.ipus_per_replica - 1
+        last_ipu = self.ipu_config.ipus_per_replica - 1
         logger.info(f"Head       --> IPU {last_ipu}")
         self.score = poptorch.BeginBlock(self.score, "Score", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
@@ -200,7 +200,7 @@ class PipelinedGPT2ForSequenceClassification(GPT2ForSequenceClassification, GPT2
 class PipelinedGPT2ForTokenClassification(GPT2ForTokenClassification, GPT2PipelineMixin):
     def parallelize(self):
         super().parallelize()
-        last_ipu = self.config.ipus_per_replica - 1
+        last_ipu = self.ipu_config.ipus_per_replica - 1
         logger.info(f"Head       --> IPU {last_ipu}")
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
