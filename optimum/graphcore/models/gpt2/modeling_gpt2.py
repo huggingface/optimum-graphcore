@@ -25,7 +25,7 @@ from ...modeling_utils import (
     PipelineMixin,
     SerializedEmbedding,
     SerializedLinear,
-    _get_layer_ipu,
+    get_layer_ipu,
     outline_attribute,
     recomputation_checkpoint,
     register,
@@ -59,7 +59,7 @@ class GPT2PipelineMixin(PipelineMixin):
             )
 
         super().parallelize()
-        layer_ipu = _get_layer_ipu(self.config.layers_per_ipu)
+        layer_ipu = get_layer_ipu(self.config.layers_per_ipu)
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding  --> IPU 0")
@@ -128,7 +128,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
             self.tie_weights()
 
         PipelineMixin.parallelize(self)
-        layer_ipu = _get_layer_ipu(self.config.layers_per_ipu)
+        layer_ipu = get_layer_ipu(self.config.layers_per_ipu)
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Token Embedding     --> IPU 0")
