@@ -354,7 +354,7 @@ class SharedEmbedding(nn.Module):
     def forward(
         self,
         input_ids: torch.Tensor,
-        decoder_input_ids: torch.Tensor,
+        decoder_input_ids: torch.Tensor = None,
         encoder_embed_scale: Optional[float] = None,
         decoder_embed_scale: Optional[float] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -366,15 +366,23 @@ class SharedEmbedding(nn.Module):
         #     decoder_inputs_embeds = self.shared(decoder_input_ids) * decoder_embed_scale
         # combined, n1, n2 = self._combine_inputs(input_ids, decoder_input_ids)
         # encoder_inputs_embeds, decoder_inputs_embeds = self._separate_inputs(self.shared(combined), n1, n2)
-        idx, combined = self._combine_inputs(input_ids, decoder_input_ids)
-        encoder_inputs_embeds, decoder_inputs_embeds = self._separate_inputs(idx, self.shared(combined))
+
+        encoder_inputs_embeds, decoder_inputs_embeds = None, None
+        if decoder_input_ids is not None:
+            idx, combined = self._combine_inputs(input_ids, decoder_input_ids)
+            encoder_inputs_embeds, decoder_inputs_embeds = self._separate_inputs(idx, self.shared(combined))
+        else:
+            encoder_inputs_embeds = self.shared(input_ids)
 
         if encoder_embed_scale:
             encoder_inputs_embeds = encoder_inputs_embeds * encoder_embed_scale
-        if decoder_embed_scale:
+        if decoder_embed_scale and decoder_input_ids is not None:
             decoder_inputs_embeds = decoder_inputs_embeds * decoder_embed_scale
 
-        return encoder_inputs_embeds, decoder_inputs_embeds
+        if decoder_inputs_embeds is not None:
+            return encoder_inputs_embeds, decoder_inputs_embeds
+        else:
+            return encoder_inputs_embeds
 
 
 class OnehotGather(nn.Module):

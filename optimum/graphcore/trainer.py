@@ -322,7 +322,9 @@ class IPUTrainer:
             return
         if log:
             logger.info("Compiling Model...")
+
         sample_batch = self._prepare_inputs(sample_batch)
+
         start_compile = time.perf_counter()
         if isinstance(sample_batch, tuple):
             model.compile(*sample_batch)
@@ -1723,7 +1725,7 @@ class IPUTrainer:
             description="Evaluation",
             # No point gathering the predictions if there are no metrics, otherwise we defer to
             # self.args.prediction_loss_only
-            prediction_loss_only=True if self.compute_metrics is None else None,
+            prediction_loss_only=None,
             ignore_keys=ignore_keys,
             metric_key_prefix=metric_key_prefix,
         )
@@ -1819,8 +1821,23 @@ class IPUTrainer:
             prediction_loss_only if prediction_loss_only is not None else self.args.prediction_loss_only
         )
 
+        dummy_batch_for_compilation = next(iter(dataloader))
+        if self.args.predict_with_generate:
+            dummy_batch_for_compilation["encoder_outputs"] = self.model.get_encoder().to(torch.float32)(
+                **dummy_batch_for_compilation, return_dict=False
+            )
+            dummy_batch_for_compilation["encoder_outputs"] = tuple(
+                x.to(torch.float16) for x in dummy_batch_for_compilation["encoder_outputs"]
+            )
+            dummy_batch_for_compilation["decoder_input_ids"] = dummy_batch_for_compilation["input_ids"]
+            dummy_batch_for_compilation.pop("input_ids", None)
+            dummy_batch_for_compilation = {
+                k: v.to(torch.long) if isinstance(v, torch.Tensor) else v
+                for k, v in dummy_batch_for_compilation.items()
+            }
+
         model = self._wrap_model(self.model, training=False)
-        self._compile_model(model, next(iter(dataloader)), log=True)
+        self._compile_model(model, dummy_batch_for_compilation, log=True)
 
         batch_size = dataloader.batch_size
 
@@ -1845,10 +1862,12 @@ class IPUTrainer:
         losses_host = None
         preds_host = None
         labels_host = None
+        scores_host = None
         # losses/preds/labels on CPU (final containers)
         all_losses = None
         all_preds = None
         all_labels = None
+        all_scores = None
         # Will be useful when we have an iterable dataset so don't know its length.
 
         observed_num_examples = 0
@@ -1863,9 +1882,22 @@ class IPUTrainer:
                     batch_size = observed_batch_size
 
             # Prediction step
-            loss, logits, labels = self.prediction_step(
-                model, inputs, prediction_loss_only, ignore_keys=ignore_keys, is_last_batch=step == len(dataloader) - 1
-            )
+            if self.args.predict_with_generate:
+                loss, logits, scores, labels = self.prediction_step(
+                    model,
+                    inputs,
+                    prediction_loss_only,
+                    ignore_keys=ignore_keys,
+                    is_last_batch=step == len(dataloader) - 1,
+                )
+            else:
+                loss, logits, labels = self.prediction_step(
+                    model,
+                    inputs,
+                    prediction_loss_only,
+                    ignore_keys=ignore_keys,
+                    is_last_batch=step == len(dataloader) - 1,
+                )
 
             # Update containers on host
             if loss is not None:
@@ -1879,6 +1911,10 @@ class IPUTrainer:
                 labels = self._pad_across_processes(labels)
                 labels = self._nested_gather(labels)
                 labels_host = labels if labels_host is None else nested_concat(labels_host, labels, padding_index=-100)
+            if scores is not None:
+                scores = self._pad_across_processes(scores)
+                scores = self._nested_gather(scores)
+                scores_host = scores if scores_host is None else nested_concat(scores_host, scores, padding_index=-100)
             self.control = self.callback_handler.on_prediction_step(self.args, self.state, self.control)
 
             # Gather all tensors and put them back on the CPU if we have done enough accumulation steps.
@@ -1894,9 +1930,14 @@ class IPUTrainer:
                     all_labels = (
                         labels if all_labels is None else nested_concat(all_labels, labels, padding_index=-100)
                     )
+                if scores_host is not None:
+                    scores = nested_numpify(scores_host)
+                    all_scores = (
+                        scores if all_scores is None else nested_concat(all_scores, scores, padding_index=-100)
+                    )
 
                 # Set back to None to begin a new accumulation
-                losses_host, preds_host, labels_host = None, None, None
+                losses_host, preds_host, labels_host, scores_host = None, None, None, None
 
         if self.args.past_index and hasattr(self, "_past"):
             # Clean the state at the end of the evaluation loop
@@ -1912,6 +1953,9 @@ class IPUTrainer:
         if labels_host is not None:
             labels = nested_numpify(labels_host)
             all_labels = labels if all_labels is None else nested_concat(all_labels, labels, padding_index=-100)
+        if scores_host is not None:
+            scores = nested_numpify(scores_host)
+            all_scores = scores if all_scores is None else nested_concat(all_scores, scores, padding_index=-100)
 
         # Number of samples
         if not isinstance(eval_dataset, IterableDataset):
@@ -1931,6 +1975,8 @@ class IPUTrainer:
             all_preds = nested_truncate(all_preds, num_samples)
         if all_labels is not None:
             all_labels = nested_truncate(all_labels, num_samples)
+        if all_scores is not None:
+            all_scores = nested_truncate(all_scores, num_samples)
 
         # Metrics!
         if self.compute_metrics is not None and all_preds is not None and all_labels is not None:
@@ -1952,7 +1998,9 @@ class IPUTrainer:
         # Detaching model from device to let the training model attach itself
         model.detachFromDevice()
 
-        return EvalLoopOutput(predictions=all_preds, label_ids=all_labels, metrics=metrics, num_samples=num_samples)
+        return EvalLoopOutput(
+            predictions=(all_preds, all_scores), label_ids=all_labels, metrics=metrics, num_samples=num_samples
+        )
 
     def _nested_gather(self, tensors, name=None):
         """

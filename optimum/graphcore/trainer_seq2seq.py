@@ -161,8 +161,10 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         gen_kwargs = {
             "max_length": self._max_length if self._max_length is not None else self.model.config.max_length,
             # TODO: disabled beam search for now.
-            # "num_beams": self._num_beams if self._num_beams is not None else self.model.config.num_beams,
+            "num_beams": self._num_beams if self._num_beams is not None else self.model.config.num_beams,
             "synced_gpus": False,
+            "return_dict_in_generate": True,  # TODO: to set as argument elsewhere
+            "output_scores": True,  # TODO: to set as argument elsewhere
         }
 
         # prepare generation inputs
@@ -173,18 +175,29 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         else:
             generation_inputs = inputs[self.model.main_input_name]
 
-        generated_tokens = self.model.generate(
+        model.model.forward = model.__call__
+
+        outputs = model.generate(
             generation_inputs,
             attention_mask=inputs.get("attention_mask", None),
             **gen_kwargs,
         )
+
+        generated_tokens = outputs.sequences
+        generated_tokens_scores = outputs.scores
+
         # in case the batch is shorter than max length, the output should be padded
         if generated_tokens.shape[-1] < gen_kwargs["max_length"]:
             generated_tokens = self._pad_tensors_to_max_len(generated_tokens, gen_kwargs["max_length"])
 
+        inputs["encoder_outputs"] = self.model.get_encoder().to(torch.float32)(**inputs, return_dict=False)
+        inputs["encoder_outputs"] = tuple(x.to(torch.float16) for x in inputs["encoder_outputs"])
+        inputs["decoder_input_ids"] = inputs["input_ids"]
+        inputs.pop("input_ids", None)
+        inputs = {k: v.to(torch.long) if isinstance(v, torch.Tensor) else v for k, v in inputs.items()}
+
         with torch.no_grad():
-            with self.autocast_smart_context_manager():
-                outputs = model(**inputs)
+            outputs = model(**inputs)
             if has_labels:
                 if self.label_smoother is not None:
                     loss = self.label_smoother(outputs, inputs["labels"]).mean().detach()
@@ -203,7 +216,7 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         else:
             labels = None
 
-        return (loss, generated_tokens, labels)
+        return (loss, generated_tokens, generated_tokens_scores, labels)
 
     def _pad_tensors_to_max_len(self, tensor, max_length):
         if self.tokenizer is not None and hasattr(self.tokenizer, "pad_token_id"):

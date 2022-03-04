@@ -42,7 +42,15 @@ from transformers.generation_stopping_criteria import (
     StoppingCriteriaList,
     validate_stopping_criteria,
 )
-from transformers.generation_utils import BeamSearchOutput, GenerationMixin, GreedySearchOutput
+from transformers.generation_utils import (
+    BeamSearchOutput,
+    GenerationMixin,
+    GreedySearchOutput,
+    GreedySearchEncoderDecoderOutput,
+    GreedySearchDecoderOnlyOutput,
+    BeamSearchEncoderDecoderOutput,
+    BeamSearchDecoderOnlyOutput,
+)
 from transformers.modeling_outputs import ModelOutput
 
 
@@ -267,22 +275,22 @@ class IPUGenerationMixin(GenerationMixin):
 
             # Store scores, attentions and hidden_states when required
             # TODO: enable that?
-            # if return_dict_in_generate:
-            #     if output_scores:
-            #         scores += (next_token_logits,)
-            #     if output_attentions:
-            #         decoder_attentions += (
-            #             (outputs.decoder_attentions,) if self.config.is_encoder_decoder else (outputs.attentions,)
-            #         )
-            #         if self.config.is_encoder_decoder:
-            #             cross_attentions += (outputs.cross_attentions,)
+            if return_dict_in_generate:
+                if output_scores:
+                    scores += (next_token_logits,)
+                if output_attentions:
+                    decoder_attentions += (
+                        (outputs.decoder_attentions,) if self.config.is_encoder_decoder else (outputs.attentions,)
+                    )
+                    if self.config.is_encoder_decoder:
+                        cross_attentions += (outputs.cross_attentions,)
 
-            #     if output_hidden_states:
-            #         decoder_hidden_states += (
-            #             (outputs.decoder_hidden_states,)
-            #             if self.config.is_encoder_decoder
-            #             else (outputs.hidden_states,)
-            #         )
+                if output_hidden_states:
+                    decoder_hidden_states += (
+                        (outputs.decoder_hidden_states,)
+                        if self.config.is_encoder_decoder
+                        else (outputs.hidden_states,)
+                    )
 
             # pre-process distribution
             next_tokens_scores = logits_processor(input_ids, next_token_logits)
@@ -315,28 +323,26 @@ class IPUGenerationMixin(GenerationMixin):
                     this_peer_finished = True
 
         # TODO: enable that?
-        # if return_dict_in_generate:
-        #     if self.config.is_encoder_decoder:
-        #         return GreedySearchEncoderDecoderOutput(
-        #             sequences=input_ids,
-        #             scores=scores,
-        #             encoder_attentions=encoder_attentions,
-        #             encoder_hidden_states=encoder_hidden_states,
-        #             decoder_attentions=decoder_attentions,
-        #             cross_attentions=cross_attentions,
-        #             decoder_hidden_states=decoder_hidden_states,
-        #         )
-        #     else:
-        #         return GreedySearchDecoderOnlyOutput(
-        #             sequences=input_ids,
-        #             scores=scores,
-        #             attentions=decoder_attentions,
-        #             hidden_states=decoder_hidden_states,
-        #         )
-        # else:
-        #     return input_ids
-
-        return input_ids
+        if return_dict_in_generate:
+            if self.config.is_encoder_decoder:
+                return GreedySearchEncoderDecoderOutput(
+                    sequences=input_ids,
+                    scores=scores,
+                    encoder_attentions=encoder_attentions,
+                    encoder_hidden_states=encoder_hidden_states,
+                    decoder_attentions=decoder_attentions,
+                    cross_attentions=cross_attentions,
+                    decoder_hidden_states=decoder_hidden_states,
+                )
+            else:
+                return GreedySearchDecoderOnlyOutput(
+                    sequences=input_ids,
+                    scores=scores,
+                    attentions=decoder_attentions,
+                    hidden_states=decoder_hidden_states,
+                )
+        else:
+            return input_ids
 
     def beam_search(
         self,
@@ -473,6 +479,16 @@ class IPUGenerationMixin(GenerationMixin):
             return_dict_in_generate if return_dict_in_generate is not None else self.config.return_dict_in_generate
         )
 
+        batch_size = len(beam_scorer._beam_hyps)
+        num_beams = beam_scorer.num_beams
+
+        batch_beam_size, cur_len = input_ids.shape
+
+        if num_beams * batch_size != batch_beam_size:
+            raise ValueError(
+                f"Batch dimension of `input_ids` should be {num_beams * batch_size}, but is {batch_beam_size}."
+            )
+
         # init attention / hidden states / scores tuples
         scores = () if (return_dict_in_generate and output_scores) else None
         decoder_attentions = () if (return_dict_in_generate and output_attentions) else None
@@ -484,16 +500,6 @@ class IPUGenerationMixin(GenerationMixin):
             encoder_attentions = model_kwargs["encoder_outputs"].get("attentions") if output_attentions else None
             encoder_hidden_states = (
                 model_kwargs["encoder_outputs"].get("hidden_states") if output_hidden_states else None
-            )
-
-        batch_size = len(beam_scorer._beam_hyps)
-        num_beams = beam_scorer.num_beams
-
-        batch_beam_size, cur_len = input_ids.shape
-
-        if num_beams * batch_size != batch_beam_size:
-            raise ValueError(
-                f"Batch dimension of `input_ids` should be {num_beams * batch_size}, but is {batch_beam_size}."
             )
 
         beam_scores = torch.zeros((batch_size, num_beams), dtype=torch.float, device=input_ids.device)
@@ -514,23 +520,16 @@ class IPUGenerationMixin(GenerationMixin):
                     break
 
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
-
             model_inputs = {k: v for k, v in model_inputs.items() if v is not None}
-
-            # from collections import namedtuple
-            # def convert(dictionary):
-            #         return namedtuple('GenericDict', dictionary.keys())(**dictionary)
-
-            # model_inputs["encoder_outputs"] = convert(model_inputs["encoder_outputs"])
-            # import pdb; pdb.set_trace()
-
             model_inputs["encoder_outputs"] = tuple(model_inputs["encoder_outputs"].values())
+
             outputs = self(
                 **model_inputs,
                 # return_dict=True,
                 # output_attentions=output_attentions,
                 # output_hidden_states=output_hidden_states,
             )
+            outputs = tuple(x.repeat(num_beams, 1, 1) for x in outputs)
 
             if synced_gpus and this_peer_finished:
                 cur_len = cur_len + 1
@@ -549,9 +548,6 @@ class IPUGenerationMixin(GenerationMixin):
 
             next_token_scores = logits_processor(input_ids, next_token_scores)
             next_token_scores = next_token_scores + beam_scores[:, None].expand_as(next_token_scores)
-            import pdb
-
-            pdb.set_trace()
 
             # Store scores, attentions and hidden_states when required
             if return_dict_in_generate:
