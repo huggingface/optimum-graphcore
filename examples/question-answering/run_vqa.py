@@ -356,6 +356,9 @@ def main():
         )
     max_seq_length = min(data_args.max_seq_length, tokenizer.model_max_length)
 
+    # since this will be pickled to avoid _LazyModule error in Hasher force logger loading before tokenize_function
+    tok_logger = transformers.utils.logging.get_logger("transformers.tokenization_utils_base")
+
     def preprocess_function(examples):
         result = tokenizer(
             examples[question_column_name],
