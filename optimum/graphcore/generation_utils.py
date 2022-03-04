@@ -43,13 +43,13 @@ from transformers.generation_stopping_criteria import (
     validate_stopping_criteria,
 )
 from transformers.generation_utils import (
+    BeamSearchDecoderOnlyOutput,
+    BeamSearchEncoderDecoderOutput,
     BeamSearchOutput,
     GenerationMixin,
-    GreedySearchOutput,
-    GreedySearchEncoderDecoderOutput,
     GreedySearchDecoderOnlyOutput,
-    BeamSearchEncoderDecoderOutput,
-    BeamSearchDecoderOnlyOutput,
+    GreedySearchEncoderDecoderOutput,
+    GreedySearchOutput,
 )
 from transformers.modeling_outputs import ModelOutput
 
