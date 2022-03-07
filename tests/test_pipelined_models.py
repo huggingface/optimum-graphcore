@@ -25,6 +25,7 @@ from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
 from parameterized import parameterized
 from transformers import (
     CONFIG_MAPPING,
+    MODEL_FOR_AUDIO_CLASSIFICATION_MAPPING,
     MODEL_FOR_CAUSAL_LM_MAPPING,
     MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING,
     MODEL_FOR_MASKED_LM_MAPPING,
@@ -49,6 +50,7 @@ REVERSE_CONFIG_MAPPING = {v: k for k, v in CONFIG_MAPPING.items()}
 def _get_models_to_test(model_to_test_names):
     def find_config_class_from_pretrained_class(pretrained_class):
         mappings = [
+            MODEL_FOR_AUDIO_CLASSIFICATION_MAPPING,
             MODEL_FOR_CAUSAL_LM_MAPPING,
             MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING,
             MODEL_FOR_MASKED_LM_MAPPING,
@@ -89,11 +91,23 @@ MODELS_TO_TEST = _get_models_to_test(MODELS_TO_TEST_MAPPING)
 
 
 class PipelinedModelsTester(TestCase):
+
+    # Copied from transformers hubert tests.
+    def _load_superb(self, task, num_samples):
+        from datasets import load_dataset
+
+        ds = load_dataset("anton-l/superb_dummy", task, split="test")
+
+        return ds[:num_samples]
+
     def _generate_input_for_model_class(self, model_name_or_path, model_class):
         # TODO: add support for labels.
         inputs = None
         extractor = None
-        if model_class in [*MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING.values()]:
+        if model_class in [
+            *MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING.values(),
+            *MODEL_FOR_AUDIO_CLASSIFICATION_MAPPING.values(),
+        ]:
             extractor = AutoFeatureExtractor.from_pretrained(model_name_or_path)
         else:
             extractor = AutoTokenizer.from_pretrained(model_name_or_path)
@@ -122,6 +136,9 @@ class PipelinedModelsTester(TestCase):
             url = "http://images.cocodataset.org/val2017/000000039769.jpg"
             image = Image.open(requests.get(url, stream=True).raw)
             inputs = extractor(images=image, return_tensors="pt")
+        elif model_class in MODEL_FOR_AUDIO_CLASSIFICATION_MAPPING.values():
+            input_data = self._load_superb("ic", 1)
+            inputs = extractor(input_data["speech"], return_tensors="pt")
         else:
             inputs = extractor(
                 "This is a test to check that pretrained and pipeline model outputs match.", return_tensors="pt"
