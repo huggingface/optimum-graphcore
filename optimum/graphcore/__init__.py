@@ -25,6 +25,7 @@ from .models.bert import (
     PipelinedBertForSequenceClassification,
     PipelinedBertForTokenClassification,
 )
+from .models.hubert import PipelinedHubertForSequenceClassification
 from .models.lxmert import PipelinedLxmertForQuestionAnswering
 from .models.roberta import (
     PipelinedRobertaForMultipleChoice,
