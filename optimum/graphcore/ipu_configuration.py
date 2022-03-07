@@ -29,7 +29,7 @@ from poptorch import Options, OutputMode
 logger = logging.get_logger(__name__)
 
 IPU_CONFIG_NAME = "ipu_config.json"
-ALLOWED_POD_TYPES = ["pod4", "pod16", "pod64", "pod128", "pod256"]
+ALLOWED_POD_TYPES = ["pod4", "pod8", "pod16", "pod32", "pod64"]
 
 
 class IPUConfig(BaseConfig):
