@@ -32,7 +32,7 @@ from transformers.models.deberta.modeling_deberta import (
 from ...modeling_utils import (
     PipelineMixin,
     SerializedEmbedding,
-    _get_layer_ipu,
+    get_layer_ipu,
     outline_attribute,
     recomputation_checkpoint,
     register,
@@ -271,9 +271,6 @@ class DebertaPipelineMixin(PipelineMixin):
                     if restore
                     else poptorch.autocast(enabled=True)(mod.forward)
                 )
-            # if isinstance(mod, DebertaLayerNorm):
-            #     enabled = not restore
-            #     mod.forward = poptorch.autocast(enabled=enabled)(mod.forward)
             if isinstance(mod, DebertaEncoder):
                 func = DebertaEncoder.get_rel_embedding if restore else _get_rel_embedding
                 mod.get_rel_embedding = func.__get__(mod, DebertaEncoder)
@@ -287,11 +284,11 @@ class DebertaPipelineMixin(PipelineMixin):
         - Adds recomputation checkpoints
         """
         self._hooks = []
-        layer_ipu = _get_layer_ipu(self.config.layers_per_ipu)
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding  --> IPU 0")
-        if self.config.embedding_serialization_factor > 1:
+        if self.ipu_config.embedding_serialization_factor > 1:
             self.deberta.embeddings.word_embeddings = SerializedEmbedding(
                 self.deberta.embeddings.word_embeddings, self.config.embedding_serialization_factor
             )
@@ -308,7 +305,7 @@ class DebertaPipelineMixin(PipelineMixin):
 
         for index, layer in enumerate(self.deberta.encoder.layer):
             ipu = layer_ipu[index]
-            if self.config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
+            if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
                 h = recomputation_checkpoint(layer)
                 self._hooks.append(h)
             self.deberta.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
@@ -324,7 +321,7 @@ class DebertaPipelineMixin(PipelineMixin):
         super().deparallelize()
         self.change_modules_for_ipu(True)
         # Deserialize the serialized word embedding
-        if self.config.embedding_serialization_factor > 1:
+        if self.ipu_config.embedding_serialization_factor > 1:
             self.deberta.embeddings.word_embeddings = self.deberta.embeddings.word_embeddings.deserialize()
         return self
 
@@ -342,7 +339,7 @@ class PipelinedDebertaForSequenceClassification(DebertaForSequenceClassification
 
     def parallelize(self):
         super().parallelize()
-        last_ipu = self.config.ipus_per_replica - 1
+        last_ipu = self.ipu_config.ipus_per_replica - 1
         logger.info(f"Classifier Output --> IPU {last_ipu}")
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
@@ -407,7 +404,7 @@ class PipelinedDebertaForTokenClassification(DebertaForTokenClassification, Debe
 
     def parallelize(self):
         super().parallelize()
-        last_ipu = self.config.ipus_per_replica - 1
+        last_ipu = self.ipu_config.ipus_per_replica - 1
         logger.info(f"Classifier Output --> IPU {last_ipu}")
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
@@ -436,7 +433,7 @@ class PipelinedDebertaForQuestionAnswering(DebertaForQuestionAnswering, DebertaP
 
     def parallelize(self):
         super().parallelize()
-        last_ipu = self.config.ipus_per_replica - 1
+        last_ipu = self.ipu_config.ipus_per_replica - 1
         logger.info(f"QA Outputs --> IPU {last_ipu}")
         self.qa_outputs = poptorch.BeginBlock(self.qa_outputs, "QA Outputs", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
