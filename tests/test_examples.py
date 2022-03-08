@@ -133,7 +133,9 @@ class ExampleTestMeta(type):
                     task=self.TASK_NAME,
                     do_eval=self.EVAL_IS_SUPPORTED,
                 )
-                import pdb; pdb.set_trace()
+                import pdb
+
+                pdb.set_trace()
                 p = subprocess.Popen(cmd_line)
                 return_code = p.wait()
                 # TODO: not sure about that.
