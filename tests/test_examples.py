@@ -33,8 +33,12 @@ from transformers import (
     MODEL_FOR_SEQUENCE_CLASSIFICATION_MAPPING,
     MODEL_FOR_TOKEN_CLASSIFICATION_MAPPING,
 )
+from transformers.testing_utils import slow
 
 from .utils import MODELS_TO_TEST_MAPPING
+
+
+_ALLOWED_REPLICATION_FACTOR = 2
 
 
 def _get_supported_models_for_script(
@@ -114,6 +118,7 @@ class ExampleTestMeta(type):
             The test function that runs the example.
         """
 
+        @slow
         def test(self):
             example_script = Path(self.EXAMPLE_DIR).glob(f"*/{self.EXAMPLE_NAME}.py")
             example_script = list(example_script)
@@ -133,18 +138,14 @@ class ExampleTestMeta(type):
                     task=self.TASK_NAME,
                     do_eval=self.EVAL_IS_SUPPORTED,
                 )
-                import pdb
-
-                pdb.set_trace()
                 p = subprocess.Popen(cmd_line)
                 return_code = p.wait()
-                # TODO: not sure about that.
                 self.assertEqual(return_code, 0)
 
                 if self.EVAL_IS_SUPPORTED:
-                    with open(tmp_dir / "all_results.json") as fp:
+                    with open(Path(tmp_dir) / "all_results.json") as fp:
                         results = json.load(fp)
-                    self.assertGreaterEqual(results["eval_accuracy"], self.EVAL_ACCURACY_THRESHOLD)
+                    self.assertGreaterEqual(float(results["eval_accuracy"]), self.EVAL_ACCURACY_THRESHOLD)
 
         return test
 
@@ -160,6 +161,9 @@ class ExampleTesterBase(TestCase):
         EVAL_IS_SUPPORTED (`bool`): whether evaluation is currently supported on IPUs.
             If True, the example will run evaluation, otherwise it will be skipped.
         EVAL_ACCURACY_THRESHOLD (`float`): the score threshold from which training is assumed to have worked.
+        DATASET_PARAMETER_NAME (`str`): the argument name to use for the dataset parameter.
+            Most of the time it will be "dataset_name", but for some tasks on a benchmark it might be something else.
+        EXTRA_COMMAND_LINE_ARGS (`list(str)`, *optional*): a list of extra command line arguments to provide to the script.
     """
 
     EXAMPLE_DIR = Path(os.path.dirname(__file__)).parent / "examples"
@@ -167,6 +171,8 @@ class ExampleTesterBase(TestCase):
     TASK_NAME = None
     EVAL_IS_SUPPORTED = True
     EVAL_ACCURACY_THRESHOLD = 0.75
+    DATASET_PARAMETER_NAME = "dataset_name"
+    # EXTRA_COMMAND_LINE_ARGS = None
 
     def _create_command_line(
         self,
@@ -179,10 +185,23 @@ class ExampleTesterBase(TestCase):
         lr: float = 1e-5,
         train_batch_size: int = 2,
         eval_batch_size: int = 2,
-        num_epochs: int = 3,
+        num_epochs: int = 2,
+        extra_command_line_arguments: Optional[List[str]] = None,
     ) -> List[str]:
         do_eval_option = "--do_eval" if do_eval else " "
-        task_option = f"--dataset_name {task}" if task else " "
+        task_option = f"--{self.DATASET_PARAMETER_NAME} {task}" if task else " "
+        # A batch size scale factor of 64 x _ALLOWED_REPLICATON_FACTOR is enforced.
+        ipu_config_overrides = ",".join(
+            [
+                "executable_cache_dir=none",
+                f"replication_factor={_ALLOWED_REPLICATION_FACTOR}",
+                f"inference_replication_factor={_ALLOWED_REPLICATION_FACTOR}",
+                "device_iterations=1",
+                "inference_device_iterations=4",
+                "gradient_accumulation_steps=64",
+            ]
+        )
+
         cmd_line = [
             f"{script}",
             f"--model_name_or_path {model_name}",
@@ -196,47 +215,17 @@ class ExampleTesterBase(TestCase):
             f"--per_device_train_batch_size {train_batch_size}",
             f"--per_device_eval_batch_size {eval_batch_size}",
             "--save_strategy epoch",
-            "--ipu_config_overrides 'executable_cache_dir=None'",
+            f"--ipu_config_overrides {ipu_config_overrides}",
             f" --num_train_epochs {num_epochs}",
         ]
+        if extra_command_line_arguments is not None:
+            cmd_line += extra_command_line_arguments
         return [x for y in cmd_line for x in y.split()]
 
 
 class TextClassificationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_glue"):
     TASK_NAME = "sst2"
-
-    def _create_command_line(
-        self,
-        script: str,
-        model_name: str,
-        ipu_config_name: str,
-        output_dir: str,
-        task: Optional[str] = None,
-        do_eval: bool = True,
-        lr: float = 1e-5,
-        train_batch_size: int = 2,
-        eval_batch_size: int = 2,
-        num_epochs: int = 3,
-    ) -> List[str]:
-        do_eval_option = "--do_eval" if do_eval else " "
-        task_option = f"--task_name {task}" if task else " "
-        cmd_line = [
-            f"{script}",
-            f"--model_name_or_path {model_name}",
-            f"--ipu_config_name {ipu_config_name}",
-            f"{task_option}",
-            "--do_train",
-            f"{do_eval_option}",
-            f"--output_dir {output_dir}",
-            "--overwrite_output_dir true",
-            f"--learning_rate {lr}",
-            f"--per_device_train_batch_size {train_batch_size}",
-            f"--per_device_eval_batch_size {eval_batch_size}",
-            "--save_strategy epoch",
-            "--ipu_config_overrides 'executable_cache_dir=None'",
-            f" --num_train_epochs {num_epochs}",
-        ]
-        return [x for y in cmd_line for x in y.split()]
+    DATASET_PARAMETER_NAME = "task_name"
 
 
 class TokenClassificationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_ner"):
@@ -253,12 +242,76 @@ class QuestionAnsweringExampleTester(ExampleTesterBase, metaclass=ExampleTestMet
 
 class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_summarization"):
     TASK_NAME = "cnn_dailymail"
-    # TODO: handle prefix pr t5
+
+    def _create_command_line(
+        self,
+        script: str,
+        model_name: str,
+        ipu_config_name: str,
+        output_dir: str,
+        task: Optional[str] = None,
+        do_eval: bool = True,
+        lr: float = 1e-5,
+        train_batch_size: int = 2,
+        eval_batch_size: int = 2,
+        num_epochs: int = 2,
+        extra_command_line_arguments: Optional[List[str]] = None,
+    ) -> List[str]:
+        if extra_command_line_arguments is None:
+            extra_command_line_arguments = []
+        extra_command_line_arguments.append("--dataset_config '3.0.0'")
+        if "t5" in model_name:
+            extra_command_line_arguments.append("--source_prefix 'summarize: '")
+        return super()._create_command_line(
+            script,
+            model_name,
+            ipu_config_name,
+            output_dir,
+            task=task,
+            do_eval=do_eval,
+            lr=lr,
+            train_batch_size=train_batch_size,
+            eval_batch_size=eval_batch_size,
+            num_epoch=num_epochs,
+            extra_command_line_arguments=extra_command_line_arguments,
+        )
 
 
 class TranslationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_translation"):
     TASK_NAME = "wmt16"
-    # TODO: handle prefix pr t5 and dataset_config
+
+    def _create_command_line(
+        self,
+        script: str,
+        model_name: str,
+        ipu_config_name: str,
+        output_dir: str,
+        task: Optional[str] = None,
+        do_eval: bool = True,
+        lr: float = 1e-5,
+        train_batch_size: int = 2,
+        eval_batch_size: int = 2,
+        num_epochs: int = 2,
+        extra_command_line_arguments: Optional[List[str]] = None,
+    ) -> List[str]:
+        if extra_command_line_arguments is None:
+            extra_command_line_arguments = []
+        extra_command_line_arguments.append("--dataset_config ro-en")
+        if "t5" in model_name:
+            extra_command_line_arguments.append("--source_prefix 'translate English to Romanian: '")
+        return super()._create_command_line(
+            script,
+            model_name,
+            ipu_config_name,
+            output_dir,
+            task=task,
+            do_eval=do_eval,
+            lr=lr,
+            train_batch_size=train_batch_size,
+            eval_batch_size=eval_batch_size,
+            num_epoch=num_epochs,
+            extra_command_line_arguments=extra_command_line_arguments,
+        )
 
 
 class ImageClassificationExampleTester(
