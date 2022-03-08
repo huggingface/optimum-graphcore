@@ -35,3 +35,5 @@ Currently the following model architectures are supported:
 - BERT (base and large)
 - RoBERTa (base and large)
 - Vision Transformer
+- BART (base)
+- T5 (small)
