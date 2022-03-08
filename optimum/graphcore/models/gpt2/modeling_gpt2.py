@@ -163,6 +163,8 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
         lm_logits = self.lm_head(hidden_states)
         if self.ipu_config.embedding_serialization_factor > 1:
             lm_logits = lm_logits[:, :, 0 : self.actual_vocab_size]
+            # TODO: Use the following line instead to ignore the padding logits
+            # lm_logits[:, :, self.actual_vocab_size:] = -10000
 
         loss = None
         if labels is not None:
