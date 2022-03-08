@@ -12,7 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import unittest
+from unittest import TestCase
 
 import torch
 from PIL import Image
@@ -37,6 +37,8 @@ from transformers import (
     AutoFeatureExtractor,
     AutoTokenizer,
 )
+
+from .utils import MODELS_TO_TEST_MAPPING
 
 
 REVERSE_CONFIG_MAPPING = {v: k for k, v in CONFIG_MAPPING.items()}
@@ -81,17 +83,10 @@ def _get_models_to_test(model_to_test_names):
     return models_to_test
 
 
-MODELS_TO_TEST_NAMES = {
-    "bart": ("facebook/bart-base", "Graphcore/bart-base-ipu"),
-    "bert": ("bert-base-uncased", "Graphcore/bert-base-ipu"),
-    "roberta": ("roberta-base", "Graphcore/roberta-base-ipu"),
-    "t5": ("t5-small", "Graphcore/t5-small-ipu"),
-    "vit": ("google/vit-base-patch16-224", "Graphcore/vit-base-ipu"),
-}
-MODELS_TO_TEST = _get_models_to_test(MODELS_TO_TEST_NAMES)
+MODELS_TO_TEST = _get_models_to_test(MODELS_TO_TEST_MAPPING)
 
 
-class PipelinedModelsTester(unittest.TestCase):
+class PipelinedModelsTester(TestCase):
     def _generate_input_for_model_class(self, model_name_or_path, model_class):
         # TODO: add support for labels.
         inputs = None
