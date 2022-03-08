@@ -115,17 +115,25 @@ class ExampleTestMeta(type):
         """
 
         def test(self):
+            example_script = Path(self.EXAMPLE_DIR).glob(f"*/{self.EXAMPLE_NAME}.py")
+            example_script = list(example_script)
+            if len(example_script) == 0:
+                raise RuntimeError(f"could not find {self.EXAMPLE_NAME}.py in examples located in {self.EXAMPLE_DIR}")
+            elif len(example_script) > 1:
+                raise RuntimeError(f"found more than {self.EXAMPLE_NAME}.py in examples located in {self.EXAMPLE_DIR}")
+            else:
+                example_script = example_script[0]
+
             with TemporaryDirectory() as tmp_dir:
                 cmd_line = self._create_command_line(
-                    str(self.EXAMPLE_DIR / self.EXAMPLE_NAME) + ".py",
-                    self.TASK_NAME,
+                    example_script,
                     model_name,
                     ipu_config_name,
                     tmp_dir,
+                    task=self.TASK_NAME,
                     do_eval=self.EVAL_IS_SUPPORTED,
                 )
-
-                return
+                import pdb; pdb.set_trace()
                 p = subprocess.Popen(cmd_line)
                 return_code = p.wait()
                 # TODO: not sure about that.
@@ -152,7 +160,7 @@ class ExampleTesterBase(TestCase):
         EVAL_ACCURACY_THRESHOLD (`float`): the score threshold from which training is assumed to have worked.
     """
 
-    EXAMPLE_DIR = Path(os.path.dirname(__file__)) / "examples"
+    EXAMPLE_DIR = Path(os.path.dirname(__file__)).parent / "examples"
     EXAMPLE_NAME = None
     TASK_NAME = None
     EVAL_IS_SUPPORTED = True
@@ -171,27 +179,62 @@ class ExampleTesterBase(TestCase):
         eval_batch_size: int = 2,
         num_epochs: int = 3,
     ) -> List[str]:
-        do_eval_option = "--do-eval \\" if do_eval else ""
-        task_option = f"--dataset_name {task} \\" if task else ""
-        return f"""
-            {script} \
-             --model_name_or_path {model_name} \
-             --ipu_config_name {ipu_config_name} \
-             {task_option}
-             --do_train \
-             {do_eval_option}
-             --output_dir {output_dir} \
-             --overwrite_output_dir \
-             --learning_rate {lr} \
-             --per_device_train_batch_size {train_batch_size} \
-             --per_device_eval_batch_size {eval_batch_size} \
-             --save_strategy epochs \
-             --num_epochs {num_epochs} \
-             """.split()
+        do_eval_option = "--do_eval" if do_eval else " "
+        task_option = f"--dataset_name {task}" if task else " "
+        cmd_line = [
+            f"{script}",
+            f"--model_name_or_path {model_name}",
+            f"--ipu_config_name {ipu_config_name}",
+            f"{task_option}",
+            "--do_train",
+            f"{do_eval_option}",
+            f"--output_dir {output_dir}",
+            "--overwrite_output_dir true",
+            f"--learning_rate {lr}",
+            f"--per_device_train_batch_size {train_batch_size}",
+            f"--per_device_eval_batch_size {eval_batch_size}",
+            "--save_strategy epoch",
+            "--ipu_config_overrides 'executable_cache_dir=None'",
+            f" --num_train_epochs {num_epochs}",
+        ]
+        return [x for y in cmd_line for x in y.split()]
 
 
 class TextClassificationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_glue"):
     TASK_NAME = "sst2"
+
+    def _create_command_line(
+        self,
+        script: str,
+        model_name: str,
+        ipu_config_name: str,
+        output_dir: str,
+        task: Optional[str] = None,
+        do_eval: bool = True,
+        lr: float = 1e-5,
+        train_batch_size: int = 2,
+        eval_batch_size: int = 2,
+        num_epochs: int = 3,
+    ) -> List[str]:
+        do_eval_option = "--do_eval" if do_eval else " "
+        task_option = f"--task_name {task}" if task else " "
+        cmd_line = [
+            f"{script}",
+            f"--model_name_or_path {model_name}",
+            f"--ipu_config_name {ipu_config_name}",
+            f"{task_option}",
+            "--do_train",
+            f"{do_eval_option}",
+            f"--output_dir {output_dir}",
+            "--overwrite_output_dir true",
+            f"--learning_rate {lr}",
+            f"--per_device_train_batch_size {train_batch_size}",
+            f"--per_device_eval_batch_size {eval_batch_size}",
+            "--save_strategy epoch",
+            "--ipu_config_overrides 'executable_cache_dir=None'",
+            f" --num_train_epochs {num_epochs}",
+        ]
+        return [x for y in cmd_line for x in y.split()]
 
 
 class TokenClassificationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_ner"):
@@ -208,10 +251,12 @@ class QuestionAnsweringExampleTester(ExampleTesterBase, metaclass=ExampleTestMet
 
 class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_summarization"):
     TASK_NAME = "cnn_dailymail"
+    # TODO: handle prefix pr t5
 
 
 class TranslationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_translation"):
     TASK_NAME = "wmt16"
+    # TODO: handle prefix pr t5 and dataset_config
 
 
 class ImageClassificationExampleTester(
