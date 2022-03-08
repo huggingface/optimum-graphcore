@@ -440,6 +440,12 @@ def main():
         else:
             return metric.compute(predictions=np.argmax(p.predictions, axis=1), references=p.label_ids)
 
+    # Replace the qa head according to the fine-tuning task
+    if model_args.replace_qa_head:
+        model.resize_num_qa_labels(num_classes)
+        # resize_num_qa_labels retains the weights of the qa head from the checkpoint, so we erase the weights by reinitialization
+        model._init_weights(model.answer_head.logit_fc[-1])
+
     # Initialize our Trainer
     trainer = IPUTrainer(
         model=model,
@@ -451,14 +457,6 @@ def main():
         data_collator=data_collator,
         compute_metrics=compute_metrics,
     )
-
-    # Replace the qa head according to the fine-tuning task
-    if model_args.replace_qa_head:
-        trainer.model.resize_num_qa_labels(num_classes)
-        # resize_num_qa_labels retains the weights of the qa head from the checkpoint, so we erase the weights by reinitialization
-        trainer.model._init_weights(trainer.model.answer_head.logit_fc[-1])
-        if not training_args.fp32:
-            trainer.model.answer_head.logit_fc[-1] = trainer.model.answer_head.logit_fc[-1].half()
 
     # Training
     if training_args.do_train:
