@@ -15,10 +15,11 @@
 
 import json
 import os
+import re
 import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Callable, Dict, List, Optional, Tuple, Type
+from typing import Callable, Dict, List, Optional, Tuple, Type, Union
 from unittest import TestCase
 
 from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
@@ -120,6 +121,8 @@ class ExampleTestMeta(type):
 
         @slow
         def test(self):
+            if self.EXAMPLE_NAME is None:
+                raise ValueError("an example name must be provided")
             example_script = Path(self.EXAMPLE_DIR).glob(f"*/{self.EXAMPLE_NAME}.py")
             example_script = list(example_script)
             if len(example_script) == 0:
@@ -129,6 +132,8 @@ class ExampleTestMeta(type):
             else:
                 example_script = example_script[0]
 
+            self._install_requirements(example_script.parent / "requirements.txt")
+
             with TemporaryDirectory() as tmp_dir:
                 cmd_line = self._create_command_line(
                     example_script,
@@ -137,6 +142,10 @@ class ExampleTestMeta(type):
                     tmp_dir,
                     task=self.TASK_NAME,
                     do_eval=self.EVAL_IS_SUPPORTED,
+                    train_batch_size=self.TRAIN_BATCH_SIZE,
+                    eval_batch_size=self.EVAL_BATCH_SIZE,
+                    inference_device_iterations=self.INFERENCE_DEVICE_ITERATIONS,
+                    gradient_accumulation_steps=self.GRADIENT_ACCUMULATION_STEPS,
                 )
                 p = subprocess.Popen(cmd_line)
                 return_code = p.wait()
@@ -145,7 +154,7 @@ class ExampleTestMeta(type):
                 if self.EVAL_IS_SUPPORTED:
                     with open(Path(tmp_dir) / "all_results.json") as fp:
                         results = json.load(fp)
-                    self.assertGreaterEqual(float(results["eval_accuracy"]), self.EVAL_ACCURACY_THRESHOLD)
+                    self.assertGreaterEqual(float(results[self.SCORE_NAME]), self.EVAL_SCORE_THRESHOLD)
 
         return test
 
@@ -155,24 +164,32 @@ class ExampleTesterBase(TestCase):
     Base example tester class.
 
     Attributes:
-        EXAMPLE_DIR (`Pathlike`): the directory containing the examples.
+        EXAMPLE_DIR (`str` or `os.Pathlike`): the directory containing the examples.
         EXAMPLE_NAME (`str`): the name of the example script without the file extension, e.g. run_qa, run_glue, etc.
         TASK_NAME (`str`): the name of the dataset to use.
         EVAL_IS_SUPPORTED (`bool`): whether evaluation is currently supported on IPUs.
             If True, the example will run evaluation, otherwise it will be skipped.
-        EVAL_ACCURACY_THRESHOLD (`float`): the score threshold from which training is assumed to have worked.
+        EVAL_SCORE_THRESHOLD (`float`): the score threshold from which training is assumed to have worked.
+        SCORE_NAME (`str`): the name of the metric to use for checking that the example ran successfully.
         DATASET_PARAMETER_NAME (`str`): the argument name to use for the dataset parameter.
             Most of the time it will be "dataset_name", but for some tasks on a benchmark it might be something else.
-        EXTRA_COMMAND_LINE_ARGS (`list(str)`, *optional*): a list of extra command line arguments to provide to the script.
+        TRAIN_BATCH_SIZE (`int`): the batch size to give to the example script for training.
+        EVAL_BATCH_SIZE (`int`): the batch size to give to the example script for evaluation.
+        INFERENCE_DEVICE_ITERATIONS (`int`): the number of device iterations to use for evaluation.
+        GRADIENT_ACCUMULATION_STEPS (`int`): the number of gradient accumulation to use during training.
     """
 
     EXAMPLE_DIR = Path(os.path.dirname(__file__)).parent / "examples"
     EXAMPLE_NAME = None
     TASK_NAME = None
     EVAL_IS_SUPPORTED = True
-    EVAL_ACCURACY_THRESHOLD = 0.75
+    EVAL_SCORE_THRESHOLD = 0.75
+    SCORE_NAME = "eval_accuracy"
     DATASET_PARAMETER_NAME = "dataset_name"
-    # EXTRA_COMMAND_LINE_ARGS = None
+    TRAIN_BATCH_SIZE = 2
+    EVAL_BATCH_SIZE = 2
+    INFERENCE_DEVICE_ITERATIONS = 4
+    GRADIENT_ACCUMULATION_STEPS = 64
 
     def _create_command_line(
         self,
@@ -186,19 +203,20 @@ class ExampleTesterBase(TestCase):
         train_batch_size: int = 2,
         eval_batch_size: int = 2,
         num_epochs: int = 2,
+        inference_device_iterations: int = 4,
+        gradient_accumulation_steps: int = 64,
         extra_command_line_arguments: Optional[List[str]] = None,
     ) -> List[str]:
         do_eval_option = "--do_eval" if do_eval else " "
         task_option = f"--{self.DATASET_PARAMETER_NAME} {task}" if task else " "
-        # A batch size scale factor of 64 x _ALLOWED_REPLICATON_FACTOR is enforced.
         ipu_config_overrides = ",".join(
             [
                 "executable_cache_dir=none",
                 f"replication_factor={_ALLOWED_REPLICATION_FACTOR}",
                 f"inference_replication_factor={_ALLOWED_REPLICATION_FACTOR}",
                 "device_iterations=1",
-                "inference_device_iterations=4",
-                "gradient_accumulation_steps=64",
+                f"inference_device_iterations={inference_device_iterations}",
+                f"gradient_accumulation_steps={gradient_accumulation_steps}",
             ]
         )
 
@@ -217,10 +235,24 @@ class ExampleTesterBase(TestCase):
             "--save_strategy epoch",
             f"--ipu_config_overrides {ipu_config_overrides}",
             f" --num_train_epochs {num_epochs}",
+            "--dataloader_num_workers 16",
         ]
         if extra_command_line_arguments is not None:
             cmd_line += extra_command_line_arguments
-        return [x for y in cmd_line for x in y.split()]
+
+        pattern = re.compile(r"([\"\'].+?[\"\'])|\s")
+        return [x for y in cmd_line for x in re.split(pattern, y) if x]
+
+    def _install_requirements(self, requirements_filename: Union[str, os.PathLike]):
+        """
+        Installs the necessary requirements to run the example if the provided file exists, otherwise does nothing.
+        """
+        if not Path(requirements_filename).exists():
+            return
+        cmd_line = f"pip install -r {requirements_filename}".split()
+        p = subprocess.Popen(cmd_line)
+        return_code = p.wait()
+        self.assertEqual(return_code, 0)
 
 
 class TextClassificationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_glue"):
@@ -233,16 +265,21 @@ class TokenClassificationExampleTester(ExampleTesterBase, metaclass=ExampleTestM
 
 
 class MultipleChoiceExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_swag"):
-    pass
+    # Using a small gradient accumulation steps value because input data is repated for the multiple choice task.
+    TRAIN_BATCH_SIZE = 1
+    EVAL_BATCH_SIZE = 1
 
 
 class QuestionAnsweringExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_qa"):
     TASK_NAME = "squad"
+    SCORE_NAME = "eval_f1"
 
 
 class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_summarization"):
     TASK_NAME = "cnn_dailymail"
     EVAL_IS_SUPPORTED = False
+    EVAL_SCORE_THRESHOLD = 30
+    SCORE_NAME = "eval_rougeLsum"
 
     def _create_command_line(
         self,
@@ -256,11 +293,14 @@ class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, e
         train_batch_size: int = 2,
         eval_batch_size: int = 2,
         num_epochs: int = 2,
+        inference_device_iterations: int = 4,
+        gradient_accumulation_steps: int = 64,
         extra_command_line_arguments: Optional[List[str]] = None,
     ) -> List[str]:
         if extra_command_line_arguments is None:
             extra_command_line_arguments = []
         extra_command_line_arguments.append("--dataset_config '3.0.0'")
+        extra_command_line_arguments.append("--predict_with_generate")
         if "t5" in model_name:
             extra_command_line_arguments.append("--source_prefix 'summarize: '")
         return super()._create_command_line(
@@ -273,7 +313,9 @@ class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, e
             lr=lr,
             train_batch_size=train_batch_size,
             eval_batch_size=eval_batch_size,
-            num_epoch=num_epochs,
+            num_epochs=num_epochs,
+            inference_device_iterations=inference_device_iterations,
+            gradient_accumulation_steps=gradient_accumulation_steps,
             extra_command_line_arguments=extra_command_line_arguments,
         )
 
@@ -281,6 +323,8 @@ class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, e
 class TranslationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_translation"):
     TASK_NAME = "wmt16"
     EVAL_IS_SUPPORTED = False
+    EVAL_SCORE_THRESHOLD = 22
+    SCORE_NAME = "eval_bleu"
 
     def _create_command_line(
         self,
@@ -294,11 +338,16 @@ class TranslationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, exa
         train_batch_size: int = 2,
         eval_batch_size: int = 2,
         num_epochs: int = 2,
+        inference_device_iterations: int = 4,
+        gradient_accumulation_steps: int = 64,
         extra_command_line_arguments: Optional[List[str]] = None,
     ) -> List[str]:
         if extra_command_line_arguments is None:
             extra_command_line_arguments = []
         extra_command_line_arguments.append("--dataset_config ro-en")
+        extra_command_line_arguments.append("--source_lang ro")
+        extra_command_line_arguments.append("--target_lang en")
+        extra_command_line_arguments.append("--predict_with_generate")
         if "t5" in model_name:
             extra_command_line_arguments.append("--source_prefix 'translate English to Romanian: '")
         return super()._create_command_line(
@@ -311,7 +360,9 @@ class TranslationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, exa
             lr=lr,
             train_batch_size=train_batch_size,
             eval_batch_size=eval_batch_size,
-            num_epoch=num_epochs,
+            num_epochs=num_epochs,
+            inference_device_iterations=inference_device_iterations,
+            gradient_accumulation_steps=gradient_accumulation_steps,
             extra_command_line_arguments=extra_command_line_arguments,
         )
 
