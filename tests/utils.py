@@ -18,5 +18,5 @@ MODELS_TO_TEST_MAPPING = {
     "bert": ("bert-base-uncased", "Graphcore/bert-base-ipu"),
     "roberta": ("roberta-base", "Graphcore/roberta-base-ipu"),
     "t5": ("t5-small", "Graphcore/t5-small-ipu"),
-    "vit": ("google/vit-base-patch16-224", "Graphcore/vit-base-ipu"),
+    "vit": ("google/vit-base-patch16-224-in21k", "Graphcore/vit-base-ipu"),
 }
