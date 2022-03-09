@@ -424,14 +424,21 @@ class IPUTrainingArguments:
         dataloader_mode_mapping = {"sync": 0, "async": 1, "async_rebatched": 2}
         self.dataloader_mode = DataLoaderMode(dataloader_mode_mapping[self.dataloader_mode])
 
+        override_str = []
         if self.gradient_accumulation_steps is not None:
-            override_str = f"gradient_accumulation_steps={self.gradient_accumulation_steps}"
+            override_str.append(f"gradient_accumulation_steps={self.gradient_accumulation_steps}")
+        else:
+            self.gradient_accumulation_steps = 1
+
+        if self.gradient_checkpointing:
+            override_str.append("recompute_checkpoint_every_layer=True")
+
+        if override_str:
+            override_str = ",".join(override_str)
             if self.ipu_config_overrides is None:
                 self.ipu_config_overrides = override_str
             else:
                 self.ipu_config_overrides = ",".join([self.ipu_config_overrides, override_str])
-        else:
-            self.gradient_accumulation_steps = 1
 
     @cached_property
     @torch_required
@@ -482,22 +489,6 @@ class IPUTrainingArguments:
         #     return sm_dist.get_rank()
         # elif self.local_rank != -1:
         #     return torch.distributed.get_rank()
-        return 0
-
-    @property
-    @torch_required
-    def local_process_index(self):
-        """
-        The index of the local process used.
-        """
-        # if is_torch_tpu_available():
-        #     return xm.get_local_ordinal()
-        # elif is_sagemaker_mp_enabled():
-        #     return smp.local_rank()
-        # elif is_sagemaker_dp_enabled():
-        #     return sm_dist.get_rank()
-        # elif self.local_rank != -1:
-        #     return self.local_rank
         return 0
 
     @property

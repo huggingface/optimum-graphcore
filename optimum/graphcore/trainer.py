@@ -174,7 +174,6 @@ class IPUTrainer:
         self.args = args
         # Seed must be set before instantiating the model when using model
         set_seed(self.args.seed)
-        self.hp_name = None
         self.is_in_train = False
 
         # memory metrics - must set up as early as possible
@@ -203,21 +202,12 @@ class IPUTrainer:
                 )
             self.model_init = model_init
 
-        if hasattr(model, "is_parallelizable") and model.is_parallelizable and model.model_parallel:
-            self.is_model_parallel = True
-        else:
-            self.is_model_parallel = False
-
         default_collator = default_data_collator if tokenizer is None else DataCollatorWithPadding(tokenizer)
         self.data_collator = data_collator if data_collator is not None else default_collator
         self.train_dataset = train_dataset
         self.eval_dataset = eval_dataset
         self.tokenizer = tokenizer
 
-        # if self.place_model_on_device:
-        #     self._move_model_to_device(model, args.device)
-
-        # later use `self.model is self.model_wrapped` to check if it's wrapped or not
         self.ipu_config = copy.deepcopy(ipu_config).for_pod_type(self.args.pod_type)
         if args.ipu_config_overrides:
             logger.info(f"Overriding IPU config: {args.ipu_config_overrides}")
@@ -319,6 +309,16 @@ class IPUTrainer:
         sample_batch: Union[Dict[str, torch.Tensor], Tuple[torch.Tensor]],
         log: bool = False,
     ):
+        """
+        Compiles the model with poptorch.
+
+        Args:
+            model: The model to compile (already wrapped).
+            sample_batch: The inputs to use the compilation, this will set the input shapes that the compiled model
+                can accept.
+            log: Whether to log that compilation is happening or not.
+
+        """
         # Skipping compilation if the model was already compiled.
         if model.isCompiled():
             return
@@ -371,13 +371,6 @@ class IPUTrainer:
                In the first case, will remove the first member of that class found in the list of callbacks.
         """
         self.callback_handler.remove_callback(callback)
-
-    # TODO: combine this with _compile_model?
-    def _move_model_to_device(self, model, device):
-        model = model.to(device)
-        # Moving a model to an XLA device disconnects the tied weights, so we have to retie them.
-        if self.args.parallel_mode == ParallelMode.TPU and hasattr(model, "tie_weights"):
-            model.tie_weights()
 
     def _remove_unused_columns(self, dataset: "datasets.Dataset", description: Optional[str] = None):
         if not self.args.remove_unused_columns:
@@ -694,11 +687,6 @@ class IPUTrainer:
 
             self.optimizer.variable_attrs.markAsConstant("weight_decay")
 
-            # TODO: enable this feature.
-            # if self.args.use_popdist:
-            #     # TODO make sure the proper model is provided.
-            #     hvd.broadcast_parameters(self.model.state_dict(), root_rank=0)
-
         return self.optimizer
 
     def create_scheduler(self, num_training_steps: int, optimizer: torch.optim.Optimizer = None):
@@ -728,90 +716,6 @@ class IPUTrainer:
         Will raise an exception if the underlying dataset does not implement method :obj:`__len__`
         """
         return len(dataloader.dataset)
-
-    # TODO: keep this for later.
-    # def _hp_search_setup(self, trial: Union["optuna.Trial", Dict[str, Any]]):
-    #     """HP search setup code"""
-    #     self._trial = trial
-
-    #     if self.hp_search_backend is None or trial is None:
-    #         return
-    #     if self.hp_search_backend == HPSearchBackend.OPTUNA:
-    #         params = self.hp_space(trial)
-    #     elif self.hp_search_backend == HPSearchBackend.RAY:
-    #         params = trial
-    #         params.pop("wandb", None)
-    #     elif self.hp_search_backend == HPSearchBackend.SIGOPT:
-    #         params = {k: int(v) if isinstance(v, str) else v for k, v in trial.assignments.items()}
-
-    #     for key, value in params.items():
-    #         if not hasattr(self.args, key):
-    #             logger.warn(
-    #                 f"Trying to set {key} in the hyperparameter search but there is no corresponding field in `TrainingArguments`."
-    #             )
-    #             continue
-    #         old_attr = getattr(self.args, key, None)
-    #         # Casting value to the proper type
-    #         if old_attr is not None:
-    #             value = type(old_attr)(value)
-    #         setattr(self.args, key, value)
-    #     if self.hp_search_backend == HPSearchBackend.OPTUNA:
-    #         logger.info("Trial:", trial.params)
-    #     if self.hp_search_backend == HPSearchBackend.SIGOPT:
-    #         logger.info(f"SigOpt Assignments: {trial.assignments}")
-    #     if self.args.deepspeed:
-    #         # Rebuild the deepspeed config to reflect the updated training parameters
-    #         from transformers.deepspeed import HfDeepSpeedConfig
-
-    #         self.args.hf_deepspeed_config = HfDeepSpeedConfig(self.args)
-
-    # TODO: keep this for later.
-    # def _report_to_hp_search(
-    #     self, trial: Union["optuna.Trial", Dict[str, Any]], epoch: int, metrics: Dict[str, float]
-    # ):
-    #     if self.hp_search_backend is None or trial is None:
-    #         return
-    #     self.objective = self.compute_objective(metrics.copy())
-    #     if self.hp_search_backend == HPSearchBackend.OPTUNA:
-    #         import optuna
-
-    #         trial.report(self.objective, epoch)
-    #         if trial.should_prune():
-    #             raise optuna.TrialPruned()
-    #     elif self.hp_search_backend == HPSearchBackend.RAY:
-    #         from ray import tune
-
-    #         if self.control.should_save:
-    #             self._tune_save_checkpoint()
-    #         tune.report(objective=self.objective, **metrics)
-
-    # TODO: keep this for later.
-    # def _tune_save_checkpoint(self):
-    #     from ray import tune
-
-    #     if not self.use_tune_checkpoints:
-    #         return
-    #     with tune.checkpoint_dir(step=self.state.global_step) as checkpoint_dir:
-    #         output_dir = os.path.join(checkpoint_dir, f"{PREFIX_CHECKPOINT_DIR}-{self.state.global_step}")
-    #         self.save_model(output_dir)
-    #         if self.args.should_save:
-    #             self.state.save_to_json(os.path.join(output_dir, TRAINER_STATE_NAME))
-    #             torch.save(self.optimizer.state_dict(), os.path.join(output_dir, OPTIMIZER_NAME))
-    #             torch.save(self.lr_scheduler.state_dict(), os.path.join(output_dir, SCHEDULER_NAME))
-
-    def call_model_init(self, trial=None):
-        model_init_argcount = number_of_arguments(self.model_init)
-        if model_init_argcount == 0:
-            model = self.model_init()
-        elif model_init_argcount == 1:
-            model = self.model_init(trial)
-        else:
-            raise RuntimeError("model_init should have 0 or 1 argument.")
-
-        if model is None:
-            raise RuntimeError("model_init should not return None.")
-
-        return model
 
     def _wrap_model(self, model: Union[PreTrainedModel, PoplarExecutor], training=True):
         wrapped = None
@@ -876,15 +780,6 @@ class IPUTrainer:
         if len(kwargs) > 0:
             raise TypeError(f"train() received got unexpected keyword arguments: {', '.join(list(kwargs.keys()))}.")
 
-        # This might change the seed so needs to run first.
-        # self._hp_search_setup(trial)
-        # Seed must be set before instantiating the model when using model_init.
-        # set_seed(args.seed)
-        # self.model = self.call_model_init(trial)
-        # model_reloaded = True
-        # # Reinitializes optimizer and scheduler
-        # self.optimizer, self.lr_scheduler = None, None
-
         # Load potential model checkpoint
         if isinstance(resume_from_checkpoint, bool) and resume_from_checkpoint:
             resume_from_checkpoint = get_last_checkpoint(args.output_dir)
@@ -914,12 +809,6 @@ class IPUTrainer:
             self._load_state_dict_in_model(state_dict)
             # release memory
             del state_dict
-
-        # If model was re-initialized, put it on the right device and update self.model_wrapped
-        # if model_reloaded:
-        #     if self.place_model_on_device:
-        #         self._move_model_to_device(self.model, args.device)
-        #     self.model_wrapped = self.model
 
         # Keeping track whether we can can len() on the dataset or not
         train_dataset_is_sized = isinstance(self.train_dataset, collections.abc.Sized)
@@ -959,17 +848,15 @@ class IPUTrainer:
             num_train_samples = args.max_steps * total_train_batch_size
 
         if DebugOption.UNDERFLOW_OVERFLOW in self.args.debug:
-            # TODO: test if this works.
             debug_overflow = DebugUnderflowOverflow(self.model)  # noqa
 
         self.create_optimizer_and_scheduler(num_training_steps=max_steps)
 
         self.state = TrainerState()
+        if trial is not None:
+            raise ValueError("Hyperparameyer tuning is not supported by the IPUTrainer.")
+            trial = None
         self.state.is_hyper_param_search = trial is not None
-
-        # Activate gradient checkpointing if needed
-        if args.gradient_checkpointing:
-            self.model.gradient_checkpointing_enable()
 
         model = self._wrap_model(self.model_wrapped)
 
@@ -983,10 +870,6 @@ class IPUTrainer:
 
         # Check if saved optimizer or scheduler states exist
         self._load_optimizer_and_scheduler(resume_from_checkpoint)
-
-        # important: at this point:
-        # self.model         is the Transformers Model
-        # self.model_wrapped is DDP(Transformers Model), Deepspeed(Transformers Model), etc.
 
         self._compile_model(model, next(iter(train_dataloader)), log=True)
 
@@ -1033,7 +916,7 @@ class IPUTrainer:
                     "batches in the first epoch. If this takes a lot of time, you can add the `--ignore_data_skip` "
                     "flag to your launch command, but you will resume the training on data already seen by your model."
                 )
-                if self.is_local_process_zero() and not args.disable_tqdm:
+                if args.disable_tqdm:
                     steps_trained_progress_bar = tqdm(total=steps_trained_in_current_epoch)
                     steps_trained_progress_bar.set_description("Skipping the first batches")
 
@@ -1042,18 +925,12 @@ class IPUTrainer:
         self.callback_handler.optimizer = self.optimizer
         self.callback_handler.lr_scheduler = self.lr_scheduler
         self.callback_handler.train_dataloader = train_dataloader
-        self.state.trial_name = self.hp_name(trial) if self.hp_name is not None else None
-        # if trial is not None:
-        #     assignments = trial.assignments if self.hp_search_backend == HPSearchBackend.SIGOPT else trial
-        #     self.state.trial_params = hp_params(assignments)
-        # else:
+        self.state.trial_name = None
         self.state.trial_params = None
         # This should be the same if the state has been saved but in case the training arguments changed, it's safer
         # to set this after the load.
         self.state.max_steps = max_steps
         self.state.num_train_epochs = num_train_epochs
-        self.state.is_local_process_zero = self.is_local_process_zero()
-        self.state.is_world_process_zero = self.is_world_process_zero()
 
         # tr_loss is a tensor to avoid synchronization of TPUs through .item()
         tr_loss = torch.tensor(0.0).to(args.device)
@@ -1119,23 +996,6 @@ class IPUTrainer:
                 # TODO: see how to enable this (if necessary), slows down training a lot.
                 self.current_flos += float(self.floating_point_ops(inputs))
 
-                # if (step + 1) % args.gradient_accumulation_steps == 0 or (
-                #     # last step in epoch but step is always smaller than gradient_accumulation_steps
-                #     steps_in_epoch <= args.gradient_accumulation_steps
-                #     and (step + 1) == steps_in_epoch
-                # ):
-
-                # TODO: check how gradient clipping is done with poptorch optimizers.
-                # if hasattr(self.optimizer, "clip_grad_norm"):
-                #     # Some optimizers (like the sharded optimizer) have a specific way to do gradient clipping
-                #     self.optimizer.clip_grad_norm(args.max_grad_norm)
-                # elif hasattr(model, "clip_grad_norm_"):
-                #     # Some models (like FullyShardedDDP) have a specific way to do gradient clipping
-                #     model.clip_grad_norm_(args.max_grad_norm)
-                # else:
-                #     # Revert to normal clipping otherwise, handling Apex or full precision
-                #     nn.utils.clip_grad_norm_(model.parameters(), args.max_grad_norm)
-
                 # Optimizer step
                 optimizer_was_run = True
 
@@ -1143,7 +1003,6 @@ class IPUTrainer:
                     self.lr_scheduler.step()
                     self.training_model.setOptimizer(self.optimizer)
 
-                # model.zero_grad()
                 self.state.global_step += 1
                 self.state.epoch = epoch + (step + 1) / steps_in_epoch
                 self.control = self.callback_handler.on_step_end(args, self.state, self.control)
@@ -1210,12 +1069,6 @@ class IPUTrainer:
         if not self.args.fp32:
             self.model.half()
 
-        # TODO: check if this is needed.
-        # if self.training_model and self.training_model.isAttachedToDevice():
-        #     self.training_model.copyWeightsToDevice()
-
-        # if self.inference_model and self.inference_model.isAttachedToDevice():
-        #     self.inference_model.copyWeightsToDevice()
         if len(load_result.missing_keys) != 0:
             logger.warn(f"There were missing keys in the checkpoint model loaded: {load_result.missing_keys}.")
         if len(load_result.unexpected_keys) != 0:
@@ -1281,13 +1134,6 @@ class IPUTrainer:
         np.random.set_state(checkpoint_rng_state["numpy"])
         torch.random.set_rng_state(checkpoint_rng_state["cpu"])
         # TODO: set poptorch rng state?
-        # if torch.cuda.is_available():
-        #     if self.args.local_rank != -1:
-        #         torch.cuda.random.set_rng_state(checkpoint_rng_state["cuda"])
-        #     else:
-        #         torch.cuda.random.set_rng_state_all(checkpoint_rng_state["cuda"])
-        # if is_torch_tpu_available():
-        #     xm.set_rng_state(checkpoint_rng_state["xla"])
 
     def _save_checkpoint(self, model, trial, metrics=None):
         # In all cases, including ddp/dp/deepspeed, self.model is always a reference to the model we
@@ -1368,103 +1214,10 @@ class IPUTrainer:
         if os.path.isfile(os.path.join(checkpoint, OPTIMIZER_NAME)) and os.path.isfile(
             os.path.join(checkpoint, SCHEDULER_NAME)
         ):
-            # TODO: make sure the optimizer and scheduler are properly loaded to the IPU.
             self.optimizer.load_state_dict(torch.load(os.path.join(checkpoint, OPTIMIZER_NAME)))
             with warnings.catch_warnings(record=True) as caught_warnings:
                 self.lr_scheduler.load_state_dict(torch.load(os.path.join(checkpoint, SCHEDULER_NAME)))
             reissue_pt_warnings(caught_warnings)
-
-    # TODO: keep this for later.
-    # def hyperparameter_search(
-    #     self,
-    #     hp_space: Optional[Callable[["optuna.Trial"], Dict[str, float]]] = None,
-    #     compute_objective: Optional[Callable[[Dict[str, float]], float]] = None,
-    #     n_trials: int = 20,
-    #     direction: str = "minimize",
-    #     backend: Optional[Union["str", HPSearchBackend]] = None,
-    #     hp_name: Optional[Callable[["optuna.Trial"], str]] = None,
-    #     **kwargs,
-    # ) -> BestRun:
-    #     """
-    #     Launch an hyperparameter search using ``optuna`` or ``Ray Tune`` or ``SigOpt``. The optimized quantity is
-    #     determined by :obj:`compute_objective`, which defaults to a function returning the evaluation loss when no
-    #     metric is provided, the sum of all metrics otherwise.
-
-    #     .. warning::
-
-    #         To use this method, you need to have provided a ``model_init`` when initializing your
-    #         :class:`~transformers.Trainer`: we need to reinitialize the model at each new run. This is incompatible
-    #         with the ``optimizers`` argument, so you need to subclass :class:`~transformers.Trainer` and override the
-    #         method :meth:`~transformers.Trainer.create_optimizer_and_scheduler` for custom optimizer/scheduler.
-
-    #     Args:
-    #         hp_space (:obj:`Callable[["optuna.Trial"], Dict[str, float]]`, `optional`):
-    #             A function that defines the hyperparameter search space. Will default to
-    #             :func:`~transformers.trainer_utils.default_hp_space_optuna` or
-    #             :func:`~transformers.trainer_utils.default_hp_space_ray` or
-    #             :func:`~transformers.trainer_utils.default_hp_space_sigopt` depending on your backend.
-    #         compute_objective (:obj:`Callable[[Dict[str, float]], float]`, `optional`):
-    #             A function computing the objective to minimize or maximize from the metrics returned by the
-    #             :obj:`evaluate` method. Will default to :func:`~transformers.trainer_utils.default_compute_objective`.
-    #         n_trials (:obj:`int`, `optional`, defaults to 100):
-    #             The number of trial runs to test.
-    #         direction(:obj:`str`, `optional`, defaults to :obj:`"minimize"`):
-    #             Whether to optimize greater or lower objects. Can be :obj:`"minimize"` or :obj:`"maximize"`, you should
-    #             pick :obj:`"minimize"` when optimizing the validation loss, :obj:`"maximize"` when optimizing one or
-    #             several metrics.
-    #         backend(:obj:`str` or :class:`~transformers.training_utils.HPSearchBackend`, `optional`):
-    #             The backend to use for hyperparameter search. Will default to optuna or Ray Tune or SigOpt, depending
-    #             on which one is installed. If all are installed, will default to optuna.
-    #         kwargs:
-    #             Additional keyword arguments passed along to :obj:`optuna.create_study` or :obj:`ray.tune.run`. For
-    #             more information see:
-
-    #             - the documentation of `optuna.create_study
-    #               <https://optuna.readthedocs.io/en/stable/reference/generated/optuna.study.create_study.html>`__
-    #             - the documentation of `tune.run
-    #               <https://docs.ray.io/en/latest/tune/api_docs/execution.html#tune-run>`__
-    #             - the documentation of `sigopt <https://app.sigopt.com/docs/endpoints/experiments/create>`__
-
-    #     Returns:
-    #         :class:`transformers.trainer_utils.BestRun`: All the information about the best run.
-    #     """
-    #     if backend is None:
-    #         backend = default_hp_search_backend()
-    #         if backend is None:
-    #             raise RuntimeError(
-    #                 "At least one of optuna or ray should be installed. "
-    #                 "To install optuna run `pip install optuna`. "
-    #                 "To install ray run `pip install ray[tune]`. "
-    #                 "To install sigopt run `pip install sigopt`."
-    #             )
-    #     backend = HPSearchBackend(backend)
-    #     if backend == HPSearchBackend.OPTUNA and not is_optuna_available():
-    #         raise RuntimeError("You picked the optuna backend, but it is not installed. Use `pip install optuna`.")
-    #     if backend == HPSearchBackend.RAY and not is_ray_tune_available():
-    #         raise RuntimeError(
-    #             "You picked the Ray Tune backend, but it is not installed. Use `pip install 'ray[tune]'`."
-    #         )
-    #     if backend == HPSearchBackend.SIGOPT and not is_sigopt_available():
-    #         raise RuntimeError("You picked the sigopt backend, but it is not installed. Use `pip install sigopt`.")
-    #     self.hp_search_backend = backend
-    #     if self.model_init is None:
-    #         raise RuntimeError(
-    #             "To use hyperparameter search, you need to pass your model through a model_init function."
-    #         )
-
-    #     self.hp_space = default_hp_space[backend] if hp_space is None else hp_space
-    #     self.hp_name = hp_name
-    #     self.compute_objective = default_compute_objective if compute_objective is None else compute_objective
-
-    #     backend_dict = {
-    #         HPSearchBackend.OPTUNA: run_hp_search_optuna,
-    #         HPSearchBackend.RAY: run_hp_search_ray,
-    #         HPSearchBackend.SIGOPT: run_hp_search_sigopt,
-    #     }
-    #     best_run = backend_dict[backend](self, n_trials, direction, **kwargs)
-
-    #     self.hp_search_backend = None
-    #     return best_run
 
     def log(self, logs: Dict[str, float]) -> None:
         """
@@ -1492,9 +1245,6 @@ class IPUTrainer:
         elif isinstance(data, (tuple, list)):
             return type(data)(self._prepare_input(v) for v in data)
         elif isinstance(data, torch.Tensor):
-            # TODO: check that.
-            # kwargs = dict(device=self.args.device)
-            # return data.to(**kwargs)
             return data
         return data
 
@@ -1557,27 +1307,6 @@ class IPUTrainer:
             loss = outputs["loss"] if isinstance(outputs, dict) else outputs[0]
 
         return (loss, outputs) if return_outputs else loss
-
-    # TODO: should we keep this?
-    def is_local_process_zero(self) -> bool:
-        """
-        Whether or not this process is the local (e.g., on one machine if training in a distributed fashion on several
-        machines) main process.
-        """
-        return self.args.local_process_index == 0
-
-    # TODO: should we keep this?
-    def is_world_process_zero(self) -> bool:
-        """
-        Whether or not this process is the global main process (when training in a distributed fashion on several
-        machines, this is only going to be :obj:`True` for one process).
-        """
-        # Special case for SageMaker ModelParallel since there process_index is dp_process_index, not the global
-        # process index.
-        # if is_sagemaker_mp_enabled():
-        #     return smp.rank() == 0
-        # else:
-        return self.args.process_index == 0
 
     def save_model(self, output_dir: Optional[str] = None):
         """
@@ -2112,8 +1841,6 @@ class IPUTrainer:
         """
         Initializes a git repo in :obj:`self.args.hub_model_id`.
         """
-        if not self.is_world_process_zero():
-            return
         use_auth_token = True if self.args.hub_token is None else self.args.hub_token
         if self.args.hub_model_id is None:
             repo_name = Path(self.args.output_dir).absolute().name
@@ -2182,7 +1909,7 @@ class IPUTrainer:
 
     def _push_from_checkpoint(self, checkpoint_folder):
         # Only push from one node.
-        if not self.is_world_process_zero() or self.args.hub_strategy == HubStrategy.END:
+        if self.args.hub_strategy == HubStrategy.END:
             return
         # If we haven't finished the last push, we don't do this one.
         if self.push_in_progress is not None and not self.push_in_progress.is_done:
@@ -2247,10 +1974,6 @@ class IPUTrainer:
         # Needs to be executed on all processes for TPU training, but will only save on the processed determined by
         # self.args.should_save.
         self.save_model()
-
-        # Only push from one node.
-        if not self.is_world_process_zero():
-            return
 
         git_head_commit_url = self.repo.push_to_hub(
             commit_message=commit_message, blocking=blocking, auto_lfs_prune=True
