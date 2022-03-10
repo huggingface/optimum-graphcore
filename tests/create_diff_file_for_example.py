@@ -23,7 +23,7 @@ from pathlib import Path
 DIFF_DIRECTORY = Path("tests/examples")
 
 
-def _ask_yer_or_no_question(message: str) -> str:
+def _ask_yes_or_no_question(message: str) -> str:
     if message[-1] == "?":
         message = message[:-1]
     message = f"{message} (y/n) ? "
@@ -68,7 +68,7 @@ def create_diff_content(raw_diff: str) -> str:
         start, end = m1.span()[1], m2.span()[0] if m2 is not None else None
         content = raw_diff[start:end].strip()
         print(_colorize_lines(content))
-        keep_diff = _ask_yer_or_no_question("Keep this diff")
+        keep_diff = _ask_yes_or_no_question("Keep this diff")
         if keep_diff == "n":
             continue
         final_diff.append(m1.group(0) + content)
@@ -101,7 +101,7 @@ def main():
         filename = Path(filename)
         should_override = True
         if filename.exists():
-            should_override = _ask_yer_or_no_question("This file already exists, do you want to overwrite it")
+            should_override = _ask_yes_or_no_question("This file already exists, do you want to overwrite it")
             should_override = should_override == "y"
 
         if should_override:
