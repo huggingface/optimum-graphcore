@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 the HuggingFace Inc. team.
+# Copyright 2022 the HuggingFace Inc. team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,6 +18,7 @@ import re
 import subprocess
 from argparse import ArgumentParser
 from pathlib import Path
+
 
 DIFF_DIRECTORY = Path("tests/examples")
 
@@ -38,7 +39,6 @@ def _ask_yer_or_no_question(message: str) -> str:
 
 def diff(filename1: Path, filename2: Path) -> str:
     if not filename1.exists() or not filename2.exists():
-        import pdb; pdb.set_trace()
         raise FileNotFoundError("Cannot compute the diff because at least of one the file does not exist.")
     cmd_line = ["diff", str(filename1), str(filename2)]
     p = subprocess.Popen(cmd_line, stdout=subprocess.PIPE)
@@ -66,7 +66,7 @@ def create_diff_content(raw_diff: str) -> str:
     final_diff = []
     for m1, m2 in zip(matches, matches[1:] + [None]):
         start, end = m1.span()[1], m2.span()[0] if m2 is not None else None
-        content = raw_diff[start: end].strip()
+        content = raw_diff[start:end].strip()
         print(_colorize_lines(content))
         keep_diff = _ask_yer_or_no_question("Keep this diff")
         if keep_diff == "n":
@@ -76,7 +76,9 @@ def create_diff_content(raw_diff: str) -> str:
 
 
 def parse_args():
-    parser = ArgumentParser(description="Tool to create or update a diff file between transformers and optimum examples.")
+    parser = ArgumentParser(
+        description="Tool to create or update a diff file between transformers and optimum examples."
+    )
     parser.add_argument("--transformers", type=Path, required=True, help="The path to the transformers example")
     parser.add_argument("--optimum", type=Path, required=True, help="The path to the optimum example")
     return parser.parse_args()

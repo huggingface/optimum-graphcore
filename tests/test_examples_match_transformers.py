@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 the HuggingFace Inc. team.
+# Copyright 2022 the HuggingFace Inc. team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,20 +13,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import pytest
 import shutil
-from git import Repo
 from os import PathLike
 from pathlib import Path
 from typing import List, Tuple, Union
 
+import pytest
+from git import Repo
+
 from .create_diff_file_for_example import DIFF_DIRECTORY, diff
+
 
 TRANSFORMERS_REPO_URL = "https://github.com/huggingface/transformers.git"
 TRANSFORMERS_REPO_PATH = Path("transformers")
 
 
-def get_examples(transformers_example_dir: Union[str, PathLike], optimum_example_dir: Union[str, PathLike], include_readmes: bool = False) -> List[Tuple[str]]:
+def get_examples(
+    transformers_example_dir: Union[str, PathLike],
+    optimum_example_dir: Union[str, PathLike],
+    include_readmes: bool = False,
+) -> List[Tuple[str]]:
     glob_pattern = "*/*.py" if not include_readmes else "*/*.(py|md)"
 
     transformers_files = list(Path(transformers_example_dir).glob(glob_pattern))
