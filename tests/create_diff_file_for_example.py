@@ -56,6 +56,8 @@ def _colorize_lines(content):
     }
     end_color = "\033[0;0m"
     for i, line in enumerate(lines):
+        if not line:
+            continue
         start_char = color_mapping.get(line[0], color_mapping["default"])
         lines[i] = "".join([start_char, line, end_color])
     return "\n".join(lines)
@@ -72,6 +74,8 @@ def create_diff_content(raw_diff: str) -> str:
         if keep_diff == "n":
             continue
         final_diff.append(m1.group(0) + content)
+    # To end with a return to line character, just as the diff function.
+    final_diff.append("")
     return "\n".join(final_diff)
 
 
