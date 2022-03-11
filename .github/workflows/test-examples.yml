@@ -40,4 +40,5 @@ jobs:
         . ${SDK_PATH}/poplar-ubuntu_18_04-2\.4\.0**/enable.sh
         . ${SDK_PATH}/popart-ubuntu_18_04-*2\.4\.0*/enable.sh
         export RUN_SLOW=true
+        pytest tests/test_examples_match_transformers.py
         pytest tests/test_examples.py
