@@ -19,6 +19,7 @@
 from .ipu_configuration import IPUConfig
 from .models.bart import PipelinedBartForConditionalGeneration
 from .models.bert import (
+    PipelinedBertForMaskedLM,
     PipelinedBertForMultipleChoice,
     PipelinedBertForPreTraining,
     PipelinedBertForQuestionAnswering,
@@ -27,10 +28,16 @@ from .models.bert import (
 )
 from .models.lxmert import PipelinedLxmertForQuestionAnswering
 from .models.roberta import (
+    PipelinedRobertaForMaskedLM,
     PipelinedRobertaForMultipleChoice,
     PipelinedRobertaForQuestionAnswering,
     PipelinedRobertaForSequenceClassification,
     PipelinedRobertaForTokenClassification,
+)
+from .models.gpt2 import (
+    PipelinedGPT2LMHeadModel,
+    PipelinedGPT2ForSequenceClassification,
+    PipelinedGPT2ForTokenClassification,
 )
 from .models.t5 import PipelinedT5ForConditionalGeneration
 from .models.vit import PipelinedViTForImageClassification
