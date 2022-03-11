@@ -43,6 +43,8 @@ class GPT2PipelineMixin(PipelineMixin):
         - (If enabled) Replaces the word embedding with a SerializedEmbedding
         - Adds recomputation checkpoints
         """
+        super().parallelize()
+
         if self.ipu_config.embedding_serialization_factor > 1:
             # Resize token embedding using padding if vocab_size is not a multiple of embedding_serialization_factor
             self.actual_vocab_size = self.config.vocab_size
@@ -58,7 +60,6 @@ class GPT2PipelineMixin(PipelineMixin):
                 self.transformer.wte, self.ipu_config.embedding_serialization_factor
             )
 
-        super().parallelize()
         layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
 
         logger.info("-------------------- Device Allocation --------------------")
@@ -105,6 +106,8 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
         model = PipelinedGPT2LMHeadModel(config).parallelize().half()
         ```
         """
+        PipelineMixin.parallelize(self)
+
         if self.ipu_config.embedding_serialization_factor > 1:
             # Resize token embedding using padding if vocab_size is not a multiple of embedding_serialization_factor
             self.actual_vocab_size = self.config.vocab_size
@@ -127,7 +130,6 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
             self.lm_head = serialized_decoder
             self.tie_weights()
 
-        PipelineMixin.parallelize(self)
         layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
 
         logger.info("-------------------- Device Allocation --------------------")
