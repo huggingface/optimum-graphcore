@@ -67,7 +67,7 @@ def create_diff_content(raw_diff: str) -> str:
     matches = list(re.finditer(r"^[^><-]+", raw_diff, flags=re.MULTILINE))
     final_diff = []
     for m1, m2 in zip(matches, matches[1:] + [None]):
-        start, end = m1.span()[1], m2.span()[0] if m2 is not None else None
+        start, end = m1.span()[0], m2.span()[0] if m2 is not None else None
         content = raw_diff[start:end].strip()
         print(_colorize_lines(content))
         keep_diff = _ask_yes_or_no_question("Keep this diff")
