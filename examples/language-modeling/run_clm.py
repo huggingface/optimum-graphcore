@@ -331,7 +331,9 @@ def main():
     elif model_args.model_name_or_path:
         ipu_config = IPUConfig.from_pretrained(model_args.model_name_or_path, **config_kwargs)
     else:
-        raise RuntimeError("You must provide an IPUConfig")
+        raise RuntimeError(
+            "You must provide an IPUConfig. If the pretrained model does not contain an IPUConfig, you can load an IPUConfig using --ipu_config_name."
+        )
 
     tokenizer_kwargs = {
         "cache_dir": model_args.cache_dir,
