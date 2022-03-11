@@ -54,7 +54,7 @@ from transformers.utils.versions import require_version
 logger = logging.getLogger(__name__)
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-check_min_version("4.15.0.dev0")
+check_min_version("4.18.0.dev0")
 
 require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/image-classification/requirements.txt")
 
@@ -150,21 +150,6 @@ def collate_fn(examples):
     pixel_values = torch.stack([example["pixel_values"] for example in examples])
     labels = torch.tensor([example["labels"] for example in examples])
     return {"pixel_values": pixel_values, "labels": labels}
-
-
-# Implement transforms as a functor instead of a function because the Async Dataloader
-# can't handle functions with closures because it uses pickle underneath.
-class ApplyTransforms:
-    """
-    Functor that applies image transforms across a batch.
-    """
-
-    def __init__(self, transforms):
-        self.transforms = transforms
-
-    def __call__(self, example_batch):
-        example_batch["pixel_values"] = [self.transforms(img) for img in example_batch["image"]]
-        return example_batch
 
 
 def main():
@@ -295,13 +280,25 @@ def main():
         ]
     )
 
+    def train_transforms(example_batch):
+        """Apply _train_transforms across a batch."""
+        example_batch["pixel_values"] = [
+            _train_transforms(pil_img.convert("RGB")) for pil_img in example_batch["image"]
+        ]
+        return example_batch
+
+    def val_transforms(example_batch):
+        """Apply _val_transforms across a batch."""
+        example_batch["pixel_values"] = [_val_transforms(pil_img.convert("RGB")) for pil_img in example_batch["image"]]
+        return example_batch
+
     if training_args.do_train:
         if "train" not in ds:
             raise ValueError("--do_train requires a train dataset")
         if data_args.max_train_samples is not None:
             ds["train"] = ds["train"].shuffle(seed=training_args.seed).select(range(data_args.max_train_samples))
         # Set the training transforms
-        ds["train"].set_transform(ApplyTransforms(_train_transforms))
+        ds["train"].set_transform(train_transforms)
 
     if training_args.do_eval:
         if "validation" not in ds:
@@ -311,7 +308,7 @@ def main():
                 ds["validation"].shuffle(seed=training_args.seed).select(range(data_args.max_eval_samples))
             )
         # Set the validation transforms
-        ds["validation"].set_transform(ApplyTransforms(_val_transforms))
+        ds["validation"].set_transform(val_transforms)
 
     # Initalize our trainer
     trainer = IPUTrainer(

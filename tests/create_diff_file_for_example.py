@@ -76,8 +76,6 @@ def create_diff_content(raw_diff: str) -> str:
         if keep_diff == "n":
             continue
         final_diff.append(content)
-    # To end with a return to line character, just as the diff function.
-    # final_diff.append("")
     return "\n".join(final_diff)
 
 
