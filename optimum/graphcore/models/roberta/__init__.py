@@ -17,6 +17,7 @@
 # limitations under the License.
 
 from .modeling_roberta import (
+    PipelinedRobertaForMaskedLM,
     PipelinedRobertaForMultipleChoice,
     PipelinedRobertaForQuestionAnswering,
     PipelinedRobertaForSequenceClassification,

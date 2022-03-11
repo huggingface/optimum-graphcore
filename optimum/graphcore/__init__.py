@@ -26,6 +26,11 @@ from .models.bert import (
     PipelinedBertForSequenceClassification,
     PipelinedBertForTokenClassification,
 )
+from .models.gpt2 import (
+    PipelinedGPT2ForSequenceClassification,
+    PipelinedGPT2ForTokenClassification,
+    PipelinedGPT2LMHeadModel,
+)
 from .models.lxmert import PipelinedLxmertForQuestionAnswering
 from .models.roberta import (
     PipelinedRobertaForMaskedLM,
@@ -33,11 +38,6 @@ from .models.roberta import (
     PipelinedRobertaForQuestionAnswering,
     PipelinedRobertaForSequenceClassification,
     PipelinedRobertaForTokenClassification,
-)
-from .models.gpt2 import (
-    PipelinedGPT2LMHeadModel,
-    PipelinedGPT2ForSequenceClassification,
-    PipelinedGPT2ForTokenClassification,
 )
 from .models.t5 import PipelinedT5ForConditionalGeneration
 from .models.vit import PipelinedViTForImageClassification
