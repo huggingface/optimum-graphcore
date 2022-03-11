@@ -57,7 +57,7 @@ class IPUConfig(BaseConfig):
         self.enable_half_partials = kwargs.pop("enable_half_partials", False)
 
         # TODO: is it actually used?
-        self.executable_cache_dir = kwargs.pop("executable_cache_dir", None)
+        self.executable_cache_dir = kwargs.pop("executable_cache_dir", "")
         self.profile_dir = kwargs.pop("profile_dir", None)
 
         self.embedding_serialization_factor = kwargs.pop("embedding_serialization_factor", 1)

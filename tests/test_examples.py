@@ -211,7 +211,7 @@ class ExampleTesterBase(TestCase):
         task_option = f"--{self.DATASET_PARAMETER_NAME} {task}" if task else " "
         ipu_config_overrides = ",".join(
             [
-                "executable_cache_dir=none",
+                "executable_cache_dir=''",
                 f"replication_factor={_ALLOWED_REPLICATION_FACTOR}",
                 f"inference_replication_factor={_ALLOWED_REPLICATION_FACTOR}",
                 "device_iterations=1",
