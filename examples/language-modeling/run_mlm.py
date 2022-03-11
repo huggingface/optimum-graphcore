@@ -507,6 +507,12 @@ def main():
         pad_to_multiple_of=None,
     )
 
+    if training_args.do_eval and not training_args.prediction_loss_only:
+        logging.warning(
+            "Because pipelined models return only the loss sometimes (due to performance reasons), evaluation might not"
+            " work as expected, set --prediction_loss_only to fix that."
+        )
+
     # Initialize our Trainer
     trainer = IPUTrainer(
         model=model,

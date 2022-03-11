@@ -29,13 +29,20 @@
 <         pad_to_multiple_of=8 if pad_to_multiple_of_8 else None,
 ---
 >         pad_to_multiple_of=None,
-510c511
+508a510,515
+>     if training_args.do_eval and not training_args.prediction_loss_only:
+>         logging.warning(
+>             "Because pipelined models return only the loss sometimes (due to performance reasons), evaluation might not"
+>             " work as expected, set --prediction_loss_only to fix that."
+>         )
+> 
+510c517
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-511a513
+511a519
 >         ipu_config=ipu_config,
-517,520c519,520
+517,520c525,526
 <         compute_metrics=compute_metrics if training_args.do_eval and not is_torch_tpu_available() else None,
 <         preprocess_logits_for_metrics=preprocess_logits_for_metrics
 <         if training_args.do_eval and not is_torch_tpu_available()
