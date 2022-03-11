@@ -162,6 +162,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
     def forward(self, input_ids, attention_mask, labels=None):
         transformer_outputs = self.transformer(input_ids, attention_mask=attention_mask)
         hidden_states = transformer_outputs[0]
+        
         lm_logits = self.lm_head(hidden_states)
         if self.ipu_config.embedding_serialization_factor > 1:
             # Ignore the padding logits. Use masking because in-place modification on a slice is not supported yet.
@@ -178,14 +179,15 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
 
         loss = None
         if labels is not None:
-            # Shift so that tokens < n predict n
+            # Shift so that tokens < n predict n. Use roll() + ignore_index instead of slicing for better efficiency on IPUs.
             labels = torch.roll(labels, -1, 1)
-            # By default ignore_index = -100
+            # By default the ignore_index of CrossEntropyLoss is -100
             labels[:, -1] = -100
             loss_fct = nn.CrossEntropyLoss()
             loss = loss_fct(lm_logits.view(-1, lm_logits.size(-1)), labels.view(-1))
 
-        return loss
+        output = (lm_logits,) + transformer_outputs[1:]
+        return loss if loss is not None else output
 
 
 @register(GPT2ForSequenceClassification)
