@@ -109,4 +109,5 @@ class PipelinedLxmertForQuestionAnswering(transformers.LxmertForQuestionAnswerin
                     answer_score.view(-1, self.num_qa_labels), labels.view(-1, self.num_qa_labels)
                 )
 
-        return loss, answer_score
+        output = (answer_score,) + lxmert_output[3:]
+        return (loss,) + output if loss is not None else output
