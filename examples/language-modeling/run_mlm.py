@@ -229,7 +229,6 @@ def main():
     transformers.utils.logging.enable_default_handler()
     transformers.utils.logging.enable_explicit_format()
 
-    # Set the verbosity to info of the Transformers logger (on main process only):
     logger.info(f"Training/evaluation parameters {training_args}")
 
     # Detecting last checkpoint.

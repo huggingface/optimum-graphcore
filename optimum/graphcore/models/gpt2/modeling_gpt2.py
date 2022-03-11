@@ -162,7 +162,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
     def forward(self, input_ids, attention_mask, labels=None):
         transformer_outputs = self.transformer(input_ids, attention_mask=attention_mask)
         hidden_states = transformer_outputs[0]
-        
+
         lm_logits = self.lm_head(hidden_states)
         if self.ipu_config.embedding_serialization_factor > 1:
             # Ignore the padding logits. Use masking because in-place modification on a slice is not supported yet.
