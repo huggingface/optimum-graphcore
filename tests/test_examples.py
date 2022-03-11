@@ -299,7 +299,7 @@ class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, e
     ) -> List[str]:
         if extra_command_line_arguments is None:
             extra_command_line_arguments = []
-        extra_command_line_arguments.append("--dataset_config '3.0.0'")
+        extra_command_line_arguments.append("--dataset_config 3.0.0")
         extra_command_line_arguments.append("--predict_with_generate")
         if "t5" in model_name:
             extra_command_line_arguments.append("--source_prefix 'summarize: '")
