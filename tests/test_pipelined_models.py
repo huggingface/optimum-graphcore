@@ -85,19 +85,7 @@ def _get_models_to_test(model_to_test_names):
     return models_to_test
 
 
-<<<<<<< HEAD
 MODELS_TO_TEST = _get_models_to_test(MODELS_TO_TEST_MAPPING)
-=======
-MODELS_TO_TEST_NAMES = {
-    "bart": ("facebook/bart-base", "Graphcore/bart-base-ipu"),
-    "bert": ("bert-base-uncased", "Graphcore/bert-base-ipu"),
-    "gpt2": ("gpt2", "Graphcore/gpt2-small-ipu"),
-    "roberta": ("roberta-base", "Graphcore/roberta-base-ipu"),
-    "t5": ("t5-small", "Graphcore/t5-small-ipu"),
-    "vit": ("google/vit-base-patch16-224", "Graphcore/vit-base-ipu"),
-}
-MODELS_TO_TEST = _get_models_to_test(MODELS_TO_TEST_NAMES)
->>>>>>> Add GPT2 to test
 
 
 class PipelinedModelsTester(TestCase):
