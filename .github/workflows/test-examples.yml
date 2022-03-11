@@ -1,8 +1,6 @@
 name: examples
 
 on:
-  push:
-    branches: [ main ]
   schedule:
     # At the end of everyday
     - cron: 0 0 * * *
