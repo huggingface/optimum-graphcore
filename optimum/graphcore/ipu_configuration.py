@@ -56,9 +56,8 @@ class IPUConfig(BaseConfig):
         self.enable_half_first_order_momentum = kwargs.pop("enable_half_first_order_momentum", False)
         self.enable_half_partials = kwargs.pop("enable_half_partials", False)
 
-        # TODO: is it actually used?
         self.executable_cache_dir = kwargs.pop("executable_cache_dir", "")
-        self.profile_dir = kwargs.pop("profile_dir", None)
+        self.profile_dir = kwargs.pop("profile_dir", "")
 
         self.embedding_serialization_factor = kwargs.pop("embedding_serialization_factor", 1)
 
@@ -187,7 +186,7 @@ class IPUConfig(BaseConfig):
         opts.setAvailableMemoryProportion(mem_prop)
 
         # Enable caching the compiled executable to disk
-        if self.executable_cache_dir:
+        if self.executable_cache_dir and self.executable_cache_dir != "disabled":
             opts.enableExecutableCaching(self.executable_cache_dir)
 
         # Enable stochastic rounding (recommended for training with FP16)
