@@ -51,7 +51,7 @@ from transformers.utils.versions import require_version
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-check_min_version("4.16.0.dev0")
+check_min_version("4.18.0.dev0")
 
 require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/translation/requirements.txt")
 
@@ -257,11 +257,6 @@ def main():
     transformers.utils.logging.enable_default_handler()
     transformers.utils.logging.enable_explicit_format()
 
-    # Log on each process the small summary:
-    # logger.warning(
-    #     f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
-    #     + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
-    # )
     logger.info(f"Training/evaluation parameters {training_args}")
 
     if data_args.source_prefix is None and model_args.model_name_or_path in [
@@ -493,7 +488,6 @@ def main():
             tokenizer,
             model=model,
             label_pad_token_id=label_pad_token_id,
-            # pad_to_multiple_of=8 if training_args.fp16 else None,
             pad_to_multiple_of=None,
         )
 
