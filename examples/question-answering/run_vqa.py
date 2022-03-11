@@ -398,7 +398,11 @@ def main():
     if training_args.do_eval:
         if "validation" not in raw_datasets:
             raise ValueError("--do_eval requires a validation dataset")
-        eval_dataset = raw_datasets["validation"]
+        # GQA dataset's validation dataset was used for pretraining the LXMERT model, so we use its test set, which contains labels, for evaluation.
+        if data_args.dataset_name == "Graphcore/gqa-lxmert":
+            eval_dataset = raw_datasets["test"]
+        else:
+            eval_dataset = raw_datasets["validation"]
         if data_args.max_eval_samples is not None:
             eval_dataset = eval_dataset.select(range(data_args.max_eval_samples))
 
