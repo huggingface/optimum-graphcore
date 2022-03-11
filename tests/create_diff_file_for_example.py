@@ -68,14 +68,16 @@ def create_diff_content(raw_diff: str) -> str:
     final_diff = []
     for m1, m2 in zip(matches, matches[1:] + [None]):
         start, end = m1.span()[0], m2.span()[0] if m2 is not None else None
-        content = raw_diff[start:end].strip()
+        if end is not None and raw_diff[end - 1] == "\n":
+            end = end - 1
+        content = raw_diff[start:end]
         print(_colorize_lines(content))
         keep_diff = _ask_yes_or_no_question("Keep this diff")
         if keep_diff == "n":
             continue
-        final_diff.append(m1.group(0) + content)
+        final_diff.append(content)
     # To end with a return to line character, just as the diff function.
-    final_diff.append("")
+    # final_diff.append("")
     return "\n".join(final_diff)
 
 
