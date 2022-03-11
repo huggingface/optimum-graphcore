@@ -1,0 +1,43 @@
+name: examples
+
+on:
+  push:
+    branches: [ main ]
+  schedule:
+    # At the end of everyday
+    - cron: 0 0 * * *
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [3.6]
+        os: [ubuntu-18.04]
+
+    runs-on: self-hosted
+    steps:
+    - uses: actions/checkout@v2
+    - name: Setup Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v2
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Create and start a virtual environment
+      run: |
+        python -m venv venv
+        source venv/bin/activate
+    - name: Install dependencies
+      run: |
+        source venv/bin/activate
+        pip install --upgrade pip
+        export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_18_04-2\.4\.0*
+        pip install ${SDK_PATH}/poptorch-*.whl
+        pip install .
+    - name: Test with Pytest
+      run: |
+        source venv/bin/activate
+        export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_18_04-2\.4\.0*
+        . ${SDK_PATH}/poplar-ubuntu_18_04-2\.4\.0**/enable.sh
+        . ${SDK_PATH}/popart-ubuntu_18_04-*2\.4\.0*/enable.sh
+        export RUN_SLOW=true
+        pytest tests/test_examples.py
