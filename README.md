@@ -82,19 +82,18 @@ trainer = IPUTrainer(
 
 ## Supported Models
 The following model architectures and tasks are currently supported by 🤗 Optimum Graphcore:
-
-|         | Pre-Training | Masked LM | Causal LM | Seq2Seq LM (Summarization, Translation, etc) | Sequence Classification | Token Classification | Question Answering | Multiple Choice | Image Classification |
-|---------|--------------|-----------|-----------|----------------------------------------------|-------------------------|----------------------|--------------------|-----------------|----------------------|
-| BERT    | :heavy_check_mark:            | :heavy_check_mark:         | ✗         |                                              | :heavy_check_mark:                       | :heavy_check_mark:                    | :heavy_check_mark:                  | :heavy_check_mark:               |                      |
-| RoBERTa | :heavy_check_mark:            | :heavy_check_mark:         | ✗         |                                              | :heavy_check_mark:                       | :heavy_check_mark:                    | :heavy_check_mark:                  | :heavy_check_mark:               |                      |
-| RoBERTa | :heavy_check_mark:            | :heavy_check_mark:         | ✗         |                                              | :heavy_check_mark:                       | :heavy_check_mark:                    | :heavy_check_mark:                  | :heavy_check_mark:               |                      |
-| Deberta | ✗            | ✗         |           |                                              | :heavy_check_mark:                       | :heavy_check_mark:                    | :heavy_check_mark:                  |                 |                      |
-| GPT-2   | :heavy_check_mark:            |           | :heavy_check_mark:         |                                              | :heavy_check_mark:                       | :heavy_check_mark:                    |                    |                 |                      |
-| BART    | :heavy_check_mark:            |           | ✗         | :heavy_check_mark:                                            | ✗                       |                      | ✗                  |                 |                      |
-| T5      | :heavy_check_mark:            |           |           | :heavy_check_mark:                                            |                         |                      |                    |                 |                      |
-| Hubert  | ✗            |           |           |                                              | :heavy_check_mark:                       |                      |                    |                 |                      |
-| ViT     | ✗            |           |           |                                              |                         |                      |                    |                 | :heavy_check_mark:                    |
-| LXMERT  | ✗            |           |           |                                              |                         |                      | :heavy_check_mark:                  |                 |                      |
+|         | Pre-Training       | Masked LM          | Causal LM          | Seq2Seq LM (Summarization, Translation, etc) | Sequence Classification | Token Classification | Question Answering | Multiple Choice    | Image Classification |
+|---------|--------------------|--------------------|--------------------|----------------------------------------------|-------------------------|----------------------|--------------------|--------------------|----------------------|
+| BERT    | :heavy_check_mark: | :heavy_check_mark: | ✗                  |                                              | :heavy_check_mark:      | :heavy_check_mark:   | :heavy_check_mark: | :heavy_check_mark: |                      |
+| RoBERTa | :heavy_check_mark: | :heavy_check_mark: | ✗                  |                                              | :heavy_check_mark:      | :heavy_check_mark:   | :heavy_check_mark: | :heavy_check_mark: |                      |
+| RoBERTa | :heavy_check_mark: | :heavy_check_mark: | ✗                  |                                              | :heavy_check_mark:      | :heavy_check_mark:   | :heavy_check_mark: | :heavy_check_mark: |                      |
+| Deberta | ✗                  | ✗                  |                    |                                              | :heavy_check_mark:      | :heavy_check_mark:   | :heavy_check_mark: |                    |                      |
+| GPT-2   | :heavy_check_mark: |                    | :heavy_check_mark: |                                              | :heavy_check_mark:      | :heavy_check_mark:   |                    |                    |                      |
+| BART    | :heavy_check_mark: |                    | ✗                  | :heavy_check_mark:                           | ✗                       |                      | ✗                  |                    |                      |
+| T5      | :heavy_check_mark: |                    |                    | :heavy_check_mark:                           |                         |                      |                    |                    |                      |
+| Hubert  | ✗                  |                    |                    |                                              | :heavy_check_mark:      |                      |                    |                    |                      |
+| ViT     | ✗                  |                    |                    |                                              |                         |                      |                    |                    | :heavy_check_mark:   |
+| LXMERT  | ✗                  |                    |                    |                                              |                         |                      | :heavy_check_mark: |                    |                      |
 
 
 If you find any issue while using those, please open an issue or a pull request.
