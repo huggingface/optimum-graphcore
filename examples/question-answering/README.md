@@ -64,14 +64,23 @@ exact_match = 81.22
 ## Fine-tuning LXMERT on GQA
 
 ```bash
-python run_vqa.py \
+python examples/question-answering/run_vqa.py \
   --model_name_or_path unc-nlp/lxmert-base-uncased \
-  --ipu_config_name ipu_config_lxmert \
+  --ipu_config_name Graphcore/lxmert-base-ipu \
   --dataset_name Graphcore/gqa-lxmert \
   --do_train \
   --do_eval \
+  --max_seq_length 128 \
   --per_device_train_batch_size 1 \
   --num_train_epochs 4 \
-  --learning_rate 5e-5 \
-  --output_dir /tmp/lxmert_gqa/ \
+  --dataloader_num_workers 64 \
+  --logging_steps 5 \
+  --learning_rate 1e-5 \
+  --lr_scheduler_type linear \
+  --loss_scaling 16384 \
+  --weight_decay 0.01 \
+  --warmup_ratio 0.1 \
+  --output_dir /tmp/gqa/ \
+  --dataloader_drop_last \
+  --replace_qa_head
 ```
