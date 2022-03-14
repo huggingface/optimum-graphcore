@@ -37,7 +37,7 @@ You can train BERT on any dataset with `run_pretraining` as long as the dataset 
 BERT Pre-training is done in two phases - the first is with sequence length 128 for 10500 steps, and the second is with sequence length 512 for 2038 steps.
 
 
-Phase 1: 
+Phase 1:
 ```bash
 python examples/language-modeling/run_pretraining.py \
   --config_name bert-base-uncased \

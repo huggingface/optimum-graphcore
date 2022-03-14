@@ -1,6 +1,7 @@
 <p align="center">
     <img src="readme_logo.png" />
 </p>
+
 # Optimum Graphcore
 
 🤗 Optimum Graphcore is the interface between the 🤗 Transformers library and [Graphcore IPUs](https://www.graphcore.ai/products/ipu).
@@ -55,7 +56,7 @@ trainer = Trainer(
 ```
 
 
-Transformer version that can run on IPUs:
+Transformed version that can run on IPUs:
 ```python
 from optimum.graphcore import IPUConfig, IPUTrainer, IPUTrainingArguments
 
@@ -83,12 +84,70 @@ trainer = IPUTrainer(
 )
 ```
 
+## Run on Spell
+
+A quick and easy way to get try Graphcore IPUs for free is by creating an account on [Spell](https://spell.ml/graphcore). Once that is done, you will be able to run Spell Runs via the command line, but you will need to [login](https://spell.ml/docs/quickstart/#logging-in) first.
+
+<!-- TODO: insert that once Spell Run links work => either via a link (that you can find on multiple examples and model cards) or via the command line (you will need to [login](https://spell.ml/docs/quickstart/#logging-in) first). -->
+
+To run a command you can follow this template:
+
+```bash
+spell run \
+  --machine-type IPUx16 \
+  --github-url https://github.com/huggingface/optimum-graphcore.git \
+  --docker_image "graphcore/pytorch:latest" \
+  --apt python3 \
+  --apt git \
+  "pip install git+https://github.com/huggingface/transformers.git . && \
+   pip install -r examples/text-classification/requirements.txt && \
+   [INSERT YOUR COMMAND BETWEEN THE QUOTES]"
+```
+
+For instance, to run the following command:
+
+```python
+python examples/text-classification/run_glue.py \
+  --model_name_or_path bert-base-cased \
+  --ipu_config_name Graphcore/bert-base-ipu \
+  --task_name sst2 \
+  --do_train \
+  --do_eval \
+  --max_seq_length 128 \
+  --per_device_train_batch_size 8 \
+  --learning_rate 2e-5 \
+  --num_train_epochs 3 \
+  --output_dir ./output/sst2/
+```
+
+You will need to run this:
+```bash
+spell run \
+  --machine-type IPUx16 \
+  --github-url https://github.com/huggingface/optimum-graphcore.git \
+  --docker_image "graphcore/pytorch:latest" \
+  --apt python3 \
+  --apt git \
+  "pip install git+https://github.com/huggingface/transformers.git . && \
+   pip install -r examples/text-classification/requirements.txt && \
+   python3 examples/text-classification/run_glue.py \
+   --model_name_or_path bert-base-cased \
+   --ipu_config_name Graphcore/bert-base-ipu \
+   --task_name sst2 \
+   --do_train \
+   --do_eval \
+   --max_seq_length 128 \
+   --per_device_train_batch_size 8 \
+   --learning_rate 2e-5 \
+   --num_train_epochs 3 \
+   --output_dir ./output/sst2/"
+```
+
 ## Supported Models
 The following model architectures and tasks are currently supported by 🤗 Optimum Graphcore:
 |         | Pre-Training       | Masked LM          | Causal LM          | Seq2Seq LM (Summarization, Translation, etc) | Sequence Classification | Token Classification | Question Answering | Multiple Choice    | Image Classification |
 |---------|--------------------|--------------------|--------------------|----------------------------------------------|-------------------------|----------------------|--------------------|--------------------|----------------------|
 | BERT    | :heavy_check_mark: | :heavy_check_mark: | ✗                  |                                              | :heavy_check_mark:      | :heavy_check_mark:   | :heavy_check_mark: | :heavy_check_mark: |                      |
-| RoBERTa | :heavy_check_mark: | :heavy_check_mark: | ✗                  |                                              | :heavy_check_mark:      | :heavy_check_mark:   | :heavy_check_mark: | :heavy_check_mark: |                      |
 | RoBERTa | :heavy_check_mark: | :heavy_check_mark: | ✗                  |                                              | :heavy_check_mark:      | :heavy_check_mark:   | :heavy_check_mark: | :heavy_check_mark: |                      |
 | Deberta | ✗                  | ✗                  |                    |                                              | :heavy_check_mark:      | :heavy_check_mark:   | :heavy_check_mark: |                    |                      |
 | GPT-2   | :heavy_check_mark: |                    | :heavy_check_mark: |                                              | :heavy_check_mark:      | :heavy_check_mark:   |                    |                    |                      |

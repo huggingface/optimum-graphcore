@@ -37,35 +37,14 @@ python run_glue.py \
   --do_train \
   --do_eval \
   --max_seq_length 128 \
-  --per_device_train_batch_size 32 \
+  --per_device_train_batch_size 8 \
   --learning_rate 2e-5 \
   --num_train_epochs 3 \
   --output_dir ./output/$TASK_NAME/
 ```
 
-where task name can be one of cola, sst2, mrpc, stsb, qqp, mnli, qnli, rte, wnli. All tasks should work correctly with a batch size of 32, except mrpc and rte (16) and wnli (4).
+where task name can be one of cola, sst2, mrpc, stsb, qqp, mnli, qnli, rte, wnli.
 
-We get the following results on the dev set of the benchmark with the previous commands (with an exception for MRPC and
-WNLI which are tiny and where we used 5 epochs instead of 3). <!-- TODO: perform experiments on the PODs -> Trainings are seeded so you should obtain the same
-results with PyTorch 1.6.0 (and close results with different versions), training times are given for information (a
-single Titan RTX was used):
-
-| Task  | Metric                       | Result      | Training time |
-|-------|------------------------------|-------------|---------------|
-| CoLA  | Matthews corr                | 56.53       | 3:17          |
-| SST-2 | Accuracy                     | 92.32       | 26:06         |
-| MRPC  | F1/Accuracy                  | 88.85/84.07 | 2:21          |
-| STS-B | Pearson/Spearman corr.       | 88.64/88.48 | 2:13          |
-| QQP   | Accuracy/F1                  | 90.71/87.49 | 2:22:26       |
-| MNLI  | Matched acc./Mismatched acc. | 83.91/84.10 | 2:35:23       |
-| QNLI  | Accuracy                     | 90.66       | 40:57         |
-| RTE   | Accuracy                     | 65.70       | 57            |
-| WNLI  | Accuracy                     | 56.34       | 24            |
-
-Some of these results are significantly different from the ones reported on the test set of GLUE benchmark on the
-website. For QQP and WNLI, please refer to [FAQ #12](https://gluebenchmark.com/faq) on the website.
-
--->
 The following example fine-tunes BERT on the `imdb` dataset hosted on our [hub](https://huggingface.co/datasets):
 
 ```bash
@@ -90,7 +69,7 @@ Based on the script [`run_xnli.py`](https://github.com/huggingface/transformers/
 
 #### Fine-tuning on XNLI
 
-This example code fine-tunes mBERT (multi-lingual BERT) on the XNLI dataset. <!-- TODO: compute time -> It runs in 106 mins on a single tesla V100 16GB.-->
+This example code fine-tunes mBERT (multi-lingual BERT) on the XNLI dataset.
 
 ```bash
 python run_xnli.py \
