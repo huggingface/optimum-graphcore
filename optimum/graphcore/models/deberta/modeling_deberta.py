@@ -214,12 +214,7 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
             pos_key_layer = self.transpose_for_scores(pos_key_layer)
             c2p_att = torch.matmul(query_layer, pos_key_layer.transpose(-1, -2))
             c2p_pos = torch.clamp(relative_pos + att_span, 0, att_span * 2 - 1)
-            # index = c2p_dynamic_expand(c2p_pos, query_layer, relative_pos)
-            # c2p_att = self.c2p_gather(c2p_att)
-            # c2p_att = self.p2c_gather(c2p_att)
             c2p_att = self.index_select_gather(c2p_att, c2p_pos)
-            # c2p_att = torch.gather(c2p_att, dim=-1, index=index)
-            # assert (c2p_att == c2p_att2).all(), "c2p not equal"
             score += c2p_att
 
         # position->content
@@ -233,14 +228,7 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
                 r_pos = relative_pos
             p2c_pos = torch.clamp(-r_pos + att_span, 0, att_span * 2 - 1)
             p2c_att = torch.matmul(key_layer, pos_query_layer.transpose(-1, -2))
-            # index = p2c_dynamic_expand(p2c_pos, query_layer, key_layer)
-            # import ipdb; ipdb.set_trace()
-            # p2c_att = self.p2c_gather(p2c_att).transpose(-1, -2)
             p2c_att = self.index_select_gather(p2c_att, p2c_pos).transpose(-1, -2)
-            # p2c_att = torch.gather(
-            #     p2c_att, dim=-1, index=p2c_dynamic_expand(p2c_pos, query_layer, key_layer)
-            # ).transpose(-1, -2)
-            # assert (p2c_att == p2c_att2).all(), f"p2c not equal {p2c_pos}"
 
             # TODO When does path this occur and what is the value of index in this case?
             if query_layer.size(-2) != key_layer.size(-2):
