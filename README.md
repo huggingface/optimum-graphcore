@@ -11,10 +11,6 @@ Quote from the Hugging Face [blog post](https://huggingface.co/blog/graphcore#wh
 
 > This design delivers high performance and new levels of efficiency, whether running today’s most popular models, such as BERT and EfficientNet, or exploring next-generation AI applications.
 
-> Software plays a vital role in unlocking the IPU’s capabilities. Our Poplar SDK has been co-designed with the processor since Graphcore’s inception. Today it fully integrates with standard machine learning frameworks, including PyTorch and TensorFlow, as well as orchestration and deployment tools such as Docker and Kubernetes.
-
-> Making Poplar compatible with these widely used, third-party systems allows developers to easily port their models from their other compute platforms and start taking advantage of the IPU’s advanced AI capabilities.
-
 ## Install
 To install the latest release of this package:
 
@@ -29,11 +25,74 @@ Last but not least, don't forget to install requirements for every example:
 `cd <example-folder>
 pip install -r requirements.txt`
 
-## Supported Models
-Currently the following model architectures are supported:
+## How to use it?
+🤗 Optimum Graphcore was designed with one goal in mind: make training and evaluation straightforward for any 🤗 Transformers user while leveraging the complete power of IPUs.
+There are two main classes one needs to know:
+- IPUTrainer: the trainer class that takes care of compiling the model to run on IPUs, and of performing traning and evaluation.
+- IPUConfig: the class that specifies attributes and configuration parameters to compile and put the model on the device.
 
-- BERT (base and large)
-- RoBERTa (base and large)
-- Vision Transformer
-- BART (base)
-- T5 (small)
+The `IPUTrainer` is very similar to the [🤗 Transformers Trainer](https://huggingface.co/docs/transformers/main_classes/trainer), and adapting a script using the Trainer to make it work with IPUs will mostly consists of simply swapping the `Trainer` class for the `IPUTrainer` one. That's how most of the [example scripts](https://github.com/huggingface/optimum-graphcore/tree/main/examples) were adapted from their [original counterparts](https://github.com/huggingface/transformers/tree/master/examples/pytorch).
+
+Original script:
+```python
+from transformers import Trainer, TrainingArguments
+
+# A lot of code here
+
+# Initialize our Trainer
+trainer = Trainer(
+    model=model,
+    args=training_args,  # Original training arguments.
+    train_dataset=train_dataset if training_args.do_train else None,
+    eval_dataset=eval_dataset if training_args.do_eval else None,
+    compute_metrics=compute_metrics,
+    tokenizer=tokenizer,
+    data_collator=data_collator,
+)
+```
+
+
+Transformer version that can run on IPUs:
+```python
+from optimum.graphcore import IPUConfig, IPUTrainer, IPUTrainingArguments
+
+# A lot of the same code as the original script here
+
+# Loading the IPUConfig needed by the IPUTrainer to compile and train the model on IPUs
+ipu_config = IPUConfig.from_pretrained(
+    training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
+    cache_dir=model_args.cache_dir,
+    revision=model_args.model_revision,
+    use_auth_token=True if model_args.use_auth_token else None,
+)
+
+# Initialize our Trainer
+trainer = IPUTrainer(
+    model=model,
+    ipu_config=ipu_config,
+    args=training_args,  # The training arguments differ a bit from the original ones, that is why we use IPUTrainingArguments
+    train_dataset=train_dataset if training_args.do_train else None,
+    eval_dataset=eval_dataset if training_args.do_eval else None,
+    compute_metrics=compute_metrics,
+    tokenizer=tokenizer,
+    data_collator=data_collator,
+)
+```
+
+## Supported Models
+The following model architectures and tasks are currently supported by 🤗 Optimum Graphcore:
+
+|         | Pre-Training | Masked LM | Causal LM | Seq2Seq LM (Summarization, Translation, etc) | Sequence Classification | Token Classification | Question Answering | Multiple Choice | Image Classification |
+|---------|--------------|-----------|-----------|----------------------------------------------|-------------------------|----------------------|--------------------|-----------------|----------------------|
+| BERT    | ✓            | ✓         | ✗         |                                              | ✓                       | ✓                    | ✓                  | ✓               |                      |
+| RoBERTa | ✓            | ✓         | ✗         |                                              | ✓                       | ✓                    | ✓                  | ✓               |                      |
+| Deberta | ✗            | ✗         |           |                                              | ✓                       | ✓                    | ✓                  |                 |                      |
+| GPT-2   | ✓            |           | ✓         |                                              | ✓                       | ✓                    |                    |                 |                      |
+| BART    | ✓            |           | ✗         | ✓                                            | ✗                       |                      | ✗                  |                 |                      |
+| T5      | ✓            |           |           | ✓                                            |                         |                      |                    |                 |                      |
+| Hubert  | ✗            |           |           |                                              | ✓                       |                      |                    |                 |                      |
+| ViT     | ✗            |           |           |                                              |                         |                      |                    |                 | ✓                    |
+| LXMERT  | ✗            |           |           |                                              |                         |                      | ✓                  |                 |                      |
+
+
+If you find any issue while using those, please open an issue or a pull request.
