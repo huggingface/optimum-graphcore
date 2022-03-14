@@ -23,6 +23,7 @@ install_requires = [
     "pytest",
     "pytest-pythonpath",
     "parameterized",
+    "GitPython",
 ]
 
 setup(

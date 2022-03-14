@@ -122,13 +122,13 @@ class ExampleTestMeta(type):
         @slow
         def test(self):
             if self.EXAMPLE_NAME is None:
-                raise ValueError("an example name must be provided")
+                raise ValueError("An example name must be provided")
             example_script = Path(self.EXAMPLE_DIR).glob(f"*/{self.EXAMPLE_NAME}.py")
             example_script = list(example_script)
             if len(example_script) == 0:
-                raise RuntimeError(f"could not find {self.EXAMPLE_NAME}.py in examples located in {self.EXAMPLE_DIR}")
+                raise RuntimeError(f"Could not find {self.EXAMPLE_NAME}.py in examples located in {self.EXAMPLE_DIR}")
             elif len(example_script) > 1:
-                raise RuntimeError(f"found more than {self.EXAMPLE_NAME}.py in examples located in {self.EXAMPLE_DIR}")
+                raise RuntimeError(f"Found more than {self.EXAMPLE_NAME}.py in examples located in {self.EXAMPLE_DIR}")
             else:
                 example_script = example_script[0]
 
@@ -211,7 +211,7 @@ class ExampleTesterBase(TestCase):
         task_option = f"--{self.DATASET_PARAMETER_NAME} {task}" if task else " "
         ipu_config_overrides = ",".join(
             [
-                "executable_cache_dir=none",
+                "executable_cache_dir=disabled",
                 f"replication_factor={_ALLOWED_REPLICATION_FACTOR}",
                 f"inference_replication_factor={_ALLOWED_REPLICATION_FACTOR}",
                 "device_iterations=1",
@@ -299,7 +299,7 @@ class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, e
     ) -> List[str]:
         if extra_command_line_arguments is None:
             extra_command_line_arguments = []
-        extra_command_line_arguments.append("--dataset_config '3.0.0'")
+        extra_command_line_arguments.append("--dataset_config 3.0.0")
         extra_command_line_arguments.append("--predict_with_generate")
         if "t5" in model_name:
             extra_command_line_arguments.append("--source_prefix 'summarize: '")
