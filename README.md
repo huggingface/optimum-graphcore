@@ -70,7 +70,8 @@ ipu_config = IPUConfig.from_pretrained(
 trainer = IPUTrainer(
     model=model,
     ipu_config=ipu_config,
-    args=training_args,  # The training arguments differ a bit from the original ones, that is why we use IPUTrainingArguments
+    # The training arguments differ a bit from the original ones, that is why we use IPUTrainingArguments
+    args=training_args,
     train_dataset=train_dataset if training_args.do_train else None,
     eval_dataset=eval_dataset if training_args.do_eval else None,
     compute_metrics=compute_metrics,
@@ -84,15 +85,16 @@ The following model architectures and tasks are currently supported by 🤗 Opti
 
 |         | Pre-Training | Masked LM | Causal LM | Seq2Seq LM (Summarization, Translation, etc) | Sequence Classification | Token Classification | Question Answering | Multiple Choice | Image Classification |
 |---------|--------------|-----------|-----------|----------------------------------------------|-------------------------|----------------------|--------------------|-----------------|----------------------|
-| BERT    | ✓            | ✓         | ✗         |                                              | ✓                       | ✓                    | ✓                  | ✓               |                      |
-| RoBERTa | ✓            | ✓         | ✗         |                                              | ✓                       | ✓                    | ✓                  | ✓               |                      |
-| Deberta | ✗            | ✗         |           |                                              | ✓                       | ✓                    | ✓                  |                 |                      |
-| GPT-2   | ✓            |           | ✓         |                                              | ✓                       | ✓                    |                    |                 |                      |
-| BART    | ✓            |           | ✗         | ✓                                            | ✗                       |                      | ✗                  |                 |                      |
-| T5      | ✓            |           |           | ✓                                            |                         |                      |                    |                 |                      |
-| Hubert  | ✗            |           |           |                                              | ✓                       |                      |                    |                 |                      |
-| ViT     | ✗            |           |           |                                              |                         |                      |                    |                 | ✓                    |
-| LXMERT  | ✗            |           |           |                                              |                         |                      | ✓                  |                 |                      |
+| BERT    | :heaver_check_mark:            | :heaver_check_mark:         | ✗         |                                              | :heaver_check_mark:                       | :heaver_check_mark:                    | :heaver_check_mark:                  | :heaver_check_mark:               |                      |
+| RoBERTa | :heaver_check_mark:            | :heaver_check_mark:         | ✗         |                                              | :heaver_check_mark:                       | :heaver_check_mark:                    | :heaver_check_mark:                  | :heaver_check_mark:               |                      |
+| RoBERTa | :heaver_check_mark:            | :heaver_check_mark:         | ✗         |                                              | :heaver_check_mark:                       | :heaver_check_mark:                    | :heaver_check_mark:                  | :heaver_check_mark:               |                      |
+| Deberta | ✗            | ✗         |           |                                              | :heaver_check_mark:                       | :heaver_check_mark:                    | :heaver_check_mark:                  |                 |                      |
+| GPT-2   | :heaver_check_mark:            |           | :heaver_check_mark:         |                                              | :heaver_check_mark:                       | :heaver_check_mark:                    |                    |                 |                      |
+| BART    | :heaver_check_mark:            |           | ✗         | :heaver_check_mark:                                            | ✗                       |                      | ✗                  |                 |                      |
+| T5      | :heaver_check_mark:            |           |           | :heaver_check_mark:                                            |                         |                      |                    |                 |                      |
+| Hubert  | ✗            |           |           |                                              | :heaver_check_mark:                       |                      |                    |                 |                      |
+| ViT     | ✗            |           |           |                                              |                         |                      |                    |                 | :heaver_check_mark:                    |
+| LXMERT  | ✗            |           |           |                                              |                         |                      | :heaver_check_mark:                  |                 |                      |
 
 
 If you find any issue while using those, please open an issue or a pull request.
