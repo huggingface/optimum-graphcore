@@ -1,3 +1,6 @@
+<p align="center">
+    <img src="readme_logo.png" />
+</p>
 # Optimum Graphcore
 
 🤗 Optimum Graphcore is the interface between the 🤗 Transformers library and [Graphcore IPUs](https://www.graphcore.ai/products/ipu).
