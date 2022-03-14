@@ -48,7 +48,7 @@ class PipelinedLxmertForQuestionAnswering(transformers.LxmertForQuestionAnswerin
 
         # Language layers
         for index, layer in enumerate(self.lxmert.encoder.layer):
-            if self.config.recompute_checkpoint_every_layer:
+            if self.ipu_config.recompute_checkpoint_every_layer:
                 h = recomputation_checkpoint(layer)
                 self._hooks.append(h)
             self.lxmert.encoder.layer[index] = poptorch.BeginBlock(layer, f"Language layer{index}", ipu_id=1)
@@ -56,7 +56,7 @@ class PipelinedLxmertForQuestionAnswering(transformers.LxmertForQuestionAnswerin
 
         # Visual layers
         for index, layer in enumerate(self.lxmert.encoder.r_layers):
-            if self.config.recompute_checkpoint_every_layer:
+            if self.ipu_config.recompute_checkpoint_every_layer:
                 h = recomputation_checkpoint(layer)
                 self._hooks.append(h)
             self.lxmert.encoder.r_layers[index] = poptorch.BeginBlock(layer, f"Visual layer{index}", ipu_id=2)
@@ -64,7 +64,7 @@ class PipelinedLxmertForQuestionAnswering(transformers.LxmertForQuestionAnswerin
 
         # Cross modality layers
         for index, layer in enumerate(self.lxmert.encoder.x_layers):
-            if self.config.recompute_checkpoint_every_layer:
+            if self.ipu_config.recompute_checkpoint_every_layer:
                 h = recomputation_checkpoint(layer)
                 self._hooks.append(h)
             self.lxmert.encoder.x_layers[index] = poptorch.BeginBlock(layer, f"Cross modality layer{index}", ipu_id=3)
