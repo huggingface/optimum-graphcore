@@ -34,7 +34,8 @@ def get_examples(
     include_readmes: bool = False,
 ) -> List[Tuple[str]]:
     """Retrieves the common example filenames between the transformers and  the optimum-graphcore repos."""
-    glob_pattern = "*/*.py" if not include_readmes else "*/*.(py|md)"
+    # TODO: validate for include README.
+    glob_pattern = "*/run_*.py" if not include_readmes else "*/(run_*|README).(py|md)"
 
     transformers_files = list(Path(transformers_example_dir).glob(glob_pattern))
     transformer_example_names = {p.name for p in transformers_files}
