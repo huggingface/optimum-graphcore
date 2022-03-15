@@ -31,6 +31,7 @@ python examples/multiple-choice/run_swag.py \
 --output_dir ./output/swag_base \
 --per_device_eval_batch_size=16 \
 --per_device_train_batch_size=16 \
+--pod_type pod16 \
 --overwrite_output
 ```
 
