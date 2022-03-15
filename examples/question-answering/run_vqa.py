@@ -33,7 +33,6 @@ import transformers
 from optimum.graphcore import IPUConfig, IPUTrainer
 from optimum.graphcore import IPUTrainingArguments as TrainingArguments
 from optimum.graphcore.data import pad_on_batch_axis
-
 from transformers import (
     AutoConfig,
     AutoModelForQuestionAnswering,
@@ -412,17 +411,6 @@ def main():
         if data_args.pad_to_max_length
         else DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None)
     )
-
-    # if training_args.do_train and training_args.pad_on_batch_axis:
-    #     logger.info(
-    #         "Padding on batch axis enabled, each batch feeded to the compiled model during training will have the proper size"
-    #     )
-    #     data_collator_wrapper = pad_on_batch_axis(
-    #         training_args.per_device_train_batch_size * ipu_config.batch_size_factor(),
-    #         # This cannot handle soft label
-    #         {k: -100 if k in ["labels"] else 0 for k in train_dataset.column_names},
-    #     )
-    #     data_collator = data_collator_wrapper(data_collator)
 
     # Get the metric function
     metric = load_metric("accuracy")
