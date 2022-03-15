@@ -41,6 +41,7 @@ python examples/summarization/run_summarization.py \
     --output_dir /tmp/tst-summarization \
     --per_device_train_batch_size=4 \
     --per_device_eval_batch_size=4 \
+    --pod_type pod16 \
     --overwrite_output_dir \
     --predict_with_generate
 ```
@@ -67,6 +68,7 @@ python examples/summarization/run_summarization.py \
     --overwrite_output_dir \
     --per_device_train_batch_size=4 \
     --per_device_eval_batch_size=4 \
+    --pod_type pod16 \
     --predict_with_generate
 ```
 
