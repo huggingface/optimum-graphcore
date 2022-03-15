@@ -42,6 +42,36 @@ from ...modeling_utils import (
 logger = logging.get_logger(__name__)
 
 
+class FastGatherLastDim(nn.Module):
+    """
+    Custom Op that does a faster specialised version of `gather` 
+    on the last dimension of a tensor. 
+    """
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, data, idx, target=None):
+        if poptorch.isRunningOnIpu():
+            if target is None:
+                target = torch.zeros(idx.shape).half()
+            else:
+                target = target.type_as(data)
+
+            target.requires_grad_()
+            o = poptorch.custom_op([data, idx],
+                                   "FastGatherLastDim",
+                                   "poptorch.custom_ops",
+                                   1,
+                                   example_outputs=[target],
+                                   attributes={"axis": -1})
+            return o[0]
+        else:
+            return torch.gather(data, -1, idx)
+
+
+gather_last_dim = FastGatherLastDim()
+
+
 class XSoftmax(torch.nn.Module):
     def __init__(self, dim):
         super().__init__()
@@ -80,22 +110,6 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
     def __init__(self, config):
         super().__init__(config)
         self.xsoftmax = XSoftmax(-1)
-
-    def index_select_gather(self, t, pos):
-        """Uses `index_select` function to gather indices on the last two dimension of the attention tensor
-        shaped [bs, num_attn_heads, seq_len, 2*seq_len]
-        """
-        size = t.size()
-        seq_len = size[-2]
-        indices = ((torch.arange(0, seq_len) * 2 * seq_len).unsqueeze(1) + pos).reshape(-1)
-        tf = t.reshape(size[0], size[1], -1)
-
-        out = []
-        chunk_size = indices.shape[-1] // 4
-        for i in range(0, indices.shape[-1], chunk_size):
-            out.append(torch.index_select(tf, -1, indices[i : i + chunk_size]))
-        out = torch.cat(out, dim=-1)
-        return out.reshape(size[0], size[1], seq_len, seq_len)
 
     def forward(
         self,
@@ -206,7 +220,7 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
             self.max_relative_positions - att_span : self.max_relative_positions + att_span, :
         ].unsqueeze(0)
 
-        score = 0
+        score = 0.0
 
         # content->position
         if "c2p" in self.pos_att_type:
@@ -214,7 +228,8 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
             pos_key_layer = self.transpose_for_scores(pos_key_layer)
             c2p_att = torch.matmul(query_layer, pos_key_layer.transpose(-1, -2))
             c2p_pos = torch.clamp(relative_pos + att_span, 0, att_span * 2 - 1)
-            c2p_att = self.index_select_gather(c2p_att, c2p_pos)
+            index = c2p_pos.expand([query_layer.size(0), query_layer.size(1), query_layer.size(2), relative_pos.size(-1)])
+            c2p_att = gather_last_dim(c2p_att, index)
             score += c2p_att
 
         # position->content
@@ -228,15 +243,16 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
                 r_pos = relative_pos
             p2c_pos = torch.clamp(-r_pos + att_span, 0, att_span * 2 - 1)
             p2c_att = torch.matmul(key_layer, pos_query_layer.transpose(-1, -2))
-            p2c_att = self.index_select_gather(p2c_att, p2c_pos).transpose(-1, -2)
+            index = p2c_pos.expand([query_layer.size(0), query_layer.size(1), key_layer.size(-2), key_layer.size(-2)])
+            p2c_att = gather_last_dim(p2c_att, index).transpose(-1, -2)
 
-            # TODO When does path this occur and what is the value of index in this case?
             if query_layer.size(-2) != key_layer.size(-2):
                 pos_index = relative_pos[:, :, :, 0].unsqueeze(-1)
-                # index = pos_dynamic_expand(pos_index, p2c_att, key_layer)
-                p2c_att = self.index_select_gather(p2c_att, pos_index)
+                index = pos_index.expand(pos_index, p2c_att, key_layer)
+                p2c_att = gather_last_dim(p2c_att, index)
             score += p2c_att
 
+        # return c2p_att + p2c_att
         return score
 
 
