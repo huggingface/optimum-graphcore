@@ -33,21 +33,11 @@ class PipelinedHubertForSequenceClassification(HubertForSequenceClassification, 
         self.hubert.feature_projection = poptorch.BeginBlock(self.hubert.feature_projection, ipu_id=0)
         self.hubert.encoder = poptorch.BeginBlock(self.hubert.encoder, ipu_id=0)
 
-        # for layer in self.hubert.feature_extractor.conv_layers[2:]:
-        #     h = recomputation_checkpoint(layer)
-        #     self._hooks.append(h)
-
-        # h = recomputation_checkpoint(self.hubert.feature_projection)
-        # self._hooks.append(h)
-
-        # h = recomputation_checkpoint(self.hubert.encoder.pos_conv_embed)
-        # self._hooks.append(h)
-
         layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
         for index, layer in enumerate(self.hubert.encoder.layers):
             # Put checkpoints on every encoder layer
-            # h = recomputation_checkpoint(layer)
-            # self._hooks.append(h)
+            h = recomputation_checkpoint(layer)
+            self._hooks.append(h)
             ipu = layer_ipu[index]
             self.hubert.encoder.layers[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
 
