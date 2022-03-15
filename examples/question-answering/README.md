@@ -70,7 +70,7 @@ python examples/question-answering/run_vqa.py \
   --dataset_name Graphcore/gqa-lxmert \
   --do_train \
   --do_eval \
-  --max_seq_length 128 \
+  --max_seq_length 512 \
   --per_device_train_batch_size 1 \
   --num_train_epochs 4 \
   --dataloader_num_workers 64 \
@@ -82,5 +82,6 @@ python examples/question-answering/run_vqa.py \
   --warmup_ratio 0.1 \
   --output_dir /tmp/gqa/ \
   --dataloader_drop_last \
-  --replace_qa_head
+  --replace_qa_head \
+  --pod_type pod16
 ```
