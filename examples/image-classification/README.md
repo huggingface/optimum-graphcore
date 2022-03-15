@@ -38,6 +38,7 @@ python run_image_classification.py \
     --num_train_epochs 50 \
     --per_device_train_batch_size 15 \
     --per_device_eval_batch_size 15 \
+    --pod_type pod16 \
     --logging_strategy steps \
     --logging_steps 10 \
     --save_total_limit 3 \
@@ -65,6 +66,7 @@ python run_image_classification.py \
     --per_device_train_batch_size 1 \
     --per_device_eval_batch_size 1 \
     --gradient_accumulation_steps 16 \
+    --pod_type pod16 \
     --logging_strategy steps \
     --logging_steps 10 \
     --save_total_limit 3 \
@@ -92,6 +94,7 @@ python run_image_classification.py \
     --num_train_epochs 5 \
     --per_device_train_batch_size 15 \
     --per_device_eval_batch_size 15 \
+    --pod_type pod16 \
     --logging_strategy steps \
     --logging_steps 10 \
     --evaluation_strategy epoch \
@@ -129,6 +132,7 @@ python run_image_classification_on_local_data.py \
     --learning_rate 3e-4 \
     --per_device_train_batch_size 1 \
     --per_device_eval_batch_size 1 \
+    --pod_type pod16 \
     --dataloader_num_workers 8 \
     --dataloader_drop_last \
     --seed 1337
