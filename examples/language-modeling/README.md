@@ -55,6 +55,7 @@ python examples/language-modeling/run_pretraining.py \
   --lamb_no_bias_correction \
   --per_device_train_batch_size 32 \
   --gradient_accumulation_steps 512 \
+  --pod_type pod16 \
   --learning_rate 0.006 \
   --lr_scheduler_type linear \
   --loss_scaling 16384 \
@@ -84,6 +85,7 @@ python examples/language-modeling/run_pretraining.py \
   --lamb_no_bias_correction \
   --per_device_train_batch_size 8 \
   --gradient_accumulation_steps 512 \
+  --pod_type pod16 \
   --learning_rate 0.002828 \
   --lr_scheduler_type linear \
   --loss_scaling 128.0 \
@@ -118,6 +120,7 @@ python run_mlm.py \
     --do_train \
     --do_eval \
     --num_train_epochs 5 \
+    --pod_type pod16 \
     --output_dir /tmp/mlm_output \
     --ipu_config_overrides="optimizer_state_offchip=true,inference_device_iterations=5"
 ```
@@ -133,6 +136,7 @@ python run_mlm.py \
     --do_train \
     --do_eval \
     --num_train_epochs 5 \
+    --pod_type pod16 \
     --output_dir /tmp/mlm_output \
     --ipu_config_overrides="embedding_serialization_factor=5,inference_device_iterations=5,matmul_proportion=[0.08 0.2 0.25 0.25]"
 ```
