@@ -873,6 +873,10 @@ class IPUTrainer:
         model = self._wrap_model(self.model)
         self.model_wrapped = model
 
+        # for the rest of this function `model` is the outside model, whether it was wrapped or not
+        if model is not self.model:
+            self.model_wrapped = model
+
         # TODO: handle optimizer and scheduler creation
         # if delay_optimizer_creation:
         #     self.create_optimizer_and_scheduler(num_training_steps=max_steps)
@@ -1329,13 +1333,10 @@ class IPUTrainer:
         os.makedirs(output_dir, exist_ok=True)
         logger.info(f"Saving model checkpoint to {output_dir}")
 
-<<<<<<< HEAD
         # Updating self.model weights with the weights stored on device.
         if self.training_model is not None and self.training_model.isAttachedToDevice():
             self.training_model.copyWeightsToHost()
 
-=======
->>>>>>> Fix parallelize
         if not isinstance(self.model, PreTrainedModel):
             logger.info("Trainer.model is not a `PreTrainedModel`, only saving its state dict.")
             if state_dict is None:
