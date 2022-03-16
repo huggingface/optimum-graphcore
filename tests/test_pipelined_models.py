@@ -18,6 +18,7 @@ import torch
 from PIL import Image
 
 import requests
+import transformers
 from optimum.graphcore import IPUConfig
 from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
 from parameterized import parameterized
@@ -109,7 +110,13 @@ class PipelinedModelsTester(TestCase):
             inputs = {k: v.unsqueeze(0) for k, v in inputs.items()}
         # TODO: do we really need this case?
         elif model_class in MODEL_FOR_QUESTION_ANSWERING_MAPPING.values():
-            inputs = extractor("Who was Jim Henson?", "Jim Henson was a nice puppet", return_tensors="pt")
+            # LXMERT does visual question answering so it requires visual features as input
+            if model_class == transformers.models.lxmert.modeling_lxmert.LxmertForQuestionAnswering:
+                inputs = extractor("What is the man wearing?", return_tensors="pt")
+                inputs["visual_feats"] = torch.rand(1, 36, 2048)
+                inputs["visual_pos"] = torch.rand(1, 36, 4)
+            else:
+                inputs = extractor("Who was Jim Henson?", "Jim Henson was a nice puppet", return_tensors="pt")
         elif model_class in MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING.values():
             url = "http://images.cocodataset.org/val2017/000000039769.jpg"
             image = Image.open(requests.get(url, stream=True).raw)
