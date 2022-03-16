@@ -44,9 +44,10 @@ logger = logging.get_logger(__name__)
 
 class FastGatherLastDim(nn.Module):
     """
-    Custom Op that does a faster specialised version of `gather` 
-    on the last dimension of a tensor. 
+    Custom Op that does a faster specialised version of `gather`
+    on the last dimension of a tensor.
     """
+
     def __init__(self):
         super().__init__()
 
@@ -58,12 +59,14 @@ class FastGatherLastDim(nn.Module):
                 target = target.type_as(data)
 
             target.requires_grad_()
-            o = poptorch.custom_op([data, idx],
-                                   "FastGatherLastDim",
-                                   "poptorch.custom_ops",
-                                   1,
-                                   example_outputs=[target],
-                                   attributes={"axis": -1})
+            o = poptorch.custom_op(
+                [data, idx],
+                "FastGatherLastDim",
+                "poptorch.custom_ops",
+                1,
+                example_outputs=[target],
+                attributes={"axis": -1},
+            )
             return o[0]
         else:
             return torch.gather(data, -1, idx)
@@ -228,7 +231,9 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
             pos_key_layer = self.transpose_for_scores(pos_key_layer)
             c2p_att = torch.matmul(query_layer, pos_key_layer.transpose(-1, -2))
             c2p_pos = torch.clamp(relative_pos + att_span, 0, att_span * 2 - 1)
-            index = c2p_pos.expand([query_layer.size(0), query_layer.size(1), query_layer.size(2), relative_pos.size(-1)])
+            index = c2p_pos.expand(
+                [query_layer.size(0), query_layer.size(1), query_layer.size(2), relative_pos.size(-1)]
+            )
             c2p_att = gather_last_dim(c2p_att, index)
             score += c2p_att
 
