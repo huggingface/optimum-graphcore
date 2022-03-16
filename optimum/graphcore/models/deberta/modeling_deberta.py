@@ -220,7 +220,7 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
             self.max_relative_positions - att_span : self.max_relative_positions + att_span, :
         ].unsqueeze(0)
 
-        score = 0.0
+        score = torch.zeros(query_layer.size(0), query_layer.size(1), query_layer.size(2), query_layer.size(2)).half()
 
         # content->position
         if "c2p" in self.pos_att_type:
@@ -252,7 +252,6 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
                 p2c_att = gather_last_dim(p2c_att, index)
             score += p2c_att
 
-        # return c2p_att + p2c_att
         return score
 
 
