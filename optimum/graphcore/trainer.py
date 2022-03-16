@@ -202,6 +202,7 @@ class IPUTrainer:
         if not self.args.fp32:
             self.model = self.model.half()
 
+        self.model_wrapped = self.model
         self.training_model = None
         self.inference_model = None
 
@@ -870,8 +871,7 @@ class IPUTrainer:
         if args.gradient_checkpointing:
             self.model.gradient_checkpointing_enable()
 
-        model = self._wrap_model(self.model)
-        self.model_wrapped = model
+        model = self._wrap_model(self.model_wrapped)
 
         # for the rest of this function `model` is the outside model, whether it was wrapped or not
         if model is not self.model:
