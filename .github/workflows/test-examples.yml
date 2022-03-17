@@ -30,6 +30,7 @@ jobs:
         pip install --upgrade pip
         export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_18_04-2\.4\.0*
         pip install ${SDK_PATH}/poptorch-*.whl
+        pip install git+https://github.com/huggingface/transformers.git
         pip install .
     - name: Test with Pytest
       run: |
