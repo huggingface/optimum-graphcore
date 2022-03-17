@@ -179,7 +179,6 @@ if is_torch_available():
             self.double_output = double_output
             self.config = None
 
-        # def forward(self, input_x, labels=None, **kwargs):
         def forward(self, input_x, labels=None):
             y = input_x * self.a + self.b
             if labels is None:
@@ -392,6 +391,7 @@ class IPUTrainerIntegrationPrerunTest(TestCasePlus, IPUTrainerIntegrationCommon)
     def check_trained_model(self, model, alternate_seed=False):
         # Checks a training seeded with learning_rate = 0.1
         (a, b) = self.alternate_trained_model if alternate_seed else self.default_trained_model
+        import pdb; pdb.set_trace()
         self.assertTrue(torch.allclose(model.a, a))
         self.assertTrue(torch.allclose(model.b, b))
 
@@ -455,48 +455,27 @@ class IPUTrainerIntegrationPrerunTest(TestCasePlus, IPUTrainerIntegrationCommon)
     #     trainer.train()
     #     self.check_trained_model(trainer.model, alternate_seed=True)
 
-    # TODO: hande this.
-    # def test_gradient_accumulation(self):
-    #     # Training with half the batch size but accumulation steps as 2 should give the same results.
-    #     trainer = get_regression_trainer(
-    #         gradient_accumulation_steps=2, per_device_train_batch_size=4, learning_rate=0.1
-    #     )
-    #     trainer.train()
-    #     self.check_trained_model(trainer.model)
+    def test_gradient_accumulation(self):
+        # Training with half the batch size but accumulation steps as 2 should give the same results.
+        trainer = get_regression_trainer(
+            gradient_accumulation_steps=2, per_device_train_batch_size=self.batch_size // 2, learning_rate=0.1
+        )
+        trainer.train()
+        self.check_trained_model(trainer.model)
 
-    # TODO: hande this.
-    # def test_custom_optimizer(self):
-    #     train_dataset = RegressionDataset()
-    #     args = IPUTrainingArguments("./regression")
-    #     model = RegressionModel()
-    #     optimizer = torch.optim.SGD(model.parameters(), lr=1.0)
-    #     lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda x: 1.0)
-    #     trainer = IPUTrainer(model, ipu_config, args, train_dataset=train_dataset, optimizers=(optimizer, lr_scheduler))
-    #     trainer.train()
+    def test_custom_optimizer(self):
+        train_dataset = RegressionDataset()
+        args = IPUTrainingArguments("./regression")
+        model = RegressionModel()
+        optimizer = torch.optim.SGD(model.parameters(), lr=1.0)
+        lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda x: 1.0)
+        trainer = IPUTrainer(model, get_ipu_config(), args, train_dataset=train_dataset, optimizers=(optimizer, lr_scheduler), force_to_pipelined=True)
+        trainer.train()
 
-    #     (a, b) = self.default_trained_model
-    #     self.assertFalse(torch.allclose(trainer.model.a, a))
-    #     self.assertFalse(torch.allclose(trainer.model.b, b))
-    #     self.assertEqual(trainer.optimizer.state_dict()["param_groups"][0]["lr"], 1.0)
-
-    # TODO: hande this.
-    # def test_adafactor_lr_none(self):
-    #     # test the special case where lr=None, since IPUTrainer can't not have lr_scheduler
-
-    #     from transformers.optimization import Adafactor, AdafactorSchedule
-
-    #     train_dataset = RegressionDataset()
-    #     args = IPUTrainingArguments("./regression")
-    #     model = RegressionModel()
-    #     optimizer = Adafactor(model.parameters(), scale_parameter=True, relative_step=True, warmup_init=True, lr=None)
-    #     lr_scheduler = AdafactorSchedule(optimizer)
-    #     trainer = IPUTrainer(model, args, train_dataset=train_dataset, optimizers=(optimizer, lr_scheduler))
-    #     trainer.train()
-
-    #     (a, b) = self.default_trained_model
-    #     self.assertFalse(torch.allclose(trainer.model.a, a))
-    #     self.assertFalse(torch.allclose(trainer.model.b, b))
-    #     self.assertGreater(trainer.optimizer.state_dict()["param_groups"][0]["lr"], 0)
+        (a, b) = self.default_trained_model
+        self.assertFalse(torch.allclose(trainer.model.a, a))
+        self.assertFalse(torch.allclose(trainer.model.b, b))
+        self.assertEqual(trainer.optimizer.state_dict()["param_groups"][0]["lr"], 1.0)
 
 
 @require_torch

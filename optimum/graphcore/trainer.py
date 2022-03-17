@@ -143,9 +143,6 @@ class IPUTrainer:
         preprocess_logits_for_metrics: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = None,
         force_to_pipelined: bool = False,
     ):
-        if optimizers != (None, None):
-            raise NotImplementedError("providing optimizers to IPUTrainer is not supported yet.")
-
         if args is None:
             output_dir = "tmp_trainer"
             logger.info(f"No `TrainingArguments` passed, using `output_dir={output_dir}`.")
@@ -211,6 +208,10 @@ class IPUTrainer:
         self.compute_metrics = compute_metrics
         self.preprocess_logits_for_metrics = preprocess_logits_for_metrics
         self.optimizer, self.lr_scheduler = optimizers
+
+        if self.optimizer is not None and not isinstance(self.optimizer, poptorch.optim.Optimizer):
+            self.optimizer = self._pytorch_optimizer_to_poptorch(self.optimizer, model, self.model)
+
         if model_init is not None and (self.optimizer is not None or self.lr_scheduler is not None):
             raise RuntimeError(
                 "Passing a `model_init` is incompatible with providing the `optimizers` argument. "
@@ -265,15 +266,56 @@ class IPUTrainer:
         # very last
         self._memory_tracker.stop_and_update_metrics()
 
-    def _pytorch_optimizer_to_poptorch(self, optimizer: optim.Optimizer):
-        # TODO: implement this function
-        pytorch_to_poptorch_mapping = {
-            optim.SGD: poptorch.optim.SGD,
-            optim.Adam: poptorch.optim.Adam,
-            optim.AdamW: poptorch.optim.AdamW,
-            optim.RMSpop: poptorch.optim.RMSprop,
+    def _pytorch_optimizer_to_poptorch(self, optimizer: optim.Optimizer, model: Union[PreTrainedModel, nn.Module], pipelined_model: Union[PreTrainedModel, nn.Module]) -> poptorch.optim.Optimizer:
+        """
+        Converts a PyTorch optimizer to a poptorch optimizer.
+
+        Args:
+            optimizer (`~torch.optim.Optimizer`): The optimizer to convert.
+            model (~transformers.modeling_utils.PreTrainedModel or torch.nn.Module):
+                The original model the optimizer has parameter references to.
+            pipelined_model (~transformers.modeling_utils.PreTrainedModel or torch.nn.Module):
+                The pipelined version of the model, its parameters will be used by the poptorch optimizer.
+
+        Returns:
+            The converted poptorch optimizer.
+        """
+        first_order_type = torch.float16 if self.ipu_config.enable_half_first_order_momentum else torch.float32
+        optimizer_kwargs = {
+            "loss_scaling": self.args.loss_scaling,
+            "accum_type": torch.float16,
+            "first_order_momentum_accum_type": first_order_type,
+            "second_order_momentum_accum_type": torch.float32,
         }
-        pass
+        # TODO: disabled max_grad_norm because it make things fail, fix it.
+        max_grad_norm = self.args.max_grad_norm
+        self.args.max_grad_norm = None
+        pytorch_to_poptorch_mapping = {
+            optim.SGD: (poptorch.optim.SGD, {"loss_scaling": self.args.loss_scaling}),
+            optim.Adam: (poptorch.optim.Adam, {"max_grad_norm": self.args.max_grad_norm, **optimizer_kwargs}),
+            optim.AdamW: (poptorch.optim.AdamW, {"max_grad_norm": self.args.max_grad_norm, **optimizer_kwargs}),
+            optim.RMSprop: (poptorch.optim.RMSprop, optimizer_kwargs),
+        }
+        self.args.max_grad_norm = max_grad_norm
+        poptorch_optimizer_cls, kwargs = pytorch_to_poptorch_mapping.get(optimizer.__class__, (None, {}))
+        if poptorch_optimizer_cls is None:
+            raise KeyError(f"Could not find a poptorch counterpart for optimizer {optimizer.__class__.__name__}")
+
+        # Some dummy value that should be overriden by the real value with .load_state_dict, using some absurd value to
+        # make clear if the value is not properly overriden.
+        dummy_lr = 1e4
+        poptorch_optimizer = poptorch_optimizer_cls(optimizer.param_groups, lr=dummy_lr, **kwargs)
+        poptorch_optimizer.load_state_dict({"ipu_state": None, "ipu_param": None, **optimizer.state_dict()})
+
+        # Currently poptorch_optimizer contains references to the original model parameters, so we need to change those
+        # to references to the pipelined model parameters.
+        id2name = {id(param): name for name, param in model.named_parameters()}
+        name2param = dict(pipelined_model.named_parameters())
+        for group in poptorch_optimizer.param_groups:
+            for idx, param in enumerate(group["params"]):
+                group["params"][idx] = name2param[id2name[id(param)]]
+
+        return poptorch_optimizer
 
     def _compile_model(
         self,
@@ -614,8 +656,8 @@ class IPUTrainer:
             else:
                 optimizer_cls = AdamW
                 optimizer_kwargs = {
-                    # Makes test_trainer.py fail but should be added
-                    # "max_grad_norm": self.args.max_grad_norm,
+                    # TODO: disabled max_grad_norm because it make things fail, fix it.
+                    #  "max_grad_norm": self.args.max_grad_norm,
                     "betas": (self.args.adam_beta1, self.args.adam_beta2),
                     "eps": self.args.adam_epsilon,
                     "bias_correction": False,
