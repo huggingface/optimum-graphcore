@@ -31,16 +31,7 @@ from tqdm.auto import tqdm
 
 # Integrations must be imported before ML frameworks:
 from transformers.integrations import (  # isort: split
-    default_hp_search_backend,
     get_reporting_integration_callbacks,
-    hp_params,
-    is_fairscale_available,
-    is_optuna_available,
-    is_ray_tune_available,
-    is_sigopt_available,
-    run_hp_search_optuna,
-    run_hp_search_ray,
-    run_hp_search_sigopt,
 )
 
 import numpy as np
@@ -82,16 +73,9 @@ from transformers.trainer_callback import (
     TrainerState,
 )
 from transformers.trainer_pt_utils import (
-    DistributedLengthGroupedSampler,
-    DistributedSamplerWithLoop,
-    DistributedTensorGatherer,
     IterableDatasetShard,
     LabelSmoother,
     LengthGroupedSampler,
-    SequentialDistributedSampler,
-    ShardSampler,
-    distributed_broadcast_scalars,
-    distributed_concat,
     find_batch_size,
     get_parameter_names,
     nested_concat,
@@ -102,25 +86,18 @@ from transformers.trainer_pt_utils import (
 )
 from transformers.trainer_utils import (
     PREFIX_CHECKPOINT_DIR,
-    BestRun,
     EvalLoopOutput,
     EvalPrediction,
-    HPSearchBackend,
     HubStrategy,
     IntervalStrategy,
     PredictionOutput,
-    ShardedDDPOption,
     TrainerMemoryTracker,
     TrainOutput,
-    default_compute_objective,
-    default_hp_space,
     denumpify_detensorize,
     get_last_checkpoint,
-    number_of_arguments,
     set_seed,
     speed_metrics,
 )
-from transformers.training_args import ParallelMode, TrainingArguments
 
 from .ipu_configuration import IPU_CONFIG_NAME, IPUConfig
 from .modelcard import IPUTrainingSummary
@@ -132,6 +109,9 @@ from .training_args import IPUTrainingArguments
 if is_datasets_available():
     import datasets
 
+
+if TYPE_CHECKING:
+    import optuna
 
 logger = logging.get_logger(__name__)
 
@@ -151,7 +131,7 @@ class IPUTrainer:
         self,
         model: Union[PreTrainedModel, nn.Module] = None,
         ipu_config: IPUConfig = None,
-        args: TrainingArguments = None,
+        args: IPUTrainingArguments = None,
         data_collator: Optional[DataCollator] = None,
         train_dataset: Optional[Dataset] = None,
         eval_dataset: Optional[Dataset] = None,
@@ -249,14 +229,6 @@ class IPUTrainer:
         # Create clone of distant repo and output directory if needed
         if self.args.push_to_hub:
             self.init_git_repo()
-
-        # if self.args.should_save:
-        # os.makedirs(self.args.output_dir, exist_ok=True)
-        # path = os.path.join(self.args.output_dir, "executable_cache")
-        # logger.info(f"Executable caching enabled, cache directory: {path}")
-        # if self.ipu_config.executable_cache_dir is not None:
-        #     logger.warning(f"IPUConfig executable_cache_dir was overriden to be: {path}")
-        # self.ipu_config.executable_cache_dir = path
 
         if not callable(self.data_collator) and callable(getattr(self.data_collator, "collate_batch", None)):
             raise ValueError("The `data_collator` should be a simple callable (function, class with `__call__`).")
@@ -420,7 +392,6 @@ class IPUTrainer:
                 lengths = None
             model_input_name = self.tokenizer.model_input_names[0] if self.tokenizer is not None else None
 
-            # TODO: does this work with an IPU?
             return LengthGroupedSampler(
                 combined_batch_size,
                 dataset=self.train_dataset,
@@ -466,18 +437,16 @@ class IPUTrainer:
             "worker_init_fn": _WorkerInit(123),
         }
 
-        # TODO: support for iterable dataset
-        # if isinstance(train_dataset, torch.utils.data.IterableDataset):
-        #    self.options.Distributed.setNum,
-        #    return poptorch.DataLoader(
-        #        self.opts,
-        #        train_dataset,
-        #        batch_size=self.args.train_batch_size,
-        #        collate_fn=self.data_collator,
-        #        num_workers=self.args.dataloader_num_workers,
-        #        pin_memory=self.args.dataloader_pin_memory,
-        #        **poptorch_specific_kwargs,
-        #    )
+        if isinstance(train_dataset, torch.utils.data.IterableDataset):
+            return poptorch.DataLoader(
+                self.opts,
+                train_dataset,
+                batch_size=self.args.train_batch_size,
+                collate_fn=self.data_collator,
+                num_workers=self.args.dataloader_num_workers,
+                pin_memory=self.args.dataloader_pin_memory,
+                **poptorch_specific_kwargs,
+            )
 
         train_sampler = self._get_train_sampler()
         combined_batch_size = self.args.per_device_train_batch_size * self.ipu_config.batch_size_factor()
@@ -500,8 +469,7 @@ class IPUTrainer:
         )
 
     def _get_eval_sampler(self, eval_dataset: Dataset) -> Optional[torch.utils.data.Sampler]:
-        if self.args.world_size <= 1:
-            return SequentialSampler(eval_dataset)
+        return SequentialSampler(eval_dataset)
 
     def get_eval_dataloader(self, eval_dataset: Optional[Dataset] = None) -> poptorch.DataLoader:
         """
@@ -531,25 +499,16 @@ class IPUTrainer:
         # data collator as the wrapped version is only wanted for training.
         data_collator = getattr(self.data_collator, "__wrapped__", self.data_collator)
 
-        # if isinstance(eval_dataset, torch.utils.data.IterableDataset):
-        #     # TODO: add support, should be easy.
-        #     # raise NotImplementedError("Evluation with IterableDataset not supported yet.")
-        #     # if self.args.world_size > 1:
-        #     #     eval_dataset = IterableDatasetShard(
-        #     #         eval_dataset,
-        #     #         batch_size=self.args.eval_batch_size,
-        #     #         drop_last=self.args.dataloader_drop_last,
-        #     #         num_processes=self.args.world_size,
-        #     #         process_index=self.args.process_index,
-        #     #     )
-        #     return poptorch.DataLoader(
-        #         self.eval_opts,
-        #         eval_dataset,
-        #         batch_size=self.args.per_device_eval_batch_size,
-        #         collate_fn=data_collator,
-        #         num_workers=self.args.dataloader_num_workers,
-        #         pin_memory=self.args.dataloader_pin_memory,
-        #     )
+        if isinstance(eval_dataset, torch.utils.data.IterableDataset):
+            return poptorch.DataLoader(
+                self.eval_opts,
+                eval_dataset,
+                batch_size=self.args.per_device_eval_batch_size,
+                collate_fn=data_collator,
+                num_workers=self.args.dataloader_num_workers,
+                pin_memory=self.args.dataloader_pin_memory,
+                **poptorch_specific_kwargs,
+            )
 
         eval_sampler = self._get_eval_sampler(eval_dataset)
 
@@ -590,14 +549,6 @@ class IPUTrainer:
         data_collator = getattr(self.data_collator, "__wrapped__", self.data_collator)
 
         if isinstance(test_dataset, torch.utils.data.IterableDataset):
-            # if self.args.world_size > 1:
-            #     test_dataset = IterableDatasetShard(
-            #         test_dataset,
-            #         batch_size=self.args.eval_batch_size,
-            #         drop_last=self.args.dataloader_drop_last,
-            #         num_processes=self.args.world_size,
-            #         process_index=self.args.process_index,
-            #     )
             return poptorch.DataLoader(
                 self.eval_opts,
                 test_dataset,
@@ -605,16 +556,16 @@ class IPUTrainer:
                 collate_fn=data_collator,
                 num_workers=self.args.dataloader_num_workers,
                 pin_memory=self.args.dataloader_pin_memory,
+                **poptorch_specific_kwargs,
             )
 
-        # Slow things down.
-        # test_sampler = self._get_eval_sampler(test_dataset)
+        test_sampler = self._get_eval_sampler(test_dataset)
 
         # We use the same batch_size as for eval.
         return poptorch.DataLoader(
             self.eval_opts,
             test_dataset,
-            # sampler=test_sampler,
+            sampler=test_sampler,
             batch_size=self.args.per_device_eval_batch_size,
             collate_fn=data_collator,
             drop_last=self.args.dataloader_drop_last,
@@ -658,7 +609,7 @@ class IPUTrainer:
                 optimizer_kwargs = {
                     "max_weight_norm": None,
                     "bias_correction": not self.args.lamb_no_bias_correction,
-                    "eps": 1e-6,  # TODO: use self.args.adam_epsilon?
+                    "eps": self.args.adam_epsilon,
                 }
             else:
                 optimizer_cls = AdamW
@@ -670,13 +621,10 @@ class IPUTrainer:
                     "bias_correction": False,
                 }
 
-            # TODO: update the training args
             first_order_type = torch.float16 if self.ipu_config.enable_half_first_order_momentum else torch.float32
             optimizer_kwargs["lr"] = self.args.learning_rate
             optimizer_kwargs["loss_scaling"] = self.args.loss_scaling
-            optimizer_kwargs[
-                "accum_type"
-            ] = torch.float16  # TODO: should take into account if the model is in full or half precision.
+            optimizer_kwargs["accum_type"] = torch.float16
             optimizer_kwargs["first_order_momentum_accum_type"] = first_order_type
             optimizer_kwargs["second_order_momentum_accum_type"] = torch.float32
 
@@ -717,9 +665,20 @@ class IPUTrainer:
         """
         return len(dataloader.dataset)
 
-    def _wrap_model(self, model: Union[PreTrainedModel, PoplarExecutor], training=True):
+    def _wrap_model(self, model: Union[PreTrainedModel, PoplarExecutor], training=True) -> PoplarExecutor:
+        """
+        Wraps a model for poptorch, either for training or for inference.
+
+        Args:
+            model (`~transformers.modeling_utils.PreTrainedModel` or `PoplarExecutor`): the model to wrap
+            training (`bool`, *optional*, defaults to `True`): whether to wrap the model for training or not.
+
+        Returns:
+            The wrapped model.
+
+        """
         wrapped = None
-        if isinstance(model, poptorch.PoplarExecutor):
+        if isinstance(model, PoplarExecutor):
             wrapped = model
         elif training:
             if self.training_model is None:
@@ -793,7 +752,6 @@ class IPUTrainer:
             logger.info(f"Loading model from {resume_from_checkpoint}).")
 
             if os.path.isfile(os.path.join(resume_from_checkpoint, CONFIG_NAME)):
-                # TODO: how do we reload IPU specific configs.
                 config = PretrainedConfig.from_json_file(os.path.join(resume_from_checkpoint, CONFIG_NAME))
                 checkpoint_version = config.transformers_version
                 if checkpoint_version is not None and checkpoint_version != __version__:
@@ -863,10 +821,6 @@ class IPUTrainer:
         # for the rest of this function `model` is the outside model, whether it was wrapped or not
         if model is not self.model:
             self.model_wrapped = model
-
-        # TODO: handle optimizer and scheduler creation
-        # if delay_optimizer_creation:
-        #     self.create_optimizer_and_scheduler(num_training_steps=max_steps)
 
         # Check if saved optimizer or scheduler states exist
         self._load_optimizer_and_scheduler(resume_from_checkpoint)
@@ -981,8 +935,6 @@ class IPUTrainer:
                     steps_trained_progress_bar.close()
                     steps_trained_progress_bar = None
 
-                # TODO: gradient accumulation happens inside PopTorch, how to handle this then?
-                # if step % args.gradient_accumulation_steps == 0:
                 self.control = self.callback_handler.on_step_begin(args, self.state, self.control)
 
                 tr_loss_step = self.training_step(model, inputs)
@@ -1007,13 +959,13 @@ class IPUTrainer:
                 self.state.epoch = epoch + (step + 1) / steps_in_epoch
                 self.control = self.callback_handler.on_step_end(args, self.state, self.control)
 
-                self._maybe_log_save_evaluate(tr_loss, model, trial, epoch, ignore_keys_for_eval)
+                self._maybe_log_save_evaluate(tr_loss, model, epoch, ignore_keys_for_eval)
 
                 if self.control.should_epoch_stop or self.control.should_training_stop:
                     break
 
             self.control = self.callback_handler.on_epoch_end(args, self.state, self.control)
-            self._maybe_log_save_evaluate(tr_loss, model, trial, epoch, ignore_keys_for_eval)
+            self._maybe_log_save_evaluate(tr_loss, model, epoch, ignore_keys_for_eval)
 
             if self.control.should_training_stop:
                 break
@@ -1032,7 +984,7 @@ class IPUTrainer:
             if os.path.exists(best_model_path):
                 # We load the model state dict on the CPU to avoid an OOM error.
                 state_dict = torch.load(best_model_path, map_location="cpu")
-                # If the model is on the GPU, it still works!
+                # If the model is on the IPUs, it still works!
                 self._load_state_dict_in_model(state_dict)
             else:
                 logger.warn(
@@ -1074,12 +1026,11 @@ class IPUTrainer:
         if len(load_result.unexpected_keys) != 0:
             logger.warn(f"There were unexpected keys in the checkpoint model loaded: {load_result.unexpected_keys}.")
 
-    def _maybe_log_save_evaluate(self, tr_loss, model, trial, epoch, ignore_keys_for_eval):
+    def _maybe_log_save_evaluate(self, tr_loss, model, epoch, ignore_keys_for_eval):
         if self.control.should_log:
             logs: Dict[str, float] = {}
 
-            # all_gather + mean() to get average loss over all processes
-            tr_loss_scalar = self._nested_gather(tr_loss).mean().item()
+            tr_loss_scalar = tr_loss.mean().item()
 
             # reset tr_loss to zero
             tr_loss -= tr_loss
@@ -1098,10 +1049,9 @@ class IPUTrainer:
             model.detachFromDevice()
             metrics = self.evaluate(ignore_keys=ignore_keys_for_eval)
             model.attachToDevice()
-            # self._report_to_hp_search(trial, epoch, metrics)
 
         if self.control.should_save:
-            self._save_checkpoint(model, trial, metrics=metrics)
+            self._save_checkpoint(model, metrics=metrics)
             self.control = self.callback_handler.on_save(self.args, self.state, self.control)
 
     def _load_rng_state(self, checkpoint):
@@ -1111,7 +1061,6 @@ class IPUTrainer:
 
         # TODO: validate that.
         local_rank = -1
-        # local_rank = xm.get_local_ordinal() if is_torch_tpu_available() else self.args.local_rank
         if local_rank != -1:
             rng_file = os.path.join(checkpoint, f"rng_state_{local_rank}.pth")
             if not os.path.isfile(os.path.join(checkpoint, rng_file)):
@@ -1135,7 +1084,7 @@ class IPUTrainer:
         torch.random.set_rng_state(checkpoint_rng_state["cpu"])
         # TODO: set poptorch rng state?
 
-    def _save_checkpoint(self, model, trial, metrics=None):
+    def _save_checkpoint(self, model, metrics=None):
         # In all cases, including ddp/dp/deepspeed, self.model is always a reference to the model we
         # want to save except FullyShardedDDP.
         # assert unwrap_model(model) is self.model, "internal model should be a reference to self.model"
@@ -1143,20 +1092,8 @@ class IPUTrainer:
         # Save model checkpoint
         checkpoint_folder = f"{PREFIX_CHECKPOINT_DIR}-{self.state.global_step}"
 
-        if self.hp_search_backend is not None and trial is not None:
-            if self.hp_search_backend == HPSearchBackend.OPTUNA:
-                run_id = trial.number
-            elif self.hp_search_backend == HPSearchBackend.RAY:
-                from ray import tune
-
-                run_id = tune.get_trial_id()
-            elif self.hp_search_backend == HPSearchBackend.SIGOPT:
-                run_id = trial.id
-            run_name = self.hp_name(trial) if self.hp_name is not None else f"run-{run_id}"
-            run_dir = os.path.join(self.args.output_dir, run_name)
-        else:
-            run_dir = self.args.output_dir
-            self.store_flos()
+        run_dir = self.args.output_dir
+        self.store_flos()
 
         output_dir = os.path.join(run_dir, checkpoint_folder)
         self.save_model(output_dir)
@@ -1307,6 +1244,10 @@ class IPUTrainer:
             loss = outputs["loss"] if isinstance(outputs, dict) else outputs[0]
 
         return (loss, outputs) if return_outputs else loss
+
+    def is_world_process_zero(self) -> bool:
+        # Needed only because log_metrics use it.
+        return True
 
     def save_model(self, output_dir: Optional[str] = None):
         """
@@ -1572,7 +1513,7 @@ class IPUTrainer:
             self._past = None
 
         # Initialize containers
-        # losses/preds/labels on GPU/TPU (accumulated for eval_accumulation_steps)
+        # losses/preds/labels on IPU (accumulated for eval_accumulation_steps, legacy code for IPUs)
         losses_host = None
         preds_host = None
         labels_host = None
@@ -1598,44 +1539,22 @@ class IPUTrainer:
                 model, inputs, prediction_loss_only, ignore_keys=ignore_keys, is_last_batch=step == len(dataloader) - 1
             )
 
+            loss = loss.mean(dim=0, keepdim=True)
+
             # Update containers on host
             if loss is not None:
-                losses = self._nested_gather(loss.repeat(batch_size))
-                losses_host = losses if losses_host is None else torch.cat((losses_host, losses), dim=0)
-            if labels is not None:
-                labels = self._pad_across_processes(labels)
-                labels = self._nested_gather(labels)
-                labels_host = labels if labels_host is None else nested_concat(labels_host, labels, padding_index=-100)
+                losses_host = loss if losses_host is None else torch.cat((losses_host, loss), dim=0)
             if logits is not None:
-                logits = self._pad_across_processes(logits)
-                logits = self._nested_gather(logits)
-                if self.preprocess_logits_for_metrics is not None:
-                    logits = self.preprocess_logits_for_metrics(logits, labels)
                 preds_host = logits if preds_host is None else nested_concat(preds_host, logits, padding_index=-100)
+            if labels is not None:
+                labels_host = labels if labels_host is None else nested_concat(labels_host, labels, padding_index=-100)
+
             self.control = self.callback_handler.on_prediction_step(self.args, self.state, self.control)
-
-            # Gather all tensors and put them back on the CPU if we have done enough accumulation steps.
-            if self.args.eval_accumulation_steps is not None and (step + 1) % self.args.eval_accumulation_steps == 0:
-                if losses_host is not None:
-                    losses = nested_numpify(losses_host)
-                    all_losses = losses if all_losses is None else np.concatenate((all_losses, losses), axis=0)
-                if preds_host is not None:
-                    logits = nested_numpify(preds_host)
-                    all_preds = logits if all_preds is None else nested_concat(all_preds, logits, padding_index=-100)
-                if labels_host is not None:
-                    labels = nested_numpify(labels_host)
-                    all_labels = (
-                        labels if all_labels is None else nested_concat(all_labels, labels, padding_index=-100)
-                    )
-
-                # Set back to None to begin a new accumulation
-                losses_host, preds_host, labels_host = None, None, None
 
         if self.args.past_index and hasattr(self, "_past"):
             # Clean the state at the end of the evaluation loop
             delattr(self, "_past")
 
-        # Gather all remaining tensors and put them back on the CPU
         if losses_host is not None:
             losses = nested_numpify(losses_host)
             all_losses = losses if all_losses is None else np.concatenate((all_losses, losses), axis=0)
@@ -1686,57 +1605,6 @@ class IPUTrainer:
         model.detachFromDevice()
 
         return EvalLoopOutput(predictions=all_preds, label_ids=all_labels, metrics=metrics, num_samples=num_samples)
-
-    def _nested_gather(self, tensors, name=None):
-        """
-        Gather value of `tensors` (tensor or list/tuple of nested tensors) and convert them to numpy before
-        concatenating them to `gathered`
-        """
-        if tensors is None:
-            return
-        # TODO: this can be removed.
-        # if is_torch_tpu_available():
-        #     if name is None:
-        #         name = "nested_gather"
-        #     tensors = nested_xla_mesh_reduce(tensors, name)
-        # elif is_sagemaker_mp_enabled():
-        #     tensors = smp_gather(tensors)
-        # elif self.args.local_rank != -1:
-        #     tensors = distributed_concat(tensors)
-        return tensors
-
-    # Copied from Accelerate.
-    def _pad_across_processes(self, tensor, pad_index=-100):
-        """
-        Recursively pad the tensors in a nested list/tuple/dictionary of tensors from all devices to the same size so
-        they can safely be gathered.
-        """
-        if isinstance(tensor, (list, tuple)):
-            return type(tensor)(self._pad_across_processes(t, pad_index=pad_index) for t in tensor)
-        elif isinstance(tensor, dict):
-            return type(tensor)({k: self._pad_across_processes(v, pad_index=pad_index) for k, v in tensor.items()})
-        elif not isinstance(tensor, torch.Tensor):
-            raise TypeError(
-                f"Can't pad the values of type {type(tensor)}, only of nested list/tuple/dicts of tensors."
-            )
-
-        if len(tensor.shape) < 2:
-            return tensor
-        # Gather all sizes
-        size = torch.tensor(tensor.shape, device=tensor.device)[None]
-        sizes = self._nested_gather(size).cpu()
-
-        max_size = max(s[1] for s in sizes)
-        if tensor.shape[1] == max_size:
-            return tensor
-
-        # Then pad to the maximum size
-        old_size = tensor.shape
-        new_size = list(old_size)
-        new_size[1] = max_size
-        new_tensor = tensor.new_zeros(tuple(new_size)) + pad_index
-        new_tensor[:, : old_size[1]] = tensor
-        return new_tensor
 
     def prediction_step(
         self,
@@ -1792,7 +1660,7 @@ class IPUTrainer:
                 # corresponding POD, ignoring them is necessary to not mess up evaluation loss computation
                 if is_last_batch:
                     loss = loss[~loss.isnan()]
-                loss = loss.mean().detach()
+                loss = loss.detach()
                 if isinstance(outputs, dict):
                     logits = tuple(v for k, v in outputs.items() if k not in ignore_keys + ["loss"])
                 else:

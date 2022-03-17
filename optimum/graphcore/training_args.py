@@ -85,10 +85,6 @@ class IPUTrainingArguments:
         default=None,
         metadata={"help": "Number of updates steps to accumulate before performing a backward/update pass."},
     )
-    eval_accumulation_steps: Optional[int] = field(
-        default=None,
-        metadata={"help": "Number of predictions steps to accumulate before moving the tensors to the CPU."},
-    )
     learning_rate: float = field(default=5e-5, metadata={"help": "The initial learning rate for AdamW."})
     weight_decay: float = field(default=0.0, metadata={"help": "Weight decay for AdamW if we apply some."})
     adam_beta1: float = field(default=0.9, metadata={"help": "Beta1 for AdamW optimizer"})
@@ -455,69 +451,11 @@ class IPUTrainingArguments:
         return self._setup_devices
 
     @property
-    @torch_required
-    def parallel_mode(self):
-        return ParallelMode.IPU
-
-    @property
-    @torch_required
-    def world_size(self):
-        """
-        The number of processes used in parallel.
-        """
-        # if is_torch_tpu_available():
-        #     return xm.xrt_world_size()
-        # elif is_sagemaker_mp_enabled():
-        #     return smp.dp_size()
-        # elif is_sagemaker_dp_enabled():
-        #     return sm_dist.get_world_size()
-        # elif self.local_rank != -1:
-        #     return torch.distributed.get_world_size()
-        return 1
-
-    @property
-    @torch_required
-    def process_index(self):
-        """
-        The index of the current process used.
-        """
-        # if is_torch_tpu_available():
-        #     return xm.get_ordinal()
-        # elif is_sagemaker_mp_enabled():
-        #     return smp.dp_rank()
-        # elif is_sagemaker_dp_enabled():
-        #     return sm_dist.get_rank()
-        # elif self.local_rank != -1:
-        #     return torch.distributed.get_rank()
-        return 0
-
-    @property
-    def should_log(self):
-        """
-        Whether or not the current process should produce log.
-        """
-        return self.process_index
-        # if self.log_on_each_node:
-        #     return self.local_process_index == 0
-        # else:
-        #     # if is_sagemaker_mp_enabled():
-        #     #     return smp.rank() == 0
-        #     # else:
-        #     return self.process_index == 0
-
-    @property
     def should_save(self):
         """
         Whether or not the current process should write to disk, e.g., to save models and checkpoints.
         """
-        return self.process_index == 0
-        # if self.save_on_each_node:
-        #     return self.local_process_index == 0
-        # else:
-        #     if is_sagemaker_mp_enabled():
-        #         return smp.rank() == 0
-        #     else:
-        #         return self.process_index == 0
+        return True
 
     def get_process_log_level(self):
         """
@@ -534,22 +472,6 @@ class IPUTrainingArguments:
         """
         log_level_main_node = logging.INFO if self.log_level == -1 else self.log_level
         return log_level_main_node
-        # log_level_replica_node = logging.WARNING if self.log_level_replica == -1 else self.log_level_replica
-        # return log_level_main_node if self.should_log else log_level_replica_node
-
-    @property
-    def place_model_on_device(self):
-        """
-        Can be subclassed and overridden for some specific integrations.
-        """
-        return not is_sagemaker_mp_enabled()
-
-    @property
-    def _no_sync_in_gradient_accumulation(self):
-        """
-        Whether or not to use no_sync for the gradients when doing gradient accumulation.
-        """
-        return not (self.deepspeed or is_sagemaker_dp_enabled() or is_sagemaker_mp_enabled())
 
     @contextlib.contextmanager
     def main_process_first(self, local=True, desc="work"):
@@ -572,37 +494,8 @@ class IPUTrainingArguments:
                 a work description to be used in debug logs
 
         """
-        if is_torch_available() and self.world_size > 1:
-            if local:
-                is_main_process = self.local_process_index == 0
-                main_process_desc = "main local process"
-            else:
-                is_main_process = self.process_index == 0
-                main_process_desc = "main process"
-
-            try:
-                if not is_main_process:
-                    # tell all replicas to wait
-                    logger.debug(f"{self.process_index}: waiting for the {main_process_desc} to perform {desc}")
-                    if is_torch_tpu_available():
-                        xm.rendezvous(desc)
-                    elif is_sagemaker_dp_enabled():
-                        sm_dist.barrier()
-                    else:
-                        torch.distributed.barrier()
-                yield
-            finally:
-                if is_main_process:
-                    # the wait is over
-                    logger.debug(f"{self.process_index}: {main_process_desc} completed {desc}, releasing all replicas")
-                    if is_torch_tpu_available():
-                        xm.rendezvous(desc)
-                    elif is_sagemaker_dp_enabled():
-                        sm_dist.barrier()
-                    else:
-                        torch.distributed.barrier()
-        else:
-            yield
+        # Not useful, kept to save us from having to edit all the examples.
+        yield
 
     def get_warmup_steps(self, num_training_steps: int):
         """
