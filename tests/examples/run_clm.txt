@@ -1,0 +1,66 @@
+33c33
+< from datasets import load_dataset, load_metric
+---
+> from datasets import load_dataset
+35a36,38
+> from optimum.graphcore import IPUConfig, IPUTrainer
+> from optimum.graphcore import IPUTrainingArguments as TrainingArguments
+> from optimum.graphcore.data import pad_on_batch_axis
+43,44d45
+<     Trainer,
+<     TrainingArguments,
+46d46
+<     is_torch_tpu_available,
+56c56
+< check_min_version("4.18.0.dev0")
+---
+> check_min_version("4.12.0.dev0")
+220,224d219
+<     # Log on each process the small summary:
+<     logger.warning(
+<         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
+<         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
+<     )
+329c324,332
+<             logger.info(f"New config: {config}")
+---
+> 
+>     if training_args.ipu_config_name:
+>         ipu_config = IPUConfig.from_pretrained(training_args.ipu_config_name, **config_kwargs)
+>     elif model_args.model_name_or_path:
+>         ipu_config = IPUConfig.from_pretrained(model_args.model_name_or_path, **config_kwargs)
+>     else:
+>         raise RuntimeError(
+>             "You must provide an IPUConfig. If the pretrained model does not contain an IPUConfig, you can load an IPUConfig using --ipu_config_name."
+>         )
+457,473d459
+<         def preprocess_logits_for_metrics(logits, labels):
+<             if isinstance(logits, tuple):
+<                 # Depending on the model and config, logits may contain extra tensors,
+<                 # like past_key_values, but logits always come first
+<                 logits = logits[0]
+<             return logits.argmax(dim=-1)
+< 
+<         metric = load_metric("accuracy")
+< 
+<         def compute_metrics(eval_preds):
+<             preds, labels = eval_preds
+<             # preds have the same shape as the labels, after the argmax(-1) has been calculated
+<             # by preprocess_logits_for_metrics but we need to shift the labels
+<             labels = labels[:, 1:].reshape(-1)
+<             preds = preds[:, :-1].reshape(-1)
+<             return metric.compute(predictions=preds, references=labels)
+< 
+475c461
+<     trainer = Trainer(
+---
+>     trainer = IPUTrainer(
+476a463
+>         ipu_config=ipu_config,
+481d467
+<         # Data collator will default to DataCollatorWithPadding, so we change it.
+483,486d468
+<         compute_metrics=compute_metrics if training_args.do_eval and not is_torch_tpu_available() else None,
+<         preprocess_logits_for_metrics=preprocess_logits_for_metrics
+<         if training_args.do_eval and not is_torch_tpu_available()
+<         else None,
