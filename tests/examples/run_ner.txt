@@ -33,12 +33,23 @@
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
+<<<<<<< HEAD
 394a400,404
+=======
+351a353,357
+>     # Customize tokenization for GPT2. We reuse the EOS token as the PAD token.
+>     if config.model_type == "gpt2":
+>         tokenizer.pad_token = tokenizer.eos_token
+>         model.config.pad_token_id = model.config.eos_token_id
+> 
+391a398,402
+>>>>>>> Update diff files for glue, xnli, ner
 >     if not data_args.pad_to_max_length:
 >         logging.warning(
 >             "Not padding to max length might lead to batches with difference sequence lengths, which might not work as"
 >             "expected on IPUs"
 >         )
+<<<<<<< HEAD
 481c491
 <     data_collator = DataCollatorForTokenClassification(tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None)
 ---
@@ -48,4 +59,15 @@
 ---
 >     trainer = IPUTrainer(
 521a532
+=======
+475c486
+<     data_collator = DataCollatorForTokenClassification(tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None)
+---
+>     data_collator = DataCollatorForTokenClassification(tokenizer, pad_to_multiple_of=None)
+514c525
+<     trainer = Trainer(
+---
+>     trainer = IPUTrainer(
+515a527
+>>>>>>> Update diff files for glue, xnli, ner
 >         ipu_config=ipu_config,
