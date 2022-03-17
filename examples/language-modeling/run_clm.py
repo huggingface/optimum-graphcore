@@ -15,8 +15,9 @@
 # limitations under the License.
 """
 Fine-tuning the library models for causal language modeling (GPT, GPT-2, CTRL, ...) on a text file or a dataset.
+
 Here is the full list of checkpoints on the hub that can be fine-tuned by this script:
-https://huggingface.co/models?filter=causal-lm
+https://huggingface.co/models?filter=text-generation
 """
 # You can also adapt this script on your own causal language modeling task. Pointers for this are left as comments.
 
@@ -25,6 +26,7 @@ import math
 import os
 import sys
 from dataclasses import dataclass, field
+from itertools import chain
 from typing import Optional
 
 import datasets
@@ -56,6 +58,7 @@ check_min_version("4.12.0.dev0")
 require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/language-modeling/requirements.txt")
 
 logger = logging.getLogger(__name__)
+
 
 MODEL_CONFIG_CLASSES = list(MODEL_FOR_CAUSAL_LM_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
@@ -111,11 +114,11 @@ class ModelArguments:
         },
     )
 
-    # def __post_init__(self):
-    #     if self.config_overrides is not None and (self.config_name is not None or self.model_name_or_path is not None):
-    #         raise ValueError(
-    #             "--config_overrides can't be used in combination with --config_name or --model_name_or_path"
-    #         )
+    def __post_init__(self):
+        if self.config_overrides is not None and (self.config_name is not None or self.model_name_or_path is not None):
+            raise ValueError(
+                "--config_overrides can't be used in combination with --config_name or --model_name_or_path"
+            )
 
 
 @dataclass
@@ -181,12 +184,10 @@ class DataTrainingArguments:
         else:
             if self.train_file is not None:
                 extension = self.train_file.split(".")[-1]
-                if extension not in ["csv", "json", "txt"]:
-                    raise ValueError("`train_file` should be a csv, a json or a txt file.")
+                assert extension in ["csv", "json", "txt"], "`train_file` should be a csv, a json or a txt file."
             if self.validation_file is not None:
                 extension = self.validation_file.split(".")[-1]
-                if extension not in ["csv", "json", "txt"]:
-                    raise ValueError("`validation_file` should be a csv, a json or a txt file.")
+                assert extension in ["csv", "json", "txt"], "`validation_file` should be a csv, a json or a txt file."
 
 
 def main():
@@ -412,7 +413,7 @@ def main():
     # Main data processing function that will concatenate all texts from our dataset and generate chunks of block_size.
     def group_texts(examples):
         # Concatenate all texts.
-        concatenated_examples = {k: sum(examples[k], []) for k in examples.keys()}
+        concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
         total_length = len(concatenated_examples[list(examples.keys())[0]])
         # We drop the small remainder, we could add padding if the model supported it instead of this drop, you can
         # customize this part to your needs.
@@ -476,6 +477,7 @@ def main():
             checkpoint = last_checkpoint
         train_result = trainer.train(resume_from_checkpoint=checkpoint)
         trainer.save_model()  # Saves the tokenizer too for easy upload
+
         metrics = train_result.metrics
 
         max_train_samples = (
@@ -504,7 +506,7 @@ def main():
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
 
-    kwargs = {"finetuned_from": model_args.model_name_or_path, "tasks": "fill-mask"}
+    kwargs = {"finetuned_from": model_args.model_name_or_path, "tasks": "text-generation"}
     if data_args.dataset_name is not None:
         kwargs["dataset_tags"] = data_args.dataset_name
         if data_args.dataset_config_name is not None:
