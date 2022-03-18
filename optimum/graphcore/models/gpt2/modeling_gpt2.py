@@ -187,7 +187,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
             loss = loss_fct(lm_logits.view(-1, lm_logits.size(-1)), labels.view(-1))
 
         output = (lm_logits,) + transformer_outputs[1:]
-        return loss if loss is not None else output
+        return (loss,) if loss is not None else output
 
 
 @register(GPT2ForSequenceClassification)
