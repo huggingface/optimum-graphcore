@@ -253,28 +253,6 @@ def main():
         data_args.audio_column_name, datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate)
     )
 
-    def train_transforms(batch):
-        """Apply train_transforms across a batch."""
-        output_batch = {"input_values": []}
-        for audio in batch[data_args.audio_column_name]:
-            wav = random_subsample(
-                audio["array"], max_length=data_args.max_length_seconds, sample_rate=feature_extractor.sampling_rate
-            )
-            output_batch["input_values"].append(wav)
-        output_batch["labels"] = [label for label in batch[data_args.label_column_name]]
-
-        return output_batch
-
-    def val_transforms(batch):
-        """Apply val_transforms across a batch."""
-        output_batch = {"input_values": []}
-        for audio in batch[data_args.audio_column_name]:
-            wav = audio["array"]
-            output_batch["input_values"].append(wav)
-        output_batch["labels"] = [label for label in batch[data_args.label_column_name]]
-
-        return output_batch
-
     # Prepare label mappings.
     # We'll include these in the model's config to get human readable labels in the Inference API.
     labels = raw_datasets["train"].features[data_args.label_column_name].names
@@ -329,9 +307,6 @@ def main():
 
     def preprocess_function(examples):
         audio = examples[data_args.audio_column_name]
-        # output["input_values"] = random_subsample(
-        #     audio["array"], max_length=data_args.max_length_seconds, sample_rate=feature_extractor.sampling_rate
-        # )
         subsampled_audio = random_subsample(
             audio["array"], max_length=data_args.max_length_seconds, sample_rate=feature_extractor.sampling_rate
         )
@@ -353,8 +328,6 @@ def main():
                 raw_datasets["train"].shuffle(seed=training_args.seed).select(range(data_args.max_train_samples))
             )
         # Set the training transforms
-        # raw_datasets["train"].set_transform(train_transforms, output_all_columns=False)
-
         raw_datasets["train"] = raw_datasets["train"].map(
             preprocess_function, remove_columns=raw_datasets["train"].column_names
         )
@@ -365,7 +338,6 @@ def main():
                 raw_datasets["eval"].shuffle(seed=training_args.seed).select(range(data_args.max_eval_samples))
             )
         # Set the validation transforms
-        # raw_datasets["eval"].set_transform(val_transforms, output_all_columns=False)
         raw_datasets["eval"] = raw_datasets["eval"].map(
             preprocess_function, remove_columns=raw_datasets["eval"].column_names
         )
