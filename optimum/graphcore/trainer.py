@@ -166,8 +166,9 @@ class IPUTrainer:
 
         if model is None:
             if model_init is not None:
-                self.model_init = model_init
-                model = self.call_model_init()
+                raise RuntimeError("model_init is not supported by the IPUTrainer yet")
+                # self.model_init = model_init
+                # model = self.call_model_init()
             else:
                 raise RuntimeError("`Trainer` requires either a `model` or `model_init` argument")
         else:
@@ -283,7 +284,7 @@ class IPUTrainer:
         first_order_type = torch.float16 if self.ipu_config.enable_half_first_order_momentum else torch.float32
         optimizer_kwargs = {
             "loss_scaling": self.args.loss_scaling,
-            "accum_type": torch.float16,
+            "accum_type": first_order_type,
             "first_order_momentum_accum_type": first_order_type,
             "second_order_momentum_accum_type": torch.float32,
         }
@@ -666,7 +667,7 @@ class IPUTrainer:
             first_order_type = torch.float16 if self.ipu_config.enable_half_first_order_momentum else torch.float32
             optimizer_kwargs["lr"] = self.args.learning_rate
             optimizer_kwargs["loss_scaling"] = self.args.loss_scaling
-            optimizer_kwargs["accum_type"] = torch.float16
+            optimizer_kwargs["accum_type"] = first_order_type
             optimizer_kwargs["first_order_momentum_accum_type"] = first_order_type
             optimizer_kwargs["second_order_momentum_accum_type"] = torch.float32
 
@@ -903,6 +904,7 @@ class IPUTrainer:
             else:
                 steps_trained_in_current_epoch = 0
 
+            import pdb; pdb.set_trace()
             logger.info("  Continuing training from checkpoint, will skip to saved global_step")
             logger.info(f"  Continuing training from epoch {epochs_trained}")
             logger.info(f"  Continuing training from global step {self.state.global_step}")
@@ -1124,7 +1126,7 @@ class IPUTrainer:
         random.setstate(checkpoint_rng_state["python"])
         np.random.set_state(checkpoint_rng_state["numpy"])
         torch.random.set_rng_state(checkpoint_rng_state["cpu"])
-        # TODO: set poptorch rng state?
+        self.training_model.rng_state = checkpoint_rng_state["ipu"]
 
     def _save_checkpoint(self, model, metrics=None):
         # In all cases, including ddp/dp/deepspeed, self.model is always a reference to the model we
@@ -1166,11 +1168,11 @@ class IPUTrainer:
             self.state.save_to_json(os.path.join(output_dir, TRAINER_STATE_NAME))
 
         # Save RNG state in non-distributed training
-        # TODO: save IPU RNG state once it is available
         rng_states = {
             "python": random.getstate(),
             "numpy": np.random.get_state(),
             "cpu": torch.random.get_rng_state(),
+            "ipu": self.training_model.rng_state,
         }
 
         # A process can arrive here before the process 0 has a chance to save the model, in which case output_dir may
@@ -1577,11 +1579,17 @@ class IPUTrainer:
                     batch_size = observed_batch_size
 
             # Prediction step
+            # If dataset is not sized, is_last_batch is False because we cannot know.
+            is_last_batch = step == len(dataloader) - 1 if isinstance(dataloader.dataset, collections.abc.Sized) else False
             loss, logits, labels = self.prediction_step(
-                model, inputs, prediction_loss_only, ignore_keys=ignore_keys, is_last_batch=step == len(dataloader) - 1
+                model, inputs, prediction_loss_only, ignore_keys=ignore_keys, is_last_batch=is_last_batch
             )
 
             loss = loss.mean(dim=0, keepdim=True)
+
+            # If only one IPU is used, loss is a zero dimensional tensor, we unsqueeze to be able to concatenate.
+            if loss.dim() == 0:
+                loss = loss.unsqueeze(0)
 
             # Update containers on host
             if loss is not None:

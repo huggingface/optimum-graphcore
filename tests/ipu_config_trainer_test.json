@@ -13,9 +13,9 @@
   "attention_probs_dropout_prob": 0.0,
   "mask_tokens": 20,
   "output_mode": "all",
-  "replication_factor": 4,
+  "replication_factor": 1,
   "gradient_accumulation_steps": 1,
-  "device_iterations": 4,
+  "device_iterations": 1,
   "executable_cache_dir": "disabled",
   "replicated_tensor_sharding": true
 }
