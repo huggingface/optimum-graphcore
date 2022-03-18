@@ -156,6 +156,9 @@ class ExampleTestMeta(type):
                         results = json.load(fp)
                     self.assertGreaterEqual(float(results[self.SCORE_NAME]), self.EVAL_SCORE_THRESHOLD)
 
+            # TODO: do we need to enable this?
+            # self._cleanup_dataset_cache()
+
         return test
 
 
@@ -250,6 +253,15 @@ class ExampleTesterBase(TestCase):
         if not Path(requirements_filename).exists():
             return
         cmd_line = f"pip install -r {requirements_filename}".split()
+        p = subprocess.Popen(cmd_line)
+        return_code = p.wait()
+        self.assertEqual(return_code, 0)
+
+    def _cleanup_dataset_cache(self):
+        """
+        Cleans up the dataset cache to free up space for other tests.
+        """
+        cmd_line = ["rm" "-r", "/nethome/michaelb/.cache/huggingface/datasets"]
         p = subprocess.Popen(cmd_line)
         return_code = p.wait()
         self.assertEqual(return_code, 0)
