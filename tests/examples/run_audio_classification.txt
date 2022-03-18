@@ -1,0 +1,93 @@
+30,38c30,32
+< from transformers import (
+<     AutoConfig,
+<     AutoFeatureExtractor,
+<     AutoModelForAudioClassification,
+<     HfArgumentParser,
+<     Trainer,
+<     TrainingArguments,
+<     set_seed,
+< )
+---
+> from optimum.graphcore import IPUConfig, IPUTrainer
+> from optimum.graphcore import IPUTrainingArguments as TrainingArguments
+> from transformers import AutoConfig, AutoFeatureExtractor, AutoModelForAudioClassification, HfArgumentParser, set_seed
+203,206d196
+<     logger.warning(
+<         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu} "
+<         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
+<     )
+266,287d255
+<     def train_transforms(batch):
+<         """Apply train_transforms across a batch."""
+<         output_batch = {"input_values": []}
+<         for audio in batch[data_args.audio_column_name]:
+<             wav = random_subsample(
+<                 audio["array"], max_length=data_args.max_length_seconds, sample_rate=feature_extractor.sampling_rate
+<             )
+<             output_batch["input_values"].append(wav)
+<         output_batch["labels"] = [label for label in batch[data_args.label_column_name]]
+< 
+<         return output_batch
+< 
+<     def val_transforms(batch):
+<         """Apply val_transforms across a batch."""
+<         output_batch = {"input_values": []}
+<         for audio in batch[data_args.audio_column_name]:
+<             wav = audio["array"]
+<             output_batch["input_values"].append(wav)
+<         output_batch["labels"] = [label for label in batch[data_args.label_column_name]]
+< 
+<         return output_batch
+< 
+315a284,295
+> 
+>     # Disable these features that can't run on IPU yet
+>     # TODO handle this properly
+>     config.layerdrop = 0.0
+>     config.mask_time_prob = 0.0
+> 
+>     ipu_config = IPUConfig.from_pretrained(
+>         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
+>         cache_dir=model_args.cache_dir,
+>         revision=model_args.model_revision,
+>         use_auth_token=True if model_args.use_auth_token else None,
+>     )
+318d297
+<         from_tf=bool(".ckpt" in model_args.model_name_or_path),
+328a308,324
+>     def preprocess_function(examples):
+>         audio = examples[data_args.audio_column_name]
+>         subsampled_audio = random_subsample(
+>             audio["array"], max_length=data_args.max_length_seconds, sample_rate=feature_extractor.sampling_rate
+>         )
+>         max_length = int(round(feature_extractor.sampling_rate * data_args.max_length_seconds))
+>         inputs = feature_extractor(
+>             subsampled_audio,
+>             max_length=max_length,
+>             sampling_rate=feature_extractor.sampling_rate,
+>             padding="max_length",
+>         )
+>         # examples.update(inputs)
+>         examples["input_values"] = inputs["input_values"][0]
+>         examples["labels"] = examples[data_args.label_column_name]
+>         return examples
+> 
+335c331,333
+<         raw_datasets["train"].set_transform(train_transforms, output_all_columns=False)
+---
+>         raw_datasets["train"] = raw_datasets["train"].map(
+>             preprocess_function, remove_columns=raw_datasets["train"].column_names
+>         )
+343c341,343
+<         raw_datasets["eval"].set_transform(val_transforms, output_all_columns=False)
+---
+>         raw_datasets["eval"] = raw_datasets["eval"].map(
+>             preprocess_function, remove_columns=raw_datasets["eval"].column_names
+>         )
+346c346
+<     trainer = Trainer(
+---
+>     trainer = IPUTrainer(
+347a348
+>         ipu_config=ipu_config,
