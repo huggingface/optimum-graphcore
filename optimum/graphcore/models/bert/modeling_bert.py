@@ -282,7 +282,13 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
             return (masked_lm_loss,)
 
         else:
-            return super().forward(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids, labels=labels, return_dict=False)
+            return super().forward(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                token_type_ids=token_type_ids,
+                labels=labels,
+                return_dict=False,
+            )
 
 
 class BertPipelineMixin(PipelineMixin):
