@@ -117,12 +117,14 @@ python run_mlm.py \
     --ipu_config_name Graphcore/roberta-base-ipu \
     --dataset_name wikitext \
     --dataset_config_name wikitext-2-raw-v1 \
+    --per_device_train_batch_size 4 \
+    --per_device_eval_batch_size 1 \
     --do_train \
     --do_eval \
     --num_train_epochs 5 \
     --pod_type pod16 \
     --output_dir /tmp/mlm_output \
-    --ipu_config_overrides="optimizer_state_offchip=true,inference_device_iterations=5"
+    --ipu_config_overrides="inference_device_iterations=5"
 ```
 
 To fine-tune RoBERTa-large on WikiText-2, we need to override a different set of IPU configurations.
@@ -133,10 +135,14 @@ python run_mlm.py \
     --ipu_config_name Graphcore/roberta-large-ipu \
     --dataset_name wikitext \
     --dataset_config_name wikitext-2-raw-v1 \
+    --per_device_train_batch_size 1 \
+    --per_device_eval_batch_size 1 \
     --do_train \
     --do_eval \
     --num_train_epochs 5 \
     --pod_type pod16 \
     --output_dir /tmp/mlm_output \
-    --ipu_config_overrides="embedding_serialization_factor=5,inference_device_iterations=5,matmul_proportion=[0.08 0.2 0.25 0.25]"
+    --ipu_config_overrides="inference_device_iterations=5"
 ```
+
+The same can be done with the BERT model by changing the flags: `--model_name_or_path bert-base-uncased --ipu_config_name Graphcore/bert-base-ipu`. 
