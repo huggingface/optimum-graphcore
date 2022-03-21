@@ -201,13 +201,18 @@ class PipelinedGPT2ForSequenceClassification(GPT2ForSequenceClassification, GPT2
         return self
 
     def forward(self, input_ids, attention_mask, labels=None):
-        return super().forward(
+        output = super().forward(
             input_ids=input_ids,
             attention_mask=attention_mask,
             labels=labels,
-            use_cache=False,
             return_dict=False,
         )
+        # By default use_cache=True and the model would return past_key_values, which could be very large and cause OOM.
+        # To prevent this we only return loss and logits during training and evaluation (i.e. when there are labels).
+        if labels is not None:
+            loss = output[0]
+            logits = output[1]
+        return (loss, logits) if labels is not None else output
 
 
 @register(GPT2ForTokenClassification)
