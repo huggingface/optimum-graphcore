@@ -16,11 +16,11 @@ limitations under the License.
 
 # Language model training
 
-Fine-tuning (or training from scratch) the library models for language modeling on a text dataset for GPT, GPT-2,
-ALBERT, BERT, DistilBERT, RoBERTa, XLNet... GPT and GPT-2 are trained or fine-tuned using a causal language modeling
-(CLM) loss while ALBERT, BERT, DistilBERT and RoBERTa are trained or fine-tuned using a masked language modeling (MLM)
-loss. XLNet uses permutation language modeling (PLM), you can find more information about the differences between those
-objectives in our [model summary](https://huggingface.co/transformers/model_summary.html).
+Fine-tuning (or training from scratch) the library models for language modeling on a text dataset for GPT-2,
+BERT, RoBERTa... GPT-2 is trained or fine-tuned using a causal language modeling
+(CLM) loss while ALBERT, DistilBERT and RoBERTa are trained or fine-tuned using a masked language modeling (MLM)
+loss. BERT model is trained using a combination of MLM and NSP (next sentence prediction).
+You can find more information about the differences between those objectives in our [model summary](https://huggingface.co/transformers/model_summary.html).
 
 The following examples, will run on datasets hosted on our [hub](https://huggingface.co/datasets) or with your own
 text files for training and validation. We give examples of both below.
@@ -37,7 +37,7 @@ You can train BERT on any dataset with `run_pretraining` as long as the dataset 
 BERT Pre-training is done in two phases - the first is with sequence length 128 for 10500 steps, and the second is with sequence length 512 for 2038 steps.
 
 
-Phase 1: 
+Phase 1:
 ```bash
 python examples/language-modeling/run_pretraining.py \
   --config_name bert-base-uncased \
