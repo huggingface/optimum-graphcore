@@ -264,28 +264,31 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
         return self
 
     def forward(self, input_ids, attention_mask, token_type_ids=None, labels=None):
-        output = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
-        sequence_output = output[0]
+        if self.training:
+            output = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+            sequence_output = output[0]
 
-        if labels is not None:
             # Select only the masked tokens for the classifier
             max_number_of_masked_tokens = int(labels.size(1) * 0.25)
             masked_lm_labels, masked_lm_positions = torch.topk(labels, k=max_number_of_masked_tokens, dim=1)
             masked_output = self.gather_indices(sequence_output, masked_lm_positions)
-        else:
-            # This case should never happen during training
-            masked_output = sequence_output
 
-        prediction_scores = self.cls(masked_output)
-        output = (prediction_scores,) + output[2:]
+            prediction_scores = self.cls(masked_output)
+            output = (prediction_scores,) + output[2:]
 
-        if labels is not None:
             masked_lm_loss = F.cross_entropy(
                 prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1)
             ).float()
-            return masked_lm_loss
+            return (masked_lm_loss,)
 
-        return output
+        else:
+            return super().forward(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                token_type_ids=token_type_ids,
+                labels=labels,
+                return_dict=False,
+            )
 
 
 class BertPipelineMixin(PipelineMixin):

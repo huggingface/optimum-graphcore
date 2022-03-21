@@ -141,28 +141,25 @@ class PipelinedRobertaForMaskedLM(RobertaForMaskedLM, PipelineMixin):
         return self
 
     def forward(self, input_ids, attention_mask, labels=None):
-        outputs = self.roberta(input_ids, attention_mask=attention_mask)
-        sequence_output = outputs[0]
+        if self.training:
+            outputs = self.roberta(input_ids, attention_mask=attention_mask)
+            sequence_output = outputs[0]
 
-        if labels is not None:
             # Select only the masked tokens for the classifier
             max_number_of_masked_tokens = int(labels.size(1) * 0.25)
             masked_lm_labels, masked_lm_positions = torch.topk(labels, k=max_number_of_masked_tokens, dim=1)
             masked_output = self.gather_indices(sequence_output, masked_lm_positions)
-        else:
-            # This case should never happen during training
-            masked_output = sequence_output
 
-        prediction_scores = self.lm_head(masked_output)
-        outputs = (prediction_scores,) + outputs[2:]
+            prediction_scores = self.lm_head(masked_output)
 
-        if labels is not None:
             masked_lm_loss = F.cross_entropy(
                 prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1)
             ).float()
-            return masked_lm_loss
-
-        return outputs
+            return (masked_lm_loss,)
+        else:
+            return super().forward(
+                input_ids=input_ids, attention_mask=attention_mask, labels=labels, return_dict=False
+            )
 
 
 @register(RobertaForSequenceClassification)
