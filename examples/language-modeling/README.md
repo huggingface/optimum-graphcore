@@ -27,7 +27,7 @@ text files for training and validation. We give examples of both below.
 
 ## BERT pre-training
 
-The following example pre-trains BERT-base on English Wikipedia *from scratch*. This uses the HuggingFace `IPUTrainer` for training, designed to perform training on GraphCore IPUs. The model is trained on two tasks:
+The following example pre-trains BERT-base and -large on English Wikipedia *from scratch*. This uses the HuggingFace `IPUTrainer` for training, designed to perform training on GraphCore IPUs. The model is trained on two tasks:
 
 - Masked Language Modeling (MLM)
 - Next Sentence Prediction (NSP)
@@ -36,6 +36,7 @@ You can train BERT on any dataset with `run_pretraining` as long as the dataset 
 
 BERT Pre-training is done in two phases - the first is with sequence length 128 for 10500 steps, and the second is with sequence length 512 for 2038 steps.
 
+### BERT-base
 
 Phase 1: 
 ```bash
@@ -96,7 +97,66 @@ python examples/language-modeling/run_pretraining.py \
   --output_dir output-pretrain-bert-base-phase2
 ```
 
+### BERT-large
 
+Phase 1:
+```bash
+python examples/language-modeling/run_pretraining.py \
+  --config_name bert-large-uncased \
+  --tokenizer_name bert-large-uncased \
+  --ipu_config_name Graphcore/bert-large-ipu \
+  --dataset_name Graphcore/wikipedia-bert-128 \
+  --do_train \
+  --logging_steps 5 \
+  --max_seq_length 128 \
+  --max_steps 10500 \
+  --is_already_preprocessed \
+  --dataloader_num_workers 64 \
+  --dataloader_mode async_rebatched \
+  --lamb \
+  --lamb_no_bias_correction \
+  --per_device_train_batch_size 8 \
+  --gradient_accumulation_steps 512 \
+  --pod_type pod64 \
+  --learning_rate 0.006 \
+  --lr_scheduler_type linear \
+  --loss_scaling 32768 \
+  --weight_decay 0.01 \
+  --warmup_ratio 0.28 \
+  --config_overrides "layer_norm_eps=0.001" \
+  --ipu_config_overrides "matmul_proportion=[0.14 0.19 0.19 0.19]" \
+  --output_dir output-pretrain-bert-large-phase1
+```
+
+Phase 2:
+```bash
+python examples/language-modeling/run_pretraining.py \
+  --config_name bert-large-uncased \
+  --tokenizer_name bert-large-uncased \
+  --model_name_or_path ./output-pretrain-bert-large-phase1 \
+  --ipu_config_name Graphcore/bert-large-ipu \
+  --dataset_name Graphcore/wikipedia-bert-512 \
+  --do_train \
+  --logging_steps 5 \
+  --max_seq_length 512 \
+  --max_steps 2038 \
+  --is_already_preprocessed \
+  --dataloader_num_workers 96 \
+  --dataloader_mode async_rebatched \
+  --lamb \
+  --lamb_no_bias_correction \
+  --per_device_train_batch_size 2 \
+  --gradient_accumulation_steps 512 \
+  --pod_type pod64 \
+  --learning_rate 0.002828 \
+  --lr_scheduler_type linear \
+  --loss_scaling 16384 \
+  --weight_decay 0.01 \
+  --warmup_ratio 0.128 \
+  --config_overrides "layer_norm_eps=0.001" \
+  --ipu_config_overrides "matmul_proportion=[0.15 0.2 0.2 0.2]" \
+  --output_dir output-pretrain-bert-large-phase2
+```
 
 ### Creating a model on the fly
 
