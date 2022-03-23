@@ -119,6 +119,7 @@ python run_mlm.py \
     --dataset_config_name wikitext-2-raw-v1 \
     --per_device_train_batch_size 4 \
     --per_device_eval_batch_size 1 \
+    --gradient_accumulation_steps 16 \
     --do_train \
     --do_eval \
     --num_train_epochs 5 \
@@ -137,6 +138,7 @@ python run_mlm.py \
     --dataset_config_name wikitext-2-raw-v1 \
     --per_device_train_batch_size 1 \
     --per_device_eval_batch_size 1 \
+    --gradient_accumulation_steps 16 \
     --do_train \
     --do_eval \
     --num_train_epochs 5 \
