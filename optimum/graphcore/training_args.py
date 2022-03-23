@@ -78,8 +78,8 @@ class IPUTrainingArguments:
         metadata={"help": "When performing evaluation and predictions, only returns the loss."},
     )
 
-    per_device_train_batch_size: int = field(default=2, metadata={"help": "Batch size per IPU for training."})
-    per_device_eval_batch_size: int = field(default=8, metadata={"help": "Batch size per IPU for evaluation."})
+    per_device_train_batch_size: int = field(default=1, metadata={"help": "Batch size per IPU for training."})
+    per_device_eval_batch_size: int = field(default=1, metadata={"help": "Batch size per IPU for evaluation."})
 
     gradient_accumulation_steps: int = field(
         default=None,

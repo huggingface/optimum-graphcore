@@ -81,8 +81,8 @@ if is_torch_available():
 
 PATH_SAMPLE_TEXT = f"{get_tests_dir()}/fixtures/sample_text.txt"
 
-TRAIN_LEN = 128
-EVAL_LEN = 64
+TRAIN_LEN = 64
+EVAL_LEN = 32
 
 
 class RegressionDataset:
@@ -545,7 +545,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         train_output = trainer.train()
         self.assertEqual(train_output.global_step, 10)
 
-    # TODO: Handle this.
+    # TODO: Handle this once GPT-2 is supported.
     # def test_logging_inf_nan_filter(self):
     #     config = GPT2Config(vocab_size=100, n_positions=128, n_embd=32, n_layer=3, n_head=4)
     #     tiny_gpt2 = GPT2LMHeadModel(config)
@@ -666,28 +666,6 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         self.assertTrue(np.array_equal(labels[0], trainer.eval_dataset.ys[0]))
         self.assertTrue(np.array_equal(labels[1], trainer.eval_dataset.ys[1]))
 
-    # TODO: handle this.
-    # def test_dynamic_shapes(self):
-    #     eval_dataset = DynamicShapesDataset(batch_size=self.batch_size)
-    #     model = RegressionModel(a=2, b=1)
-    #     ipu_config = get_ipu_config()
-    #     args = IPUTrainingArguments("./regression")
-    #     trainer = IPUTrainer(model, ipu_config, args, eval_dataset=eval_dataset, force_to_pipelined=True)
-
-    #     import pdb; pdb.set_trace()
-    #     # Check evaluation can run to completion
-    #     _ = trainer.evaluate()
-
-    #     # Check predictions
-    #     preds = trainer.predict(eval_dataset)
-    #     for expected, seen in zip(eval_dataset.ys, preds.label_ids):
-    #         self.assertTrue(np.array_equal(expected, seen[: expected.shape[0]]))
-    #         self.assertTrue(np.all(seen[expected.shape[0] :] == -100))
-
-    #     for expected, seen in zip(eval_dataset.xs, preds.predictions):
-    #         self.assertTrue(np.array_equal(2 * expected + 1, seen[: expected.shape[0]]))
-    #         self.assertTrue(np.all(seen[expected.shape[0] :] == -100))
-
     def test_log_level(self):
         # testing only --log_level (--log_level_replica requires multiple gpus and DDP and is tested elsewhere)
         logger = logging.get_logger()
@@ -725,7 +703,6 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
             self.check_saved_checkpoints(tmpdir, 5, int(self.n_epochs * TRAIN_LEN / combined_batch_size), False)
 
     # TODO: handle this as it gets complex with IPUs.
-    @require_torch_up_to_2_gpus
     def test_can_resume_training(self):
         # This test will fail for more than 2 GPUs since the batch size will get bigger and with the number of
         # save_steps, the checkpoint will resume training at epoch 2 or more (so the data seen by the model
@@ -733,7 +710,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             # Make sure there are enough samples to end up with at least a checkpoint-15
-            kwargs = dict(output_dir=tmpdir, train_len=TRAIN_LEN * 4, save_steps=5, learning_rate=0.1)
+            kwargs = dict(output_dir=tmpdir, train_len=TRAIN_LEN, save_steps=5, learning_rate=0.1)
             trainer = get_regression_trainer(**kwargs)
             trainer.train()
             (a, b) = trainer.model.a.item(), trainer.model.b.item()
@@ -747,6 +724,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
             trainer.train(resume_from_checkpoint=checkpoint)
             (a1, b1) = trainer.model.a.item(), trainer.model.b.item()
             state1 = dataclasses.asdict(trainer.state)
+            import pdb; pdb.set_trace()
             self.assertEqual(a, a1)
             self.assertEqual(b, b1)
             self.check_trainer_state_are_the_same(state, state1)
@@ -768,7 +746,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         with tempfile.TemporaryDirectory() as tmpdir:
             # Make sure there are enough samples to end up with at least a checkpoint-15
             kwargs = dict(
-                output_dir=tmpdir, train_len=TRAIN_LEN * 2, save_steps=5, learning_rate=0.1, pretrained=False
+                output_dir=tmpdir, train_len=TRAIN_LEN, save_steps=5, learning_rate=0.1, pretrained=False
             )
 
             trainer = get_regression_trainer(**kwargs)
@@ -1013,32 +991,6 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
             self.check_saved_checkpoints(tmpdir, 5, total, is_pretrained=False)
             self.check_best_model_has_been_loaded(tmpdir, 5, total, trainer, "eval_loss", is_pretrained=False)
 
-    @slow
-    def test_trainer_eval_mrpc(self):
-        MODEL_ID = "bert-base-cased-finetuned-mrpc"
-        tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-        model = AutoModelForSequenceClassification.from_pretrained(MODEL_ID)
-        data_args = GlueDataTrainingArguments(
-            task_name="mrpc", data_dir=f"{get_tests_dir()}/fixtures/tests_samples/MRPC", overwrite_cache=True
-        )
-        eval_dataset = GlueDataset(data_args, tokenizer=tokenizer, mode="dev")
-
-        training_args = IPUTrainingArguments(output_dir="./examples", no_cuda=True)
-        trainer = IPUTrainer(model=model, args=training_args, eval_dataset=eval_dataset)
-        result = trainer.evaluate()
-        self.assertLess(result["eval_loss"], 0.2)
-
-    @slow
-    def test_trainer_eval_lm(self):
-        MODEL_ID = "distilroberta-base"
-        tokenizer = AutoTokenizer.from_pretrained(MODEL_ID)
-        dataset = LineByLineTextDataset(
-            tokenizer=tokenizer,
-            file_path=PATH_SAMPLE_TEXT,
-            block_size=tokenizer.max_len_single_sentence,
-        )
-        self.assertEqual(len(dataset), 31)
-
     def test_training_iterable_dataset(self):
         config = RegressionModelConfig()
         model = RegressionPreTrainedModel(config)
@@ -1223,6 +1175,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
 
     def check_mem_metrics(self, trainer, check_func):
         metrics = trainer.train().metrics
+        import pdb; pdb.set_trace()
         check_func("init_mem_cpu_alloc_delta", metrics)
         check_func("train_mem_cpu_alloc_delta", metrics)
 
@@ -1232,17 +1185,16 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         metrics = trainer.predict(RegressionDataset()).metrics
         check_func("test_mem_cpu_alloc_delta", metrics)
 
-    # def test_mem_metrics(self):
+    def test_mem_metrics(self):
 
-    #     # with mem metrics enabled
-    #     trainer = get_regression_trainer(skip_memory_metrics=False)
-    #     self.check_mem_metrics(trainer, self.assertIn)
+        # with mem metrics enabled
+        trainer = get_regression_trainer(skip_memory_metrics=False)
+        self.check_mem_metrics(trainer, self.assertIn)
 
-    #     # with mem metrics disabled
-    #     trainer = get_regression_trainer(skip_memory_metrics=True)
-    #     self.check_mem_metrics(trainer, self.assertNotIn)
+        # with mem metrics disabled
+        trainer = get_regression_trainer(skip_memory_metrics=True)
+        self.check_mem_metrics(trainer, self.assertNotIn)
 
-    @require_torch_gpu
     def test_fp16_full_eval(self):
 
         # this is a sensitive test so let's keep debugging printouts in place for quick diagnosis.
@@ -1300,19 +1252,18 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         # perfect world: fp32_init/2 == fp16_eval
         self.assertAlmostEqual(fp16_eval, fp32_init / 2, delta=5_000)
 
-    # TODO: ask Sylvain.
-    # def test_no_wd_param_group(self):
-    #     model = nn.Sequential(TstLayer(128), nn.ModuleList([TstLayer(128), TstLayer(128)]))
-    #     ipu_config = get_ipu_config()
-    #     trainer = IPUTrainer(model=model, ipu_config=ipu_config, force_to_pipelined=True)
-    #     trainer.create_optimizer_and_scheduler(10)
-    #     # fmt: off
-    #     wd_names = ['0.linear1.weight', '0.linear2.weight', '1.0.linear1.weight', '1.0.linear2.weight', '1.1.linear1.weight', '1.1.linear2.weight']
-    #     # fmt: on
-    #     wd_params = [p for n, p in model.named_parameters() if n in wd_names]
-    #     no_wd_params = [p for n, p in model.named_parameters() if n not in wd_names]
-    #     self.assertListEqual(trainer.optimizer.param_groups[0]["params"], wd_params)
-    #     self.assertListEqual(trainer.optimizer.param_groups[1]["params"], no_wd_params)
+    def test_no_wd_param_group(self):
+        model = nn.Sequential(TstLayer(128), nn.ModuleList([TstLayer(128), TstLayer(128)]))
+        ipu_config = get_ipu_config()
+        trainer = IPUTrainer(model=model, ipu_config=ipu_config, force_to_pipelined=True)
+        trainer.create_optimizer_and_scheduler(10)
+        # fmt: off
+        wd_names = ['0.linear1.weight', '0.linear2.weight', '1.0.linear1.weight', '1.0.linear2.weight', '1.1.linear1.weight', '1.1.linear2.weight']
+        # fmt: on
+        wd_params = [p for n, p in model.named_parameters() if n in wd_names]
+        no_wd_params = [p for n, p in model.named_parameters() if n not in wd_names]
+        self.assertListEqual(trainer.optimizer.param_groups[0]["params"], wd_params)
+        self.assertListEqual(trainer.optimizer.param_groups[1]["params"], no_wd_params)
 
 
 @require_torch

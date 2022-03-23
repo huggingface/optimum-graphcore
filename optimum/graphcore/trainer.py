@@ -202,7 +202,6 @@ class IPUTrainer:
         if not self.args.fp32:
             self.model = self.model.half()
 
-        self.model_wrapped = self.model
         self.training_model = None
         self.inference_model = None
 
@@ -859,11 +858,7 @@ class IPUTrainer:
             trial = None
         self.state.is_hyper_param_search = trial is not None
 
-        model = self._wrap_model(self.model_wrapped)
-
-        # for the rest of this function `model` is the outside model, whether it was wrapped or not
-        if model is not self.model:
-            self.model_wrapped = model
+        model = self._wrap_model(self.model)
 
         # Check if saved optimizer or scheduler states exist
         self._load_optimizer_and_scheduler(resume_from_checkpoint)
@@ -934,7 +929,6 @@ class IPUTrainer:
         # _total_loss_scalar is updated everytime .item() has to be called on tr_loss and stores the sum of all losses
         self._total_loss_scalar = 0.0
         self._globalstep_last_logged = self.state.global_step
-        model.zero_grad()
 
         self.control = self.callback_handler.on_train_begin(args, self.state, self.control)
 
@@ -965,6 +959,10 @@ class IPUTrainer:
             self.control = self.callback_handler.on_epoch_begin(args, self.state, self.control)
 
             for step, inputs in enumerate(epoch_iterator):
+
+                # TODO: remove that.
+                # if epoch == 0 and step == 5:
+                #     import pdb; pdb.set_trace()
 
                 # Skip past any already trained steps if resuming training
                 if steps_trained_in_current_epoch > 0:
@@ -1199,6 +1197,8 @@ class IPUTrainer:
                 self.lr_scheduler.load_state_dict(torch.load(os.path.join(checkpoint, SCHEDULER_NAME)))
             reissue_pt_warnings(caught_warnings)
 
+            self.training_model.setOptimizer(self.optimizer)
+
     def log(self, logs: Dict[str, float]) -> None:
         """
         Log :obj:`logs` on the various objects watching training.
@@ -1260,8 +1260,11 @@ class IPUTrainer:
             :obj:`torch.Tensor`: The tensor with training loss on this batch.
         """
         inputs = self._prepare_inputs(inputs)
+        # logger.info(f"{model.a} {model.b}")
         loss = self.compute_loss(model, inputs)
         loss = loss.mean()
+        logger.info(f"{self.lr_scheduler.state_dict()}")
+        # logger.info(f"{inputs} ----- {model.a} {model.b} ----- {loss}")
         return loss
 
     def compute_loss(self, model, inputs, return_outputs=False):
@@ -1312,8 +1315,8 @@ class IPUTrainer:
         logger.info(f"Saving model checkpoint to {output_dir}")
 
         # Updating self.model weights with the weights stored on device.
-        if self.model_wrapped.isAttachedToDevice():
-            self.model_wrapped.copyWeightsToHost()
+        if self.training_model is not None and self.training_model.isAttachedToDevice():
+            self.training_model.copyWeightsToHost()
 
         if not isinstance(self.model, PreTrainedModel):
             logger.info("Trainer.model is not a `PreTrainedModel`, only saving its state dict.")
