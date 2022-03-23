@@ -100,7 +100,7 @@ spell run \
   --apt python3 \
   --apt git \
   "pip install git+https://github.com/huggingface/transformers.git . && \
-   pip install -r examples/text-classification/requirements.txt && \
+   pip install -r [PATH TO POTENTIAL REQUIREMENTS] && \
    [INSERT YOUR COMMAND BETWEEN THE QUOTES]"
 ```
 
