@@ -198,7 +198,7 @@ class IPUConfig(BaseConfig):
 
         # PopART performance options #
         # Only stream needed tensors back to host
-        opts._Popart.set("disableGradAccumulationTensorStreams", True)
+        opts._Popart.set("disableGradAccumulationTensorStreams", False)
         # Parallelize optimizer step update across IPUs
         opts._Popart.set(
             "accumulateOuterFragmentSettings.schedule",

@@ -960,10 +960,6 @@ class IPUTrainer:
 
             for step, inputs in enumerate(epoch_iterator):
 
-                # TODO: remove that.
-                # if epoch == 0 and step == 5:
-                #     import pdb; pdb.set_trace()
-
                 # Skip past any already trained steps if resuming training
                 if steps_trained_in_current_epoch > 0:
                     steps_trained_in_current_epoch -= 1
@@ -1260,11 +1256,8 @@ class IPUTrainer:
             :obj:`torch.Tensor`: The tensor with training loss on this batch.
         """
         inputs = self._prepare_inputs(inputs)
-        # logger.info(f"{model.a} {model.b}")
         loss = self.compute_loss(model, inputs)
         loss = loss.mean()
-        logger.info(f"{self.lr_scheduler.state_dict()}")
-        # logger.info(f"{inputs} ----- {model.a} {model.b} ----- {loss}")
         return loss
 
     def compute_loss(self, model, inputs, return_outputs=False):
