@@ -793,36 +793,6 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
             trainer.train(resume_from_checkpoint=True)
         self.assertTrue("No valid checkpoint found in output directory" in str(context.exception))
 
-    # TODO: check if this is needed too.
-    # @require_torch_non_multi_gpu
-    # def test_resume_training_with_randomness(self):
-    #     # This test will fail flakily for more than 1 GPUs since the result will be slightly more different
-    #     # TODO: investigate why it fails for 2 GPUs?
-
-    #     # if torch.cuda.is_available():
-    #     #     torch.backends.cudnn.deterministic = True
-    #     train_dataset = RegressionDataset(length=TRAIN_LEN * 2)
-    #     eval_dataset = RegressionDataset()
-
-    #     config = RegressionModelConfig(a=0, b=2)
-    #     model = RegressionRandomPreTrainedModel(config)
-
-    #     tmp_dir = self.get_auto_remove_tmp_dir()
-    #     args = RegressionIPUTrainingArguments(tmp_dir, save_steps=5, learning_rate=0.1)
-    #     ipu_config = get_ipu_config()
-    #     trainer = IPUTrainer(model, ipu_config, args, train_dataset=train_dataset, eval_dataset=eval_dataset, force_to_pipelined=True)
-
-    #     trainer.train()
-    #     (a, b) = trainer.model.a.item(), trainer.model.b.item()
-
-    #     model = RegressionRandomPreTrainedModel(config)
-    #     trainer = IPUTrainer(model, args, train_dataset=train_dataset, eval_dataset=eval_dataset, force_to_pipelined=True)
-    #     trainer.train(resume_from_checkpoint=os.path.join(tmp_dir, "checkpoint-15"))
-    #     (a1, b1) = trainer.model.a.item(), trainer.model.b.item()
-
-    #     self.assertAlmostEqual(a, a1, delta=1e-8)
-    #     self.assertAlmostEqual(b, b1, delta=1e-8)
-
     # TODO: this seems to fais due to randomness.
     # regression for this issue: https://github.com/huggingface/transformers/issues/12970
     # def test_training_with_resume_from_checkpoint_flase(self):
