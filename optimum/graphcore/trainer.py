@@ -266,7 +266,12 @@ class IPUTrainer:
         # very last
         self._memory_tracker.stop_and_update_metrics()
 
-    def _pytorch_optimizer_to_poptorch(self, optimizer: optim.Optimizer, model: Union[PreTrainedModel, nn.Module], pipelined_model: Union[PreTrainedModel, nn.Module]) -> poptorch.optim.Optimizer:
+    def _pytorch_optimizer_to_poptorch(
+        self,
+        optimizer: optim.Optimizer,
+        model: Union[PreTrainedModel, nn.Module],
+        pipelined_model: Union[PreTrainedModel, nn.Module],
+    ) -> poptorch.optim.Optimizer:
         """
         Converts a PyTorch optimizer to a poptorch optimizer.
 
@@ -699,7 +704,7 @@ class IPUTrainer:
 
         return self.lr_scheduler
 
-    def num_examples(self, dataloader: DataLoader) -> int:
+    def num_examples(self, dataloader: poptorch.DataLoader) -> int:
         """
         Helper to get number of samples in a :class:`~torch.utils.data.DataLoader` by accessing its dataset.
 
@@ -1575,7 +1580,9 @@ class IPUTrainer:
 
             # Prediction step
             # If dataset is not sized, is_last_batch is False because we cannot know.
-            is_last_batch = step == len(dataloader) - 1 if isinstance(dataloader.dataset, collections.abc.Sized) else False
+            is_last_batch = (
+                step == len(dataloader) - 1 if isinstance(dataloader.dataset, collections.abc.Sized) else False
+            )
             loss, logits, labels = self.prediction_step(
                 model, inputs, prediction_loss_only, ignore_keys=ignore_keys, is_last_batch=is_last_batch
             )

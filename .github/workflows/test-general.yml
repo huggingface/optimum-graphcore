@@ -38,4 +38,5 @@ jobs:
         export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_18_04-2\.4\.0*
         . ${SDK_PATH}/poplar-ubuntu_18_04-2\.4\.0**/enable.sh
         . ${SDK_PATH}/popart-ubuntu_18_04-*2\.4\.0*/enable.sh
+        export HUGGINGFACE_CO_STAGING=true
         pytest tests/

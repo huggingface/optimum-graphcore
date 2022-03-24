@@ -375,14 +375,14 @@ class IPUTrainerIntegrationPrerunTest(TestCasePlus, IPUTrainerIntegrationCommon)
 
     def setUp(self):
         super().setUp()
-        args = IPUTrainingArguments(".")
+        args = IPUTrainingArguments(".", per_device_train_batch_size=2)
         self.n_epochs = args.num_train_epochs
         self.batch_size = args.train_batch_size
-        trainer = get_regression_trainer(learning_rate=0.1)
+        trainer = get_regression_trainer(learning_rate=0.1, per_device_train_batch_size=2)
         trainer.train()
         self.default_trained_model = (trainer.model.a, trainer.model.b)
 
-        trainer = get_regression_trainer(learning_rate=0.1, seed=314)
+        trainer = get_regression_trainer(learning_rate=0.1, seed=314, per_device_train_batch_size=2)
         trainer.train()
         self.alternate_trained_model = (trainer.model.a, trainer.model.b)
 
@@ -394,12 +394,12 @@ class IPUTrainerIntegrationPrerunTest(TestCasePlus, IPUTrainerIntegrationCommon)
 
     def test_reproducible_training(self):
         # Checks that training worked, model trained and seed made a reproducible training.
-        trainer = get_regression_trainer(learning_rate=0.1)
+        trainer = get_regression_trainer(learning_rate=0.1, per_device_train_batch_size=self.batch_size)
         trainer.train()
         self.check_trained_model(trainer.model)
 
         # Checks that a different seed gets different (reproducible) results.
-        trainer = get_regression_trainer(learning_rate=0.1, seed=314)
+        trainer = get_regression_trainer(learning_rate=0.1, seed=314, per_device_train_batch_size=self.batch_size)
         trainer.train()
         self.check_trained_model(trainer.model, alternate_seed=True)
 
@@ -415,7 +415,7 @@ class IPUTrainerIntegrationPrerunTest(TestCasePlus, IPUTrainerIntegrationCommon)
 
         # Base training. Should have the same results as test_reproducible_training
         model = RegressionModel()
-        args = IPUTrainingArguments("./regression", learning_rate=0.1)
+        args = IPUTrainingArguments("./regression", learning_rate=0.1, per_device_train_batch_size=2, fp32=True)
         trainer = IPUTrainer(model, ipu_config, args, train_dataset=train_dataset, force_to_pipelined=True)
         trainer.train()
         self.check_trained_model(trainer.model)
@@ -462,11 +462,19 @@ class IPUTrainerIntegrationPrerunTest(TestCasePlus, IPUTrainerIntegrationCommon)
 
     def test_custom_optimizer(self):
         train_dataset = RegressionDataset()
-        args = IPUTrainingArguments("./regression")
+        ipu_config = get_ipu_config()
+        args = IPUTrainingArguments("./regression", fp32=True)
         model = RegressionModel()
         optimizer = torch.optim.SGD(model.parameters(), lr=1.0)
         lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda x: 1.0)
-        trainer = IPUTrainer(model, get_ipu_config(), args, train_dataset=train_dataset, optimizers=(optimizer, lr_scheduler), force_to_pipelined=True)
+        trainer = IPUTrainer(
+            model,
+            ipu_config,
+            args,
+            train_dataset=train_dataset,
+            optimizers=(optimizer, lr_scheduler),
+            force_to_pipelined=True,
+        )
         trainer.train()
 
         (a, b) = self.default_trained_model
@@ -521,7 +529,8 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
     def test_training_arguments_are_left_untouched(self):
         trainer = get_regression_trainer()
         trainer.train()
-        args = IPUTrainingArguments("./regression", report_to=[])
+        # Setting fp32 to True because that is what is being done in get_regression_trainer.
+        args = IPUTrainingArguments("./regression", report_to=[], fp32=True)
         dict1, dict2 = args.to_dict(), trainer.args.to_dict()
         for key in dict1.keys():
             # Logging dir can be slightly different as they default to something with the time.
@@ -580,8 +589,8 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         self.assertEqual(trainer.get_eval_dataloader().batch_size, 16 * eval_batch_size_factor)
 
         # Check drop_last works
-        train_len = TRAIN_LEN * 2 + 6
-        eval_len = EVAL_LEN * 2 + 4
+        train_len = TRAIN_LEN + 6
+        eval_len = EVAL_LEN + 4
         trainer = get_regression_trainer(
             train_len=train_len,
             eval_len=eval_len,
@@ -628,8 +637,8 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         x, y = trainer.eval_dataset.x, trainer.eval_dataset.ys[0]
         pred = 1.5 * x + 2.5
         # Losses will not match because the batch is incomplete.
-        # expected_loss = ((pred - y) ** 2).mean()
-        # self.assertAlmostEqual(results["eval_loss"], expected_loss)
+        expected_loss = ((pred - y) ** 2).mean()
+        self.assertAlmostEqual(results["eval_loss"], expected_loss)
         expected_acc = AlmostAccuracy()((pred, y))["accuracy"]
         self.assertAlmostEqual(results["eval_accuracy"], expected_acc)
 
@@ -653,9 +662,10 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         self.assertTrue(np.allclose(preds[0], 1.5 * x + 2.5))
         self.assertTrue(np.allclose(preds[1], 1.5 * x + 2.5))
 
-        # TODO: handle this.
         # With more than one output/label of the model
-        trainer = get_regression_trainer(a=1.5, b=2.5, double_output=True, label_names=["labels", "labels_2"], half_precision=False)
+        trainer = get_regression_trainer(
+            a=1.5, b=2.5, double_output=True, label_names=["labels", "labels_2"], half_precision=False
+        )
         outputs = trainer.predict(trainer.eval_dataset)
         preds = outputs.predictions
         labels = outputs.label_ids
@@ -744,9 +754,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         # With a regular model that is not a PreTrainedModel
         with tempfile.TemporaryDirectory() as tmpdir:
             # Make sure there are enough samples to end up with at least a checkpoint-15
-            kwargs = dict(
-                output_dir=tmpdir, train_len=TRAIN_LEN, save_steps=5, learning_rate=0.1, pretrained=False
-            )
+            kwargs = dict(output_dir=tmpdir, train_len=TRAIN_LEN, save_steps=5, learning_rate=0.1, pretrained=False)
 
             trainer = get_regression_trainer(**kwargs)
             trainer.train()
@@ -793,100 +801,98 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
             trainer.train(resume_from_checkpoint=True)
         self.assertTrue("No valid checkpoint found in output directory" in str(context.exception))
 
-    # TODO: this seems to fais due to randomness.
     # regression for this issue: https://github.com/huggingface/transformers/issues/12970
-    # def test_training_with_resume_from_checkpoint_flase(self):
-    #     train_dataset = RegressionDataset(length=TRAIN_LEN * 2)
-    #     eval_dataset = RegressionDataset()
+    def test_training_with_resume_from_checkpoint_false(self):
+        train_dataset = RegressionDataset(length=TRAIN_LEN)
+        eval_dataset = RegressionDataset()
 
-    #     config = RegressionModelConfig(a=0, b=2)
-    #     model = RegressionRandomPreTrainedModel(config)
+        config = RegressionModelConfig(a=0, b=2)
+        model = RegressionPreTrainedModel(config)
 
-    #     tmp_dir = self.get_auto_remove_tmp_dir()
-    #     args = RegressionIPUTrainingArguments(tmp_dir, save_steps=5, learning_rate=0.1)
-    #     ipu_config = get_ipu_config()
-    #     trainer = IPUTrainer(model, ipu_config, args, train_dataset=train_dataset, eval_dataset=eval_dataset, force_to_pipelined=True)
+        tmp_dir = self.get_auto_remove_tmp_dir()
+        ipu_config = get_ipu_config()
+        args = RegressionIPUTrainingArguments(tmp_dir, save_steps=5, learning_rate=0.1)
+        trainer = IPUTrainer(
+            model, ipu_config, args, train_dataset=train_dataset, eval_dataset=eval_dataset, force_to_pipelined=True
+        )
 
-    #     trainer.train(resume_from_checkpoint=False)
+        trainer.train(resume_from_checkpoint=False)
 
-    # TODO: it should not be needed?
-    # @require_torch_up_to_2_gpus
-    # def test_resume_training_with_gradient_accumulation(self):
-    #     # This test will fail for more than 2 GPUs since the batch size will get bigger and with the number of
-    #     # save_steps, the checkpoint will resume training at epoch 2 or more (so the data seen by the model
-    #     # won't be the same since the training dataloader is shuffled).
+    def test_resume_training_with_gradient_accumulation(self):
+        # This test will fail for more than 2 GPUs since the batch size will get bigger and with the number of
+        # save_steps, the checkpoint will resume training at epoch 2 or more (so the data seen by the model
+        # won't be the same since the training dataloader is shuffled).
 
-    #     with tempfile.TemporaryDirectory() as tmpdir:
-    #         trainer = get_regression_trainer(
-    #             output_dir=tmpdir,
-    #             train_len=128,
-    #             gradient_accumulation_steps=2,
-    #             per_device_train_batch_size=4,
-    #             save_steps=5,
-    #             learning_rate=0.1,
-    #         )
-    #         trainer.train()
-    #         (a, b) = trainer.model.a.item(), trainer.model.b.item()
-    #         state = dataclasses.asdict(trainer.state)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            trainer = get_regression_trainer(
+                output_dir=tmpdir,
+                train_len=128,
+                gradient_accumulation_steps=2,
+                per_device_train_batch_size=4,
+                save_steps=5,
+                learning_rate=0.1,
+            )
+            trainer.train()
+            (a, b) = trainer.model.a.item(), trainer.model.b.item()
+            state = dataclasses.asdict(trainer.state)
 
-    #         checkpoint = os.path.join(tmpdir, "checkpoint-5")
+            checkpoint = os.path.join(tmpdir, "checkpoint-5")
 
-    #         # Reinitialize trainer
-    #         trainer = get_regression_trainer(
-    #             output_dir=tmpdir,
-    #             train_len=128,
-    #             gradient_accumulation_steps=2,
-    #             per_device_train_batch_size=4,
-    #             save_steps=5,
-    #             learning_rate=0.1,
-    #         )
+            # Reinitialize trainer
+            trainer = get_regression_trainer(
+                output_dir=tmpdir,
+                train_len=128,
+                gradient_accumulation_steps=2,
+                per_device_train_batch_size=4,
+                save_steps=5,
+                learning_rate=0.1,
+            )
 
-    #         trainer.train(resume_from_checkpoint=checkpoint)
-    #         (a1, b1) = trainer.model.a.item(), trainer.model.b.item()
-    #         state1 = dataclasses.asdict(trainer.state)
-    #         self.assertEqual(a, a1)
-    #         self.assertEqual(b, b1)
-    #         self.check_trainer_state_are_the_same(state, state1)
+            trainer.train(resume_from_checkpoint=checkpoint)
+            (a1, b1) = trainer.model.a.item(), trainer.model.b.item()
+            state1 = dataclasses.asdict(trainer.state)
+            self.assertEqual(a, a1)
+            self.assertEqual(b, b1)
+            self.check_trainer_state_are_the_same(state, state1)
 
-    # @require_torch_up_to_2_gpus
-    # def test_resume_training_with_frozen_params(self):
-    #     # This test will fail for more than 2 GPUs since the batch size will get bigger and with the number of
-    #     # save_steps, the checkpoint will resume training at epoch 2 or more (so the data seen by the model
-    #     # won't be the same since the training dataloader is shuffled).
+    def test_resume_training_with_frozen_params(self):
+        # This test will fail for more than 2 GPUs since the batch size will get bigger and with the number of
+        # save_steps, the checkpoint will resume training at epoch 2 or more (so the data seen by the model
+        # won't be the same since the training dataloader is shuffled).
 
-    #     with tempfile.TemporaryDirectory() as tmpdir:
-    #         trainer = get_regression_trainer(
-    #             output_dir=tmpdir,
-    #             train_len=TRAIN_LEN * 2,
-    #             per_device_train_batch_size=4,
-    #             save_steps=5,
-    #             learning_rate=0.1,
-    #         )
-    #         trainer.model.a.requires_grad_(False)
-    #         trainer.train()
-    #         (a, b) = trainer.model.a.item(), trainer.model.b.item()
-    #         state = dataclasses.asdict(trainer.state)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            trainer = get_regression_trainer(
+                output_dir=tmpdir,
+                train_len=128,
+                per_device_train_batch_size=4,
+                save_steps=5,
+                learning_rate=0.1,
+            )
+            trainer.model.a.requires_grad_(False)
+            trainer.train()
+            (a, b) = trainer.model.a.item(), trainer.model.b.item()
+            state = dataclasses.asdict(trainer.state)
 
-    #         checkpoint = os.path.join(tmpdir, "checkpoint-5")
+            checkpoint = os.path.join(tmpdir, "checkpoint-5")
 
-    #         # Reinitialize trainer
-    #         trainer = get_regression_trainer(
-    #             output_dir=tmpdir,
-    #             train_len=TRAIN_LEN * 2,
-    #             per_device_train_batch_size=4,
-    #             save_steps=5,
-    #             learning_rate=0.1,
-    #         )
-    #         trainer.model.a.requires_grad_(False)
+            # Reinitialize trainer
+            trainer = get_regression_trainer(
+                output_dir=tmpdir,
+                train_len=128,
+                per_device_train_batch_size=4,
+                save_steps=5,
+                learning_rate=0.1,
+            )
+            trainer.model.a.requires_grad_(False)
 
-    #         trainer.train(resume_from_checkpoint=checkpoint)
+            trainer.train(resume_from_checkpoint=checkpoint)
 
-    #         self.assertFalse(trainer.model.a.requires_grad)
-    #         (a1, b1) = trainer.model.a.item(), trainer.model.b.item()
-    #         state1 = dataclasses.asdict(trainer.state)
-    #         self.assertEqual(a, a1)
-    #         self.assertEqual(b, b1)
-    #         self.check_trainer_state_are_the_same(state, state1)
+            self.assertFalse(trainer.model.a.requires_grad)
+            (a1, b1) = trainer.model.a.item(), trainer.model.b.item()
+            state1 = dataclasses.asdict(trainer.state)
+            self.assertEqual(a, a1)
+            self.assertEqual(b, b1)
+            self.check_trainer_state_are_the_same(state, state1)
 
     def test_load_best_model_at_end(self):
         combined_batch_size = self.batch_size * get_ipu_config().batch_size_factor()
@@ -965,8 +971,9 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         model = RegressionPreTrainedModel(config)
         train_dataset = SampleIterableDataset(length=TRAIN_LEN)
 
-        args = RegressionIPUTrainingArguments(output_dir="./examples", max_steps=4)
         ipu_config = get_ipu_config()
+
+        args = RegressionIPUTrainingArguments(output_dir="./examples", max_steps=4)
         trainer = IPUTrainer(
             model=model, ipu_config=ipu_config, args=args, train_dataset=train_dataset, force_to_pipelined=True
         )
@@ -979,9 +986,10 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
 
     def test_evaluation_iterable_dataset(self):
         config = RegressionModelConfig(a=1.5, b=2.5)
-        ipu_config = get_ipu_config()
         model = RegressionPreTrainedModel(config)
         eval_dataset = SampleIterableDataset(length=EVAL_LEN)
+
+        ipu_config = get_ipu_config()
 
         args = RegressionIPUTrainingArguments(output_dir="./examples")
         trainer = IPUTrainer(
@@ -1002,24 +1010,24 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         self.assertAlmostEqual(results["eval_accuracy"], expected_acc)
 
         # With a number of elements not a round multiple of the batch size
-        # TODO: not supported for now.
-        # eval_dataset = SampleIterableDataset(length=66)
-        # results = trainer.evaluate(eval_dataset)
+        eval_dataset = SampleIterableDataset(length=66)
+        results = trainer.evaluate(eval_dataset)
 
-        # x, y = eval_dataset.dataset.x, eval_dataset.dataset.ys[0]
-        # pred = 1.5 * x + 2.5
+        x, y = eval_dataset.dataset.x, eval_dataset.dataset.ys[0]
+        pred = 1.5 * x + 2.5
         # expected_loss = ((pred - y) ** 2).mean()
         # self.assertAlmostEqual(results["eval_loss"], expected_loss)
-        # expected_acc = AlmostAccuracy()((pred, y))["accuracy"]
-        # self.assertAlmostEqual(results["eval_accuracy"], expected_acc)
+        expected_acc = AlmostAccuracy()((pred, y))["accuracy"]
+        self.assertAlmostEqual(results["eval_accuracy"], expected_acc)
 
     def test_predict_iterable_dataset(self):
         config = RegressionModelConfig(a=1.5, b=2.5)
         model = RegressionPreTrainedModel(config)
         eval_dataset = SampleIterableDataset(length=EVAL_LEN)
 
-        args = RegressionIPUTrainingArguments(output_dir="./examples")
         ipu_config = get_ipu_config()
+
+        args = RegressionIPUTrainingArguments(output_dir="./examples", fp32=True)
         trainer = IPUTrainer(
             model=model,
             ipu_config=ipu_config,
@@ -1144,7 +1152,6 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
 
     def check_mem_metrics(self, trainer, check_func):
         metrics = trainer.train().metrics
-        import pdb; pdb.set_trace()
         check_func("init_mem_cpu_alloc_delta", metrics)
         check_func("train_mem_cpu_alloc_delta", metrics)
 
@@ -1164,75 +1171,29 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         trainer = get_regression_trainer(skip_memory_metrics=True)
         self.check_mem_metrics(trainer, self.assertNotIn)
 
-    def test_fp16_full_eval(self):
-
-        # this is a sensitive test so let's keep debugging printouts in place for quick diagnosis.
-        # it's using pretty large safety margins, but small enough to detect broken functionality.
-        debug = 0
-        n_gpus = get_gpu_count()
-
-        bs = 8
-        eval_len = 16 * n_gpus
-        # make the params somewhat big so that there will be enough RAM consumed to be able to
-        # measure things. We should get about 64KB for a+b in fp32
-        a = torch.ones(1000, bs) + 0.001
-        b = torch.ones(1000, bs) - 0.001
-
-        # 1. with mem metrics enabled
-        trainer = get_regression_trainer(a=a, b=b, eval_len=eval_len, skip_memory_metrics=False)
-        metrics = trainer.evaluate()
-        del trainer
-        gc.collect()
-
-        fp32_init = metrics["init_mem_gpu_alloc_delta"]
-        fp32_eval = metrics["eval_mem_gpu_alloc_delta"]
-
-        if debug:
-            print(f"fp32_init {fp32_init}")
-            print(f"fp32_eval {fp32_eval}")
-
-        # here we expect the model to be preloaded in trainer.__init__ and consume around 64K gpu ram.
-        # perfect world: fp32_init == 64<<10
-        self.assertGreater(fp32_init, 59_000)
-        # after eval should be no extra memory allocated - with a small margin (other than the peak
-        # memory consumption for the forward calculation that gets recovered)
-        # perfect world: fp32_eval == close to zero
-        self.assertLess(fp32_eval, 5_000)
-
-        # 2. with mem metrics disabled
-        trainer = get_regression_trainer(a=a, b=b, eval_len=eval_len, fp16_full_eval=True, skip_memory_metrics=False)
-        metrics = trainer.evaluate()
-        fp16_init = metrics["init_mem_gpu_alloc_delta"]
-        fp16_eval = metrics["eval_mem_gpu_alloc_delta"]
-
-        if debug:
-            print(f"fp16_init {fp16_init}")
-            print(f"fp16_eval {fp16_eval}")
-
-        # here we expect the model to not be preloaded in trainer.__init__, so with a small margin it should be close to 0
-        # perfect world: fp16_init == close to zero
-        self.assertLess(fp16_init, 5_000)
-        # here we put the model on device in eval and only `half()` of it, i.e. about 32K,(again we ignore the peak margin which gets returned back)
-        # perfect world: fp32_init == 32<<10
-        self.assertGreater(fp16_eval, 27_000)
-
-        # 3. relative comparison fp32 vs full fp16
-        # should be about half of fp16_init
-        # perfect world: fp32_init/2 == fp16_eval
-        self.assertAlmostEqual(fp16_eval, fp32_init / 2, delta=5_000)
-
     def test_no_wd_param_group(self):
         model = nn.Sequential(TstLayer(128), nn.ModuleList([TstLayer(128), TstLayer(128)]))
         ipu_config = get_ipu_config()
-        trainer = IPUTrainer(model=model, ipu_config=ipu_config, force_to_pipelined=True)
+        args = IPUTrainingArguments(".", fp32=True)
+        trainer = IPUTrainer(model=model, ipu_config=ipu_config, args=args, force_to_pipelined=True)
+        # from transformers import Trainer
+        # trainer = Trainer(model=model)
         trainer.create_optimizer_and_scheduler(10)
         # fmt: off
         wd_names = ['0.linear1.weight', '0.linear2.weight', '1.0.linear1.weight', '1.0.linear2.weight', '1.1.linear1.weight', '1.1.linear2.weight']
         # fmt: on
         wd_params = [p for n, p in model.named_parameters() if n in wd_names]
         no_wd_params = [p for n, p in model.named_parameters() if n not in wd_names]
-        self.assertListEqual(trainer.optimizer.param_groups[0]["params"], wd_params)
-        self.assertListEqual(trainer.optimizer.param_groups[1]["params"], no_wd_params)
+
+        # Original test is checking that:
+        # self.assertListEqual(trainer.optimizer.param_groups[0]["params"], wd_params)
+        # self.assertListEqual(trainer.optimizer.param_groups[1]["params"], no_wd_params)
+        # This is not possible with the IPUTrainer because a deepcopy of the model is made when converting to the
+        # pipelined version. These asserts check that the parameters ids match, which is not the case here...
+        # Instead of comparing the ids, we compare that the values match.
+
+        self.assertTrue(all((x == y).all() for x, y in zip(trainer.optimizer.param_groups[0]["params"], wd_params)))
+        self.assertTrue(all((x == y).all() for x, y in zip(trainer.optimizer.param_groups[1]["params"], no_wd_params)))
 
 
 @require_torch
