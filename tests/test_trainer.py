@@ -712,7 +712,6 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
             trainer.train()
             self.check_saved_checkpoints(tmpdir, 5, int(self.n_epochs * TRAIN_LEN / combined_batch_size), False)
 
-    # TODO: handle this as it gets complex with IPUs.
     def test_can_resume_training(self):
         # This test will fail for more than 2 GPUs since the batch size will get bigger and with the number of
         # save_steps, the checkpoint will resume training at epoch 2 or more (so the data seen by the model
@@ -1046,22 +1045,6 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         preds = trainer.predict(test_dataset).predictions
         x = test_dataset.dataset.x
         self.assertTrue(np.allclose(preds, 1.5 * x + 2.5))
-
-    # TODO: handle this.
-    def test_num_train_epochs_in_training(self):
-        # len(train_dl) < gradient_accumulation_steps shouldn't give ``ZeroDivisionError`` when ``max_steps`` is given.
-        # It should give 1 update step for each epoch.
-        trainer = get_regression_trainer(
-            max_steps=3, train_len=64, per_device_train_batch_size=16, gradient_accumulation_steps=5
-        )
-        train_output = trainer.train()
-        self.assertEqual(train_output.global_step, 3)
-
-        # Even ``max_steps`` is not specified, we still expect 1 update step for each epoch if
-        # len(train_dl) < gradient_accumulation_steps.
-        trainer = get_regression_trainer(train_len=64, per_device_train_batch_size=16, gradient_accumulation_steps=5)
-        train_output = trainer.train()
-        self.assertEqual(train_output.global_step, int(self.n_epochs))
 
     def test_early_stopping_callback(self):
         # early stopping stops training before num_training_epochs
