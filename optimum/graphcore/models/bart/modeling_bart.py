@@ -480,15 +480,11 @@ class _BartModelWithSharedEmbedding(BartModel):
                 logger.warning("encoder and decoder embeddings computation is already shared")
             else:
                 self.shared = SharedEmbedding(self.shared)
-                self.encoder.embed_tokens = None
-                self.decoder.embed_tokens = None
         else:
             if isinstance(self.shared, nn.Embedding):
                 logger.warning("encoder and decoder embeddings computation is not shared")
             else:
                 self.shared = self.shared.shared
-                self.encoder.embed_tokens = self.shared
-                self.decoder.embed_tokens = self.shared
 
     def change_bart_encoder_and_decoder_classes(self, restore: bool):
         """Changes the encoder and decoder classes to update their forward pass so that they use our custom versions of
@@ -552,19 +548,18 @@ class _BartModelWithSharedEmbedding(BartModel):
         use_cache = use_cache if use_cache is not None else self.config.use_cache
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
-        if self.is_encoder_and_decoder_embeddings_computation_shared:
-            inputs_embeds, decoder_inputs_embeds = self.shared(
-                input_ids=input_ids,
-                decoder_input_ids=decoder_input_ids,
-                encoder_embed_scale=self.encoder.embed_scale,
-                decoder_embed_scale=self.decoder.embed_scale,
-            )
-            if inputs_embeds is not None:
-                input_ids = None
-            if decoder_inputs_embeds is not None:
-                decoder_input_ids = None
-
         if encoder_outputs is None:
+            if self.is_encoder_and_decoder_embeddings_computation_shared:
+                inputs_embeds, decoder_inputs_embeds = self.shared(
+                    input_ids=input_ids,
+                    decoder_input_ids=decoder_input_ids,
+                    encoder_embed_scale=self.encoder.embed_scale,
+                    decoder_embed_scale=self.decoder.embed_scale,
+                )
+                if inputs_embeds is not None:
+                    input_ids = None
+                if decoder_inputs_embeds is not None:
+                    decoder_input_ids = None
             encoder_outputs = self.encoder(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
