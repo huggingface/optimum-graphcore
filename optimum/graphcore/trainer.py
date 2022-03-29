@@ -1124,7 +1124,8 @@ class IPUTrainer:
         random.setstate(checkpoint_rng_state["python"])
         np.random.set_state(checkpoint_rng_state["numpy"])
         torch.random.set_rng_state(checkpoint_rng_state["cpu"])
-        self.training_model.rng_state = checkpoint_rng_state["ipu"]
+        # TODO: enable this when SDK 2.5 is out.
+        # self.training_model.rng_state = checkpoint_rng_state["ipu"]
 
     def _save_checkpoint(self, model, metrics=None):
         # In all cases, including ddp/dp/deepspeed, self.model is always a reference to the model we
