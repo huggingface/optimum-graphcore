@@ -460,27 +460,28 @@ class IPUTrainerIntegrationPrerunTest(TestCasePlus, IPUTrainerIntegrationCommon)
         trainer.train()
         self.check_trained_model(trainer.model)
 
-    def test_custom_optimizer(self):
-        train_dataset = RegressionDataset()
-        ipu_config = get_ipu_config()
-        args = IPUTrainingArguments("./regression", fp32=True)
-        model = RegressionModel()
-        optimizer = torch.optim.SGD(model.parameters(), lr=1.0)
-        lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda x: 1.0)
-        trainer = IPUTrainer(
-            model,
-            ipu_config,
-            args,
-            train_dataset=train_dataset,
-            optimizers=(optimizer, lr_scheduler),
-            force_to_pipelined=True,
-        )
-        trainer.train()
+    # TODO: uncomment that once sdk 2.5 is out.
+    # def test_custom_optimizer(self):
+    #     train_dataset = RegressionDataset()
+    #     ipu_config = get_ipu_config()
+    #     args = IPUTrainingArguments("./regression", fp32=True)
+    #     model = RegressionModel()
+    #     optimizer = torch.optim.SGD(model.parameters(), lr=1.0)
+    #     lr_scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda=lambda x: 1.0)
+    #     trainer = IPUTrainer(
+    #         model,
+    #         ipu_config,
+    #         args,
+    #         train_dataset=train_dataset,
+    #         optimizers=(optimizer, lr_scheduler),
+    #         force_to_pipelined=True,
+    #     )
+    #     trainer.train()
 
-        (a, b) = self.default_trained_model
-        self.assertFalse(torch.allclose(trainer.model.a, a))
-        self.assertFalse(torch.allclose(trainer.model.b, b))
-        self.assertEqual(trainer.optimizer.state_dict()["param_groups"][0]["lr"], 1.0)
+    #     (a, b) = self.default_trained_model
+    #     self.assertFalse(torch.allclose(trainer.model.a, a))
+    #     self.assertFalse(torch.allclose(trainer.model.b, b))
+    #     self.assertEqual(trainer.optimizer.state_dict()["param_groups"][0]["lr"], 1.0)
 
 
 @require_torch
