@@ -116,8 +116,8 @@ python examples/language-modeling/run_pretraining.py \
   --lamb \
   --lamb_no_bias_correction \
   --per_device_train_batch_size 8 \
-  --gradient_accumulation_steps 512 \
-  --pod_type pod64 \
+  --gradient_accumulation_steps 2048 \
+  --pod_type pod16 \
   --learning_rate 0.006 \
   --lr_scheduler_type linear \
   --loss_scaling 32768 \
@@ -146,8 +146,8 @@ python examples/language-modeling/run_pretraining.py \
   --lamb \
   --lamb_no_bias_correction \
   --per_device_train_batch_size 2 \
-  --gradient_accumulation_steps 512 \
-  --pod_type pod64 \
+  --gradient_accumulation_steps 2048 \
+  --pod_type pod16 \
   --learning_rate 0.002828 \
   --lr_scheduler_type linear \
   --loss_scaling 16384 \
