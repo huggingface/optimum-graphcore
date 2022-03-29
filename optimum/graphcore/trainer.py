@@ -1171,7 +1171,8 @@ class IPUTrainer:
             "python": random.getstate(),
             "numpy": np.random.get_state(),
             "cpu": torch.random.get_rng_state(),
-            "ipu": self.training_model.rng_state,
+            # TODO: enable this when SDK 2.5 is out.
+            # "ipu": self.training_model.rng_state,
         }
 
         # A process can arrive here before the process 0 has a chance to save the model, in which case output_dir may
