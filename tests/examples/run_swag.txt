@@ -4,39 +4,37 @@
 39,40d40
 <     Trainer,
 <     TrainingArguments,
-118c118
+117c117
 <         default=False,
 ---
 >         default=True,
-168d167
-<             Maximum length of the returned list and optionally padding length (see above).
-232,236d230
+231,235d230
 <     # Log on each process the small summary:
 <     logger.warning(
 <         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
 <         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
 <     )
-290a285,290
+289a285,290
 >     ipu_config = IPUConfig.from_pretrained(
 >         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
 >         cache_dir=model_args.cache_dir,
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
-383c383
+382c383
 <         else DataCollatorForMultipleChoice(tokenizer=tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None)
 ---
 >         else DataCollatorForMultipleChoice(tokenizer=tokenizer, pad_to_multiple_of=None)
-385a386,391
+384a386,391
 >     if not data_args.pad_to_max_length:
 >         logging.warning(
 >             "Not padding to max length might lead to batches with difference sequence lengths, which might not work as"
 >             "expected on IPUs"
 >         )
 > 
-393c399
+392c399
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-394a401
+393a401
 >         ipu_config=ipu_config,
