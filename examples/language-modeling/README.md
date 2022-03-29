@@ -154,7 +154,7 @@ python examples/language-modeling/run_pretraining.py \
   --weight_decay 0.01 \
   --warmup_ratio 0.128 \
   --config_overrides "layer_norm_eps=0.001" \
-  --ipu_config_overrides "matmul_proportion=[0.15 0.2 0.2 0.2]" \
+  --ipu_config_overrides "matmul_proportion=[0.14 0.19 0.19 0.19]" \
   --output_dir output-pretrain-bert-large-phase2
 ```
 
