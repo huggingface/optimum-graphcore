@@ -99,7 +99,7 @@ spell run \
   --docker_image "graphcore/pytorch:latest" \
   --apt python3 \
   --apt git \
-  "pip install git+https://github.com/huggingface/transformers.git . && \
+  "pip install . && \
    pip install -r [PATH TO POTENTIAL REQUIREMENTS] && \
    [INSERT YOUR COMMAND BETWEEN THE QUOTES]"
 ```
@@ -128,7 +128,7 @@ spell run \
   --docker_image "graphcore/pytorch:latest" \
   --apt python3 \
   --apt git \
-  "pip install git+https://github.com/huggingface/transformers.git . && \
+  "pip install . && \
    pip install -r examples/text-classification/requirements.txt && \
    python3 examples/text-classification/run_glue.py \
    --model_name_or_path bert-base-cased \

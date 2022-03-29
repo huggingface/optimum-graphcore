@@ -1,5 +1,4 @@
+git+https://github.com/huggingface/transformers.git # Requires latest version of transformers
 seqeval
-transformers
 datasets >= 1.8.0
 torch >= 1.3
-optimum[graphcore]

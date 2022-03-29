@@ -1,6 +1,5 @@
+git+https://github.com/huggingface/transformers.git # Requires latest version of transformers
 datasets >= 1.8.0
-transformers
-optimum[graphcore]
 sentencepiece != 0.1.92
 scipy
 scikit-learn
