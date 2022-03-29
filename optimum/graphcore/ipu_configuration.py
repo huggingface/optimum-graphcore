@@ -197,6 +197,8 @@ class IPUConfig(BaseConfig):
             opts.Precision.setPartialsType(torch.float16)
 
         # PopART performance options #
+        # Only stream needed tensors back to host
+        opts._Popart.set("disableGradAccumulationTensorStreams", True)
         # Parallelize optimizer step update across IPUs
         opts._Popart.set(
             "accumulateOuterFragmentSettings.schedule",
