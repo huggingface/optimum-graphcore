@@ -12,7 +12,7 @@ except Exception as error:
     assert False, "Error: Could not open '%s' due %s\n" % (filepath, error)
 
 
-install_requires = [
+INSTALL_REQUIRES = [
     "optimum",
     "datasets",
     "tokenizers",
@@ -20,11 +20,17 @@ install_requires = [
     "sentencepiece",
     "scipy",
     "pillow",
-    "pytest",
-    "pytest-pythonpath",
-    "parameterized",
-    "GitPython",
 ]
+
+EXTRA_REQUIRE = {
+    "testing": [
+        "GitPython",
+        "parameterized",
+        "psutil",
+        "pytest",
+        "pytest-pythonpath",
+    ]
+}
 
 setup(
     name="optimum-graphcore",
@@ -51,7 +57,8 @@ setup(
     author_email="hardware@huggingface.co",
     license="Apache",
     packages=find_namespace_packages(include=["optimum*"]),
-    install_requires=install_requires,
+    install_requires=INSTALL_REQUIRES,
+    extras_require=EXTRA_REQUIRE,
     include_package_data=True,
     zip_safe=False,
 )
