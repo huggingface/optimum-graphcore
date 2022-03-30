@@ -859,7 +859,7 @@ class IPUTrainer:
 
         self.state = TrainerState()
         if trial is not None:
-            raise ValueError("Hyperparameyer tuning is not supported by the IPUTrainer.")
+            raise ValueError("Hyperparameter tuning is not supported by the IPUTrainer.")
             trial = None
         self.state.is_hyper_param_search = trial is not None
 
