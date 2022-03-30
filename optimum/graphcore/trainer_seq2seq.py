@@ -12,21 +12,106 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
 import torch
 from torch import nn
 from torch.utils.data import Dataset
 
-from optimum.utils import logging
+# import poptorch
 
+from optimum.utils import logging
 from .trainer import IPUTrainer
 
+if TYPE_CHECKING:
+    # from transformers import PreTrainedModel, PreTrainedTokenizerBase
+    from transformers.data.data_collator import DataCollator
+    from transformers.trainer_callback import TrainerCallback
+    from transformers.trainer_utils import EvalPrediction
+    from .ipu_configuration import IPUConfig, IPUSeq2SeqTrainingArguments
 
 logger = logging.get_logger(__name__)
 
 
 class IPUSeq2SeqTrainer(IPUTrainer):
+    # def __init__(
+    #     self,
+    #     model: Union[PreTrainedModel, nn.Module] = None,
+    #     ipu_config: IPUConfig = None,
+    #     args: IPUSeq2SeqTrainingArguments = None,
+    #     data_collator: Optional[DataCollator] = None,
+    #     train_dataset: Optional[Dataset] = None,
+    #     eval_dataset: Optional[Dataset] = None,
+    #     tokenizer: Optional[PreTrainedTokenizerBase] = None,
+    #     model_init: Callable[[], PreTrainedModel] = None,
+    #     compute_metrics: Optional[Callable[[EvalPrediction], Dict]] = None,
+    #     callbacks: Optional[List[TrainerCallback]] = None,
+    #     optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (None, None),
+    #     preprocess_logits_for_metrics: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = None,
+    #     force_to_pipelined: bool = False,
+    # ):
+    #     super().__init__(
+    #         model=model,
+    #         ipu_config=ipu_config,
+    #         args=args,
+    #         data_collator=data_collator,
+    #         train_dataset=train_dataset,
+    #         eval_dataset=eval_dataset,
+    #         tokenizer=tokenizer,
+    #         model_init=model_init,
+    #         compute_metrics=compute_metrics,
+    #         callbacks=callbacks,
+    #         optimizers=optimizers,
+    #         preprocess_logits_for_metrics=preprocess_logits_for_metrics,
+    #         force_to_pipelined=force_to_pipelined
+    #     )
+    #     self.inference_encoder_model = None
+
+    def _wrap_and_compile_model_for_evaluation(self, dataloader, prediction_loss_only):
+        if prediction_loss_only:
+            return super()._wrap_and_compile_model_for_evaluation(dataloader)
+
+        sample_batch = next(iter(dataloader))
+
+        import inspect
+        if isinstance(sample_batch, tuple):
+            parameter_names = list(inspect.signature(self.model).parameters)[: len(sample_batch)]
+            sample_batch = dict(zip(parameter_names, sample_batch))
+
+        encoder = self.model.get_encoder()
+        encoder_kwargs = {k: v for k, v in sample_batch.items() if k in inspect.signature(encoder.forward).parameters}
+
+        # This will both compile the encoder stack and return the output we need to compile the decoder stack.
+        encoder_outputs = encoder(**encoder_kwargs)
+
+        self.ipu_config.inference_device_iterations = int(self.ipu_config.inference_device_iterations * self.args.generation_num_beams)
+        self.eval_opts = self.ipu_config.to_options(for_inference=True)
+        model = self._wrap_model(self.model, training=False)
+        self.ipu_config.inference_device_iterations = int(self.ipu_config.inference_device_iterations / self.args.generation_num_beams)
+        self.eval_opts = self.ipu_config.to_options(for_inference=True)
+
+        sample_batch.pop("input_ids")
+        sample_batch["encoder_outputs"] = encoder_outputs
+
+        def repeat(input_):
+            if isinstance(input_, tuple):
+                return tuple(map(repeat, input_))
+            if isinstance(input_, torch.Tensor):
+                return input_.repeat((self.args.generation_num_beams, ) + (1,) * (input_.dim() - 1))
+            return input_
+
+        sample_batch = {k: repeat(v) for k, v in sample_batch.items()}
+
+        model.compile(**sample_batch)
+
+        # To be able to make the generate method work.
+        import poptorch
+        if not isinstance(model.model.forward.__self__, poptorch.PoplarExecutor):
+            model.model.forward = model.__call__
+            # model.model.lol = model
+            # model.generate = model.generate.__func__.__get__(model, poptorch.PoplarExecutor)
+        return model
+
     def evaluate(
         self,
         eval_dataset: Optional[Dataset] = None,
@@ -161,7 +246,7 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         gen_kwargs = {
             "max_length": self._max_length if self._max_length is not None else self.model.config.max_length,
             # TODO: disabled beam search for now.
-            # "num_beams": self._num_beams if self._num_beams is not None else self.model.config.num_beams,
+            "num_beams": self._num_beams if self._num_beams is not None else self.model.config.num_beams,
             "synced_gpus": False,
         }
 
@@ -173,9 +258,10 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         else:
             generation_inputs = inputs[self.model.main_input_name]
 
-        generated_tokens = self.model.generate(
+        import ipdb; ipdb.set_trace()
+        generated_tokens = model.generate(
             generation_inputs,
-            attention_mask=inputs.get("attention_mask", None),
+            attention_mask=inputs["attention_mask"], #.get("attention_mask", None),
             **gen_kwargs,
         )
         # in case the batch is shorter than max length, the output should be padded

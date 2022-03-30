@@ -437,7 +437,7 @@ class PipelinedT5ForConditionalGeneration(IPUGenerationMixin, T5ForConditionalGe
         use_cache=None,
         output_attentions=None,
         output_hidden_states=None,
-        return_dict=None,
+        return_dict=False,
     ):
         use_cache = use_cache if use_cache is not None else self.config.use_cache
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict

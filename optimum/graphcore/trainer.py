@@ -1520,6 +1520,11 @@ class IPUTrainer:
 
         return PredictionOutput(predictions=output.predictions, label_ids=output.label_ids, metrics=output.metrics)
 
+    def _wrap_and_compile_model_for_evaluation(self, dataloader, prediction_loss_only):
+        model = self._wrap_model(self.model, training=False)
+        self._compile_model(model, next(iter(dataloader)), log=True)
+        return model
+
     def evaluation_loop(
         self,
         dataloader: poptorch.DataLoader,
@@ -1537,8 +1542,7 @@ class IPUTrainer:
             prediction_loss_only if prediction_loss_only is not None else self.args.prediction_loss_only
         )
 
-        model = self._wrap_model(self.model, training=False)
-        self._compile_model(model, next(iter(dataloader)), log=True)
+        model = self._wrap_and_compile_model_for_evaluation(dataloader, prediction_loss_only)
 
         batch_size = dataloader.batch_size
 
@@ -1548,8 +1552,6 @@ class IPUTrainer:
         else:
             logger.info("  Num examples: Unknown")
         logger.info(f"  Batch size = {batch_size}")
-
-        model.eval()
 
         self.callback_handler.eval_dataloader = dataloader
         # Do this before wrapping.

@@ -199,7 +199,7 @@ class _BartEncoderWithCustomExpandMask(BartEncoder):
         inputs_embeds=None,
         output_attentions=None,
         output_hidden_states=None,
-        return_dict=None,
+        return_dict=False,
     ):
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -608,8 +608,9 @@ class _BartModelWithSharedEmbedding(BartModel):
         )
 
 
+from ...modeling_utils import GenerationMethodsMixin
 @register(BartForConditionalGeneration)
-class PipelinedBartForConditionalGeneration(IPUGenerationMixin, BartForConditionalGeneration, PipelineMixin):
+class PipelinedBartForConditionalGeneration(GenerationMethodsMixin, BartForConditionalGeneration, PipelineMixin, IPUGenerationMixin):
     def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.
@@ -710,13 +711,14 @@ class PipelinedBartForConditionalGeneration(IPUGenerationMixin, BartForCondition
         # Only returning the loss to make the communication between the host and the device faster.
         return outputs[0]
 
-    def _forward_for_generate(self, encoder_outputs, decoder_input_ids, attention_mask):
+    def _forward_for_generate(self, encoder_outputs, decoder_input_ids, attention_mask, labels=None):
         return super().forward(
             encoder_outputs=encoder_outputs,
             attention_mask=attention_mask,
             decoder_input_ids=decoder_input_ids,
             return_dict=False,
             use_cache=False,
+            labels=labels,
         )
 
     forward = _forward_for_train
