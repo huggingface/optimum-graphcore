@@ -32,7 +32,7 @@ pip install -r requirements.txt`
 ## How to use it?
 🤗 Optimum Graphcore was designed with one goal in mind: make training and evaluation straightforward for any 🤗 Transformers user while leveraging the complete power of IPUs.
 There are two main classes one needs to know:
-- IPUTrainer: the trainer class that takes care of compiling the model to run on IPUs, and of performing traning and evaluation.
+- IPUTrainer: the trainer class that takes care of compiling the model to run on IPUs, and of performing training and evaluation.
 - IPUConfig: the class that specifies attributes and configuration parameters to compile and put the model on the device.
 
 The `IPUTrainer` is very similar to the [🤗 Transformers Trainer](https://huggingface.co/docs/transformers/main_classes/trainer), and adapting a script using the Trainer to make it work with IPUs will mostly consists of simply swapping the `Trainer` class for the `IPUTrainer` one. That's how most of the [example scripts](https://github.com/huggingface/optimum-graphcore/tree/main/examples) were adapted from their [original counterparts](https://github.com/huggingface/transformers/tree/master/examples/pytorch).
