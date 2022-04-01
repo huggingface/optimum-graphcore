@@ -18,7 +18,7 @@
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
 > 
-536a541,553
+541a546,558
 >     if training_args.do_train and training_args.pad_on_batch_axis:
 >         logger.info(
 >             "Padding on batch axis enabled, each batch feeded to the compiled model during training will have the proper size"
@@ -32,5 +32,5 @@
 >         )
 >         data_collator = data_collator_wrapper(data_collator)
 > 
-570a588
+575a593
 >         ipu_config=ipu_config,
