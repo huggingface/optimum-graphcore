@@ -1,4 +1,3 @@
-from turtle import forward
 import poptorch
 import transformers
 from ...modeling_utils import PipelineMixin, get_layer_ipu, recomputation_checkpoint, register
@@ -43,8 +42,5 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
     
     def forward(self, pixel_values=None, labels=None, output_hidden_states=None, return_dict=None):
         return super().forward(pixel_values=pixel_values, labels=labels, output_hidden_states=output_hidden_states, return_dict=False)
+
     
-
-
-        
-
