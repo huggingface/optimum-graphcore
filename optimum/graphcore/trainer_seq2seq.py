@@ -1,4 +1,4 @@
-# Copyright 2020 The HuggingFace Team. All rights reserved.
+# Copyright 2022 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -23,49 +23,10 @@ from torch.utils.data import Dataset
 from optimum.utils import logging
 from .trainer import IPUTrainer
 
-if TYPE_CHECKING:
-    # from transformers import PreTrainedModel, PreTrainedTokenizerBase
-    from transformers.data.data_collator import DataCollator
-    from transformers.trainer_callback import TrainerCallback
-    from transformers.trainer_utils import EvalPrediction
-    from .ipu_configuration import IPUConfig, IPUSeq2SeqTrainingArguments
-
 logger = logging.get_logger(__name__)
 
 
 class IPUSeq2SeqTrainer(IPUTrainer):
-    # def __init__(
-    #     self,
-    #     model: Union[PreTrainedModel, nn.Module] = None,
-    #     ipu_config: IPUConfig = None,
-    #     args: IPUSeq2SeqTrainingArguments = None,
-    #     data_collator: Optional[DataCollator] = None,
-    #     train_dataset: Optional[Dataset] = None,
-    #     eval_dataset: Optional[Dataset] = None,
-    #     tokenizer: Optional[PreTrainedTokenizerBase] = None,
-    #     model_init: Callable[[], PreTrainedModel] = None,
-    #     compute_metrics: Optional[Callable[[EvalPrediction], Dict]] = None,
-    #     callbacks: Optional[List[TrainerCallback]] = None,
-    #     optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (None, None),
-    #     preprocess_logits_for_metrics: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = None,
-    #     force_to_pipelined: bool = False,
-    # ):
-    #     super().__init__(
-    #         model=model,
-    #         ipu_config=ipu_config,
-    #         args=args,
-    #         data_collator=data_collator,
-    #         train_dataset=train_dataset,
-    #         eval_dataset=eval_dataset,
-    #         tokenizer=tokenizer,
-    #         model_init=model_init,
-    #         compute_metrics=compute_metrics,
-    #         callbacks=callbacks,
-    #         optimizers=optimizers,
-    #         preprocess_logits_for_metrics=preprocess_logits_for_metrics,
-    #         force_to_pipelined=force_to_pipelined
-    #     )
-    #     self.inference_encoder_model = None
 
     def _wrap_and_compile_model_for_evaluation(self, dataloader, prediction_loss_only):
         if prediction_loss_only:
@@ -84,10 +45,12 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         # This will both compile the encoder stack and return the output we need to compile the decoder stack.
         encoder_outputs = encoder(**encoder_kwargs)
 
-        self.ipu_config.inference_device_iterations = int(self.ipu_config.inference_device_iterations * self.args.generation_num_beams)
+        self.ipu_config.inference_device_iterations = self.ipu_config.inference_device_iterations * self.args.generation_num_beams
+        # self.ipu_config.inference_replication_factor = self.ipu_config.inference_replication_factor - 1
         self.eval_opts = self.ipu_config.to_options(for_inference=True)
         model = self._wrap_model(self.model, training=False)
         self.ipu_config.inference_device_iterations = int(self.ipu_config.inference_device_iterations / self.args.generation_num_beams)
+        # self.ipu_config.inference_replication_factor = self.ipu_config.inference_replication_factor + 1
         self.eval_opts = self.ipu_config.to_options(for_inference=True)
 
         sample_batch.pop("input_ids")
@@ -101,13 +64,15 @@ class IPUSeq2SeqTrainer(IPUTrainer):
             return input_
 
         sample_batch = {k: repeat(v) for k, v in sample_batch.items()}
+        sample_batch.pop("labels")
 
         model.compile(**sample_batch)
 
         # To be able to make the generate method work.
         import poptorch
         if not isinstance(model.model.forward.__self__, poptorch.PoplarExecutor):
-            model.model.forward = model.__call__
+            # model.model.forward = model.__call__
+            model.model.poptorch_model = model
             # model.model.lol = model
             # model.generate = model.generate.__func__.__get__(model, poptorch.PoplarExecutor)
         return model
@@ -258,36 +223,37 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         else:
             generation_inputs = inputs[self.model.main_input_name]
 
-        import ipdb; ipdb.set_trace()
         generated_tokens = model.generate(
             generation_inputs,
-            attention_mask=inputs["attention_mask"], #.get("attention_mask", None),
+            attention_mask=inputs.get("attention_mask", None),
             **gen_kwargs,
         )
         # in case the batch is shorter than max length, the output should be padded
         if generated_tokens.shape[-1] < gen_kwargs["max_length"]:
             generated_tokens = self._pad_tensors_to_max_len(generated_tokens, gen_kwargs["max_length"])
 
-        with torch.no_grad():
-            with self.autocast_smart_context_manager():
-                outputs = model(**inputs)
-            if has_labels:
-                if self.label_smoother is not None:
-                    loss = self.label_smoother(outputs, inputs["labels"]).mean().detach()
-                else:
-                    loss = (outputs["loss"] if isinstance(outputs, dict) else outputs[0]).mean().detach()
-            else:
-                loss = None
+        # with torch.no_grad():
+        #     # with self.autocast_smart_context_manager():
+        #     outputs = model(**inputs)
+        #     if has_labels:
+        #         if self.label_smoother is not None:
+        #             loss = self.label_smoother(outputs, inputs["labels"]).mean().detach()
+        #         else:
+        #             loss = (outputs["loss"] if isinstance(outputs, dict) else outputs[0]).mean().detach()
+        #     else:
+        #         loss = None
 
-        if self.args.prediction_loss_only:
-            return (loss, None, None)
+        # if self.args.prediction_loss_only:
+        #     return (loss, None, None)
 
-        if has_labels:
-            labels = inputs["labels"]
-            if labels.shape[-1] < gen_kwargs["max_length"]:
-                labels = self._pad_tensors_to_max_len(labels, gen_kwargs["max_length"])
-        else:
-            labels = None
+        # if has_labels:
+        #     labels = inputs["labels"]
+        #     if labels.shape[-1] < gen_kwargs["max_length"]:
+        #         labels = self._pad_tensors_to_max_len(labels, gen_kwargs["max_length"])
+        # else:
+        #     labels = None
+        loss = None
+        labels = inputs["labels"]
 
         return (loss, generated_tokens, labels)
 

@@ -21,11 +21,12 @@ import torch.nn as nn
 import poptorch
 from optimum.utils import logging
 from transformers import BartForConditionalGeneration, BartModel
-from transformers.modeling_outputs import BaseModelOutput, Seq2SeqModelOutput
+from transformers.modeling_outputs import BaseModelOutput, BaseModelOutputWithPastAndCrossAttentions, Seq2SeqModelOutput
 from transformers.models.bart.modeling_bart import BartAttention, BartDecoder, BartEncoder, shift_tokens_right
 
 from ...generation_utils import IPUGenerationMixin
 from ...modeling_utils import (
+    GenerationMethodsMixin,
     PipelineMixin,
     SerializedLinear,
     SharedEmbedding,
@@ -608,7 +609,6 @@ class _BartModelWithSharedEmbedding(BartModel):
         )
 
 
-from ...modeling_utils import GenerationMethodsMixin
 @register(BartForConditionalGeneration)
 class PipelinedBartForConditionalGeneration(GenerationMethodsMixin, BartForConditionalGeneration, PipelineMixin, IPUGenerationMixin):
     def parallelize(self):
@@ -720,5 +720,17 @@ class PipelinedBartForConditionalGeneration(GenerationMethodsMixin, BartForCondi
             use_cache=False,
             labels=labels,
         )
+        # outputs = super().forward(
+        #     encoder_outputs=encoder_outputs,
+        #     attention_mask=attention_mask,
+        #     decoder_input_ids=decoder_input_ids,
+        #     return_dict=True,
+        #     use_cache=True,
+        #     # past_key_values=past_key_values,
+        #     labels=labels,
+        # )
+        # next_token_logits = outputs.logits[:, -1, :]
+        # next_token_scores = nn.functional.log_softmax(next_token_logits, dim=-1)
+        # return next_token_scores #, outputs.past_key_values
 
     forward = _forward_for_train

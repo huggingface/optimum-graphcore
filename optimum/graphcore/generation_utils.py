@@ -261,7 +261,7 @@ class IPUGenerationMixin(GenerationMixin):
     ) -> Dict[str, Any]:
         # update past
         if "past_key_values" in outputs:
-            model_kwargs["past"] = outputs.past_key_values
+            model_kwargs["past"] = outputs["past_key_values"]
         elif "mems" in outputs:
             model_kwargs["past"] = outputs.mems
         elif "past_buckets_states" in outputs:
@@ -487,6 +487,14 @@ class IPUGenerationMixin(GenerationMixin):
             transition_scores.masked_fill_(zero_transition_prob_mask, 0.0)
 
         return transition_scores
+
+    @staticmethod
+    def _poptorch_outputs_to_model_outputs(outputs):
+        # keys = ["next_token_scores"] #, "past_key_values"]
+        keys = ["logits"] #, "past_key_values"]
+        if len(outputs) == 3:
+            keys = ["loss"] + keys
+        return dict(zip(keys, outputs))
 
     @torch.no_grad()
     def generate(
@@ -758,7 +766,6 @@ class IPUGenerationMixin(GenerationMixin):
         >>> tokenizer.batch_decode(outputs, skip_special_tokens=True)
         ['Paris ist eines der dichtesten besiedelten Gebiete Europas.']
         ```"""
-        import ipdb; ipdb.set_trace()
         # 1. Set generation parameters if not already defined
         bos_token_id = bos_token_id if bos_token_id is not None else self.config.bos_token_id
         num_beams = num_beams if num_beams is not None else self.config.num_beams
@@ -1279,35 +1286,19 @@ class IPUGenerationMixin(GenerationMixin):
         unfinished_sequences = input_ids.new(input_ids.shape[0]).fill_(1)
         cur_len = input_ids.shape[-1]
 
-        this_peer_finished = False  # used by synced_gpus only
         while True:
-
-            if synced_gpus:
-                # Under synced_gpus the `forward` call must continue until all gpus complete their sequence.
-                # The following logic allows an early break if all peers finished generating their sequence
-                this_peer_finished_flag = torch.tensor(0.0 if this_peer_finished else 1.0).to(input_ids.device)
-                # send 0.0 if we finished, 1.0 otherwise
-                dist.all_reduce(this_peer_finished_flag, op=dist.ReduceOp.SUM)
-                # did all peers finish? the reduced sum will be 0.0 then
-                if this_peer_finished_flag.item() == 0.0:
-                    break
-
             # prepare model inputs
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
+            if "encoder_outputs" in model_inputs and isinstance(model_inputs["encoder_outputs"], dict):
+                model_inputs["encoder_outputs"] = model_inputs["encoder_outputs"]["last_hidden_state"]
+
             # forward pass to get next token
-            outputs = self(
+            outputs = self.poptorch_model(
                 **model_inputs,
-                return_dict=True,
-                output_attentions=output_attentions,
-                output_hidden_states=output_hidden_states,
             )
-
-            if synced_gpus and this_peer_finished:
-                cur_len = cur_len + 1
-                continue  # don't waste resources running the code we don't need
-
-            next_token_logits = outputs.logits[:, -1, :]
+            outputs = self._poptorch_outputs_to_model_outputs(outputs)
+            next_token_logits = outputs["logits"][:, -1, :].to(torch.float32)
 
             # Store scores, attentions and hidden_states when required
             if return_dict_in_generate:
@@ -1354,8 +1345,6 @@ class IPUGenerationMixin(GenerationMixin):
             if unfinished_sequences.max() == 0 or stopping_criteria(input_ids, scores):
                 if not synced_gpus:
                     break
-                else:
-                    this_peer_finished = True
 
         if return_dict_in_generate:
             if self.config.is_encoder_decoder:
@@ -1550,18 +1539,12 @@ class IPUGenerationMixin(GenerationMixin):
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
             # forward pass to get next token
-            outputs = self(
+            outputs = self.poptorch_model(
                 **model_inputs,
-                return_dict=True,
-                output_attentions=output_attentions,
-                output_hidden_states=output_hidden_states,
             )
+            outputs = self._poptorch_outputs_to_model_outputs(outputs)
 
-            if synced_gpus and this_peer_finished:
-                cur_len = cur_len + 1
-                continue  # don't waste resources running the code we don't need
-
-            next_token_logits = outputs.logits[:, -1, :]
+            next_token_logits = outputs["logits"][:, -1, :].to(torch.float32)
 
             # pre-process distribution
             next_token_scores = logits_processor(input_ids, next_token_logits)
@@ -1819,23 +1802,16 @@ class IPUGenerationMixin(GenerationMixin):
             if "encoder_outputs" in model_inputs and isinstance(model_inputs["encoder_outputs"], dict):
                 model_inputs["encoder_outputs"] = model_inputs["encoder_outputs"]["last_hidden_state"]
 
-            import ipdb; ipdb.set_trace()
-            outputs = self(
+            outputs = self.poptorch_model(
                 **model_inputs,
-                # return_dict=True,
-                # output_attentions=output_attentions,
-                # output_hidden_states=output_hidden_states,
             )
+            outputs = self._poptorch_outputs_to_model_outputs(outputs)
+            next_token_logits = outputs["logits"][:, -1, :].to(torch.float32)
 
-            if synced_gpus and this_peer_finished:
-                cur_len = cur_len + 1
-                continue  # don't waste resources running the code we don't need
-
-            # next_token_logits = outputs.logits[:, -1, :]
-            logits_idx = 1 if len(outputs) >= 2 else 0
-            next_token_logits = outputs[logits_idx][:, -1, :]
-            # hack: adjust tokens for Marian. For Marian we have to make sure that the `pad_token_id`
-            # cannot be generated both before and after the `nn.functional.log_softmax` operation.
+            # logits_idx = 1 if len(outputs) >= 2 else 0
+            # next_token_logits = outputs[logits_idx][:, -1, :].to(torch.float32)
+            # # hack: adjust tokens for Marian. For Marian we have to make sure that the `pad_token_id`
+            # # cannot be generated both before and after the `nn.functional.log_softmax` operation.
             next_token_logits = self.adjust_logits_during_generation(next_token_logits, cur_len=cur_len)
             next_token_scores = nn.functional.log_softmax(
                 next_token_logits, dim=-1
@@ -2127,30 +2103,14 @@ class IPUGenerationMixin(GenerationMixin):
         this_peer_finished = False  # used by synced_gpus only
         while True:
 
-            if synced_gpus:
-                # Under synced_gpus the `forward` call must continue until all gpus complete their sequence.
-                # The following logic allows an early break if all peers finished generating their sequence
-                this_peer_finished_flag = torch.tensor(0.0 if this_peer_finished else 1.0).to(input_ids.device)
-                # send 0.0 if we finished, 1.0 otherwise
-                dist.all_reduce(this_peer_finished_flag, op=dist.ReduceOp.SUM)
-                # did all peers finish? the reduced sum will be 0.0 then
-                if this_peer_finished_flag.item() == 0.0:
-                    break
-
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
-            outputs = self(
+            outputs = self.poptorch_model(
                 **model_inputs,
-                return_dict=True,
-                output_attentions=output_attentions,
-                output_hidden_states=output_hidden_states,
             )
+            outputs = self._poptorch_outputs_to_model_outputs(outputs)
 
-            if synced_gpus and this_peer_finished:
-                cur_len = cur_len + 1
-                continue  # don't waste resources running the code we don't need
-
-            next_token_logits = outputs.logits[:, -1, :]
+            next_token_logits = outputs["logits"][:, -1, :].to(torch.float32)
 
             # hack: adjust tokens for Marian. For Marian we have to make sure that the `pad_token_id`
             # cannot be generated both before and after the `nn.functional.log_softmax` operation.
@@ -2455,16 +2415,6 @@ class IPUGenerationMixin(GenerationMixin):
         this_peer_finished = False  # used by synced_gpus only
         while True:
 
-            if synced_gpus:
-                # Under synced_gpus the `forward` call must continue until all gpus complete their sequence.
-                # The following logic allows an early break if all peers finished generating their sequence
-                this_peer_finished_flag = torch.tensor(0.0 if this_peer_finished else 1.0).to(input_ids.device)
-                # send 0.0 if we finished, 1.0 otherwise
-                dist.all_reduce(this_peer_finished_flag, op=dist.ReduceOp.SUM)
-                # did all peers finish? the reduced sum will be 0.0 then
-                if this_peer_finished_flag.item() == 0.0:
-                    break
-
             # predicted tokens in cur_len step
             current_tokens = torch.zeros(batch_size * num_beams, dtype=input_ids.dtype, device=device)
 
@@ -2475,17 +2425,11 @@ class IPUGenerationMixin(GenerationMixin):
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
             outputs = self(
                 **model_inputs,
-                return_dict=True,
-                output_attentions=output_attentions,
-                output_hidden_states=output_hidden_states,
             )
-
-            if synced_gpus and this_peer_finished:
-                cur_len = cur_len + 1
-                continue  # don't waste resources running the code we don't need
+            outputs = self._poptorch_outputs_to_model_outputs(outputs)
 
             if output_scores:
-                processed_score = torch.zeros_like(outputs.logits[:, -1, :])
+                processed_score = torch.zeros_like(outputs["logits"][:, -1, :].to(torch.float32))
 
             for beam_group_idx in range(num_beam_groups):
                 group_start_idx = beam_group_idx * num_sub_beams
@@ -2502,7 +2446,7 @@ class IPUGenerationMixin(GenerationMixin):
                 group_input_ids = input_ids[batch_group_indices]
 
                 # select outputs of beams of current group only
-                next_token_logits = outputs.logits[batch_group_indices, -1, :]
+                next_token_logits = outputs["logits"][batch_group_indices, -1, :].to(torch.float32)
 
                 # hack: adjust tokens for Marian. For Marian we have to make sure that the `pad_token_id`
                 # cannot be generated both before and after the `nn.functional.log_softmax` operation.
@@ -2814,33 +2758,15 @@ class IPUGenerationMixin(GenerationMixin):
         beam_scores[:, 1:] = -1e9
         beam_scores = beam_scores.view((batch_size * num_beams,))
 
-        this_peer_finished = False  # used by synced_gpus only
         while True:
-
-            if synced_gpus:
-                # Under synced_gpus the `forward` call must continue until all gpus complete their sequence.
-                # The following logic allows an early break if all peers finished generating their sequence
-                this_peer_finished_flag = torch.tensor(0.0 if this_peer_finished else 1.0).to(input_ids.device)
-                # send 0.0 if we finished, 1.0 otherwise
-                dist.all_reduce(this_peer_finished_flag, op=dist.ReduceOp.SUM)
-                # did all peers finish? the reduced sum will be 0.0 then
-                if this_peer_finished_flag.item() == 0.0:
-                    break
 
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
-            outputs = self(
+            outputs = self.poptorch_model(
                 **model_inputs,
-                return_dict=True,
-                output_attentions=output_attentions,
-                output_hidden_states=output_hidden_states,
             )
 
-            if synced_gpus and this_peer_finished:
-                cur_len = cur_len + 1
-                continue  # don't waste resources running the code we don't need
-
-            next_token_logits = outputs.logits[:, -1, :]
+            next_token_logits = outputs["logits"][:, -1, :].to(torch.float32)
             # hack: adjust tokens for Marian. For Marian we have to make sure that the `pad_token_id`
             # cannot be generated both before and after the `nn.functional.log_softmax` operation.
             next_token_logits = self.adjust_logits_during_generation(next_token_logits, cur_len=cur_len)
@@ -2908,10 +2834,7 @@ class IPUGenerationMixin(GenerationMixin):
             cur_len = cur_len + 1
 
             if constrained_beam_scorer.is_done or stopping_criteria(input_ids, scores):
-                if not synced_gpus:
-                    break
-                else:
-                    this_peer_finished = True
+                break
 
         sequence_outputs = constrained_beam_scorer.finalize(
             input_ids,

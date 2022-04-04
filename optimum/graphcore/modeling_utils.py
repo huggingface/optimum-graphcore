@@ -159,10 +159,16 @@ class PipelineMixin:
 
 
 class GenerationMethodsMixin:
-    def get_encoder(self):
+    def get_encoder(self, device_iterations: Optional[int] = None, replication_factor: Optional[int] = None, for_inference: bool = True):
         if not hasattr(self, "_compiled_encoder"):
             encoder = super().get_encoder()
+            # self.ipu_config.inference_device_iterations = self.ipu_config.inference_device_iterations * self.ipu_config.inference_replication_factor
+            # inference_replication_factor = self.ipu_config.inference_replication_factor
+            # self.ipu_config.inference_replication_factor = 1
+            self.eval_opts = self.ipu_config.to_options(for_inference=True)
             self._compiled_encoder = poptorch.inferenceModel(encoder, options=self.ipu_config.to_options(for_inference=True))
+            # self.ipu_config.inference_device_iterations = int(self.ipu_config.inference_device_iterations / inference_replication_factor)
+            # self.ipu_config.inference_replication_factor = inference_replication_factor
             # self._compiled_encoder.model.forward = self._compiled_encoder.__call__
         return self._compiled_encoder
 
@@ -312,9 +318,12 @@ class SerializedLinear(nn.Linear):
         self.factor = factor
 
     def forward(self, x):
-        output = poptorch.serializedMatMul(x, self.weight.t(), self.mode, self.factor)
-        if self.bias is not None:
-            output += self.bias
+        if not self.training:
+            output = super().forward(x)
+        else:
+            output = poptorch.serializedMatMul(x, self.weight.t(), self.mode, self.factor)
+            if self.bias is not None:
+                output += self.bias
         return output
 
 
