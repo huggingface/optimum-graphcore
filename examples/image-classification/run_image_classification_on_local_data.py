@@ -20,6 +20,9 @@ import sys
 from dataclasses import dataclass, field
 from typing import Optional
 
+from timm.data.mixup import Mixup, FastCollateMixup
+import transforms
+
 import datasets
 import numpy as np
 import torch
@@ -151,6 +154,7 @@ class ModelArguments:
 def collate_fn(examples):
     # pixel_values = torch.stack([example["pixel_values"] for example in examples])
     # labels = torch.tensor([example["labels"] for example in examples])
+
     pixel_values = torch.stack([example[0] for example in examples])
     labels = torch.tensor([example[1] for example in examples])
     return {"pixel_values": pixel_values, "labels": labels}
@@ -171,6 +175,8 @@ class ApplyTransforms:
         # TODO: is ApplyTransforms still needed since we now transforms already apply to the image features.
         example_batch = self.transforms(example_batch)
         return example_batch
+
+
 
 
 def main():
@@ -233,9 +239,9 @@ def main():
 
     config = AutoConfig.from_pretrained(
         model_args.config_name or model_args.model_name_or_path,
-        num_labels=len(labels),
-        label2id=label2id,
-        id2label=id2label,
+        # num_labels=len(labels),
+        # label2id=label2id,
+        # id2label=id2label,
         finetuning_task="image-classification",
         cache_dir=model_args.cache_dir,
         revision=model_args.model_revision,
@@ -248,6 +254,15 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
+    # TODO parameterize it
+    config.nb_classes = len(labels)
+    config.smoothing = 0.1
+    config.mixup = 0.8
+    config.cutmix = 1.0
+    config.cutmix_minmax = None
+    config.mixup_prob = 1.0
+    config.mixup_switch_prob = 0.5
+    config.mixup_mode = 'batch'
 
     model = AutoModelForImageClassification.from_pretrained(
         model_args.model_name_or_path,
@@ -266,23 +281,7 @@ def main():
     )
 
     # Define torchvision transforms to be applied to each image.
-    normalize = Normalize(mean=feature_extractor.image_mean, std=feature_extractor.image_std)
-    _train_transforms = Compose(
-        [
-            RandomResizedCrop(feature_extractor.size),
-            RandomHorizontalFlip(),
-            ToTensor(),
-            normalize,
-        ]
-    )
-    _val_transforms = Compose(
-        [
-            Resize(feature_extractor.size),
-            CenterCrop(feature_extractor.size),
-            ToTensor(),
-            normalize,
-        ]
-    )
+    _train_transforms, _val_transforms = transforms.get_transforms(feature_extractor, model_args.model_name_or_path)
 
     # Initialize our dataset and prepare it for the 'image-classification' task.
     ds = dict()
@@ -321,6 +320,25 @@ def main():
         if data_args.max_eval_samples is not None:
             ds["validation"] = ds["validation"].shuffle(seed=training_args.seed)[: data_args.max_val_samples]
 
+
+    print("Train transforms: ")
+    print(_train_transforms)
+
+    # collate_with_mixup = FastCollateMixup(mixup_fn)
+    print("image size: ", feature_extractor.size)
+
+    mixup_fn = Mixup(
+    mixup_alpha=config.mixup, cutmix_alpha=config.cutmix, cutmix_minmax=config.cutmix_minmax,
+    prob=config.mixup_prob, switch_prob=config.mixup_switch_prob, mode=config.mixup_mode,
+    label_smoothing=config.smoothing, num_classes=config.nb_classes)
+
+
+    def mixup_collate_fn(examples):
+        pixel_values = torch.stack([example[0] for example in examples])
+        labels = torch.tensor([example[1] for example in examples])
+        pixel_values, labels = mixup_fn(pixel_values, labels)
+        return {"pixel_values": pixel_values, "labels": labels}
+
     # Initalize our trainer
     trainer = IPUTrainer(
         model=model,
@@ -330,7 +348,7 @@ def main():
         eval_dataset=ds["validation"] if training_args.do_eval else None,
         compute_metrics=compute_metrics,
         tokenizer=feature_extractor,
-        data_collator=collate_fn,
+        data_collator=mixup_collate_fn,
     )
 
     # Training
@@ -348,6 +366,7 @@ def main():
 
     # Evaluation
     if training_args.do_eval:
+        trainer.data_collator=collate_fn
         metrics = trainer.evaluate()
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
