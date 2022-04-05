@@ -21,7 +21,11 @@ import torch.nn as nn
 import poptorch
 from optimum.utils import logging
 from transformers import BartForConditionalGeneration, BartModel
-from transformers.modeling_outputs import BaseModelOutput, BaseModelOutputWithPastAndCrossAttentions, Seq2SeqModelOutput
+from transformers.modeling_outputs import (
+    BaseModelOutput,
+    BaseModelOutputWithPastAndCrossAttentions,
+    Seq2SeqModelOutput,
+)
 from transformers.models.bart.modeling_bart import BartAttention, BartDecoder, BartEncoder, shift_tokens_right
 
 from ...generation_utils import IPUGenerationMixin
@@ -610,7 +614,9 @@ class _BartModelWithSharedEmbedding(BartModel):
 
 
 @register(BartForConditionalGeneration)
-class PipelinedBartForConditionalGeneration(GenerationMethodsMixin, BartForConditionalGeneration, PipelineMixin, IPUGenerationMixin):
+class PipelinedBartForConditionalGeneration(
+    GenerationMethodsMixin, BartForConditionalGeneration, PipelineMixin, IPUGenerationMixin
+):
     def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.

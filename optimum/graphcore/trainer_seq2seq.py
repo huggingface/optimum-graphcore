@@ -12,29 +12,28 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import inspect
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
 import torch
 from torch import nn
 from torch.utils.data import Dataset
 
-# import poptorch
-
 from optimum.utils import logging
+
 from .trainer import IPUTrainer
+
 
 logger = logging.get_logger(__name__)
 
 
 class IPUSeq2SeqTrainer(IPUTrainer):
-
     def _wrap_and_compile_model_for_evaluation(self, dataloader, prediction_loss_only):
         if prediction_loss_only:
             return super()._wrap_and_compile_model_for_evaluation(dataloader)
 
         sample_batch = next(iter(dataloader))
 
-        import inspect
         if isinstance(sample_batch, tuple):
             parameter_names = list(inspect.signature(self.model).parameters)[: len(sample_batch)]
             sample_batch = dict(zip(parameter_names, sample_batch))
@@ -42,14 +41,24 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         encoder = self.model.get_encoder()
         encoder_kwargs = {k: v for k, v in sample_batch.items() if k in inspect.signature(encoder.forward).parameters}
 
+        # Overwrite the return_dict attribute temporarly to make sure no dictionary is being returned during compilation.
+        config_return_dict = encoder.config.return_dict
+        encoder.config.return_dict = False
+
         # This will both compile the encoder stack and return the output we need to compile the decoder stack.
         encoder_outputs = encoder(**encoder_kwargs)
 
-        self.ipu_config.inference_device_iterations = self.ipu_config.inference_device_iterations * self.args.generation_num_beams
+        encoder.config.return_dict = config_return_dict
+
+        self.ipu_config.inference_device_iterations = (
+            self.ipu_config.inference_device_iterations * self.args.generation_num_beams
+        )
         # self.ipu_config.inference_replication_factor = self.ipu_config.inference_replication_factor - 1
         self.eval_opts = self.ipu_config.to_options(for_inference=True)
         model = self._wrap_model(self.model, training=False)
-        self.ipu_config.inference_device_iterations = int(self.ipu_config.inference_device_iterations / self.args.generation_num_beams)
+        self.ipu_config.inference_device_iterations = int(
+            self.ipu_config.inference_device_iterations / self.args.generation_num_beams
+        )
         # self.ipu_config.inference_replication_factor = self.ipu_config.inference_replication_factor + 1
         self.eval_opts = self.ipu_config.to_options(for_inference=True)
 
@@ -60,7 +69,7 @@ class IPUSeq2SeqTrainer(IPUTrainer):
             if isinstance(input_, tuple):
                 return tuple(map(repeat, input_))
             if isinstance(input_, torch.Tensor):
-                return input_.repeat((self.args.generation_num_beams, ) + (1,) * (input_.dim() - 1))
+                return input_.repeat((self.args.generation_num_beams,) + (1,) * (input_.dim() - 1))
             return input_
 
         sample_batch = {k: repeat(v) for k, v in sample_batch.items()}
@@ -70,6 +79,7 @@ class IPUSeq2SeqTrainer(IPUTrainer):
 
         # To be able to make the generate method work.
         import poptorch
+
         if not isinstance(model.model.forward.__self__, poptorch.PoplarExecutor):
             # model.model.forward = model.__call__
             model.model.poptorch_model = model

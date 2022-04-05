@@ -45,9 +45,15 @@ from transformers.generation_stopping_criteria import (
     StoppingCriteriaList,
     validate_stopping_criteria,
 )
-from transformers.generation_utils import BeamSearchOutput, BeamSampleOutput, GenerationMixin, GreedySearchOutput, SampleOutput
+from transformers.generation_utils import (
+    BeamSampleOutput,
+    BeamSearchOutput,
+    GenerationMixin,
+    GreedySearchOutput,
+    SampleOutput,
+)
+from transformers.modeling_outputs import BaseModelOutput, ModelOutput
 from transformers.pytorch_utils import torch_int_div
-from transformers.modeling_outputs import ModelOutput, BaseModelOutput
 
 
 class IPUGenerationMixin(GenerationMixin):
@@ -172,9 +178,6 @@ class IPUGenerationMixin(GenerationMixin):
 
         # 2. prepare encoder args and encoder kwargs from model kwargs
         encoder_kwargs = {k: v for k, v in model_kwargs.items() if k in inspect.signature(encoder.forward).parameters}
-
-        encoder_kwargs.pop("output_attentions")
-        encoder_kwargs.pop("output_hidden_states")
 
         # 3. make sure that encoder returns `ModelOutput`
         model_input_name = model_input_name if model_input_name is not None else self.main_input_name
@@ -491,7 +494,7 @@ class IPUGenerationMixin(GenerationMixin):
     @staticmethod
     def _poptorch_outputs_to_model_outputs(outputs):
         # keys = ["next_token_scores"] #, "past_key_values"]
-        keys = ["logits"] #, "past_key_values"]
+        keys = ["logits"]  # , "past_key_values"]
         if len(outputs) == 3:
             keys = ["loss"] + keys
         return dict(zip(keys, outputs))
@@ -806,9 +809,9 @@ class IPUGenerationMixin(GenerationMixin):
         batch_size = inputs_tensor.shape[0]
 
         # 3. Define other model kwargs
-        model_kwargs["output_attentions"] = output_attentions
-        model_kwargs["output_hidden_states"] = output_hidden_states
-        model_kwargs["use_cache"] = use_cache
+        # model_kwargs["output_attentions"] = output_attentions
+        # model_kwargs["output_hidden_states"] = output_hidden_states
+        # model_kwargs["use_cache"] = use_cache
 
         accepts_attention_mask = "attention_mask" in set(inspect.signature(self.forward).parameters.keys())
         requires_attention_mask = "encoder_outputs" not in model_kwargs
