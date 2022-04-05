@@ -16,4 +16,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .modeling_convnext import PipelinedConvNextModel, PipelinedConvNextForImageClassification
+from .modeling_convnext import PipelinedConvNextForImageClassification
