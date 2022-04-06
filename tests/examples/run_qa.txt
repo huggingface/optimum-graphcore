@@ -10,7 +10,7 @@
 <         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
 <         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
 <     )
-293a291,297
+302a300,306
 >     ipu_config = IPUConfig.from_pretrained(
 >         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
 >         cache_dir=model_args.cache_dir,
@@ -18,7 +18,7 @@
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
 > 
-541a546,558
+550a555,567
 >     if training_args.do_train and training_args.pad_on_batch_axis:
 >         logger.info(
 >             "Padding on batch axis enabled, each batch feeded to the compiled model during training will have the proper size"
@@ -32,5 +32,5 @@
 >         )
 >         data_collator = data_collator_wrapper(data_collator)
 > 
-575a593
+584a602
 >         ipu_config=ipu_config,
