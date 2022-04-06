@@ -170,7 +170,7 @@ class TrainingArguments(IPUTrainingArguments):
             "help": "Image input size."
         },
     )
-    disable_mixup: Optional[bool] = field)
+    disable_mixup: Optional[bool] = field(
         default=False,
         metadata={
             "help": "Disable the pre-processing Mixup function for data augmentation."
@@ -293,9 +293,9 @@ def main():
 
     config = AutoConfig.from_pretrained(
         model_args.config_name or model_args.model_name_or_path,
-        # num_labels=len(labels),
-        # label2id=label2id,
-        # id2label=id2label,
+        num_labels=len(labels),
+        label2id=label2id,
+        id2label=id2label,
         finetuning_task="image-classification",
         cache_dir=model_args.cache_dir,
         revision=model_args.model_revision,
@@ -366,19 +366,8 @@ def main():
         if data_args.max_eval_samples is not None:
             ds["validation"] = ds["validation"].shuffle(seed=training_args.seed)[: data_args.max_val_samples]
 
-
-    # print("Train transforms: ")
-    # print(_train_transforms)
-
-    # # collate_with_mixup = FastCollateMixup(mixup_fn)
-    # print("image size: ", feature_extractor.size)
-
-
-
-
     train_collate_fn = collate_fn
-    if (training_args.mixup > 0 or training_args.cutmix > 0. or training_args.cutmix_minmax is not None)
-        and not training_args.disable_mixup:
+    if (training_args.mixup > 0 or training_args.cutmix > 0. or training_args.cutmix_minmax is not None) and not training_args.disable_mixup:
 
         logger.info("Training with Mixup")
         mixup_fn = Mixup(
