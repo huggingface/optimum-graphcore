@@ -1,4 +1,5 @@
 --find-links https://download.pytorch.org/whl/torch_stable.html
+git+https://github.com/huggingface/transformers.git # Requires latest version of transformers
 datasets>=1.14.0
 librosa
 torchaudio==0.10.0+cpu
