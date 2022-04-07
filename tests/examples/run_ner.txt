@@ -33,6 +33,10 @@
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
+328c333
+<     if config.model_type in {"gpt2", "roberta"}:
+---
+>     if config.model_type in {"gpt2", "roberta", "deberta"}:
 354a360,364
 >     # Customize tokenization for GPT2. We reuse the EOS token as the PAD token.
 >     if config.model_type == "gpt2":
