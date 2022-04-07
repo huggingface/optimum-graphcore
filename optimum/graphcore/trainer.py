@@ -1589,14 +1589,13 @@ class IPUTrainer:
                 model, inputs, prediction_loss_only, ignore_keys=ignore_keys, is_last_batch=is_last_batch
             )
 
-            loss = loss.mean(dim=0, keepdim=True)
-
-            # If only one IPU is used, loss is a zero dimensional tensor, we unsqueeze to be able to concatenate.
-            if loss.dim() == 0:
-                loss = loss.unsqueeze(0)
-
             # Update containers on host
             if loss is not None:
+                loss = loss.mean(dim=0, keepdim=True)
+
+                # If only one IPU is used, loss is a zero dimensional tensor, we unsqueeze to be able to concatenate.
+                if loss.dim() == 0:
+                    loss = loss.unsqueeze(0)
                 losses_host = loss if losses_host is None else torch.cat((losses_host, loss), dim=0)
             if logits is not None:
                 preds_host = logits if preds_host is None else nested_concat(preds_host, logits, padding_index=-100)
