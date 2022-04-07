@@ -20,6 +20,10 @@ import sys
 from dataclasses import dataclass, field
 from typing import Optional
 
+from timm.data.mixup import Mixup, FastCollateMixup
+
+import transforms
+
 import datasets
 import numpy as np
 import torch
@@ -38,7 +42,7 @@ from torchvision.transforms import (
 
 import transformers
 from optimum.graphcore import IPUConfig, IPUTrainer
-from optimum.graphcore import IPUTrainingArguments as TrainingArguments
+from optimum.graphcore import IPUTrainingArguments
 from transformers import (
     MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING,
     AutoConfig,
@@ -138,7 +142,15 @@ class ModelArguments:
         default="main",
         metadata={"help": "The specific model version to use (can be a branch name, tag name or commit id)."},
     )
-    feature_extractor_name: str = field(default=None, metadata={"help": "Name or path of preprocessor config."})
+    feature_extractor_name: str = field(default=None, metadata={"help": "Name or path of preprocessor config."},
+    )
+
+    disable_feature_extractor: bool = field(
+        default=False,
+        metadata={
+            "help": "Weather or not to disable the feature extractor."
+        },
+    )
     use_auth_token: bool = field(
         default=False,
         metadata={
@@ -147,10 +159,56 @@ class ModelArguments:
         },
     )
 
+@dataclass
+class TrainingArguments(IPUTrainingArguments):
+    """
+    Subclass IPUTrainingArguments to pass extra training-related arguments such as data-augmentation.
+    """
+    input_size: Optional[int] = field(
+        default = 224,
+        metadata={
+            "help": "Image input size."
+        },
+    )
+    disable_mixup: Optional[bool] = field(
+        default=False,
+        metadata={
+            "help": "Disable the pre-processing Mixup function for data augmentation."
+        },
+    )
+    nb_classes: Optional[float] = field(
+        default=1000
+    )
+    smoothing: Optional[float] = field(
+        default=0.1,
+        metadata={
+            "help": "Label smoothing."
+        },
+    )
+    mixup: Optional[float] = field(
+        default=1.0
+    )
+    cutmix: Optional[float] = field(
+        default=1.0
+    )
+    cutmix_minmax: Optional[float] = field(
+        default=None
+    )
+    mixup_prob: Optional[float] = field(
+        default=0.1
+    )
+    mixup_switch_prob: Optional[float] = field(
+        default=0.5
+    )
+    mixup_mode: Optional[str] = field(
+        default='batch'
+    )
+
 
 def collate_fn(examples):
     # pixel_values = torch.stack([example["pixel_values"] for example in examples])
     # labels = torch.tensor([example["labels"] for example in examples])
+
     pixel_values = torch.stack([example[0] for example in examples])
     labels = torch.tensor([example[1] for example in examples])
     return {"pixel_values": pixel_values, "labels": labels}
@@ -171,6 +229,8 @@ class ApplyTransforms:
         # TODO: is ApplyTransforms still needed since we now transforms already apply to the image features.
         example_batch = self.transforms(example_batch)
         return example_batch
+
+
 
 
 def main():
@@ -241,14 +301,15 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
+    config.smoothing=training_args.smoothing
 
-    ipu_config = IPUConfig.from_pretrained(
-        training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
-        cache_dir=model_args.cache_dir,
-        revision=model_args.model_revision,
-        use_auth_token=True if model_args.use_auth_token else None,
-    )
-
+    # ipu_config = IPUConfig.from_pretrained(
+    #     training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
+    #     cache_dir=model_args.cache_dir,
+    #     revision=model_args.model_revision,
+    #     use_auth_token=True if model_args.use_auth_token else None,
+    # )
+    ipu_config = IPUConfig.from_json_file("convnext_ipuconfig.json")
     model = AutoModelForImageClassification.from_pretrained(
         model_args.model_name_or_path,
         from_tf=bool(".ckpt" in model_args.model_name_or_path),
@@ -266,23 +327,7 @@ def main():
     )
 
     # Define torchvision transforms to be applied to each image.
-    normalize = Normalize(mean=feature_extractor.image_mean, std=feature_extractor.image_std)
-    _train_transforms = Compose(
-        [
-            RandomResizedCrop(feature_extractor.size),
-            RandomHorizontalFlip(),
-            ToTensor(),
-            normalize,
-        ]
-    )
-    _val_transforms = Compose(
-        [
-            Resize(feature_extractor.size),
-            CenterCrop(feature_extractor.size),
-            ToTensor(),
-            normalize,
-        ]
-    )
+    _train_transforms, _val_transforms = transforms.get_transforms(model_args.model_name_or_path, training_args, feature_extractor)
 
     # Initialize our dataset and prepare it for the 'image-classification' task.
     ds = dict()
@@ -321,6 +366,25 @@ def main():
         if data_args.max_eval_samples is not None:
             ds["validation"] = ds["validation"].shuffle(seed=training_args.seed)[: data_args.max_val_samples]
 
+    train_collate_fn = collate_fn
+    if (training_args.mixup > 0 or training_args.cutmix > 0. or training_args.cutmix_minmax is not None) and not training_args.disable_mixup:
+
+        logger.info("Training with Mixup")
+        mixup_fn = Mixup(
+        mixup_alpha=training_args.mixup, cutmix_alpha=training_args.cutmix, cutmix_minmax=training_args.cutmix_minmax,
+        prob=training_args.mixup_prob, switch_prob=training_args.mixup_switch_prob, mode=training_args.mixup_mode,
+        label_smoothing=training_args.smoothing, num_classes=training_args.nb_classes)
+
+        def mixup_collate_fn(examples):
+            pixel_values = torch.stack([example[0] for example in examples])
+            labels = torch.tensor([example[1] for example in examples])
+            pixel_values, labels = mixup_fn(pixel_values, labels)
+            return {"pixel_values": pixel_values, "labels": labels}
+
+        train_collate_fn = mixup_collate_fn
+    if model_args.disable_feature_extractor:
+        logger.info("Model feature extractor disabled")
+
     # Initalize our trainer
     trainer = IPUTrainer(
         model=model,
@@ -329,8 +393,8 @@ def main():
         train_dataset=ds["train"] if training_args.do_train else None,
         eval_dataset=ds["validation"] if training_args.do_eval else None,
         compute_metrics=compute_metrics,
-        tokenizer=feature_extractor,
-        data_collator=collate_fn,
+        tokenizer=feature_extractor if not model_args.disable_feature_extractor else None,
+        data_collator=train_collate_fn,
     )
 
     # Training
@@ -348,6 +412,7 @@ def main():
 
     # Evaluation
     if training_args.do_eval:
+        trainer.data_collator=collate_fn
         metrics = trainer.evaluate()
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
