@@ -21,20 +21,20 @@
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
-382c383
+384c385
 <         else DataCollatorForMultipleChoice(tokenizer=tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None)
 ---
 >         else DataCollatorForMultipleChoice(tokenizer=tokenizer, pad_to_multiple_of=None)
-384a386,391
+386a388,393
 >     if not data_args.pad_to_max_length:
 >         logging.warning(
 >             "Not padding to max length might lead to batches with difference sequence lengths, which might not work as"
 >             "expected on IPUs"
 >         )
 > 
-392c399
+394c401
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-393a401
+395a403
 >         ipu_config=ipu_config,

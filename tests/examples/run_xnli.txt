@@ -17,12 +17,12 @@
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
-329,330d329
+332,333d332
 <     elif training_args.fp16:
 <         data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8)
-335c334
+338c337
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-336a336
+339a339
 >         ipu_config=ipu_config,
