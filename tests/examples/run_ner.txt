@@ -14,26 +14,26 @@
 <         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
 <         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
 <     )
-322a318,323
+325a321,326
 >     ipu_config = IPUConfig.from_pretrained(
 >         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
 >         cache_dir=model_args.cache_dir,
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
-391a393,397
+394a396,400
 >     if not data_args.pad_to_max_length:
 >         logging.warning(
 >             "Not padding to max length might lead to batches with difference sequence lengths, which might not work as"
 >             "expected on IPUs"
 >         )
-478c484
+481c487
 <     data_collator = DataCollatorForTokenClassification(tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None)
 ---
 >     data_collator = DataCollatorForTokenClassification(tokenizer, pad_to_multiple_of=None)
-517c523
+520c526
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-518a525
+521a528
 >         ipu_config=ipu_config,
