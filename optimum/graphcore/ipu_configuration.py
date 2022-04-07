@@ -167,7 +167,7 @@ class IPUConfig(BaseConfig):
             # Optimizer state lives on- or off-chip
             .useOnChipStorage(not self.optimizer_state_offchip)
             # Shard optimizer state between replicas with zero-redundancy
-            .useReplicatedTensorSharding(self.replicated_tensor_sharding if self.replication_factor > 1 else False)
+            .useReplicatedTensorSharding(self.replicated_tensor_sharding)
         )
 
         # Use Pipelined Execution
