@@ -17,13 +17,13 @@
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
-490c491
+493c494
 <             pad_to_multiple_of=8 if training_args.fp16 else None,
 ---
 >             pad_to_multiple_of=None,
-524c525
+527c528
 <     trainer = Seq2SeqTrainer(
 ---
 >     trainer = IPUSeq2SeqTrainer(
-525a527
+528a530
 >         ipu_config=ipu_config,
