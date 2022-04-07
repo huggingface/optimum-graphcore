@@ -55,8 +55,8 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
                 if self.num_labels == 1:
                     self.config.problem_type = "regression"
                 elif self.num_labels > 1 and (labels.dtype == torch.long or labels.dtype == torch.int):
+                    #
                     self.config.problem_type = "single_label_classification"
-                    print("single_label_classification")
                 else:
                     # Using mixup
                     self.config.problem_type = "multi_label_classification"
@@ -69,7 +69,7 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
                 else:
                     loss = loss_fct(logits, labels)
             elif self.config.problem_type == "single_label_classification":
-                loss_fct = CrossEntropyLoss(label_smoothing=args.smoothing)
+                loss_fct = CrossEntropyLoss(label_smoothing=self.config.smoothing)
                 loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
             elif self.config.problem_type == "multi_label_classification":
                 loss_fct = SoftTargetCrossEntropy()
