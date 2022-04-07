@@ -1698,7 +1698,6 @@ class IPUTrainer:
             else:
                 ignore_keys = []
 
-
         # labels may be popped when computing the loss (label smoothing for instance) so we grab them first.
         if has_labels:
             labels = nested_detach(tuple(inputs.get(name) for name in self.label_names))
