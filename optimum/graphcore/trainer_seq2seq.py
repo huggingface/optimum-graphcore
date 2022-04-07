@@ -64,6 +64,8 @@ class IPUSeq2SeqTrainer(IPUTrainer):
 
         sample_batch.pop("input_ids")
         sample_batch["encoder_outputs"] = encoder_outputs
+        # TODO: enable the possibility to provide labels, currently it does not work.
+        sample_batch.pop("labels")
 
         def repeat(input_):
             if isinstance(input_, tuple):
@@ -73,7 +75,6 @@ class IPUSeq2SeqTrainer(IPUTrainer):
             return input_
 
         sample_batch = {k: repeat(v) for k, v in sample_batch.items()}
-        sample_batch.pop("labels")
 
         model.compile(**sample_batch)
 

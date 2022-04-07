@@ -51,6 +51,8 @@ class IPUConfig(BaseConfig):
         self.optimizer_state_offchip = kwargs.pop("optimizer_state_offchip", True)
         self.replicated_tensor_sharding = kwargs.pop("replicated_tensor_sharding", False)
 
+        self.sharded_execution_for_inference = kwargs.pop("sharded_execution_for_inference", False)
+
         self.matmul_proportion = kwargs.pop("matmul_proportion", 0.6)
 
         self.enable_half_first_order_momentum = kwargs.pop("enable_half_first_order_momentum", False)
@@ -170,8 +172,11 @@ class IPUConfig(BaseConfig):
             .useReplicatedTensorSharding(self.replicated_tensor_sharding)
         )
 
-        # Use Pipelined Execution
-        opts.setExecutionStrategy(poptorch.PipelinedExecution(poptorch.AutoStage.AutoIncrement))
+        if for_inference and self.sharded_execution_for_inference:
+            opts.setExecutionStrategy(poptorch.ShardedExecution(poptorch.AutoStage.AutoIncrement))
+        else:
+            # Use Pipelined Execution
+            opts.setExecutionStrategy(poptorch.PipelinedExecution(poptorch.AutoStage.AutoIncrement))
 
         # Compile offline (no IPUs required)
         if compile_only:

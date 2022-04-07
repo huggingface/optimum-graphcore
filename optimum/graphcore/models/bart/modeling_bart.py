@@ -718,7 +718,7 @@ class PipelinedBartForConditionalGeneration(
         return outputs[0]
 
     def _forward_for_generate(self, encoder_outputs, decoder_input_ids, attention_mask, labels=None):
-        return super().forward(
+        outputs = super().forward(
             encoder_outputs=encoder_outputs,
             attention_mask=attention_mask,
             decoder_input_ids=decoder_input_ids,
@@ -726,17 +726,9 @@ class PipelinedBartForConditionalGeneration(
             use_cache=False,
             labels=labels,
         )
-        # outputs = super().forward(
-        #     encoder_outputs=encoder_outputs,
-        #     attention_mask=attention_mask,
-        #     decoder_input_ids=decoder_input_ids,
-        #     return_dict=True,
-        #     use_cache=True,
-        #     # past_key_values=past_key_values,
-        #     labels=labels,
-        # )
-        # next_token_logits = outputs.logits[:, -1, :]
-        # next_token_scores = nn.functional.log_softmax(next_token_logits, dim=-1)
-        # return next_token_scores #, outputs.past_key_values
+        # Only returning the loss (if labels is provided) and the logits.
+        if labels is None:
+            return outputs[:1]
+        return outputs[:2]
 
     forward = _forward_for_train

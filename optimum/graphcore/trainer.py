@@ -231,6 +231,9 @@ class IPUTrainer:
         if self.args.push_to_hub:
             self.init_git_repo()
 
+        if self.args.should_save:
+            os.makedirs(self.args.output_dir, exist_ok=True)
+
         if not callable(self.data_collator) and callable(getattr(self.data_collator, "collate_batch", None)):
             raise ValueError("The `data_collator` should be a simple callable (function, class with `__call__`).")
 
@@ -1594,10 +1597,10 @@ class IPUTrainer:
             # Update containers on host
             if loss is not None:
                 loss = loss.mean(dim=0, keepdim=True)
-
                 # If only one IPU is used, loss is a zero dimensional tensor, we unsqueeze to be able to concatenate.
                 if loss.dim() == 0:
                     loss = loss.unsqueeze(0)
+
                 losses_host = loss if losses_host is None else torch.cat((losses_host, loss), dim=0)
             if logits is not None:
                 if self.preprocess_logits_for_metrics is not None:

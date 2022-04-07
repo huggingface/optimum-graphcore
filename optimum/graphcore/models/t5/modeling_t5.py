@@ -525,7 +525,7 @@ class PipelinedT5ForConditionalGeneration(
         if self.config.tie_word_embeddings:
             # Rescale output before projecting on vocab
             # See https://github.com/tensorflow/mesh/blob/fa19d69eafc9a482aff0b59ddd96b025c0cb207d/mesh_tensorflow/transformer/transformer.py#L586
-            sequence_output = sequence_output * (self.model_dim**-0.5)
+            sequence_output = sequence_output * (self.model_dim ** -0.5)
 
         lm_scale_modifier = getattr(self, "lm_scale_modifier", None)
         if lm_scale_modifier is not None:
@@ -573,7 +573,7 @@ class PipelinedT5ForConditionalGeneration(
         return outputs[0]
 
     def _forward_for_generate(self, encoder_outputs, decoder_input_ids, attention_mask, labels=None):
-        return super().forward(
+        outputs = super().forward(
             encoder_outputs=encoder_outputs,
             attention_mask=attention_mask,
             decoder_input_ids=decoder_input_ids,
@@ -581,5 +581,9 @@ class PipelinedT5ForConditionalGeneration(
             use_cache=False,
             labels=labels,
         )
+        # Only returning the loss (if labels is provided) and the logits.
+        if labels is None:
+            return outputs[:1]
+        return outputs[:2]
 
     forward = _forward_for_train
