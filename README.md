@@ -163,6 +163,7 @@ The following model architectures and tasks are currently supported by 🤗 Opti
 | HuBERT  | ✗                  |                    |                    |                                              | :heavy_check_mark:      |                      |                    |                    |                      |
 | ViT     | ✗                  |                    |                    |                                              |                         |                      |                    |                    | :heavy_check_mark:   |
 | LXMERT  | ✗                  |                    |                    |                                              |                         |                      | :heavy_check_mark: |                    |                      |
+| Wav2Vec2| :heavy_check_mark: |                    |                    |                                              |                         |                      |                    |                    |                      |
 
 Coming soon: Wav2Vec2 and ConvNeXt
 

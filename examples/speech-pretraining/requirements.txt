@@ -1,0 +1,5 @@
+datasets >= 1.18.0
+torchaudio == 0.10.0
+librosa
+jiwer
+soundfile
