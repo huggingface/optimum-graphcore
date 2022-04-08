@@ -20,7 +20,7 @@
 
   "learning_rate": 3e-4,
   "weight_decay": 1e-8,
-  "num_train_epochs": 1,
+  "num_train_epochs": 30,
   "do_train": true,
   "do_eval": true,
   "train_val_split": 0.1,
