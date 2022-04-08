@@ -40,5 +40,7 @@
   "overwrite_output_dir": true,
   "ipu_config_name": "./convnext_ipuconfig.json",
   "disable_feature_extractor" : true,
-  "disable_mixup": true
+  "disable_mixup": true,
+
+  "load_fb_pretrained_weights":"convnext_tiny_22k_224.pth"
   }

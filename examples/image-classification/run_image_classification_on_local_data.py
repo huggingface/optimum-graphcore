@@ -203,6 +203,9 @@ class TrainingArguments(IPUTrainingArguments):
     mixup_mode: Optional[str] = field(
         default='batch'
     )
+    load_fb_pretrained_weights: Optional[str] = field(
+        default=None
+    )
 
 
 def collate_fn(examples):
@@ -230,6 +233,26 @@ class ApplyTransforms:
         example_batch = self.transforms(example_batch)
         return example_batch
 
+
+def load_from_fb_weights(model, fb_model_path):
+    import fb_to_hf_map.FB_TO_HF_MAP as FB_TO_HF_MAP
+    fb_state_dict = torch.load(fb_model_path)
+
+    current_state_dict = model.state_dict()
+
+    new_state_dict = {}
+
+    for fb_tensor_name in fb_state_dict.keys():
+        hf_tensor_name = FB_TO_HF_MAP[fb_tensor_name]
+
+        if "head" not in fb_tensor_name:
+            new_state_dict[hf_tensor_name] = fb_state_dict[fb_tensor_name]
+        else:
+            new_state_dict[hf_tensor_name] = current_state_dict[hf_tensor_name]
+
+    model.load_state_dict(new_state_dict)
+    
+    return model
 
 
 
