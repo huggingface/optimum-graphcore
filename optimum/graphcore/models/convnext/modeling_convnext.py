@@ -2,6 +2,7 @@ import torch
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 import poptorch
 import transformers
+from transformers.models.convnext import ConvNextModel
 from transformers.modeling_outputs import (
     ImageClassifierOutputWithNoAttention,
 )
@@ -31,6 +32,20 @@ class ConvNextPipelineMixin(PipelineMixin):
 
 @register(transformers.ConvNextForImageClassification)
 class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClassification, ConvNextPipelineMixin):
+    def __init__(self, config):
+        super().__init__(config)
+
+        self.num_labels = config.num_labels
+        self.convnext = ConvNextModel(config)
+
+        # Classifier head
+        self.classifier = (
+            torch.nn.Linear(config.hidden_sizes[-1], config.num_labels) if config.num_labels > 0 else nn.Identity()
+        )
+
+        # Initialize weights and apply final processing
+        self.post_init()
+
     def parallelize(self):
         """Set pipeline mapping for the head (layernorm + classifier layers)"""
         super().parallelize()

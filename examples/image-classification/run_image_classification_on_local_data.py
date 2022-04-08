@@ -206,6 +206,9 @@ class TrainingArguments(IPUTrainingArguments):
     drop_path_rate: Optional[float]  = field(
         default=0.0
     )
+    head_init_scale: Optional[float]  = field(
+        default=1
+    )
 
 
 
@@ -305,7 +308,8 @@ def main():
         cache_dir=model_args.cache_dir,
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
-        drop_path_rate=training_args.drop_path_rate
+        drop_path_rate=training_args.drop_path_rate,
+        head_init_scale = training_args.head_init_scale,
     )
     config.smoothing=training_args.smoothing
 
