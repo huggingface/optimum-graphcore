@@ -17,7 +17,7 @@
 <         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu} "
 <         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
 <     )
-266,287d255
+272,293d261
 <     def train_transforms(batch):
 <         """Apply train_transforms across a batch."""
 <         output_batch = {"input_values": []}
@@ -40,7 +40,7 @@
 < 
 <         return output_batch
 < 
-315a284,295
+321a290,301
 > 
 >     # Disable these features that can't run on IPU yet
 >     # TODO handle this properly
@@ -53,9 +53,9 @@
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
-318d297
+324d303
 <         from_tf=bool(".ckpt" in model_args.model_name_or_path),
-328a308,324
+334a314,330
 >     def preprocess_function(examples):
 >         audio = examples[data_args.audio_column_name]
 >         subsampled_audio = random_subsample(
@@ -73,21 +73,21 @@
 >         examples["labels"] = examples[data_args.label_column_name]
 >         return examples
 > 
-335c331,333
+341c337,339
 <         raw_datasets["train"].set_transform(train_transforms, output_all_columns=False)
 ---
 >         raw_datasets["train"] = raw_datasets["train"].map(
 >             preprocess_function, remove_columns=raw_datasets["train"].column_names
 >         )
-343c341,343
+349c347,349
 <         raw_datasets["eval"].set_transform(val_transforms, output_all_columns=False)
 ---
 >         raw_datasets["eval"] = raw_datasets["eval"].map(
 >             preprocess_function, remove_columns=raw_datasets["eval"].column_names
 >         )
-346c346
+352c352
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-347a348
+353a354
 >         ipu_config=ipu_config,
