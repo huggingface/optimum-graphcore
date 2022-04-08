@@ -10,7 +10,7 @@
   "per_device_train_batch_size": 1,
   "per_device_eval_batch_size": 1,
 
-  "pod_type": "pod16",
+  "pod_type": "pod8",
   "replication_factor": {"pod4": 1, "pod8": 2, "pod16": 16, "pod32": 8, "pod64": 16, "default": 1},
   "device_iterations": 1,
   "inference_device_iterations": 1,
@@ -41,6 +41,7 @@
   "ipu_config_name": "./convnext_ipuconfig.json",
   "disable_feature_extractor" : true,
   "disable_mixup": true,
+  "lr_scheduler_type": "cosine",
 
   "load_fb_pretrained_weights":"convnext_tiny_22k_224.pth"
   }
