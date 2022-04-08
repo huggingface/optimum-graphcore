@@ -235,15 +235,15 @@ class ApplyTransforms:
 
 
 def load_from_fb_weights(model, fb_model_path):
-    import fb_to_hf_map.FB_TO_HF_MAP as FB_TO_HF_MAP
-    fb_state_dict = torch.load(fb_model_path)
+    import fb_to_hf_map
+    fb_state_dict = torch.load(fb_model_path)["model"]
 
     current_state_dict = model.state_dict()
 
     new_state_dict = {}
 
     for fb_tensor_name in fb_state_dict.keys():
-        hf_tensor_name = FB_TO_HF_MAP[fb_tensor_name]
+        hf_tensor_name = fb_to_hf_map.FB_TO_HF_MAP[fb_tensor_name]
 
         if "head" not in fb_tensor_name:
             new_state_dict[hf_tensor_name] = fb_state_dict[fb_tensor_name]
@@ -307,7 +307,6 @@ def main():
     def compute_metrics(p):
         """Computes accuracy on a batch of predictions"""
         return metric.compute(predictions=np.argmax(p.predictions, axis=1), references=p.label_ids)
-
     labels = glob.glob(os.path.join(data_args.data_files.get("train", None), "*/"))
     label2id, id2label = dict(), dict()
     for i, label in enumerate(labels):
@@ -332,14 +331,21 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
-    model = AutoModelForImageClassification.from_pretrained(
-        model_args.model_name_or_path,
-        from_tf=bool(".ckpt" in model_args.model_name_or_path),
-        config=config,
-        cache_dir=model_args.cache_dir,
-        revision=model_args.model_revision,
-        use_auth_token=True if model_args.use_auth_token else None,
-    )
+    if training_args.load_fb_pretrained_weights:
+        model = AutoModelForImageClassification.from_config(
+            config,
+        )
+
+        model = load_from_fb_weights(model, training_args.load_fb_pretrained_weights)
+    else:
+        model = AutoModelForImageClassification.from_pretrained(
+            model_args.model_name_or_path,
+            from_tf=bool(".ckpt" in model_args.model_name_or_path),
+            config=config,
+            cache_dir=model_args.cache_dir,
+            revision=model_args.model_revision,
+            use_auth_token=True if model_args.use_auth_token else None,
+        )
 
     feature_extractor = AutoFeatureExtractor.from_pretrained(
         model_args.feature_extractor_name or model_args.model_name_or_path,
