@@ -252,16 +252,15 @@ def load_from_fb_weights(model, fb_model_path):
         hf_tensor_name = fb_to_hf_map.FB_TO_HF_MAP[fb_tensor_name]
 
         if "head" not in fb_tensor_name:
+            print(f"setting {hf_tensor_name} with fb {fb_tensor_name}")
             new_state_dict[hf_tensor_name] = fb_state_dict[fb_tensor_name]
         else:
+            print(f"setting {hf_tensor_name} with current {hf_tensor_name}")
             new_state_dict[hf_tensor_name] = current_state_dict[hf_tensor_name]
 
     model.load_state_dict(new_state_dict)
     
     return model
-
-
-
 
 def main():
     # See all possible arguments in src/transformers/training_args.py
