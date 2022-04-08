@@ -309,9 +309,10 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
         drop_path_rate=training_args.drop_path_rate,
-        head_init_scale = training_args.head_init_scale,
+
     )
     config.smoothing=training_args.smoothing
+    config.head_init_scale = training_args.head_init_scale
 
     ipu_config = IPUConfig.from_pretrained(
         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
