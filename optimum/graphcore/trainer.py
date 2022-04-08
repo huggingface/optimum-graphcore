@@ -1598,6 +1598,8 @@ class IPUTrainer:
                     loss = loss.unsqueeze(0)
                 losses_host = loss if losses_host is None else torch.cat((losses_host, loss), dim=0)
             if logits is not None:
+                if self.preprocess_logits_for_metrics is not None:
+                    logits = self.preprocess_logits_for_metrics(logits, labels)
                 preds_host = logits if preds_host is None else nested_concat(preds_host, logits, padding_index=-100)
             if labels is not None:
                 labels_host = labels if labels_host is None else nested_concat(labels_host, labels, padding_index=-100)
