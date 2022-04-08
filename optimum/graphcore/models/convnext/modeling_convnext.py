@@ -46,6 +46,9 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
         # Initialize weights and apply final processing
         self.post_init()
 
+        self.classifier.weight.data.mul_(config.head_init_scale)
+        self.classifier.bias.data.mul_(config.head_init_scale)
+
     def parallelize(self):
         """Set pipeline mapping for the head (layernorm + classifier layers)"""
         super().parallelize()
