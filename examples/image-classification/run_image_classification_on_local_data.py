@@ -206,6 +206,12 @@ class TrainingArguments(IPUTrainingArguments):
     load_fb_pretrained_weights: Optional[str] = field(
         default=None
     )
+    drop_path_rate: Optional[float]  = field(
+        default=0.0
+    )
+    head_init_scale: Optional[float]  = field(
+        default=1
+    )
 
 
 def collate_fn(examples):
@@ -253,6 +259,7 @@ def load_from_fb_weights(model, fb_model_path):
     model.load_state_dict(new_state_dict)
     
     return model
+
 
 
 
@@ -322,8 +329,11 @@ def main():
         cache_dir=model_args.cache_dir,
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
+        drop_path_rate=training_args.drop_path_rate,
+
     )
     config.smoothing=training_args.smoothing
+    config.head_init_scale = training_args.head_init_scale
 
     ipu_config = IPUConfig.from_pretrained(
         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,

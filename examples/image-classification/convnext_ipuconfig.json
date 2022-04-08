@@ -19,12 +19,13 @@
   "executable_cache_dir": "./exe_cache",
 
   "learning_rate": 3e-4,
+  "weight_decay": 1e-8,
   "num_train_epochs": 1,
   "do_train": true,
   "do_eval": true,
   "train_val_split": 0.1,
-  "train_dir": "/localdata/ai-datasets/imagenet-raw-data/train",
-  "validation_dir": "/localdata/ai-datasets/imagenet-raw-data/validation",
+  "train_dir": "/localdata/datasets/imagenet-raw-data/train",
+  "validation_dir": "/localdata/datasets/imagenet-raw-data/validation",
   "output_dir": "./outputs",
   "model_name_or_path": "facebook/convnext-tiny-224",
 
@@ -42,6 +43,7 @@
   "disable_feature_extractor" : true,
   "disable_mixup": true,
   "lr_scheduler_type": "cosine",
+  "load_fb_pretrained_weights":"convnext_tiny_22k_224.pth",
+  "head_init_scale": 0.001
 
-  "load_fb_pretrained_weights":"convnext_tiny_22k_224.pth"
   }
