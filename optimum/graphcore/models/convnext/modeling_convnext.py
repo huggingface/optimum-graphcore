@@ -2,7 +2,9 @@ import torch
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 import poptorch
 import transformers
-from transformers.models.convnext.modeling_convnext import ConvNextClassifierOutput
+from transformers.modeling_outputs import (
+    ImageClassifierOutputWithNoAttention,
+)
 from optimum.utils import logging
 from ...modeling_utils import PipelineMixin, get_layer_ipu, recomputation_checkpoint, register
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
@@ -79,7 +81,7 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
             output = (logits,) + outputs[2:]
             return ((loss,) + output) if loss is not None else output
 
-        return ConvNextClassifierOutput(
+        return ImageClassifierOutputWithNoAttention(
             loss=loss,
             logits=logits,
             hidden_states=outputs.hidden_states,
