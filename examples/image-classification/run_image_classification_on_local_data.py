@@ -209,7 +209,12 @@ class TrainingArguments(IPUTrainingArguments):
     head_init_scale: Optional[float]  = field(
         default=1
     )
-
+    layer_scale_init_value: Optional[float] = field(
+        default=0.0, 
+        metadata={
+            "help": "The initial value for the layer scale model parameter."
+        }
+    )
 
 
 def collate_fn(examples):
@@ -313,6 +318,7 @@ def main():
     )
     config.smoothing=training_args.smoothing
     config.head_init_scale = training_args.head_init_scale
+    config.layer_scale_init_value = training_args.layer_scale_init_value
 
     ipu_config = IPUConfig.from_pretrained(
         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
