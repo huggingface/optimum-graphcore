@@ -11,11 +11,11 @@
   "per_device_eval_batch_size": 1,
 
   "pod_type": "pod16",
-  "replication_factor": {"pod4": 1, "pod8": 2, "pod16": 16, "pod32": 8, "pod64": 16, "default": 1},
+  "replication_factor": {"pod4": 2, "pod8": 4, "pod16": 8, "pod32": 8, "pod64": 16, "default": 1},
   "device_iterations": 1,
-  "inference_device_iterations": 1,
-  "inference_replication_factor": 16,
-  "gradient_accumulation_steps": 256,
+  "inference_device_iterations": 2,
+  "inference_replication_factor": 8,
+  "gradient_accumulation_steps": 512,
   "executable_cache_dir": "./exe_cache",
 
   "learning_rate": 3e-4,
@@ -24,13 +24,13 @@
   "do_train": true,
   "do_eval": true,
   "train_val_split": 0.1,
-  "train_dir": "/localdata/ai-datasets/imagenet-raw-data/train",
-  "validation_dir": "/localdata/ai-datasets/imagenet-raw-data/validation",
+  "train_dir": "/localdata/ai-datasets/imagenet-data/raw-data/train",
+  "validation_dir": "/localdata/ai-datasets/imagenet-data/raw-data/validation",
   "output_dir": "./outputs",
   "model_name_or_path": "facebook/convnext-tiny-224",
 
-  "ipus_per_replica": 1,
-  "layers_per_ipu": [6],
+  "ipus_per_replica": 2,
+  "layers_per_ipu": [3,3],
   "matmul_proportion": [0.1],
 
   "dataloader_drop_last": true,
