@@ -1,3 +1,4 @@
+git+https://github.com/huggingface/transformers.git # Requires latest version of transformers
 datasets >= 1.18.0
 torchaudio == 0.10.0
 librosa
