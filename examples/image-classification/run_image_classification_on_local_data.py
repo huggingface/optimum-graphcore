@@ -242,8 +242,17 @@ class ApplyTransforms:
         example_batch = self.transforms(example_batch)
         return example_batch
 
+# Implement the mixup collate function as a functor instead of a function because the Async Dataloader
+# can't handle functions with closures because it uses pickle underneath.
+class MixupCollateFn:
+    def __init__(self, mixup_fn):
+        self.mixup = mixup_fn
 
-
+    def __call__(self, examples):
+        pixel_values = torch.stack([example[0] for example in examples])
+        labels = torch.tensor([example[1] for example in examples])
+        pixel_values, labels = self.mixup(pixel_values, labels)
+        return {"pixel_values": pixel_values, "labels": labels}
 
 
 def main():
@@ -384,20 +393,14 @@ def main():
 
     train_collate_fn = collate_fn
     if (training_args.mixup > 0 or training_args.cutmix > 0. or training_args.cutmix_minmax is not None) and not training_args.disable_mixup:
-
         logger.info("Training with Mixup")
         mixup_fn = Mixup(
         mixup_alpha=training_args.mixup, cutmix_alpha=training_args.cutmix, cutmix_minmax=training_args.cutmix_minmax,
         prob=training_args.mixup_prob, switch_prob=training_args.mixup_switch_prob, mode=training_args.mixup_mode,
         label_smoothing=training_args.smoothing, num_classes=training_args.nb_classes)
-
-        def mixup_collate_fn(examples):
-            pixel_values = torch.stack([example[0] for example in examples])
-            labels = torch.tensor([example[1] for example in examples])
-            pixel_values, labels = mixup_fn(pixel_values, labels)
-            return {"pixel_values": pixel_values, "labels": labels}
-
+        mixup_collate_fn = MixupCollateFn(mixup_fn)
         train_collate_fn = mixup_collate_fn
+
     if model_args.disable_feature_extractor:
         logger.info("Model feature extractor disabled")
 
