@@ -239,29 +239,6 @@ class ApplyTransforms:
         example_batch = self.transforms(example_batch)
         return example_batch
 
-
-def load_from_fb_weights(model, fb_model_path):
-    import fb_to_hf_map
-    fb_state_dict = torch.load(fb_model_path)["model"]
-
-    current_state_dict = model.state_dict()
-
-    new_state_dict = {}
-
-    for fb_tensor_name in fb_state_dict.keys():
-        hf_tensor_name = fb_to_hf_map.FB_TO_HF_MAP[fb_tensor_name]
-
-        if "head" not in fb_tensor_name:
-            print(f"setting {hf_tensor_name} with fb {fb_tensor_name}")
-            new_state_dict[hf_tensor_name] = fb_state_dict[fb_tensor_name]
-        else:
-            print(f"setting {hf_tensor_name} with current {hf_tensor_name}")
-            new_state_dict[hf_tensor_name] = current_state_dict[hf_tensor_name]
-
-    model.load_state_dict(new_state_dict)
-    
-    return model
-
 def main():
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
@@ -345,7 +322,7 @@ def main():
             config,
         )
 
-        model = load_from_fb_weights(model, training_args.load_fb_pretrained_weights)
+        model.load_weights_from_fb_model(fb_model_path=training_args.load_fb_pretrained_weights)
     else:
         model = AutoModelForImageClassification.from_pretrained(
             model_args.model_name_or_path,

@@ -1,3 +1,73 @@
+import re
+import warnings
+
+fb_pattern_str = "^(((downsample_layers\.([0-3]+)\.([0-1]+)\.(weight|bias)$)|(stages\.([0-9]+)\.([0-9]+)\.(gamma$|((dwconv|norm|pwconv1|pwconv2)\.(weight|bias)$)))|((norm|head).(weight|bias)$))|(.*$))"
+re_fb_pattern = re.compile(fb_pattern_str)
+
+def fb_to_hf_name(fb_name: str):
+    # match regex
+    matches = re_fb_pattern.search(fb_name)
+
+    translated_name = ""
+    
+    if matches.group(2):
+        model_component = matches.group(1)
+
+        if matches.group(3):
+            # downsample layers
+            # of the form "downsample_layers.0.0.weight"
+            stage = int(matches.group(4))
+            block = int(matches.group(5))
+            param_name = matches.group(6)
+            if stage == 0:
+                translated_name += "convnext.embeddings."
+                if block == 0:
+                    translated_name += f"patch_embeddings.{param_name}"
+                elif block == 1: 
+                    translated_name += f"layernorm.{param_name}"
+            else:
+                translated_name += f"convnext.encoder.stages.{stage}.downsampling_layer.{block}.{param_name}"
+            return translated_name
+
+        elif matches.group(7):
+            # main encoder layers
+            # of the form "stages.0.0.dwconv.weight"
+            stage = int(matches.group(8))
+            block = int(matches.group(9))
+            translated_name += f"convnext.encoder.stages.{stage}.layers.{block}."
+
+            if matches.group(11):
+                op_name = matches.group(12)
+                param_name = matches.group(13)
+
+                if op_name == "norm":
+                    op_name = "layernorm"
+
+                translated_name += f"{op_name}.{param_name}"
+            else:
+                assert matches.group(10) == "gamma", f"expecting parameter name to be gamma: {fb_name}"
+                translated_name += "layer_scale_parameter"
+
+            return translated_name
+
+        elif matches.group(14):
+            # final layers
+            # of the form "norm.weight" or "head.weight"
+            op_name = matches.group(15)
+            param_name = matches.group(16)
+
+            if op_name == "norm":
+                translated_name += f"convnext.layernorm.{param_name}"
+            elif op_name == "head":
+                translated_name += f"classifier.{param_name}"
+            
+            return translated_name
+
+    else:
+        warnings.warn(f"name does not match expected format: {fb_name} (re={fb_pattern_str})")
+        return None
+
+
 FB_TO_HF_MAP={"downsample_layers.0.0.weight":"convnext.embeddings.patch_embeddings.weight",
 "downsample_layers.0.0.bias":"convnext.embeddings.patch_embeddings.bias",
 "downsample_layers.0.1.weight":"convnext.embeddings.layernorm.weight",
@@ -180,3 +250,11 @@ FB_TO_HF_MAP={"downsample_layers.0.0.weight":"convnext.embeddings.patch_embeddin
 "norm.bias":"convnext.layernorm.bias",
 "head.weight":"classifier.weight",
 "head.bias":"classifier.bias"}
+
+def run_test():
+    for key in FB_TO_HF_MAP.keys():
+        assert fb_to_hf_name(key) == FB_TO_HF_MAP[key], f"Not matching for {key}. {fb_to_hf_name(key)} != {FB_TO_HF_MAP[key]}"
+    print("Pass: all tiny names match")
+
+if __name__ == "__main__":
+    run_test()

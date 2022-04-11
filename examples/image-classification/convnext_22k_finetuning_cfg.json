@@ -39,7 +39,7 @@
 
   "seed": 1337,
   "overwrite_output_dir": true,
-  "ipu_config_name": "./convnext_ipuconfig.json",
+  "ipu_config_name": "./convnext_22k_finetuning_cfg.json",
   "disable_feature_extractor" : true,
   "disable_mixup": true,
   "lr_scheduler_type": "cosine",
