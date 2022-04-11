@@ -203,6 +203,12 @@ class TrainingArguments(IPUTrainingArguments):
     mixup_mode: Optional[str] = field(
         default='batch'
     )
+    layer_scale_init_value: Optional[float] = field(
+        default=0.0, 
+        metadata={
+            "help": "The initial value for the layer scale model parameter."
+        }
+    )
 
 
 def collate_fn(examples):
@@ -302,6 +308,7 @@ def main():
         use_auth_token=True if model_args.use_auth_token else None,
     )
     config.smoothing=training_args.smoothing
+    config.layer_scale_init_value = training_args.layer_scale_init_value
 
     ipu_config = IPUConfig.from_pretrained(
         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
