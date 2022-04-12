@@ -65,6 +65,71 @@ class IPUGenerationMixin(GenerationMixin):
     A class containing all of the functions supporting generation on IPUs, to be used as a mixin in [`PreTrainedModel`].
     """
 
+    def compile_for_generate(self, sample_batch: Union[Tuple[Any], Dict[str, Any]], num_beams: int = 1):
+        """"""
+        if getattr(self, "poptorch_model", None):
+            return self.poptorch_model
+
+        if isinstance(sample_batch, tuple):
+            parameter_names = list(inspect.signature(self.forward).parameters)[: len(sample_batch)]
+            sample_batch = dict(zip(parameter_names, sample_batch))
+        else:
+            sample_batch = dict(sample_batch)
+
+        encoder = self.get_encoder()
+        encoder_kwargs = {k: v for k, v in sample_batch.items() if k in inspect.signature(encoder.forward).parameters}
+
+        # Overwrite the return_dict attribute temporarly to make sure no dictionary is being returned during compilation.
+        config_return_dict = encoder.config.return_dict
+        encoder.config.return_dict = False
+
+        # This will both compile the encoder stack and return the output we need to compile the decoder stack.
+        # TODO: handle the case where the encoder is running on CPU.
+        encoder_outputs = encoder(**encoder_kwargs)
+
+        encoder.config.return_dict = config_return_dict
+
+        self.ipu_config.inference_device_iterations = self.ipu_config.inference_device_iterations * num_beams
+        eval_opts = self.ipu_config.to_options(for_inference=True)
+        self.ipu_config.inference_device_iterations = int(self.ipu_config.inference_device_iterations / num_beams)
+        sample_batch.pop("input_ids")
+        sample_batch["encoder_outputs"] = encoder_outputs
+
+        # TODO: enable the possibility to provide labels, currently it does not work.
+        if "labels" in sample_batch:
+            sample_batch.pop("labels")
+
+        def repeat(input_):
+            if isinstance(input_, tuple):
+                return tuple(map(repeat, input_))
+            if isinstance(input_, torch.Tensor):
+                return input_.repeat((num_beams,) + (1,) * (input_.dim() - 1))
+            return input_
+
+        sample_batch = {k: repeat(v) for k, v in sample_batch.items()}
+
+        original_mode = self.training
+        import poptorch
+
+        model = poptorch.inferenceModel(self.eval(), options=eval_opts)
+        model.compile(**sample_batch)
+        self.poptorch_model = model
+
+        if original_mode:
+            self.train()
+
+        return model
+
+    def _pad_input_ids_to_max_length(self, input_ids: torch.Tensor, max_length: int) -> torch.Tensor:
+        return torch.cat(
+            [
+                input_ids,
+                self.config.pad_token_id * torch.ones((input_ids.shape[0], max_length - input_ids.shape[1]), dtype=torch.long)
+            ],
+            dim=1
+        )
+
+
     def _prepare_model_inputs(
         self,
         inputs: Optional[torch.Tensor] = None,
@@ -207,7 +272,7 @@ class IPUGenerationMixin(GenerationMixin):
             # TODO: check if that can avoided.
             # return torch.ones((batch_size, 1), dtype=torch.long, device=self.device) * decoder_start_token_id
             bos = torch.ones((batch_size, 1), dtype=torch.long, device=self.device) * decoder_start_token_id
-            padding = torch.ones((batch_size, 127), dtype=torch.long, device=self.device) * self.config.pad_token_id
+            padding = torch.ones((batch_size, self.config.max_length), dtype=torch.long, device=self.device) * self.config.pad_token_id
             return torch.cat((bos, padding), dim=1)
 
     def _get_decoder_start_token_id(self, decoder_start_token_id: int = None, bos_token_id: int = None) -> int:
@@ -1269,6 +1334,7 @@ class IPUGenerationMixin(GenerationMixin):
                 UserWarning,
             )
             stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
+        max_length = stopping_criteria.max_length
         pad_token_id = pad_token_id if pad_token_id is not None else self.config.pad_token_id
         eos_token_id = eos_token_id if eos_token_id is not None else self.config.eos_token_id
         output_scores = output_scores if output_scores is not None else self.config.output_scores
@@ -1296,8 +1362,8 @@ class IPUGenerationMixin(GenerationMixin):
         # keep track of which sequences are already finished
         unfinished_sequences = input_ids.new(input_ids.shape[0]).fill_(1)
 
+        input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
         cur_len = torch.argmax((input_ids != self.model.config.pad_token_id).to(torch.long), dim=1)[0] + 1
-        input_ids_max_length = input_ids.shape[1]
 
         while True:
             # prepare model inputs
@@ -1360,14 +1426,7 @@ class IPUGenerationMixin(GenerationMixin):
             if unfinished_sequences.max() == 0 or stopping_criteria(input_ids, scores):
                 break
 
-            input_ids = torch.cat(
-                [
-                    input_ids,
-                    self.model.config.pad_token_id
-                    * torch.ones(input_ids.shape[0], input_ids_max_length - cur_len, dtype=torch.long),
-                ],
-                dim=-1,
-            )
+        input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
 
         if return_dict_in_generate:
             if self.config.is_encoder_decoder:
@@ -1515,6 +1574,7 @@ class IPUGenerationMixin(GenerationMixin):
                 UserWarning,
             )
             stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
+        max_length = stopping_criteria.max_length
         logits_warper = logits_warper if logits_warper is not None else LogitsProcessorList()
         pad_token_id = pad_token_id if pad_token_id is not None else self.config.pad_token_id
         eos_token_id = eos_token_id if eos_token_id is not None else self.config.eos_token_id
@@ -1542,13 +1602,17 @@ class IPUGenerationMixin(GenerationMixin):
 
         # keep track of which sequences are already finished
         unfinished_sequences = input_ids.new(input_ids.shape[0]).fill_(1)
+
         cur_len = torch.argmax((input_ids != self.model.config.pad_token_id).to(torch.long), dim=1)[0] + 1
-        input_ids_max_length = input_ids.shape[1]
+        input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
 
         # auto-regressive generation
         while True:
             # prepare model inputs
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
+
+            if "encoder_outputs" in model_inputs and isinstance(model_inputs["encoder_outputs"], dict):
+                model_inputs["encoder_outputs"] = model_inputs["encoder_outputs"]["last_hidden_state"]
 
             # forward pass to get next token
             outputs = self.poptorch_model(
@@ -1606,14 +1670,7 @@ class IPUGenerationMixin(GenerationMixin):
             if unfinished_sequences.max() == 0 or stopping_criteria(input_ids, scores):
                 break
 
-            input_ids = torch.cat(
-                [
-                    input_ids,
-                    self.model.config.pad_token_id
-                    * torch.ones(input_ids.shape[0], input_ids_max_length - cur_len, dtype=torch.long),
-                ],
-                dim=-1,
-            )
+            input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
 
         if return_dict_in_generate:
             if self.config.is_encoder_decoder:
@@ -1762,6 +1819,7 @@ class IPUGenerationMixin(GenerationMixin):
             stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
         if len(stopping_criteria) == 0:
             warnings.warn("You don't have defined any stopping_criteria, this will likely loop forever", UserWarning)
+        max_length = stopping_criteria.max_length
         pad_token_id = pad_token_id if pad_token_id is not None else self.config.pad_token_id
         eos_token_id = eos_token_id if eos_token_id is not None else self.config.eos_token_id
         output_scores = output_scores if output_scores is not None else self.config.output_scores
@@ -1776,7 +1834,9 @@ class IPUGenerationMixin(GenerationMixin):
         batch_size = len(beam_scorer._beam_hyps)
         num_beams = beam_scorer.num_beams
 
-        batch_beam_size, input_ids_max_length = input_ids.shape
+        batch_beam_size = input_ids.shape[0]
+        input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
+
         cur_len = torch.argmax((input_ids != self.model.config.pad_token_id).to(torch.long), dim=1)[0] + 1
 
         if num_beams * batch_size != batch_beam_size:
@@ -1889,14 +1949,7 @@ class IPUGenerationMixin(GenerationMixin):
             if beam_scorer.is_done or stopping_criteria(input_ids, scores):
                 break
 
-            input_ids = torch.cat(
-                [
-                    input_ids,
-                    self.model.config.pad_token_id
-                    * torch.ones(input_ids.shape[0], input_ids_max_length - cur_len, dtype=torch.long),
-                ],
-                dim=-1,
-            )
+            input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
 
         sequence_outputs = beam_scorer.finalize(
             input_ids,
@@ -2080,6 +2133,7 @@ class IPUGenerationMixin(GenerationMixin):
                 UserWarning,
             )
             stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
+        max_length = stopping_criteria.max_length
         pad_token_id = pad_token_id if pad_token_id is not None else self.config.pad_token_id
         eos_token_id = eos_token_id if eos_token_id is not None else self.config.eos_token_id
         output_scores = output_scores if output_scores is not None else self.config.output_scores
@@ -2094,8 +2148,9 @@ class IPUGenerationMixin(GenerationMixin):
         batch_size = len(beam_scorer._beam_hyps)
         num_beams = beam_scorer.num_beams
 
-        batch_beam_size, input_ids_max_length = input_ids.shape
+        batch_beam_size = input_ids.shape[0]
         cur_len = torch.argmax((input_ids != self.model.config.pad_token_id).to(torch.long), dim=1)[0] + 1
+        input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
 
         # init attention / hidden states / scores tuples
         scores = () if (return_dict_in_generate and output_scores) else None
@@ -2202,14 +2257,7 @@ class IPUGenerationMixin(GenerationMixin):
             if beam_scorer.is_done or stopping_criteria(input_ids, scores):
                 break
 
-            input_ids = torch.cat(
-                [
-                    input_ids,
-                    self.model.config.pad_token_id
-                    * torch.ones(input_ids.shape[0], input_ids_max_length - cur_len, dtype=torch.long),
-                ],
-                dim=-1,
-            )
+            input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
 
         sequence_outputs = beam_scorer.finalize(
             input_ids,
@@ -2386,6 +2434,7 @@ class IPUGenerationMixin(GenerationMixin):
                 UserWarning,
             )
             stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
+        max_length = stopping_criteria.max_length
         pad_token_id = pad_token_id if pad_token_id is not None else self.config.pad_token_id
         eos_token_id = eos_token_id if eos_token_id is not None else self.config.eos_token_id
         output_scores = output_scores if output_scores is not None else self.config.output_scores
@@ -2403,7 +2452,8 @@ class IPUGenerationMixin(GenerationMixin):
         num_sub_beams = num_beams // num_beam_groups
         device = input_ids.device
 
-        batch_beam_size, input_ids_max_length = input_ids.shape
+        batch_beam_size = input_ids.shape[0]
+        input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
         cur_len = torch.argmax((input_ids != self.model.config.pad_token_id).to(torch.long), dim=1)[0] + 1
 
         if return_dict_in_generate and output_scores:
@@ -2435,7 +2485,6 @@ class IPUGenerationMixin(GenerationMixin):
         beam_scores[:, ::num_sub_beams] = 0
         beam_scores = beam_scores.view((batch_size * num_beams,))
 
-        this_peer_finished = False  # used by synced_gpus only
         while True:
 
             # predicted tokens in cur_len step
@@ -2446,7 +2495,11 @@ class IPUGenerationMixin(GenerationMixin):
 
             # do one decoder step on all beams of all sentences in batch
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
-            outputs = self(
+
+            if "encoder_outputs" in model_inputs and isinstance(model_inputs["encoder_outputs"], dict):
+                model_inputs["encoder_outputs"] = model_inputs["encoder_outputs"]["last_hidden_state"]
+
+            outputs = self.poptorch_model(
                 **model_inputs,
             )
             outputs = self._poptorch_outputs_to_model_outputs(outputs)
@@ -2469,7 +2522,7 @@ class IPUGenerationMixin(GenerationMixin):
                 group_input_ids = input_ids[batch_group_indices]
 
                 # select outputs of beams of current group only
-                next_token_logits = outputs["logits"][batch_group_indices, -1, :].to(torch.float32)
+                next_token_logits = outputs["logits"][batch_group_indices, cur_len - 1, :].to(torch.float32)
 
                 # hack: adjust tokens for Marian. For Marian we have to make sure that the `pad_token_id`
                 # cannot be generated both before and after the `nn.functional.log_softmax` operation.
@@ -2556,10 +2609,9 @@ class IPUGenerationMixin(GenerationMixin):
             cur_len = cur_len + 1
 
             if beam_scorer.is_done or stopping_criteria(input_ids, scores):
-                if not synced_gpus:
-                    break
-                else:
-                    this_peer_finished = True
+                break
+
+            input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
 
         sequence_outputs = beam_scorer.finalize(
             input_ids,
@@ -2743,6 +2795,7 @@ class IPUGenerationMixin(GenerationMixin):
             stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
         if len(stopping_criteria) == 0:
             warnings.warn("You don't have defined any stopping_criteria, this will likely loop forever", UserWarning)
+        max_length = stopping_criteria.max_length
         pad_token_id = pad_token_id if pad_token_id is not None else self.config.pad_token_id
         eos_token_id = eos_token_id if eos_token_id is not None else self.config.eos_token_id
         output_scores = output_scores if output_scores is not None else self.config.output_scores
@@ -2770,7 +2823,8 @@ class IPUGenerationMixin(GenerationMixin):
         batch_size = len(constrained_beam_scorer._beam_hyps)
         num_beams = constrained_beam_scorer.num_beams
 
-        batch_beam_size, input_ids_max_length = input_ids.shape
+        batch_beam_size = input_ids.shape[0]
+        input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
         cur_len = torch.argmax((input_ids != self.model.config.pad_token_id).to(torch.long), dim=1)[0] + 1
 
         if num_beams * batch_size != batch_beam_size:
@@ -2785,6 +2839,9 @@ class IPUGenerationMixin(GenerationMixin):
         while True:
 
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
+
+            if "encoder_outputs" in model_inputs and isinstance(model_inputs["encoder_outputs"], dict):
+                model_inputs["encoder_outputs"] = model_inputs["encoder_outputs"]["last_hidden_state"]
 
             outputs = self.poptorch_model(
                 **model_inputs,
@@ -2863,14 +2920,7 @@ class IPUGenerationMixin(GenerationMixin):
             if constrained_beam_scorer.is_done or stopping_criteria(input_ids, scores):
                 break
 
-            input_ids = torch.cat(
-                [
-                    input_ids,
-                    self.model.config.pad_token_id
-                    * torch.ones(input_ids.shape[0], input_ids_max_length - cur_len, dtype=torch.long),
-                ],
-                dim=-1,
-            )
+            input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
 
         sequence_outputs = constrained_beam_scorer.finalize(
             input_ids,
