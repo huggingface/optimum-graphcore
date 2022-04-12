@@ -25,6 +25,7 @@ from timm.data.mixup import Mixup, FastCollateMixup
 import transforms
 
 import datasets
+import math
 import numpy as np
 import torch
 from PIL import Image
@@ -179,6 +180,9 @@ class TrainingArguments(IPUTrainingArguments):
     nb_classes: Optional[float] = field(
         default=1000
     )
+    warmup_epochs: Optional[float] = field(
+        default=0
+    )
     smoothing: Optional[float] = field(
         default=0.1,
         metadata={
@@ -186,7 +190,10 @@ class TrainingArguments(IPUTrainingArguments):
         },
     )
     mixup: Optional[float] = field(
-        default=1.0
+        default=0.8,
+        metadata={
+            "help": "'mixup alpha, mixup enabled if > 0."
+        },
     )
     cutmix: Optional[float] = field(
         default=1.0
@@ -195,13 +202,16 @@ class TrainingArguments(IPUTrainingArguments):
         default=None
     )
     mixup_prob: Optional[float] = field(
-        default=0.1
+        default=1.0
     )
     mixup_switch_prob: Optional[float] = field(
         default=0.5
     )
     mixup_mode: Optional[str] = field(
-        default='batch'
+        default='batch',
+        metadata={
+            "help":"Probability of switching to cutmix when both mixup and cutmix enabled."
+        }
     )
     drop_path_rate: Optional[float]  = field(
         default=0.0
@@ -393,6 +403,9 @@ def main():
     if model_args.disable_feature_extractor:
         logger.info("Model feature extractor disabled")
 
+    if training_args.warmup_epochs > 0:
+        training_args.warmup_ratio = training_args.warmup_epochs / training_args.num_train_epochs
+        logger.info(f"Setting up {training_args.warmup_epochs} warmup epochs.")
     # Initalize our trainer
     trainer = IPUTrainer(
         model=model,
@@ -417,6 +430,7 @@ def main():
         trainer.log_metrics("train", train_result.metrics)
         trainer.save_metrics("train", train_result.metrics)
         trainer.save_state()
+
 
     # Evaluation
     if training_args.do_eval:
