@@ -9,6 +9,7 @@ from transformers.modeling_outputs import (
 from optimum.utils import logging
 from ...modeling_utils import PipelineMixin, get_layer_ipu, recomputation_checkpoint, register
 from timm.loss import LabelSmoothingCrossEntropy, SoftTargetCrossEntropy
+from .fb_to_hf_map_util import fb_to_hf_name
 
 logger = logging.get_logger(__name__)
 
@@ -48,6 +49,27 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
 
         self.classifier.weight.data.mul_(config.head_init_scale)
         self.classifier.bias.data.mul_(config.head_init_scale)
+
+        if config.pretrained_weights_path:
+            self.load_weights_from_fb_model(config.pretrained_weights_path)
+
+    def load_weights_from_fb_model(self, fb_model_path, load_classifier=False):
+        fb_state_dict = torch.load(fb_model_path)["model"]
+
+        current_state_dict = self.state_dict()
+        new_state_dict = {}
+
+        for fb_tensor_name in fb_state_dict.keys():
+            hf_tensor_name = fb_to_hf_name(fb_tensor_name)
+
+            if hf_tensor_name and ("head" not in fb_tensor_name or load_classifier):
+                print(f"setting {hf_tensor_name} with fb {fb_tensor_name}")
+                new_state_dict[hf_tensor_name] = fb_state_dict[fb_tensor_name]
+            else:
+                print(f"setting {hf_tensor_name} with current {hf_tensor_name}")
+                new_state_dict[hf_tensor_name] = current_state_dict[hf_tensor_name]
+
+        self.load_state_dict(new_state_dict)
 
     def parallelize(self):
         """Set pipeline mapping for the head (layernorm + classifier layers)"""
