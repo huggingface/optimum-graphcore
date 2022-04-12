@@ -20,7 +20,8 @@
 
   "logging_strategy": "steps",
   "logging_steps": 50,
-  "report_to": "all",
+  "logging_dir": "logs",
+  "report_to": "tensorboard",
 
   "learning_rate": 4.0e-3,
   "weight_decay": 0.05,
@@ -29,8 +30,8 @@
   "do_train": true,
   "do_eval": true,
   "train_val_split": 0.1,
-  "train_dir": "/localdata/datasets/imagenet-raw-data/train",
-  "validation_dir": "/localdata/datasets/imagenet-raw-data/validation",
+  "train_dir": "/localdata/ai-datasets/imagenet/train",
+  "validation_dir": "/localdata/ai-datasets/imagenet/validation",
   "output_dir": "./outputs",
   "model_name_or_path": "facebook/convnext-tiny-224",
 
@@ -51,5 +52,6 @@
   "drop_path_rate": 0.1,
   "smoothing": 0.1,
   "mixup": 0.8,
-  "cutmix": 1.0
+  "cutmix": 1.0,
+  "lr_scheduler_type": "cosine"
   }
