@@ -321,8 +321,6 @@ def main():
         model = AutoModelForImageClassification.from_config(
             config,
         )
-
-        model.load_weights_from_fb_model(fb_model_path=training_args.load_fb_pretrained_weights)
     else:
         model = AutoModelForImageClassification.from_pretrained(
             model_args.model_name_or_path,
@@ -410,6 +408,10 @@ def main():
         tokenizer=feature_extractor if not model_args.disable_feature_extractor else None,
         data_collator=train_collate_fn,
     )
+
+    if training_args.load_fb_pretrained_weights:
+        trainer.model.load_weights_from_fb_model(fb_model_path=training_args.load_fb_pretrained_weights,load_classifier=False)
+    
 
     # Training
     if training_args.do_train:
