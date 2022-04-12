@@ -50,11 +50,13 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
         self.classifier.weight.data.mul_(config.head_init_scale)
         self.classifier.bias.data.mul_(config.head_init_scale)
 
+        if config.pretrained_weights_path:
+            self.load_weights_from_fb_model(config.pretrained_weights_path)
+
     def load_weights_from_fb_model(self, fb_model_path, load_classifier=False):
         fb_state_dict = torch.load(fb_model_path)["model"]
 
         current_state_dict = self.state_dict()
-
         new_state_dict = {}
 
         for fb_tensor_name in fb_state_dict.keys():

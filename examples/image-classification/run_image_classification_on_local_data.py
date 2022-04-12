@@ -213,7 +213,7 @@ class TrainingArguments(IPUTrainingArguments):
         default=1
     )
     layer_scale_init_value: Optional[float] = field(
-        default=0.0, 
+        default=1e-6, 
         metadata={
             "help": "The initial value for the layer scale model parameter."
         }
@@ -330,6 +330,7 @@ def main():
     config.smoothing=training_args.smoothing
     config.head_init_scale = training_args.head_init_scale
     config.layer_scale_init_value = training_args.layer_scale_init_value
+    config.pretrained_weights_path = training_args.load_fb_pretrained_weights
 
     ipu_config = IPUConfig.from_pretrained(
         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
@@ -422,10 +423,6 @@ def main():
         tokenizer=feature_extractor if not model_args.disable_feature_extractor else None,
         data_collator=train_collate_fn,
     )
-
-    if training_args.load_fb_pretrained_weights:
-        trainer.model.load_weights_from_fb_model(fb_model_path=training_args.load_fb_pretrained_weights,load_classifier=False)
-    
 
     # Training
     if training_args.do_train:

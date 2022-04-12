@@ -44,6 +44,7 @@
   "disable_mixup": true,
   "lr_scheduler_type": "cosine",
   "load_fb_pretrained_weights":"convnext_tiny_22k_224.pth",
-  "head_init_scale": 0.001
+  "head_init_scale": 0.001,
+  "layer_scale_init_value": 1e-6
 
   }
