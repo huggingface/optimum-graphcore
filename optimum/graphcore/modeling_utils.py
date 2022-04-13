@@ -78,9 +78,9 @@ class PipelineMixin:
         return pipelined_model
 
     @classmethod
-    def from_pretrained_transformers(cls, model_name_or_path: str, ipu_config: IPUConfig):
-        config = AutoConfig.from_pretrained(model_name_or_path)
-        pipelined_model = cls.from_pretrained(model_name_or_path, config=config)
+    def from_pretrained_transformers(cls, model_name_or_path: str, ipu_config: IPUConfig, *model_args, **kwargs):
+        # config = AutoConfig.from_pretrained(model_name_or_path)
+        pipelined_model = cls.from_pretrained(model_name_or_path, *model_args, **kwargs)  # config=config)
         pipelined_model.ipu_config = copy.deepcopy(ipu_config)
         return pipelined_model
 
@@ -167,16 +167,13 @@ class GenerationMethodsMixin:
     ):
         if not hasattr(self, "_wrapped_encoder"):
             encoder = super().get_encoder()
-            # self.ipu_config.inference_device_iterations = self.ipu_config.inference_device_iterations * self.ipu_config.inference_replication_factor
-            # inference_replication_factor = self.ipu_config.inference_replication_factor
-            # self.ipu_config.inference_replication_factor = 1
-            self.eval_opts = self.ipu_config.to_options(for_inference=True)
-            self._wrapped_encoder = poptorch.inferenceModel(
-                encoder, options=self.ipu_config.to_options(for_inference=True)
-            )
-            # self.ipu_config.inference_device_iterations = int(self.ipu_config.inference_device_iterations / inference_replication_factor)
-            # self.ipu_config.inference_replication_factor = inference_replication_factor
-            # self._compiled_encoder.model.forward = self._compiled_encoder.__call__
+            if self.ipu_config.execute_encoder_on_cpu_for_generation:
+                self._wrapped_encoder = encoder
+            else:
+                self.eval_opts = self.ipu_config.to_options(for_inference=True)
+                self._wrapped_encoder = poptorch.inferenceModel(
+                    encoder, options=self.ipu_config.to_options(for_inference=True)
+                )
         return self._wrapped_encoder
 
     def prepare_inputs_for_generation(self, input_ids: torch.LongTensor, **kwargs) -> Dict[str, Any]:

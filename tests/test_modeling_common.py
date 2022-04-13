@@ -14,9 +14,11 @@
 # limitations under the License.
 
 import random
+
 import torch
 
 from transformers.testing_utils import torch_device
+
 
 global_rng = random.Random()
 

@@ -17,9 +17,9 @@ import warnings
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
 import torch
-import torch.distributed as dist
 from torch import nn
 
+import poptorch
 from optimum.utils import logging
 from transformers.generation_beam_constraints import Constraint, DisjunctiveConstraint, PhrasalConstraint
 from transformers.generation_beam_search import BeamScorer, BeamSearchScorer, ConstrainedBeamSearchScorer
@@ -47,10 +47,18 @@ from transformers.generation_stopping_criteria import (
     validate_stopping_criteria,
 )
 from transformers.generation_utils import (
+    BeamSampleDecoderOnlyOutput,
+    BeamSampleEncoderDecoderOutput,
     BeamSampleOutput,
+    BeamSearchDecoderOnlyOutput,
+    BeamSearchEncoderDecoderOutput,
     BeamSearchOutput,
     GenerationMixin,
+    GreedySearchDecoderOnlyOutput,
+    GreedySearchEncoderDecoderOutput,
     GreedySearchOutput,
+    SampleDecoderOnlyOutput,
+    SampleEncoderDecoderOutput,
     SampleOutput,
 )
 from transformers.modeling_outputs import BaseModelOutput, ModelOutput
@@ -65,8 +73,23 @@ class IPUGenerationMixin(GenerationMixin):
     A class containing all of the functions supporting generation on IPUs, to be used as a mixin in [`PreTrainedModel`].
     """
 
-    def compile_for_generate(self, sample_batch: Union[Tuple[Any], Dict[str, Any]], num_beams: int = 1):
-        """"""
+    def compile_for_generate(
+        self,
+        sample_batch: Union[Tuple[Any], Dict[str, Any]],
+        num_beams: int = 1,
+        num_return_sequences: int = 1,
+        do_sample: bool = False,
+    ):
+        """
+        Takes care of compiling the model for generation.
+
+        Args:
+            sample_batch (tuple or dict): the sample batch to use for tracing and compiling the model.
+            num_beams (int, defaults to 1): the number of beams that will be used during generation.
+            num_return_sequences (int, defaults to 1): the number of parallel sequences to return during generation.
+            do_sample (bool, defaults to False): whether or not generation will do sampling.
+
+        """
         if getattr(self, "poptorch_model", None):
             return self.poptorch_model
 
@@ -99,17 +122,18 @@ class IPUGenerationMixin(GenerationMixin):
         if "labels" in sample_batch:
             sample_batch.pop("labels")
 
+        num_return_sequences = num_return_sequences if do_sample else 1
+
         def repeat(input_):
             if isinstance(input_, tuple):
                 return tuple(map(repeat, input_))
             if isinstance(input_, torch.Tensor):
-                return input_.repeat((num_beams,) + (1,) * (input_.dim() - 1))
+                return input_.repeat((num_beams * num_return_sequences,) + (1,) * (input_.dim() - 1))
             return input_
 
         sample_batch = {k: repeat(v) for k, v in sample_batch.items()}
 
         original_mode = self.training
-        import poptorch
 
         model = poptorch.inferenceModel(self.eval(), options=eval_opts)
         model.compile(**sample_batch)
@@ -124,11 +148,11 @@ class IPUGenerationMixin(GenerationMixin):
         return torch.cat(
             [
                 input_ids,
-                self.config.pad_token_id * torch.ones((input_ids.shape[0], max_length - input_ids.shape[1]), dtype=torch.long)
+                self.config.pad_token_id
+                * torch.ones((input_ids.shape[0], max_length - input_ids.shape[1]), dtype=torch.long),
             ],
-            dim=1
+            dim=1,
         )
-
 
     def _prepare_model_inputs(
         self,
@@ -269,11 +293,7 @@ class IPUGenerationMixin(GenerationMixin):
             return model_kwargs.pop("decoder_input_ids")
         else:
             decoder_start_token_id = self._get_decoder_start_token_id(decoder_start_token_id, bos_token_id)
-            # TODO: check if that can avoided.
-            # return torch.ones((batch_size, 1), dtype=torch.long, device=self.device) * decoder_start_token_id
-            bos = torch.ones((batch_size, 1), dtype=torch.long, device=self.device) * decoder_start_token_id
-            padding = torch.ones((batch_size, self.config.max_length), dtype=torch.long, device=self.device) * self.config.pad_token_id
-            return torch.cat((bos, padding), dim=1)
+            return torch.ones((batch_size, 1), dtype=torch.long, device=self.device) * decoder_start_token_id
 
     def _get_decoder_start_token_id(self, decoder_start_token_id: int = None, bos_token_id: int = None) -> int:
         decoder_start_token_id = (
@@ -1334,7 +1354,8 @@ class IPUGenerationMixin(GenerationMixin):
                 UserWarning,
             )
             stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
-        max_length = stopping_criteria.max_length
+        else:
+            max_length = stopping_criteria.max_length
         pad_token_id = pad_token_id if pad_token_id is not None else self.config.pad_token_id
         eos_token_id = eos_token_id if eos_token_id is not None else self.config.eos_token_id
         output_scores = output_scores if output_scores is not None else self.config.output_scores
@@ -1361,9 +1382,9 @@ class IPUGenerationMixin(GenerationMixin):
 
         # keep track of which sequences are already finished
         unfinished_sequences = input_ids.new(input_ids.shape[0]).fill_(1)
-
         input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
-        cur_len = torch.argmax((input_ids != self.model.config.pad_token_id).to(torch.long), dim=1)[0] + 1
+
+        cur_len = torch.argmax((input_ids == self.model.config.pad_token_id).to(torch.long), dim=1)[0]
 
         while True:
             # prepare model inputs
@@ -1426,7 +1447,7 @@ class IPUGenerationMixin(GenerationMixin):
             if unfinished_sequences.max() == 0 or stopping_criteria(input_ids, scores):
                 break
 
-        input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
+            input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
 
         if return_dict_in_generate:
             if self.config.is_encoder_decoder:
@@ -1574,7 +1595,8 @@ class IPUGenerationMixin(GenerationMixin):
                 UserWarning,
             )
             stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
-        max_length = stopping_criteria.max_length
+        else:
+            max_length = stopping_criteria.max_length
         logits_warper = logits_warper if logits_warper is not None else LogitsProcessorList()
         pad_token_id = pad_token_id if pad_token_id is not None else self.config.pad_token_id
         eos_token_id = eos_token_id if eos_token_id is not None else self.config.eos_token_id
@@ -1603,8 +1625,8 @@ class IPUGenerationMixin(GenerationMixin):
         # keep track of which sequences are already finished
         unfinished_sequences = input_ids.new(input_ids.shape[0]).fill_(1)
 
-        cur_len = torch.argmax((input_ids != self.model.config.pad_token_id).to(torch.long), dim=1)[0] + 1
         input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
+        cur_len = torch.argmax((input_ids == self.model.config.pad_token_id).to(torch.long), dim=1)[0] + 1
 
         # auto-regressive generation
         while True:
@@ -1817,9 +1839,10 @@ class IPUGenerationMixin(GenerationMixin):
                 UserWarning,
             )
             stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
+        else:
+            max_length = stopping_criteria.max_length
         if len(stopping_criteria) == 0:
             warnings.warn("You don't have defined any stopping_criteria, this will likely loop forever", UserWarning)
-        max_length = stopping_criteria.max_length
         pad_token_id = pad_token_id if pad_token_id is not None else self.config.pad_token_id
         eos_token_id = eos_token_id if eos_token_id is not None else self.config.eos_token_id
         output_scores = output_scores if output_scores is not None else self.config.output_scores
@@ -1837,7 +1860,7 @@ class IPUGenerationMixin(GenerationMixin):
         batch_beam_size = input_ids.shape[0]
         input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
 
-        cur_len = torch.argmax((input_ids != self.model.config.pad_token_id).to(torch.long), dim=1)[0] + 1
+        cur_len = torch.argmax((input_ids == self.model.config.pad_token_id).to(torch.long), dim=1)[0] + 1
 
         if num_beams * batch_size != batch_beam_size:
             raise ValueError(
@@ -2133,7 +2156,8 @@ class IPUGenerationMixin(GenerationMixin):
                 UserWarning,
             )
             stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
-        max_length = stopping_criteria.max_length
+        else:
+            max_length = stopping_criteria.max_length
         pad_token_id = pad_token_id if pad_token_id is not None else self.config.pad_token_id
         eos_token_id = eos_token_id if eos_token_id is not None else self.config.eos_token_id
         output_scores = output_scores if output_scores is not None else self.config.output_scores
@@ -2149,8 +2173,9 @@ class IPUGenerationMixin(GenerationMixin):
         num_beams = beam_scorer.num_beams
 
         batch_beam_size = input_ids.shape[0]
-        cur_len = torch.argmax((input_ids != self.model.config.pad_token_id).to(torch.long), dim=1)[0] + 1
         input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
+
+        cur_len = torch.argmax((input_ids == self.model.config.pad_token_id).to(torch.long), dim=1)[0] + 1
 
         # init attention / hidden states / scores tuples
         scores = () if (return_dict_in_generate and output_scores) else None
@@ -2174,6 +2199,9 @@ class IPUGenerationMixin(GenerationMixin):
         while True:
 
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
+
+            if "encoder_outputs" in model_inputs and isinstance(model_inputs["encoder_outputs"], dict):
+                model_inputs["encoder_outputs"] = model_inputs["encoder_outputs"]["last_hidden_state"]
 
             outputs = self.poptorch_model(
                 **model_inputs,
@@ -2434,7 +2462,8 @@ class IPUGenerationMixin(GenerationMixin):
                 UserWarning,
             )
             stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
-        max_length = stopping_criteria.max_length
+        else:
+            max_length = stopping_criteria.max_length
         pad_token_id = pad_token_id if pad_token_id is not None else self.config.pad_token_id
         eos_token_id = eos_token_id if eos_token_id is not None else self.config.eos_token_id
         output_scores = output_scores if output_scores is not None else self.config.output_scores
@@ -2454,7 +2483,8 @@ class IPUGenerationMixin(GenerationMixin):
 
         batch_beam_size = input_ids.shape[0]
         input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
-        cur_len = torch.argmax((input_ids != self.model.config.pad_token_id).to(torch.long), dim=1)[0] + 1
+
+        cur_len = torch.argmax((input_ids == self.model.config.pad_token_id).to(torch.long), dim=1)[0] + 1
 
         if return_dict_in_generate and output_scores:
             beam_indices = [tuple(() for _ in range(num_sub_beams * batch_size)) for _ in range(num_beam_groups)]
@@ -2793,9 +2823,10 @@ class IPUGenerationMixin(GenerationMixin):
                 UserWarning,
             )
             stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
+        else:
+            max_length = stopping_criteria.max_length
         if len(stopping_criteria) == 0:
             warnings.warn("You don't have defined any stopping_criteria, this will likely loop forever", UserWarning)
-        max_length = stopping_criteria.max_length
         pad_token_id = pad_token_id if pad_token_id is not None else self.config.pad_token_id
         eos_token_id = eos_token_id if eos_token_id is not None else self.config.eos_token_id
         output_scores = output_scores if output_scores is not None else self.config.output_scores
@@ -2825,7 +2856,8 @@ class IPUGenerationMixin(GenerationMixin):
 
         batch_beam_size = input_ids.shape[0]
         input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
-        cur_len = torch.argmax((input_ids != self.model.config.pad_token_id).to(torch.long), dim=1)[0] + 1
+
+        cur_len = torch.argmax((input_ids == self.model.config.pad_token_id).to(torch.long), dim=1)[0] + 1
 
         if num_beams * batch_size != batch_beam_size:
             raise ValueError(
