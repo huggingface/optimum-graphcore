@@ -570,7 +570,7 @@ class PipelinedT5ForConditionalGeneration(
             return_dict=False,
         )
         # Only returning the loss to make the communication between the host and the device faster.
-        return outputs[0]
+        return outputs[0: 1]
 
     def _forward_for_generate(self, encoder_outputs, decoder_input_ids, attention_mask, labels=None):
         outputs = super().forward(
