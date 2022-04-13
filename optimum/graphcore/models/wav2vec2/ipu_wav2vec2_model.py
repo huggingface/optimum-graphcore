@@ -13,17 +13,18 @@
 # limitations under the License.
 
 import torch
+
 from transformers import Wav2Vec2Model
 
-class IPUWav2Vec2Model(Wav2Vec2Model):
 
+class IPUWav2Vec2Model(Wav2Vec2Model):
     def _get_feature_vector_attention_mask(
         self, feature_vector_length: int, attention_mask: torch.LongTensor, add_adapter=None
     ):
         # Effectively attention_mask.sum(-1), but not inplace to be able to run
         # on inference mode.
-        #non_padded_lengths = attention_mask.cumsum(dim=-1)[:, -1]
-        #non_padded_lengths = attention_mask.cumsum(dim=-1)[:, 249999]
+        # non_padded_lengths = attention_mask.cumsum(dim=-1)[:, -1]
+        # non_padded_lengths = attention_mask.cumsum(dim=-1)[:, 249999]
         non_padded_lengths = attention_mask.sum(dim=-1)
 
         output_lengths = self._get_feat_extract_output_lengths(non_padded_lengths, add_adapter=add_adapter)

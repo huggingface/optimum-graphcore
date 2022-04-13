@@ -54,7 +54,7 @@ data of [librispeech_asr](https://huggingface.co/datasets/librispeech_asr).
 
 ```bash
 python run_pretraining.py \
-	--model_name_or_path="patrickvonplaten/wav2vec2-base-v2" \
+	--model_name_or_path="facebook/wav2vec2-base" \
 	--dataset_name="librispeech_asr" \
 	--dataset_config_name="clean" \
 	--train_split_name="validation" \
@@ -79,7 +79,7 @@ on 100h of training data from the [librispeech_asr](https://huggingface.co/datas
 
 ```bash
 python run_pretraining.py \
-	--model_name_or_path="patrickvonplaten/wav2vec2-base-v2" \
+	--model_name_or_path="facebook/wav2vec2-base" \
 	--dataset_name="librispeech_asr" \
 	--dataset_config_name="clean" \
 	--train_split_name="train.100" \

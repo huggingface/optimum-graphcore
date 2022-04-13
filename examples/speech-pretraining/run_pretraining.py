@@ -399,7 +399,11 @@ def main():
         sample = batch[data_args.audio_column_name]
 
         inputs = feature_extractor(
-            sample["array"], sampling_rate=sample["sampling_rate"], padding="max_length", max_length=max_length, truncation=True
+            sample["array"],
+            sampling_rate=sample["sampling_rate"],
+            padding="max_length",
+            max_length=max_length,
+            truncation=True,
         )
         batch["input_values"] = inputs.input_values[0]
         batch["input_length"] = len(inputs.input_values[0])
@@ -437,12 +441,6 @@ def main():
     config = AutoConfig.from_pretrained(
         model_args.model_name_or_path, cache_dir=model_args.cache_dir, use_auth_token=data_args.use_auth_token
     )
-    # pretraining is only supported for "newer" stable layer norm architecture
-    # apply_spec_augment has to be True, mask_feature_prob has to be 0.0
-    if not config.do_stable_layer_norm or config.feat_extract_norm != "layer":
-        raise ValueError(
-            "PreTraining is only supported for ``config.do_stable_layer_norm=True`` and ``config.feat_extract_norm='layer'"
-        )
 
     ipu_config = IPUConfig.from_pretrained(
         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
@@ -469,7 +467,9 @@ def main():
             "layerdrop": model_args.layerdrop,
             "ctc_loss_reduction": model_args.ctc_loss_reduction,
             "activation_dropout": model_args.activation_dropout,
-            "layer_norm_eps": 0.0001
+            "layer_norm_eps": 0.0001,
+            "do_stable_layer_norm": True,
+            "feat_extract_norm": "layer",
         }
     )
 
@@ -485,10 +485,12 @@ def main():
 
     # Instantiate custom data collator
     data_collator = DataCollatorForWav2Vec2Pretraining(
-        model=model, feature_extractor=feature_extractor,
+        model=model,
+        feature_extractor=feature_extractor,
         max_gumbel_temperature=model_args.max_gumbel_temperature,
         min_gumbel_temperature=model_args.min_gumbel_temperature,
-        gumbel_temperature_decay=model_args.gumbel_temperature_decay)
+        gumbel_temperature_decay=model_args.gumbel_temperature_decay,
+    )
 
     # Initialize Trainer
     trainer = IPUTrainer(
@@ -498,7 +500,7 @@ def main():
         args=training_args,
         train_dataset=vectorized_datasets["train"] if training_args.do_train else None,
         eval_dataset=vectorized_datasets["eval"] if training_args.do_eval else None,
-        tokenizer=feature_extractor
+        tokenizer=feature_extractor,
     )
 
     # 6. Finally, we can start training

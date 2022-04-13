@@ -16,6 +16,7 @@ import copy
 from unittest import TestCase
 
 import torch
+from datasets import load_dataset
 from PIL import Image
 from torch.nn.utils.weight_norm import WeightNorm
 
@@ -140,6 +141,14 @@ class PipelinedModelsTester(TestCase):
         elif model_class in MODEL_FOR_AUDIO_CLASSIFICATION_MAPPING.values():
             input_data = self._load_superb("ic", 1)
             inputs = extractor(input_data["speech"], return_tensors="pt")
+        elif (
+            model_class in MODEL_FOR_PRETRAINING_MAPPING.values()
+            and model_class == transformers.models.wav2vec2.modeling_wav2vec2.Wav2Vec2ForPreTraining
+        ):
+            # Wav2Vec2 does speech pretraining, so it requires speech data as input
+            extractor = AutoFeatureExtractor.from_pretrained(model_name_or_path)
+            ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation")
+            inputs = extractor(ds[0]["audio"]["array"], return_tensors="pt")
         else:
             inputs = extractor(
                 "This is a test to check that pretrained and pipeline model outputs match.", return_tensors="pt"

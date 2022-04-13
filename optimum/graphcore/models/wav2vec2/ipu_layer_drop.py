@@ -20,15 +20,16 @@ but with a traceable implementation of LayerDrop.
 
 import torch
 from torch.nn import functional as F
+
 from transformers.modeling_outputs import BaseModelOutput
 from transformers.models.wav2vec2.modeling_wav2vec2 import (
+    Wav2Vec2Adapter,
     Wav2Vec2Encoder,
     Wav2Vec2EncoderStableLayerNorm,
-    Wav2Vec2Adapter,
 )
 
-class IPUWav2Vec2Encoder(Wav2Vec2Encoder):
 
+class IPUWav2Vec2Encoder(Wav2Vec2Encoder):
     def __init__(self, config, sequence_length_padding_divisor=1):
 
         super().__init__(config)
@@ -47,11 +48,9 @@ class IPUWav2Vec2Encoder(Wav2Vec2Encoder):
         all_hidden_states = None
 
         if output_attentions:
-            raise ValueError("output_attetntions=True is not supported "
-                             "for IPUWav2Vec2Encoder")
+            raise ValueError("output_attetntions=True is not supported " "for IPUWav2Vec2Encoder")
         if output_hidden_states:
-            raise ValueError("output_hidden_states=True is not supported "
-                             "for IPUWav2Vec2Encoder")
+            raise ValueError("output_hidden_states=True is not supported " "for IPUWav2Vec2Encoder")
 
         if attention_mask is not None:
             # make sure padded tokens output 0
@@ -67,7 +66,7 @@ class IPUWav2Vec2Encoder(Wav2Vec2Encoder):
                     attention_mask,
                     # Want e.g. (..., 999) -> (..., 1000)
                     pad=(0, pad_length),
-                    value=0.0
+                    value=0.0,
                 )
 
             else:
@@ -88,7 +87,7 @@ class IPUWav2Vec2Encoder(Wav2Vec2Encoder):
         hidden_states = F.pad(
             hidden_states,
             # Want e.g. (..., 999, 768) -> (..., 1000, 768)
-            pad=(0, 0, 0, pad_length)
+            pad=(0, 0, 0, pad_length),
         )
 
         for layer in self.layers:
@@ -96,17 +95,14 @@ class IPUWav2Vec2Encoder(Wav2Vec2Encoder):
             # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
             dropout_probability = torch.rand(tuple())
 
-            skip_the_layer = self.training and \
-                             (dropout_probability < self.config.layerdrop)
-            layer_outputs = layer(
-                hidden_states, attention_mask=attention_mask, output_attentions=output_attentions
-            )
+            skip_the_layer = self.training and (dropout_probability < self.config.layerdrop)
+            layer_outputs = layer(hidden_states, attention_mask=attention_mask, output_attentions=output_attentions)
             hidden_states = torch.where(skip_the_layer, hidden_states, layer_outputs[0])
 
         # Remove padded values
         # Want e.g. (..., 1000, 768) -> (..., 999, 768)
         if pad_length > 0:
-             hidden_states = hidden_states[..., 0:(-pad_length), :]
+            hidden_states = hidden_states[..., 0:(-pad_length), :]
 
         if not return_dict:
             return tuple(v for v in [hidden_states, all_hidden_states, all_self_attentions] if v is not None)
@@ -119,7 +115,6 @@ class IPUWav2Vec2Encoder(Wav2Vec2Encoder):
 
 
 class IPUWav2Vec2EncoderStableLayerNorm(Wav2Vec2EncoderStableLayerNorm):
-
     def __init__(self, config, sequence_length_padding_divisor=1):
 
         super().__init__(config)
@@ -138,11 +133,9 @@ class IPUWav2Vec2EncoderStableLayerNorm(Wav2Vec2EncoderStableLayerNorm):
         all_hidden_states = None
 
         if output_attentions:
-            raise ValueError("output_attetntions=True is not supported "
-                             "for IPUWav2Vec2EncoderStableLayerNorm")
+            raise ValueError("output_attetntions=True is not supported " "for IPUWav2Vec2EncoderStableLayerNorm")
         if output_hidden_states:
-            raise ValueError("output_hidden_states=True is not supported "
-                             "for IPUWav2Vec2EncoderStableLayerNorm")
+            raise ValueError("output_hidden_states=True is not supported " "for IPUWav2Vec2EncoderStableLayerNorm")
 
         if attention_mask is not None:
             # make sure padded tokens output 0
@@ -160,7 +153,7 @@ class IPUWav2Vec2EncoderStableLayerNorm(Wav2Vec2EncoderStableLayerNorm):
                     attention_mask,
                     # Want e.g. (..., 999) -> (..., 1000)
                     pad=(0, pad_length),
-                    value=0.0
+                    value=0.0,
                 )
 
             else:
@@ -180,7 +173,7 @@ class IPUWav2Vec2EncoderStableLayerNorm(Wav2Vec2EncoderStableLayerNorm):
         hidden_states = F.pad(
             hidden_states,
             # Want e.g. (..., 999, 768) -> (..., 1000, 768)
-            pad=(0, 0, 0, pad_length)
+            pad=(0, 0, 0, pad_length),
         )
 
         for layer in self.layers:
@@ -188,11 +181,8 @@ class IPUWav2Vec2EncoderStableLayerNorm(Wav2Vec2EncoderStableLayerNorm):
             # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
             dropout_probability = torch.rand(tuple())
 
-            skip_the_layer = self.training and \
-                             (dropout_probability < self.config.layerdrop)
-            layer_outputs = layer(
-                hidden_states, attention_mask=attention_mask, output_attentions=output_attentions
-            )
+            skip_the_layer = self.training and (dropout_probability < self.config.layerdrop)
+            layer_outputs = layer(hidden_states, attention_mask=attention_mask, output_attentions=output_attentions)
             hidden_states = torch.where(skip_the_layer, hidden_states, layer_outputs[0])
 
         # Remove padded values
@@ -213,7 +203,6 @@ class IPUWav2Vec2EncoderStableLayerNorm(Wav2Vec2EncoderStableLayerNorm):
 
 
 class IPUWav2Vec2Adapter(Wav2Vec2Adapter):
-
     def forward(self, hidden_states):
         # down project hidden_states if necessary
         if self.proj is not None and self.proj_layer_norm is not None:

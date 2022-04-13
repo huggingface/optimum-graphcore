@@ -12,11 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
 import warnings
-from transformers.models.wav2vec2.modeling_wav2vec2 import (
-    Wav2Vec2GumbelVectorQuantizer,
-)
+
+import torch
+
+from transformers.models.wav2vec2.modeling_wav2vec2 import Wav2Vec2GumbelVectorQuantizer
 
 
 def _ipu_gumbel_softmax(logits, tau=1, hard=False, eps=1e-10, dim=-1):
@@ -24,9 +24,9 @@ def _ipu_gumbel_softmax(logits, tau=1, hard=False, eps=1e-10, dim=-1):
     if eps != 1e-10:
         warnings.warn("`eps` parameter is deprecated and has no effect.")
 
-    gumbels = (
-        -(torch.empty_like(logits, memory_format=torch.legacy_contiguous_format).exponential_() + 1e-4).log()
-    )  # ~Gumbel(0,1)
+    gumbels = -(
+        torch.empty_like(logits, memory_format=torch.legacy_contiguous_format).exponential_() + 1e-4
+    ).log()  # ~Gumbel(0,1)
 
     gumbels = (logits + gumbels) / tau  # ~Gumbel(logits,tau)
     y_soft = gumbels.softmax(dim)
@@ -36,7 +36,9 @@ def _ipu_gumbel_softmax(logits, tau=1, hard=False, eps=1e-10, dim=-1):
         index = y_soft.max(dim, keepdim=True)[1]
 
         update_values = torch.ones_like(index, dtype=logits.dtype)
-        y_hard = torch.zeros_like(logits, memory_format=torch.legacy_contiguous_format).scatter_(dim, index, update_values)
+        y_hard = torch.zeros_like(logits, memory_format=torch.legacy_contiguous_format).scatter_(
+            dim, index, update_values
+        )
 
         ret = y_hard - y_soft.detach() + y_soft
     else:
@@ -47,7 +49,7 @@ def _ipu_gumbel_softmax(logits, tau=1, hard=False, eps=1e-10, dim=-1):
 
 
 class IPUWav2Vec2GumbelVectorQuantizer(Wav2Vec2GumbelVectorQuantizer):
-    def forward(self, hidden_states, gumbel_temperature, mask_time_indices=None):
+    def forward(self, hidden_states, gumbel_temperature=2.0, mask_time_indices=None):
         batch_size, sequence_length, hidden_size = hidden_states.shape
 
         # project to codevector dim
@@ -56,9 +58,9 @@ class IPUWav2Vec2GumbelVectorQuantizer(Wav2Vec2GumbelVectorQuantizer):
 
         if self.training:
             # sample code vector probs via gumbel in differentiateable way
-            codevector_probs = _ipu_gumbel_softmax(
-                hidden_states.float(), tau=gumbel_temperature, hard=True
-            ).type_as(hidden_states)
+            codevector_probs = _ipu_gumbel_softmax(hidden_states.float(), tau=gumbel_temperature, hard=True).type_as(
+                hidden_states
+            )
 
             # compute perplexity
             codevector_soft_dist = torch.softmax(
@@ -82,7 +84,7 @@ class IPUWav2Vec2GumbelVectorQuantizer(Wav2Vec2GumbelVectorQuantizer):
         codevector_probs = codevector_probs.view(batch_size * sequence_length, self.num_groups, -1)
         codebook = self.codevectors[0, :, :]
         codebook = codebook.view(self.num_groups, self.num_vars, -1)
-        codevectors = torch.einsum('lgv,gvd->lgd', codevector_probs, codebook)
+        codevectors = torch.einsum("lgv,gvd->lgd", codevector_probs, codebook)
 
         codevectors = codevectors.reshape(batch_size, sequence_length, -1)
 
