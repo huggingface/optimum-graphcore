@@ -68,6 +68,8 @@ def create_ipu_config(with_default_values: bool = False, remove_pod_types: Optio
         initial_dict["output_mode"] = {k: random.choice(allowed_output_modes) for k in initial_dict["output_mode"]}
     else:
         initial_dict["output_mode"] = random.choice(allowed_output_modes)
+    # Setting this setting to False as it is currently not supported and will throw an error.
+    initial_dict["execute_encoder_on_cpu_for_generation"] = False
     return IPUConfig.from_dict(initial_dict)
 
 

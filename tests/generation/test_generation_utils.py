@@ -1729,6 +1729,8 @@ class GenerationIntegrationTests(unittest.TestCase):
                 eos_token_id=bart_model.config.eos_token_id,
                 **model_kwargs,
             )
+        bart_model.get_encoder().detachFromDevice()
+        bart_model.poptorch_model.detachFromDevice()
 
     def test_max_length_backward_compat_sample(self):
         article = """Justin Timberlake and Jessica Biel, welcome to parenthood."""
@@ -1762,6 +1764,9 @@ class GenerationIntegrationTests(unittest.TestCase):
                     eos_token_id=bart_model.config.eos_token_id,
                     **model_kwargs,
                 )
+
+        bart_model.get_encoder().detachFromDevice()
+        bart_model.poptorch_model.detachFromDevice()
 
     def test_max_length_backward_compat_beam_search(self):
         article = """Justin Timberlake and Jessica Biel, welcome to parenthood."""
@@ -1799,6 +1804,9 @@ class GenerationIntegrationTests(unittest.TestCase):
             _ = bart_model.beam_search(
                 input_ids, num_beams=num_beams, max_length=max_length, beam_scorer=beam_scorer, **model_kwargs
             )
+
+        bart_model.get_encoder().detachFromDevice()
+        bart_model.poptorch_model.detachFromDevice()
 
     # TODO: this test is not passing yet.
     # def test_max_length_backward_compat_group_beam_search(self):
@@ -1933,6 +1941,9 @@ class GenerationIntegrationTests(unittest.TestCase):
         #         **model_kwargs,
         #     )
 
+        bart_model.get_encoder().detachFromDevice()
+        bart_model.poptorch_model.detachFromDevice()
+
     def test_beam_search_warning_if_max_length_is_passed(self):
         article = """Justin Timberlake and Jessica Biel, welcome to parenthood."""
         bart_tokenizer = BartTokenizer.from_pretrained("hf-internal-testing/tiny-random-bart")
@@ -1993,6 +2004,9 @@ class GenerationIntegrationTests(unittest.TestCase):
         # BeamSearchScorer max_length should not influence "real" max_length
         self.assertEqual(generated_ids.tolist(), generated_ids_no_max_len.tolist())
 
+        bart_model.get_encoder().detachFromDevice()
+        bart_model.poptorch_model.detachFromDevice()
+
     def test_custom_stopping_criteria_overload_error(self):
         article = """Justin Timberlake and Jessica Biel, welcome to parenthood."""
         bart_tokenizer = BartTokenizer.from_pretrained("sshleifer/bart-tiny-random")
@@ -2009,6 +2023,9 @@ class GenerationIntegrationTests(unittest.TestCase):
             bart_model.generate(input_ids, stopping_criteria=stopping_criteria)
         with self.assertRaises(ValueError):
             bart_model.generate(input_ids, stopping_criteria=stopping_criteria, max_length=32)
+
+        bart_model.get_encoder().detachFromDevice()
+        bart_model.poptorch_model.detachFromDevice()
 
     def test_custom_stopping_criteria(self):
         article = """Justin Timberlake and Jessica Biel, welcome to parenthood."""
@@ -2035,6 +2052,9 @@ class GenerationIntegrationTests(unittest.TestCase):
             [1, 18],
         )
 
+        bart_model.get_encoder().detachFromDevice()
+        bart_model.poptorch_model.detachFromDevice()
+
     def test_custom_logits_processor(self):
         bart_tokenizer = BartTokenizer.from_pretrained("sshleifer/bart-tiny-random")
         article = """Justin Timberlake and Jessica Biel, welcome to parenthood."""
@@ -2052,6 +2072,9 @@ class GenerationIntegrationTests(unittest.TestCase):
 
         bart_model.config.min_length = None
         bart_model.generate(input_ids, logits_processor=logits_processor)
+
+        bart_model.get_encoder().detachFromDevice()
+        bart_model.poptorch_model.detachFromDevice()
 
     def test_max_new_tokens_encoder_decoder(self):
         article = """Justin Timberlake and Jessica Biel, welcome to parenthood."""
@@ -2089,6 +2112,9 @@ class GenerationIntegrationTests(unittest.TestCase):
         # max_new_tokens and max_length serve the same purpose and should not be used together.
         with self.assertWarns(UserWarning):
             bart_model.generate(decoder_input_ids=input_ids, max_new_tokens=10, max_length=30)
+
+        bart_model.get_encoder().detachFromDevice()
+        bart_model.poptorch_model.detachFromDevice()
 
     # TODO: enable this test once GPT-2 is supported.
     # def test_max_new_tokens_decoder_only(self):
@@ -2240,6 +2266,9 @@ class GenerationIntegrationTests(unittest.TestCase):
         self.assertListEqual(output_sequences.tolist(), output_sequences_kwargs.tolist())
         self.assertEqual(output_sequences.shape, (1, 5))
 
+        model.get_encoder().detachFromDevice()
+        model.poptorch_model.detachFromDevice()
+
     # TODO: enable this once GPT-2 is supported.
     # def test_generate_inputs_and_encoder_kwargs(self):
     #     article = """I need input_ids to generate"""
@@ -2340,6 +2369,9 @@ class GenerationIntegrationTests(unittest.TestCase):
 
         self.assertTrue(torch.allclose(transition_scores_sum, outputs.sequences_scores, atol=1e-3))
 
+        model.get_encoder().detachFromDevice()
+        model.poptorch_model.detachFromDevice()
+
     def test_transition_scores_beam_search_encoder_decoder_with_eos(self):
         articles = [
             "Justin Timberlake and Jessica Biel, welcome to parenthood.",
@@ -2370,6 +2402,9 @@ class GenerationIntegrationTests(unittest.TestCase):
         transition_scores_sum = transition_scores.sum(-1)
 
         self.assertTrue(torch.allclose(transition_scores_sum, outputs.sequences_scores, atol=1e-3))
+
+        model.get_encoder().detachFromDevice()
+        model.poptorch_model.detachFromDevice()
 
     # TODO: enable this once GPT-2 is supported.
     # def test_transition_scores_beam_search_decoder_only(self):
@@ -2700,42 +2735,42 @@ class GenerationIntegrationTests(unittest.TestCase):
 
         self.assertListEqual(outputs, ["Wie alter sind Sie?"])
 
-    def test_constrained_beam_search_mixin_type_checks(self):
-        tokenizer = AutoTokenizer.from_pretrained("t5-base")
-        model = AutoModelForSeq2SeqLM.from_pretrained("t5-base")
+    # def test_constrained_beam_search_mixin_type_checks(self):
+    #     tokenizer = AutoTokenizer.from_pretrained("t5-base")
+    #     model = AutoModelForSeq2SeqLM.from_pretrained("t5-base")
 
-        encoder_input_str = "translate English to German: How old are you?"
-        input_ids = tokenizer(encoder_input_str, return_tensors="pt").input_ids
+    #     encoder_input_str = "translate English to German: How old are you?"
+    #     input_ids = tokenizer(encoder_input_str, return_tensors="pt").input_ids
 
-        with self.assertRaises(ValueError):
-            force_words = ["sind"]
-            force_words_ids = tokenizer(force_words, return_tensors="pt").input_ids
-            model.generate(
-                input_ids,
-                force_words_ids=force_words_ids,
-                num_beams=10,
-                num_return_sequences=1,
-                no_repeat_ngram_size=1,
-                remove_invalid_values=True,
-            )
+    #     with self.assertRaises(ValueError):
+    #         force_words = ["sind"]
+    #         force_words_ids = tokenizer(force_words, return_tensors="pt").input_ids
+    #         model.generate(
+    #             input_ids,
+    #             force_words_ids=force_words_ids,
+    #             num_beams=10,
+    #             num_return_sequences=1,
+    #             no_repeat_ngram_size=1,
+    #             remove_invalid_values=True,
+    #         )
 
-        with self.assertRaises(ValueError):
-            force_words = ["sind"]
-            force_words_ids = [tokenizer(force_words, return_tensors="pt").input_ids]
-            model.generate(
-                input_ids,
-                force_words_ids=force_words_ids,
-                num_beams=10,
-                num_return_sequences=1,
-                no_repeat_ngram_size=1,
-                remove_invalid_values=True,
-            )
+    #     with self.assertRaises(ValueError):
+    #         force_words = ["sind"]
+    #         force_words_ids = [tokenizer(force_words, return_tensors="pt").input_ids]
+    #         model.generate(
+    #             input_ids,
+    #             force_words_ids=force_words_ids,
+    #             num_beams=10,
+    #             num_return_sequences=1,
+    #             no_repeat_ngram_size=1,
+    #             remove_invalid_values=True,
+    #         )
 
-        with self.assertRaises(ValueError):
-            model.generate(input_ids, force_words_ids=[])
+    #     with self.assertRaises(ValueError):
+    #         model.generate(input_ids, force_words_ids=[])
 
-        with self.assertRaises(ValueError):
-            model.generate(input_ids, force_words_ids=[[-1]])
+    #     with self.assertRaises(ValueError):
+    #         model.generate(input_ids, force_words_ids=[[-1]])
 
-        with self.assertRaises(ValueError):
-            model.generate(input_ids, force_words_ids=[[[-1]]])
+    #     with self.assertRaises(ValueError):
+    #         model.generate(input_ids, force_words_ids=[[[-1]]])
