@@ -107,8 +107,10 @@ class IPUGenerationMixin(GenerationMixin):
         encoder.config.return_dict = False
 
         # This will both compile the encoder stack and return the output we need to compile the decoder stack.
-        # TODO: handle the case where the encoder is running on CPU.
         encoder_outputs = encoder(**encoder_kwargs)
+        if self.dtype == torch.float16 and self.ipu_config.execute_encoder_on_cpu_for_generation:
+            for k, v in encoder_outputs.items():
+                encoder_outputs[k] = v.to(torch.float16)
 
         encoder.config.return_dict = config_return_dict
 
@@ -278,6 +280,9 @@ class IPUGenerationMixin(GenerationMixin):
         # We set the encoder output to be BaseModelOutput, it should work because we are only considering the last
         # hidden states anyway.
         model_kwargs["encoder_outputs"]: ModelOutput = BaseModelOutput(last_hidden_state=encoder(**encoder_kwargs)[0])
+
+        if self.dtype == torch.float16 and self.ipu_config.execute_encoder_on_cpu_for_generation:
+            model_kwargs["encoder_outputs"] = model_kwargs["encoder_outputs"].to(torch.float16)
 
         return model_kwargs
 

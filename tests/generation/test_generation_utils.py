@@ -2369,9 +2369,6 @@ class GenerationIntegrationTests(unittest.TestCase):
         )
         transition_scores_sum = transition_scores.sum(-1)
 
-        import pdb
-
-        pdb.set_trace()
         self.assertTrue(torch.allclose(transition_scores_sum, outputs.sequences_scores, atol=1e-3))
 
     # TODO: enable this once GPT-2 is supported.

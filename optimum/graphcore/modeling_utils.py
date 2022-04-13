@@ -168,7 +168,7 @@ class GenerationMethodsMixin:
         if not hasattr(self, "_wrapped_encoder"):
             encoder = super().get_encoder()
             if self.ipu_config.execute_encoder_on_cpu_for_generation:
-                self._wrapped_encoder = encoder
+                self._wrapped_encoder = encoder.to(torch.float32)
             else:
                 self.eval_opts = self.ipu_config.to_options(for_inference=True)
                 self._wrapped_encoder = poptorch.inferenceModel(
