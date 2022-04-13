@@ -53,6 +53,7 @@ from transformers import (
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version
 from transformers.utils.versions import require_version
+import wandb
 
 
 """ Fine-tuning a Transformers model for image classification"""
@@ -218,6 +219,12 @@ class TrainingArguments(IPUTrainingArguments):
             "help": "The initial value for the layer scale model parameter."
         }
     )
+    wandb_entity: Optional[str] = field(
+        default=None
+    )
+    wandb_project: Optional[str] = field(
+        default=None
+    )
 
 def collate_fn(examples):
     # pixel_values = torch.stack([example["pixel_values"] for example in examples])
@@ -270,6 +277,9 @@ def main():
         model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+
+    if training_args.wandb_entity and training_args.wandb_project:
+        wandb.init(project=training_args.wandb_project, entity=training_args.wandb_entity)
 
     # Setup logging
     logging.basicConfig(
