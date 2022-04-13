@@ -124,10 +124,8 @@ class IPUConfig(BaseConfig):
         if not compile_only and poptorch.ipuHardwareVersion() != 2:
             raise RuntimeError("This requires an IPU Mk2 system to run.")
 
-        # TODO: fix that with popdist.
-        # if self.use_popdist:
-        #     opts = popdist.poptorch.Options(ipus_per_replica=self.ipus_per_replica)
-        # else:
+        if self.execute_encoder_on_cpu_for_generation:
+            raise NotImplementedError("execute_encoder_on_cpu_for_generation is not supported yet.")
 
         opts = Options()
 

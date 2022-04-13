@@ -1662,7 +1662,10 @@ class IPUTrainer:
                 metrics[f"{metric_key_prefix}_{key}"] = metrics.pop(key)
 
         # Detaching model from device to let the training model attach itself
-        model.poptorch_model.detachFromDevice()
+        if isinstance(model, PoplarExecutor):
+            model.detachFromDevice()
+        else:
+            model.poptorch_model.detachFromDevice()
 
         return EvalLoopOutput(predictions=all_preds, label_ids=all_labels, metrics=metrics, num_samples=num_samples)
 
