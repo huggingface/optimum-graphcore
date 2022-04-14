@@ -214,6 +214,9 @@ class TrainingArguments(IPUTrainingArguments):
             "help":"Probability of switching to cutmix when both mixup and cutmix enabled."
         }
     )
+    load_fb_pretrained_weights: Optional[str] = field(
+        default=None
+    )
     drop_path_rate: Optional[float]  = field(
         default=0.0
     )
@@ -223,8 +226,15 @@ class TrainingArguments(IPUTrainingArguments):
     wandb_project: Optional[str] = field(
         default=None
     )
-
-
+    head_init_scale: Optional[float]  = field(
+        default=1
+    )
+    layer_scale_init_value: Optional[float] = field(
+        default=1e-6,
+        metadata={
+            "help": "The initial value for the layer scale model parameter."
+        }
+    )
 
 def collate_fn(examples):
     # pixel_values = torch.stack([example["pixel_values"] for example in examples])
@@ -250,6 +260,7 @@ class ApplyTransforms:
         # TODO: is ApplyTransforms still needed since we now transforms already apply to the image features.
         example_batch = self.transforms(example_batch)
         return example_batch
+
 
 # Implement the mixup collate function as a functor instead of a function because the Async Dataloader
 # can't handle functions with closures because it uses pickle underneath.
@@ -318,7 +329,6 @@ def main():
     def compute_metrics(p):
         """Computes accuracy on a batch of predictions"""
         return metric.compute(predictions=np.argmax(p.predictions, axis=1), references=p.label_ids)
-
     labels = glob.glob(os.path.join(data_args.data_files.get("train", None), "*/"))
     label2id, id2label = dict(), dict()
     for i, label in enumerate(labels):
@@ -334,9 +344,13 @@ def main():
         cache_dir=model_args.cache_dir,
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
-        drop_path_rate=training_args.drop_path_rate
+        drop_path_rate=training_args.drop_path_rate,
+
     )
     config.smoothing=training_args.smoothing
+    config.head_init_scale = training_args.head_init_scale
+    config.layer_scale_init_value = training_args.layer_scale_init_value
+    config.pretrained_weights_path = training_args.load_fb_pretrained_weights
 
     ipu_config = IPUConfig.from_pretrained(
         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
@@ -344,14 +358,19 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
-    model = AutoModelForImageClassification.from_pretrained(
-        model_args.model_name_or_path,
-        from_tf=bool(".ckpt" in model_args.model_name_or_path),
-        config=config,
-        cache_dir=model_args.cache_dir,
-        revision=model_args.model_revision,
-        use_auth_token=True if model_args.use_auth_token else None,
-    )
+    if training_args.load_fb_pretrained_weights:
+        model = AutoModelForImageClassification.from_config(
+            config,
+        )
+    else:
+        model = AutoModelForImageClassification.from_pretrained(
+            model_args.model_name_or_path,
+            from_tf=bool(".ckpt" in model_args.model_name_or_path),
+            config=config,
+            cache_dir=model_args.cache_dir,
+            revision=model_args.model_revision,
+            use_auth_token=True if model_args.use_auth_token else None,
+        )
 
     feature_extractor = AutoFeatureExtractor.from_pretrained(
         model_args.feature_extractor_name or model_args.model_name_or_path,
