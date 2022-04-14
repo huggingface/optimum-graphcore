@@ -30,8 +30,8 @@
   "do_train": true,
   "do_eval": true,
   "train_val_split": 0.1,
-  "train_dir": "/localdata/ai-datasets/imagenet/train",
-  "validation_dir": "/localdata/ai-datasets/imagenet/validation",
+  "train_dir": "/localdata/ai-datasets/imagenet-data/raw-data/train",
+  "validation_dir": "/localdata/ai-datasets/imagenet-data/raw-data/validation",
   "output_dir": "./outputs",
   "model_name_or_path": "facebook/convnext-tiny-224",
 
@@ -41,7 +41,7 @@
 
   "dataloader_drop_last": true,
   "dataloader_mode": "async",
-  "dataloader_num_workers": 16,
+  "dataloader_num_workers": 32,
 
   "seed": 1337,
   "overwrite_output_dir": true,
@@ -53,5 +53,7 @@
   "smoothing": 0.1,
   "mixup": 0.8,
   "cutmix": 1.0,
-  "lr_scheduler_type": "cosine"
+  "lr_scheduler_type": "cosine",
+  "resume_from_checkpoint": true,
+  "ignore_data_skip": true
   }
