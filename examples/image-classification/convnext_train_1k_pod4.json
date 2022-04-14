@@ -10,12 +10,12 @@
   "per_device_train_batch_size": 1,
   "per_device_eval_batch_size": 1,
 
-  "pod_type": "pod4",
-  "replication_factor": {"pod4": 2, "pod8": 2, "pod16": 8, "pod32": 8, "pod64": 16, "default": 1},
+  "pod_type": "pod8",
+  "replication_factor": {"pod4": 2, "pod8": 4, "pod16": 8, "pod32": 8, "pod64": 16, "default": 1},
   "device_iterations": 1,
   "inference_device_iterations": 2,
   "inference_replication_factor": 2,
-  "gradient_accumulation_steps": 2048,
+  "gradient_accumulation_steps": 1024,
   "executable_cache_dir": "./exe_cache",
 
 
@@ -26,14 +26,14 @@
   "do_train": true,
   "do_eval": true,
   "train_val_split": 0.1,
-  "train_dir": "/localdata/ai-datasets/imagenet-data/raw-data/train",
-  "validation_dir": "/localdata/ai-datasets/imagenet-data/raw-data/validation",
+  "train_dir": "/localdata/datasets/imagenet-raw-data/train",
+  "validation_dir": "/localdata/datasets/imagenet-raw-data/validation",
   "output_dir": "./outputs",
   "model_name_or_path": "facebook/convnext-tiny-224",
 
   "ipus_per_replica": 2,
-  "layers_per_ipu": [4],
-  "matmul_proportion": [0.1],
+  "layers_per_ipu": [2,2],
+
 
   "dataloader_drop_last": true,
   "dataloader_mode": "async",
@@ -50,13 +50,10 @@
   "mixup": 0.8,
   "cutmix": 1.0,
   "lr_scheduler_type": "cosine",
-  "resume_from_checkpoint": true,
-  "ignore_data_skip": true,
-
   "logging_strategy": "steps",
   "logging_steps": 50,
   "logging_dir": "logs",
-  "wandb_project" : "convnext_22k_finetuning",
+  "wandb_project" : "convnext_training_pod4",
   "wandb_entity" : "pse",
   "report_to" : "wandb"
   }

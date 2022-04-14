@@ -435,6 +435,7 @@ def main():
     if training_args.warmup_epochs > 0:
         training_args.warmup_ratio = training_args.warmup_epochs / training_args.num_train_epochs
         logger.info(f"Setting up {training_args.warmup_epochs} warmup epochs.")
+
     # Initalize our trainer
     trainer = IPUTrainer(
         model=model,

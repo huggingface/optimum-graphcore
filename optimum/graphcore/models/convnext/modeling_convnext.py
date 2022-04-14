@@ -31,6 +31,7 @@ class ConvNextPipelineMixin(PipelineMixin):
 
         return self
 
+
 @register(transformers.ConvNextForImageClassification)
 class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClassification, ConvNextPipelineMixin):
     def __init__(self, config):
@@ -70,6 +71,18 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
                 new_state_dict[hf_tensor_name] = current_state_dict[hf_tensor_name]
 
         self.load_state_dict(new_state_dict)
+
+    def _init_weights(self, module):
+        """Initialize the weights"""
+        if isinstance(module, (torch.nn.Linear, torch.nn.Conv2d)):
+            # Use truncated normal init as in the paper code.
+            # print("Init weights with truncated normal distribution")
+            torch.nn.init.trunc_normal_(module.weight.data, std=.02)
+            if module.bias is not None:
+                module.bias.data.zero_()
+        elif isinstance(module, torch.nn.LayerNorm):
+            module.bias.data.zero_()
+            module.weight.data.fill_(1.0)
 
     def parallelize(self):
         """Set pipeline mapping for the head (layernorm + classifier layers)"""
