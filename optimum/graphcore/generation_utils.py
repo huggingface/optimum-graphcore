@@ -1389,7 +1389,7 @@ class IPUGenerationMixin(GenerationMixin):
         unfinished_sequences = input_ids.new(input_ids.shape[0]).fill_(1)
         input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
 
-        cur_len = torch.argmax((input_ids == self.model.config.pad_token_id).to(torch.long), dim=1)[0]
+        cur_len = torch.argmax((input_ids == self.config.pad_token_id).to(torch.long), dim=1)[0]
 
         while True:
             # prepare model inputs
@@ -1631,7 +1631,7 @@ class IPUGenerationMixin(GenerationMixin):
         unfinished_sequences = input_ids.new(input_ids.shape[0]).fill_(1)
 
         input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
-        cur_len = torch.argmax((input_ids == self.model.config.pad_token_id).to(torch.long), dim=1)[0] + 1
+        cur_len = torch.argmax((input_ids == self.config.pad_token_id).to(torch.long), dim=1)[0] + 1
 
         # auto-regressive generation
         while True:
@@ -1865,7 +1865,7 @@ class IPUGenerationMixin(GenerationMixin):
         batch_beam_size = input_ids.shape[0]
         input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
 
-        cur_len = torch.argmax((input_ids == self.model.config.pad_token_id).to(torch.long), dim=1)[0] + 1
+        cur_len = torch.argmax((input_ids == self.config.pad_token_id).to(torch.long), dim=1)[0] + 1
 
         if num_beams * batch_size != batch_beam_size:
             raise ValueError(
@@ -2180,7 +2180,7 @@ class IPUGenerationMixin(GenerationMixin):
         batch_beam_size = input_ids.shape[0]
         input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
 
-        cur_len = torch.argmax((input_ids == self.model.config.pad_token_id).to(torch.long), dim=1)[0] + 1
+        cur_len = torch.argmax((input_ids == self.config.pad_token_id).to(torch.long), dim=1)[0] + 1
 
         # init attention / hidden states / scores tuples
         scores = () if (return_dict_in_generate and output_scores) else None
@@ -2489,7 +2489,7 @@ class IPUGenerationMixin(GenerationMixin):
         batch_beam_size = input_ids.shape[0]
         input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
 
-        cur_len = torch.argmax((input_ids == self.model.config.pad_token_id).to(torch.long), dim=1)[0] + 1
+        cur_len = torch.argmax((input_ids == self.config.pad_token_id).to(torch.long), dim=1)[0] + 1
 
         if return_dict_in_generate and output_scores:
             beam_indices = [tuple(() for _ in range(num_sub_beams * batch_size)) for _ in range(num_beam_groups)]
@@ -2862,7 +2862,7 @@ class IPUGenerationMixin(GenerationMixin):
         batch_beam_size = input_ids.shape[0]
         input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
 
-        cur_len = torch.argmax((input_ids == self.model.config.pad_token_id).to(torch.long), dim=1)[0] + 1
+        cur_len = torch.argmax((input_ids == self.config.pad_token_id).to(torch.long), dim=1)[0] + 1
 
         if num_beams * batch_size != batch_beam_size:
             raise ValueError(
