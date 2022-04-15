@@ -1665,6 +1665,8 @@ class IPUTrainer:
         if isinstance(model, PoplarExecutor):
             model.detachFromDevice()
         else:
+            if not self.ipu_config.execute_encoder_on_cpu_for_generation:
+                model.get_encoder().detachFromDevice()
             model.poptorch_model.detachFromDevice()
 
         return EvalLoopOutput(predictions=all_preds, label_ids=all_labels, metrics=metrics, num_samples=num_samples)
