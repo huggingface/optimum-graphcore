@@ -219,6 +219,12 @@ class TrainingArguments(IPUTrainingArguments):
             "help": "The initial value for the layer scale model parameter."
         }
     )
+    random_erasing: Optional[float] = field(
+        default=0.25,
+        metadata={
+            "help": "The random erasing probability"
+        }
+    )
     wandb_entity: Optional[str] = field(
         default=None
     )

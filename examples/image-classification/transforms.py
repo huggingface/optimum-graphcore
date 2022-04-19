@@ -24,7 +24,7 @@ def get_transforms(config_name, training_args, feature_extractor):
                     color_jitter=0.4,
                     auto_augment='rand-m9-mstd0.5-inc1',
                     interpolation='bicubic',
-                    re_prob=0.25,
+                    re_prob=training_args.random_erasing,
                     re_mode='pixel',
                     re_count=1,
                     mean=mean,
