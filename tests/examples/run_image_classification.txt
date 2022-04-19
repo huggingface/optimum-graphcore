@@ -10,18 +10,16 @@
 <         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
 <         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
 <     )
-246a242,249
-> 
+258a254,259
 >     ipu_config = IPUConfig.from_pretrained(
 >         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
 >         cache_dir=model_args.cache_dir,
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
-> 
-312c315
+326c327
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-313a317
+327a329
 >         ipu_config=ipu_config,

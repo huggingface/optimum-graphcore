@@ -13,6 +13,7 @@
 #  limitations under the License.
 
 import copy
+from inspect import signature
 from typing import Any, Dict, Optional, Tuple
 
 import torch
@@ -77,9 +78,9 @@ class PipelineMixin:
         return pipelined_model
 
     @classmethod
-    def from_pretrained_transformers(cls, model_name_or_path: str, ipu_config: IPUConfig):
-        config = AutoConfig.from_pretrained(model_name_or_path)
-        pipelined_model = cls.from_pretrained(model_name_or_path, config=config)
+    def from_pretrained_transformers(cls, model_name_or_path: str, ipu_config: IPUConfig, *model_args, **kwargs):
+        # config = AutoConfig.from_pretrained(model_name_or_path)
+        pipelined_model = cls.from_pretrained(model_name_or_path, *model_args, **kwargs)  # config=config)
         pipelined_model.ipu_config = copy.deepcopy(ipu_config)
         return pipelined_model
 
@@ -156,34 +157,28 @@ class PipelineMixin:
         else:
             return sum(p.numel() for p in self.parameters() if p.requires_grad or not only_trainable)
 
-    def _prepare_encoder_decoder_kwargs_for_generation(
-        self, inputs_tensor: torch.Tensor, model_kwargs, model_input_name: Optional[str] = None
-    ) -> Dict[str, Any]:
-        # 2. prepare encoder args and encoder kwargs from model kwargs
-        irrelevant_prefix = ["decoder_", "cross_attn", "use_cache"]
-        encoder_kwargs = {
-            argument: value
-            for argument, value in model_kwargs.items()
-            if not any(argument.startswith(p) for p in irrelevant_prefix)
-        }
-        model_input_name = model_input_name if model_input_name is not None else self.main_input_name
-        encoder_kwargs["return_dict"] = True
-        encoder_kwargs[model_input_name] = inputs_tensor
-        # 1. get encoder
-        compiled_encoder = getattr(self, "_compiled_encoder", None)
-        if compiled_encoder is None:
-            encoder = self.get_encoder()
-            # TODO: how to pass the poptorch options?
-            compiled_encoder = poptorch.inferenceModel(encoder.eval())
-            compiled_encoder.compile(**encoder_kwargs)
 
-        # 3. make sure that encoder returns `ModelOutput`
-        model_input_name = model_input_name if model_input_name is not None else self.main_input_name
-        encoder_kwargs["return_dict"] = True
-        encoder_kwargs[model_input_name] = inputs_tensor
-        model_kwargs["encoder_outputs"]: "ModelOutput" = compiled_encoder(**encoder_kwargs)
+class GenerationMethodsMixin:
+    def get_encoder(
+        self,
+        device_iterations: Optional[int] = None,
+        replication_factor: Optional[int] = None,
+        for_inference: bool = True,
+    ):
+        if not hasattr(self, "_wrapped_encoder"):
+            encoder = super().get_encoder()
+            if self.ipu_config.execute_encoder_on_cpu_for_generation:
+                self._wrapped_encoder = encoder.to(torch.float32)
+            else:
+                self.eval_opts = self.ipu_config.to_options(for_inference=True)
+                self._wrapped_encoder = poptorch.inferenceModel(
+                    encoder, options=self.ipu_config.to_options(for_inference=True)
+                )
+        return self._wrapped_encoder
 
-        return model_kwargs
+    def prepare_inputs_for_generation(self, input_ids: torch.LongTensor, **kwargs) -> Dict[str, Any]:
+        inputs = super().prepare_inputs_for_generation(input_ids, **kwargs)
+        return {k: v for k, v in inputs.items() if k in signature(self._forward_for_generate).parameters}
 
 
 def get_layer_ipu(layers_per_ipu):
@@ -327,9 +322,12 @@ class SerializedLinear(nn.Linear):
         self.factor = factor
 
     def forward(self, x):
-        output = poptorch.serializedMatMul(x, self.weight.t(), self.mode, self.factor)
-        if self.bias is not None:
-            output += self.bias
+        if not self.training:
+            output = super().forward(x)
+        else:
+            output = poptorch.serializedMatMul(x, self.weight.t(), self.mode, self.factor)
+            if self.bias is not None:
+                output += self.bias
         return output
 
 
