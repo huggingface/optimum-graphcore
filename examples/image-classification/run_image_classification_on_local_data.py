@@ -172,6 +172,12 @@ class TrainingArguments(IPUTrainingArguments):
             "help": "Image input size."
         },
     )
+    reset_weights: Optional[bool] = field(
+        default=False,
+        metadata={
+            "help": "Don't load the weights from pretrained model. Unless load_fb_pretrained_weights is enable."
+        },
+    )
     disable_mixup: Optional[bool] = field(
         default=False,
         metadata={
@@ -351,6 +357,16 @@ def main():
     config.head_init_scale = training_args.head_init_scale
     config.layer_scale_init_value = training_args.layer_scale_init_value
     config.pretrained_weights_path = training_args.load_fb_pretrained_weights
+    train_collate_fn = collate_fn
+    if (training_args.mixup > 0 or training_args.cutmix > 0. or training_args.cutmix_minmax is not None) and not training_args.disable_mixup:
+        logger.info("Training with Mixup")
+        mixup_fn = Mixup(
+        mixup_alpha=training_args.mixup, cutmix_alpha=training_args.cutmix, cutmix_minmax=training_args.cutmix_minmax,
+        prob=training_args.mixup_prob, switch_prob=training_args.mixup_switch_prob, mode=training_args.mixup_mode,
+        label_smoothing=training_args.smoothing, num_classes=training_args.nb_classes)
+        mixup_collate_fn = MixupCollateFn(mixup_fn)
+        train_collate_fn = mixup_collate_fn
+        config.problem_type = "multi_label_classification"
 
     ipu_config = IPUConfig.from_pretrained(
         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
@@ -358,7 +374,7 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
-    if training_args.load_fb_pretrained_weights:
+    if training_args.load_fb_pretrained_weights or training_args.reset_weights:
         model = AutoModelForImageClassification.from_config(
             config,
         )
@@ -419,16 +435,6 @@ def main():
         if data_args.max_eval_samples is not None:
             ds["validation"] = ds["validation"].shuffle(seed=training_args.seed)[: data_args.max_val_samples]
 
-    train_collate_fn = collate_fn
-    if (training_args.mixup > 0 or training_args.cutmix > 0. or training_args.cutmix_minmax is not None) and not training_args.disable_mixup:
-        logger.info("Training with Mixup")
-        mixup_fn = Mixup(
-        mixup_alpha=training_args.mixup, cutmix_alpha=training_args.cutmix, cutmix_minmax=training_args.cutmix_minmax,
-        prob=training_args.mixup_prob, switch_prob=training_args.mixup_switch_prob, mode=training_args.mixup_mode,
-        label_smoothing=training_args.smoothing, num_classes=training_args.nb_classes)
-        mixup_collate_fn = MixupCollateFn(mixup_fn)
-        train_collate_fn = mixup_collate_fn
-
     if model_args.disable_feature_extractor:
         logger.info("Model feature extractor disabled")
 
@@ -464,7 +470,12 @@ def main():
 
     # Evaluation
     if training_args.do_eval:
-        trainer.data_collator=collate_fn
+        # disable mixup and smoothin for evaluation
+        if (training_args.mixup > 0 or training_args.cutmix > 0. or training_args.cutmix_minmax is not None) and not training_args.disable_mixup:
+            logger.info("Disabling mixup for evaluation")
+            trainer.data_collator = collate_fn
+            trainer.model.config.problem_type = "single_label_classification"
+
         metrics = trainer.evaluate()
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)

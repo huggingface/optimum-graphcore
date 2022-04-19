@@ -23,11 +23,7 @@ class ConvNextPipelineMixin(PipelineMixin):
         self.convnext.embeddings = poptorch.BeginBlock(self.convnext.embeddings, "Embedding", ipu_id=0)
 
         #Set encoder pipeline mappings
-        encoder_layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
-        for idx, layer in enumerate(self.convnext.encoder.stages):
-            ipu_id = encoder_layer_ipu[idx]
-            logger.info(f"Encoder stage {idx} --> IPU {ipu_id}")
-            self.convnext.encoder.stages[idx] = poptorch.BeginBlock(layer, f"Encoder_stage_{idx}", ipu_id)
+        self.convnext.encoder.stages[2].layers[2] = poptorch.BeginBlock(self.convnext.encoder.stages[2].layers[2], 'test', ipu_id=1)
 
         return self
 
@@ -116,7 +112,6 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
                     # Using mixup
                     self.config.problem_type = "multi_label_classification"
 
-
             if self.config.problem_type == "regression":
                 loss_fct = MSELoss()
                 if self.num_labels == 1:
@@ -125,6 +120,8 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
                     loss = loss_fct(logits, labels)
             elif self.config.problem_type == "single_label_classification":
                 loss_fct = CrossEntropyLoss(label_smoothing=self.config.smoothing)
+                if self.eval:
+                    loss_fct = CrossEntropyLoss()
                 loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
             elif self.config.problem_type == "multi_label_classification":
                 loss_fct = SoftTargetCrossEntropy()

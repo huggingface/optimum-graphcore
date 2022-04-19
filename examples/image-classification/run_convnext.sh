@@ -1,1 +1,1 @@
-python run_image_classification_on_local_data.py ./convnext_train_1k_pod4.json
+python run_image_classification_on_local_data.py ./convnext_train_1k_pod8.json
