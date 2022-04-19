@@ -12,10 +12,10 @@
 
   "pod_type": "pod8",
   "replication_factor": {"pod4": 2, "pod8": 4, "pod16": 8, "pod32": 8, "pod64": 16, "default": 1},
-  "device_iterations": 1,
+  "device_iterations": 2,
   "inference_device_iterations": 2,
-  "inference_replication_factor": 8,
-  "gradient_accumulation_steps": 256,
+  "inference_replication_factor": 4,
+  "gradient_accumulation_steps": 512,
   "executable_cache_dir": "./exe_cache",
 
 
@@ -54,7 +54,7 @@
   "logging_strategy": "steps",
   "logging_steps": 50,
   "logging_dir": "logs",
-  "wandb_project" : "convnext_training_pod16",
+  "wandb_project" : "convnext_training_pod8",
   "wandb_entity" : "pse",
   "report_to" : "wandb",
   "reset_weights": true
