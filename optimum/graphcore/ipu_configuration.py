@@ -50,7 +50,9 @@ class IPUConfig(BaseConfig):
         self.inference_device_iterations = kwargs.pop("inference_device_iterations", 1)
         self.optimizer_state_offchip = kwargs.pop("optimizer_state_offchip", True)
         self.replicated_tensor_sharding = kwargs.pop("replicated_tensor_sharding", False)
-        if self.replication_factor == 1:
+
+        if self.replicated_tensor_sharding and self.replication_factor == 1:
+            logger.info("Setting replicated_tensor_sharding to False when replication_factor=1")
             self.replicated_tensor_sharding = False
 
         self.sharded_execution_for_inference = kwargs.pop("sharded_execution_for_inference", False)
