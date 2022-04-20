@@ -15,7 +15,7 @@
   "device_iterations": 1,
   "inference_device_iterations": 1,
   "inference_replication_factor": 1,
-  "gradient_accumulation_steps": 30,
+  "gradient_accumulation_steps": 256,
   "executable_cache_dir": "./exe_cache",
 
   "learning_rate": 3e-4,
@@ -24,7 +24,7 @@
   
   "num_train_epochs": 1,
   "do_train": true,
-  "do_eval": false,
+  "do_eval": true,
 
   "train_val_split": 0.1,
   "train_dir": "/localdata/datasets/imagenet-data/raw-data/train",
@@ -48,8 +48,6 @@
   "overwrite_output_dir": true,
   "disable_feature_extractor" : true,
   "disable_mixup": true,
-  "head_init_scale": 0.001,
-
-  "max_steps": 2
+  "head_init_scale": 0.001
 }
 
