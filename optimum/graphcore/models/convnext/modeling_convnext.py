@@ -22,12 +22,17 @@ class ConvNextPipelineMixin(PipelineMixin):
         logger.info(f"Embedding  --> IPU 0")
         self.convnext.embeddings = poptorch.BeginBlock(self.convnext.embeddings, "Embedding", ipu_id=0)
 
-        #Set encoder pipeline mappings
+        # Set encoder pipeline mappings
+        # get the mapping of encoder layers --> IPU 
         encoder_layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
-        for idx, layer in enumerate(self.convnext.encoder.stages):
-            ipu_id = encoder_layer_ipu[idx]
-            logger.info(f"Encoder stage {idx} --> IPU {ipu_id}")
-            self.convnext.encoder.stages[idx] = poptorch.BeginBlock(layer, f"Encoder_stage_{idx}", ipu_id)
+        global_layer_idx = 0
+        for stage_nr, stage in enumerate(self.convnext.encoder.stages):
+            for stage_layer_idx, layer in enumerate(stage.layers):
+                # Set encoder convnext layer mapping
+                ipu_id = encoder_layer_ipu[global_layer_idx]
+                logger.info(f"Encoder stage {stage_nr}, convnext layer {stage_layer_idx} --> IPU {ipu_id}")
+                layer = poptorch.BeginBlock(layer, f"Encoder_stage_{stage_nr}_layer_{stage_layer_idx}", ipu_id=ipu_id)
+                global_layer_idx += 1
 
         return self
 
