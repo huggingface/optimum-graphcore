@@ -453,6 +453,9 @@ def main():
         tokenizer=feature_extractor if not model_args.disable_feature_extractor else None,
         data_collator=train_collate_fn,
     )
+    if training_args.reset_weights:
+        logger.info("Weights reset: Training model from scratch")
+        trainer.model.init_weights()
 
     # Training
     if training_args.do_train:

@@ -28,7 +28,7 @@
   "train_val_split": 0.1,
   "train_dir": "/localdata/ai-datasets/imagenet-data/raw-data/train/",
   "validation_dir": "/localdata/ai-datasets/imagenet-data/raw-data/validation",
-  "output_dir": "./training-outputs",
+  "output_dir": "./training-outputs-truc-init",
   "model_name_or_path": "facebook/convnext-tiny-224",
   "feature_extractor_name": "facebook/convnext-tiny-224",
 
