@@ -455,7 +455,11 @@ def main():
     )
     if training_args.reset_weights:
         logger.info("Weights reset: Training model from scratch")
+        trainer.model = trainer.model.float()
         trainer.model.init_weights()
+        if not training_args.fp32:
+            trainer.model = trainer.model.half()
+
 
     # Training
     if training_args.do_train:

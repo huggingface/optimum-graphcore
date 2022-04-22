@@ -86,6 +86,7 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
 
         return self
 
+    @poptorch.autocast()
     def forward(self, pixel_values=None, labels=None, output_hidden_states=None, return_dict=False):
         # return super().forward(pixel_values=pixel_values, labels=labels, output_hidden_states=output_hidden_states, return_dict=False)
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
