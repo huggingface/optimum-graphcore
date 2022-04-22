@@ -1,1 +1,1 @@
-python run_image_classification_on_local_data.py ./convnext_22k_finetuning_cfg.json
+python3 run_image_classification_on_local_data.py ./ipu_config.json
