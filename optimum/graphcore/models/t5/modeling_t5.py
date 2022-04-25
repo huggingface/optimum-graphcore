@@ -409,6 +409,7 @@ class PipelinedT5ForConditionalGeneration(
         """
         # T5ForConditionalGeneration has a deparallelize method, so make sure that the PipelineMixin one is used here.
         PipelineMixin.deparallelize(self)
+
         self.encoder_and_decoder_embeddings_computation(False)
         # self.scale_down_weights(factor=1, restore=True)
 
@@ -417,7 +418,7 @@ class PipelinedT5ForConditionalGeneration(
 
         for mod in self.modules():
             if isinstance(mod, T5LayerNorm):
-                mod.forward = T5LayerNorm.forward
+                mod.forward = T5LayerNorm.forward.__get__(mod, T5LayerNorm)
 
         return self
 
