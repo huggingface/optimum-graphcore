@@ -31,6 +31,7 @@ from datasets import load_dataset, load_metric
 import transformers
 from optimum.graphcore import IPUConfig, IPUSeq2SeqTrainer
 from optimum.graphcore import IPUSeq2SeqTrainingArguments as Seq2SeqTrainingArguments
+from optimum.graphcore.utils import check_min_version
 from transformers import (
     AutoConfig,
     AutoModelForSeq2SeqLM,
@@ -46,7 +47,7 @@ from transformers import (
     set_seed,
 )
 from transformers.trainer_utils import get_last_checkpoint
-from transformers.utils import check_min_version
+from transformers.utils import check_min_version as tf_check_min_version
 from transformers.utils.versions import require_version
 
 
