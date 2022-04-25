@@ -46,7 +46,7 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
 
         # Classifier head
         self.classifier = (
-            torch.nn.Linear(config.hidden_sizes[-1], config.num_labels) if config.num_labels > 0 else nn.Identity()
+            torch.nn.Linear(config.hidden_sizes[-1], config.num_labels) if config.num_labels > 0 else torch.nn.Identity()
         )
 
         # Initialize weights and apply final processing

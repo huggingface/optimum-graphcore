@@ -199,7 +199,10 @@ def recomputation_checkpoint(module: nn.Module):
     recomputed"""
 
     def recompute_outputs(module, inputs, outputs):
-        return tuple(poptorch.recomputationCheckpoint(y) for y in outputs)
+        if type(outputs) is tuple:
+            return tuple(poptorch.recomputationCheckpoint(y) for y in outputs)
+        else:
+            return poptorch.recomputationCheckpoint(outputs)
 
     return module.register_forward_hook(recompute_outputs)
 
