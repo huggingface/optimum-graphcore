@@ -213,6 +213,11 @@ class IPUConfig(BaseConfig):
             {"TiedGather": True, "TiedGatherAccumulate": True, "UpdateInplacePrioritiesForIpu": True}
         )
 
+        # Set prefetch depth to 3 to improve IO 
+        opts._Popart.set("defaultBufferingDepth", 3) 
+        
+
+
         # Options for profiling with Popvision
         engine_options = {
             "opt.useAutoloader": "true",
