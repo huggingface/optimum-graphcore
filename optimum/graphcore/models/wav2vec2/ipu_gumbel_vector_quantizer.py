@@ -12,6 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""
+IPU implementation of the Gumbel vector quantizer.
+Compared to the original implementation, the main differences are:
+- The temperature is passed as an input to the module's forward() method
+  instead of being a class attribute, in order to allow different values
+  of the temperature at runtime on IPU;
+- Use of an IPU-customised Gumbel softmax;
+- Replace a large element-wise multiplication followed by a sum reduction
+  with a matrix multiplication (einsum), to allow for a more efficient memory
+  usage on IPU.
+"""
+
 import warnings
 
 import torch
@@ -20,7 +32,6 @@ from transformers.models.wav2vec2.modeling_wav2vec2 import Wav2Vec2GumbelVectorQ
 
 
 def _ipu_gumbel_softmax(logits, tau=1, hard=False, eps=1e-10, dim=-1):
-
     if eps != 1e-10:
         warnings.warn("`eps` parameter is deprecated and has no effect.")
 

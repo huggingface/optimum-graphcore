@@ -54,22 +54,22 @@ data of [librispeech_asr](https://huggingface.co/datasets/librispeech_asr).
 
 ```bash
 python run_pretraining.py \
-	--model_name_or_path="facebook/wav2vec2-base" \
-	--dataset_name="librispeech_asr" \
-	--dataset_config_name="clean" \
-	--train_split_name="validation" \
+	--model_name_or_path "facebook/wav2vec2-base" \
+	--dataset_name "librispeech_asr" \
+	--dataset_config_name "clean" \
+	--train_split_name "validation" \
 	--ipu_config_name Graphcore/wav2vec2-base-ipu \
-	--output_dir="./wav2vec2-pretrained-demo" \
-	--max_duration_in_seconds="20.0" \
-	--min_duration_in_seconds="2.0" \
+	--output_dir "./wav2vec2-pretrained-demo" \
+	--max_duration_in_seconds "20.0" \
+	--min_duration_in_seconds "2.0" \
 	--do_train \
 	--overwrite_output_dir \
 	--layerdrop 0.05 \
-	--per_device_train_batch_size=1 \
-	--dataloader_mode="async_rebatched" \
-	--dataloader_num_workers=8 \
-	--num_train_epochs=1 \
-	--weight_decay="0.01"
+	--per_device_train_batch_size 1 \
+	--dataloader_mode "async_rebatched" \
+	--dataloader_num_workers 8 \
+	--num_train_epochs 1 \
+	--weight_decay "0.01"
 ```
 
 ### Base
@@ -79,28 +79,27 @@ on 100h of training data from the [librispeech_asr](https://huggingface.co/datas
 
 ```bash
 python run_pretraining.py \
-	--model_name_or_path="facebook/wav2vec2-base" \
-	--dataset_name="librispeech_asr" \
-	--dataset_config_name="clean" \
-	--train_split_name="train.100" \
+	--model_name_or_path "facebook/wav2vec2-base" \
+	--dataset_name "librispeech_asr" \
+	--dataset_config_name "clean" \
+	--train_split_name "train.100" \
 	--ipu_config_name Graphcore/wav2vec2-base-ipu \
-	--output_dir="./wav2vec2-pretrained-base" \
-	--max_duration_in_seconds="20.0" \
-	--min_duration_in_seconds="2.0" \
+	--output_dir "./wav2vec2-pretrained-base" \
+	--max_duration_in_seconds "20.0" \
+	--min_duration_in_seconds "2.0" \
 	--do_train \
 	--overwrite_output_dir \
 	--layerdrop 0.05 \
-	--per_device_train_batch_size=1 \
-	--dataloader_mode="async_rebatched" \
-	--dataloader_num_workers=8 \
-	--num_train_epochs=10 \
-	--warmup_steps="1000" \
-	--weight_decay="0.01" \
-	--learning_rate="0.001" \
-	--logging_steps="100" \
-	--adam_beta1="0.9" \
-	--adam_beta2="0.98" \
-	--adam_epsilon="1e-04"
+	--per_device_train_batch_size 1 \
+	--dataloader_mode "async_rebatched" \
+	--dataloader_num_workers 8 \
+	--num_train_epochs 10 \
+	--warmup_steps "1000" \
+	--weight_decay "0.01" \
+	--learning_rate "0.001" \
+	--adam_beta1 "0.9" \
+	--adam_beta2 "0.98" \
+	--adam_epsilon "1e-04"
 ```
 
 If you increase the effective `batch_size`, for example by increasing the `gradient_accumulation_steps`,
