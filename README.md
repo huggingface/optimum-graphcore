@@ -20,11 +20,11 @@ To install the latest release of this package:
 
 `pip install optimum[graphcore]`
 
-Optimum Graphcore is a fast-moving project, and you may want to install from source:
+Optimum Graphcore is a fast-moving project, and you may want to install from source.
 
 `pip install git+https://github.com/huggingface/optimum-graphcore.git`
 
-Last but not least, don't forget to install requirements for every example:
+To run the examples in the `examples` directory you are required to install from source. When running these examples, don't forget to also install requirements for every example:
 
 `cd <example-folder>
 pip install -r requirements.txt`
