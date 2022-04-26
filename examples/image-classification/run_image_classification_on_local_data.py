@@ -175,7 +175,7 @@ class TrainingArguments(IPUTrainingArguments):
     reset_weights: Optional[bool] = field(
         default=False,
         metadata={
-            "help": "Don't load the weights from pretrained model. Unless load_fb_pretrained_weights is enable."
+            "help": "Don't load the weights from pretrained model. Train the model from scratch."
         },
     )
     disable_mixup: Optional[bool] = field(
