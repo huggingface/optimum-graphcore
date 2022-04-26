@@ -52,7 +52,10 @@ from transformers.utils.versions import require_version
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-check_min_version("4.19.0.dev0")
+tf_check_min_version("4.19.0.dev0")
+
+# Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
+check_min_version("0.2.4.dev")
 
 require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/translation/requirements.txt")
 

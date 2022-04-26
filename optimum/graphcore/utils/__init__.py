@@ -13,7 +13,7 @@
 #  limitations under the License.
 from packaging import version
 
-from ..version import __version__
+from .. import __version__
 
 
 def check_min_version(min_version):
