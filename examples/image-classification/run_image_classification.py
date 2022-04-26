@@ -37,6 +37,7 @@ from torchvision.transforms import (
 import transformers
 from optimum.graphcore import IPUConfig, IPUTrainer
 from optimum.graphcore import IPUTrainingArguments as TrainingArguments
+from optimum.graphcore.utils import check_min_version
 from transformers import (
     MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING,
     AutoConfig,
@@ -45,7 +46,7 @@ from transformers import (
     HfArgumentParser,
 )
 from transformers.trainer_utils import get_last_checkpoint
-from transformers.utils import check_min_version
+from transformers.utils import check_min_version as tf_check_min_version
 from transformers.utils.versions import require_version
 
 
@@ -54,7 +55,10 @@ from transformers.utils.versions import require_version
 logger = logging.getLogger(__name__)
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-check_min_version("4.19.0.dev0")
+tf_check_min_version("4.19.0.dev0")
+
+# Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
+check_min_version("0.2.4.dev")
 
 require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/image-classification/requirements.txt")
 
