@@ -241,6 +241,12 @@ class TrainingArguments(IPUTrainingArguments):
             "help": "The initial value for the layer scale model parameter."
         }
     )
+    random_erasing: Optional[float] = field(
+        default=0.25,
+        metadata={
+            "help": "The random erasing probability"
+        }
+    )
 
 def collate_fn(examples):
     # pixel_values = torch.stack([example["pixel_values"] for example in examples])
@@ -295,7 +301,7 @@ def main():
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
     if training_args.wandb_entity and training_args.wandb_project:
-         wandb.init(project=training_args.wandb_project, entity=training_args.wandb_entity)
+        wandb.init(project=training_args.wandb_project, entity=training_args.wandb_entity)
 
     # Setup logging
     logging.basicConfig(

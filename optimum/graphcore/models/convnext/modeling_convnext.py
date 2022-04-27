@@ -13,7 +13,6 @@ from .fb_to_hf_map_util import fb_to_hf_name
 
 logger = logging.get_logger(__name__)
 
-
 def extend_hf_convnext_init(self, config):
     # call transformers.ConvNextForImageClassification.__init__()
     transformers.ConvNextForImageClassification.original_init(self, config)
@@ -24,7 +23,6 @@ def extend_hf_convnext_init(self, config):
 
     if hasattr(config, "pretrained_weights_path") and config.pretrained_weights_path:
         load_weights_from_fb_model(self, config.pretrained_weights_path)
-
 
 transformers.ConvNextForImageClassification.original_init = transformers.ConvNextForImageClassification.__init__
 transformers.ConvNextForImageClassification.__init__ = extend_hf_convnext_init
