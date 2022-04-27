@@ -17,7 +17,7 @@ def extend_hf_convnext_init(self, config):
     # call transformers.ConvNextForImageClassification.__init__()
     transformers.ConvNextForImageClassification.original_init(self, config)
 
-    if hasattr(config, "head_init_scale"):
+    if hasattr(config, "head_init_scale") and config.num_labels > 0:
         self.classifier.weight.data.mul_(config.head_init_scale)
         self.classifier.bias.data.mul_(config.head_init_scale)
 
@@ -55,7 +55,7 @@ class ConvNextPipelineMixin(PipelineMixin):
         self.convnext.embeddings = poptorch.BeginBlock(self.convnext.embeddings, "Embedding", ipu_id=0)
 
         # Set encoder pipeline mappings
-        # get the mapping of encoder layers --> IPU 
+        # get the mapping of encoder layers --> IPU
         encoder_layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
         global_layer_idx = 0
         for stage_nr, stage in enumerate(self.convnext.encoder.stages):
@@ -68,8 +68,20 @@ class ConvNextPipelineMixin(PipelineMixin):
 
         return self
 
+
 @register(transformers.ConvNextForImageClassification)
 class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClassification, ConvNextPipelineMixin):
+    def _init_weights(self, module):
+        """Initialize the weights"""
+        if isinstance(module, (torch.nn.Linear, torch.nn.Conv2d)):
+            # Use truncated normal init as in the paper code.
+            torch.nn.init.trunc_normal_(module.weight.data, std=.02)
+            if module.bias is not None:
+                module.bias.data.zero_()
+        elif isinstance(module, torch.nn.LayerNorm):
+            module.bias.data.zero_()
+            module.weight.data.fill_(1.0)
+
     def parallelize(self):
         """Set pipeline mapping for the head (layernorm + classifier layers)"""
         super().parallelize()
@@ -80,6 +92,7 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
 
         return self
 
+    @poptorch.autocast()
     def forward(self, pixel_values=None, labels=None, output_hidden_states=None, return_dict=False):
         # return super().forward(pixel_values=pixel_values, labels=labels, output_hidden_states=output_hidden_states, return_dict=False)
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
@@ -102,7 +115,6 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
                     # Using mixup
                     self.config.problem_type = "multi_label_classification"
 
-
             if self.config.problem_type == "regression":
                 loss_fct = MSELoss()
                 if self.num_labels == 1:
@@ -111,6 +123,8 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
                     loss = loss_fct(logits, labels)
             elif self.config.problem_type == "single_label_classification":
                 loss_fct = CrossEntropyLoss(label_smoothing=self.config.smoothing)
+                if self.eval:
+                    loss_fct = CrossEntropyLoss()
                 loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
             elif self.config.problem_type == "multi_label_classification":
                 loss_fct = SoftTargetCrossEntropy()
