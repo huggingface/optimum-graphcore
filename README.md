@@ -149,13 +149,11 @@ The following model architectures and tasks are currently supported by 🤗 Opti
 |---------|--------------------|--------------------|--------------------|----------------------------------------------|-------------------------|----------------------|--------------------|--------------------|----------------------|
 | BERT    | :heavy_check_mark: | :heavy_check_mark: | ✗                  |                                              | :heavy_check_mark:      | :heavy_check_mark:   | :heavy_check_mark: | :heavy_check_mark: |                      |
 | RoBERTa | :heavy_check_mark: | :heavy_check_mark: | ✗                  |                                              | :heavy_check_mark:      | :heavy_check_mark:   | :heavy_check_mark: | :heavy_check_mark: |                      |
-| Deberta | ✗                  | ✗                  |                    |                                              | :heavy_check_mark:      | :heavy_check_mark:   | :heavy_check_mark: |                    |                      |
-| GPT-2   | :heavy_check_mark: |                    | :heavy_check_mark: |                                              | :heavy_check_mark:      | :heavy_check_mark:   |                    |                    |                      |
 | BART    | :heavy_check_mark: |                    | ✗                  | :heavy_check_mark:                           | ✗                       |                      | ✗                  |                    |                      |
 | T5      | :heavy_check_mark: |                    |                    | :heavy_check_mark:                           |                         |                      |                    |                    |                      |
-| Hubert  | ✗                  |                    |                    |                                              | :heavy_check_mark:      |                      |                    |                    |                      |
 | ViT     | ✗                  |                    |                    |                                              |                         |                      |                    |                    | :heavy_check_mark:   |
 | LXMERT  | ✗                  |                    |                    |                                              |                         |                      | :heavy_check_mark: |                    |                      |
 
+Coming soon: GPT-2, HuBERT, and DeBERTa.
 
 If you find any issue while using those, please open an issue or a pull request.
