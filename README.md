@@ -24,7 +24,12 @@ Optimum Graphcore is a fast-moving project, and you may want to install from sou
 
 `pip install git+https://github.com/huggingface/optimum-graphcore.git`
 
-To run the examples in the `examples` directory you are required to install from source. When running these examples, don't forget to also install requirements for every example:
+
+## Running the examples
+
+There are a number of examples provided in the `examples` directory. Each of these has examples contains a README with command lines for running them on IPUs with Optimum.
+
+**To run the examples you are required to install `optimum-graphcore` from source.** Don't forget to also install requirements for every example:
 
 `cd <example-folder>
 pip install -r requirements.txt`
