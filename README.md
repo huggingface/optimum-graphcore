@@ -159,6 +159,6 @@ The following model architectures and tasks are currently supported by 🤗 Opti
 | ViT     | ✗                  |                    |                    |                                              |                         |                      |                    |                    | :heavy_check_mark:   |
 | LXMERT  | ✗                  |                    |                    |                                              |                         |                      | :heavy_check_mark: |                    |                      |
 
-Coming soon: GPT-2, HuBERT, and DeBERTa.
+Coming soon: GPT-2, HuBERT, DeBERTa, and Wav2Vec2.
 
 If you find any issue while using those, please open an issue or a pull request.
