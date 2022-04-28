@@ -1413,7 +1413,7 @@ class IPUGenerationMixin(GenerationMixin):
             if not self.config.is_encoder_decoder:
                 model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
 
-            next_token_logits = outputs.logits[:, cur_len - 1, :].to(torch.float32)
+            next_token_logits = outputs.logits[:, cur_len - 1, :]
 
             # Store scores, attentions and hidden_states when required
             if return_dict_in_generate:
@@ -1664,7 +1664,7 @@ class IPUGenerationMixin(GenerationMixin):
             if not self.config.is_encoder_decoder:
                 model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
 
-            next_token_logits = outputs.logits[:, cur_len - 1, :].to(torch.float32)
+            next_token_logits = outputs.logits[:, cur_len - 1, :]
 
             # pre-process distribution
             next_token_scores = logits_processor(input_ids, next_token_logits)
@@ -1927,7 +1927,7 @@ class IPUGenerationMixin(GenerationMixin):
             if not self.config.is_encoder_decoder:
                 model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
 
-            next_token_logits = outputs.logits[:, cur_len - 1, :].to(torch.float32)
+            next_token_logits = outputs.logits[:, cur_len - 1, :]
 
             # hack: adjust tokens for Marian. For Marian we have to make sure that the `pad_token_id`
             # cannot be generated both before and after the `nn.functional.log_softmax` operation.
@@ -2242,7 +2242,7 @@ class IPUGenerationMixin(GenerationMixin):
             if not self.config.is_encoder_decoder:
                 model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
 
-            next_token_logits = outputs.logits[:, cur_len - 1, :].to(torch.float32)
+            next_token_logits = outputs.logits[:, cur_len - 1, :]
 
             # hack: adjust tokens for Marian. For Marian we have to make sure that the `pad_token_id`
             # cannot be generated both before and after the `nn.functional.log_softmax` operation.
@@ -2575,7 +2575,7 @@ class IPUGenerationMixin(GenerationMixin):
                 model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
 
             if output_scores:
-                processed_score = torch.zeros_like(outputs.logits[:, cur_len - 1, :].to(torch.float32))
+                processed_score = torch.zeros_like(outputs.logits[:, cur_len - 1, :])
 
             for beam_group_idx in range(num_beam_groups):
                 group_start_idx = beam_group_idx * num_sub_beams
@@ -2592,7 +2592,7 @@ class IPUGenerationMixin(GenerationMixin):
                 group_input_ids = input_ids[batch_group_indices]
 
                 # select outputs of beams of current group only
-                next_token_logits = outputs.logits[batch_group_indices, cur_len - 1, :].to(torch.float32)
+                next_token_logits = outputs.logits[batch_group_indices, cur_len - 1, :]
 
                 # hack: adjust tokens for Marian. For Marian we have to make sure that the `pad_token_id`
                 # cannot be generated both before and after the `nn.functional.log_softmax` operation.
@@ -2927,7 +2927,7 @@ class IPUGenerationMixin(GenerationMixin):
             if not self.config.is_encoder_decoder:
                 model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
 
-            next_token_logits = outputs.logits[:, cur_len - 1, :].to(torch.float32)
+            next_token_logits = outputs.logits[:, cur_len - 1, :]
 
             # hack: adjust tokens for Marian. For Marian we have to make sure that the `pad_token_id`
             # cannot be generated both before and after the `nn.functional.log_softmax` operation.
