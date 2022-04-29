@@ -1,4 +1,5 @@
 from torchvision import transforms
+import transformers
 from timm.data.constants import \
     IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD, IMAGENET_INCEPTION_MEAN, IMAGENET_INCEPTION_STD
 from timm.data import create_transform
@@ -12,9 +13,9 @@ from torchvision.transforms import (
     ToTensor,
 )
 
-def get_transforms(config_name, training_args, feature_extractor):
+def get_transforms(model, training_args, feature_extractor):
     normalize = Normalize(mean=feature_extractor.image_mean, std=feature_extractor.image_std)
-    if config_name == "facebook/convnext-tiny-224":
+    if isinstance(model, transformers.models.convnext.ConvNextForImageClassification):
         mean = IMAGENET_DEFAULT_MEAN
         std = IMAGENET_DEFAULT_STD
         resize_img = training_args.input_size > 32

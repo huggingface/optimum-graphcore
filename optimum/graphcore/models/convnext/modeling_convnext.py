@@ -103,6 +103,10 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
 
         logits = self.classifier(pooled_output)
 
+        smoothing = 0.0
+        if hasattr(self.config, "smoothing"):
+            smoothing = self.config.smoothing
+
         loss = None
         if labels is not None:
             if self.config.problem_type is None:
@@ -122,7 +126,7 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
                 else:
                     loss = loss_fct(logits, labels)
             elif self.config.problem_type == "single_label_classification":
-                loss_fct = CrossEntropyLoss(label_smoothing=self.config.smoothing)
+                loss_fct = CrossEntropyLoss(label_smoothing=smoothing)
                 if self.eval:
                     loss_fct = CrossEntropyLoss()
                 loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))

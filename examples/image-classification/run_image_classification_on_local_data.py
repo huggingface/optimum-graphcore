@@ -402,7 +402,7 @@ def main():
     )
 
     # Define torchvision transforms to be applied to each image.
-    _train_transforms, _val_transforms = transforms.get_transforms(model_args.model_name_or_path, training_args, feature_extractor)
+    _train_transforms, _val_transforms = transforms.get_transforms(model, training_args, feature_extractor)
 
     # Initialize our dataset and prepare it for the 'image-classification' task.
     ds = dict()
