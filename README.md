@@ -31,8 +31,10 @@ There are a number of examples provided in the `examples` directory. Each of the
 
 **To run the examples you are required to install `optimum-graphcore` from source.** Don't forget to also install the requirements for every example:
 
-`cd <example-folder>
-pip install -r requirements.txt`
+```
+cd <example-folder>
+pip install -r requirements.txt
+```
 
 ## How to use it?
 🤗 Optimum Graphcore was designed with one goal in mind: make training and evaluation straightforward for any 🤗 Transformers user while leveraging the complete power of IPUs.
