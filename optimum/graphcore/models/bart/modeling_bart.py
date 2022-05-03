@@ -574,8 +574,11 @@ class _BartModelWithSharedEmbedding(BartModel):
                 output_hidden_states=output_hidden_states,
                 return_dict=return_dict,
             )
+        # TODO: understand why a dict and not BaseModelOutput is returned, thus needing that...
+        if isinstance(encoder_outputs, dict):
+            encoder_outputs = BaseModelOutput(**encoder_outputs)
         # If the user passed a tuple for encoder_outputs, we wrap it in a BaseModelOutput when return_dict=True
-        elif return_dict and not isinstance(encoder_outputs, BaseModelOutput):
+        if return_dict and not isinstance(encoder_outputs, BaseModelOutput):
             encoder_outputs = BaseModelOutput(
                 last_hidden_state=encoder_outputs[0],
                 hidden_states=encoder_outputs[1] if len(encoder_outputs) > 1 else None,
@@ -615,7 +618,7 @@ class _BartModelWithSharedEmbedding(BartModel):
 
 @register(BartForConditionalGeneration)
 class PipelinedBartForConditionalGeneration(
-    GenerationMethodsMixin, BartForConditionalGeneration, PipelineMixin, IPUGenerationMixin
+    GenerationMethodsMixin, IPUGenerationMixin, BartForConditionalGeneration, PipelineMixin,
 ):
     def parallelize(self):
         """
@@ -700,9 +703,55 @@ class PipelinedBartForConditionalGeneration(
         self.model.__class__ = BartModel
         return self
 
+    def init_cache(self, batch_size, max_length, encoder_outputs):
+        input_ids = torch.ones((batch_size, max_length - 1), dtype=torch.long)
+        attention_mask = torch.ones_like(input_ids, dtype=torch.long)
+        # position_ids = torch.arange(max_length)
+        import pdb; pdb.set_trace()
+        output = self.orig_forward(input_ids, attention_mask)
+        return output.past_key_values
+
+    def prepare_inputs_for_generation(
+        self,
+        decoder_input_ids,
+        max_length,
+        attention_mask: Optional[torch.Tensor] = None,
+        decoder_attention_mask: Optional[torch.Tensor] = None,
+        encoder_outputs=None,
+        **kwargs
+    ):
+        # initializing the cache
+        batch_size, seq_length = decoder_input_ids.shape
+
+        past_key_values = self.init_cache(batch_size, max_length, encoder_outputs)
+        # Note that usually one would have to put 0's in the attention_mask for x > input_ids.shape[-1] and x < cache_length.
+        # But since the decoder uses a causal mask, those positions are masked anyways.
+        # Thus we can create a single static attention_mask here, which is more efficient for compilation
+        extended_attention_mask = torch.ones((batch_size, max_length), dtype=torch.long)
+        if decoder_attention_mask is not None:
+            position_ids = decoder_attention_mask.cumsum(axis=-1) - 1
+            # extended_attention_mask = lax.dynamic_update_slice(extended_attention_mask, decoder_attention_mask, (0, 0))
+            extended_attention_mask[:, :decoder_attention_mask.shape[1]] = decoder_attention_mask
+        else:
+            position_ids = torch.broadcast_to(torch.arange(seq_length, dtype=torch.long)[None, :], (batch_size, seq_length))
+
+        return {
+            "past_key_values": past_key_values,
+            "encoder_outputs": encoder_outputs,
+            "attention_mask": attention_mask,
+            "decoder_attention_mask": extended_attention_mask,
+            # "decoder_position_ids": position_ids,
+        }
+
+    def update_inputs_for_generation(self, model_outputs, model_kwargs):
+        import pdb; pdb.set_trace()
+        model_kwargs["past_key_values"] = model_outputs.past_key_values
+        # model_kwargs["position_ids"] = model_kwargs["position_ids"][:, -1:] + 1
+        return model_kwargs
+
     def train(self, mode: bool = True) -> "PipelinedBartForConditionalGeneration":
         mod = super(BartForConditionalGeneration, self).train(mode=mode)
-        mod.forward = mod._forward_for_train if mode else mod._forward_for_generate
+        mod.forward = mod._forward_for_train if mode else super().forward# mod._forward_for_generate
         return mod
 
     def _forward_for_train(self, input_ids, attention_mask, decoder_input_ids, labels=None):
