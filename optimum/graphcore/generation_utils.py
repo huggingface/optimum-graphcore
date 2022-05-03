@@ -1390,7 +1390,7 @@ class IPUGenerationMixin(GenerationMixin):
         while True:
 
             input_ids = self._pad_tensors_to_max_len(input_ids, max_length, pad_token_id)
-            # For a seq2seq model such as BART, the "attention_mask" is the enocder/cross attention mask and it does not require padding.
+            # For a seq2seq model such as BART, the "attention_mask" is the encoder/cross attention mask and it does not require padding.
             if not self.config.is_encoder_decoder:
                 model_kwargs["attention_mask"] = self._pad_tensors_to_max_len(
                     model_kwargs["attention_mask"], max_length, 0
@@ -1645,7 +1645,7 @@ class IPUGenerationMixin(GenerationMixin):
         while True:
 
             input_ids = self._pad_tensors_to_max_len(input_ids, max_length, pad_token_id)
-            # For a seq2seq model such as BART, the "attention_mask" is the enocder/cross attention mask and it does not require padding.
+            # For a seq2seq model such as BART, the "attention_mask" is the encoder/cross attention mask and it does not require padding.
             if not self.config.is_encoder_decoder:
                 model_kwargs["attention_mask"] = self._pad_tensors_to_max_len(
                     model_kwargs["attention_mask"], max_length, 0
@@ -1914,7 +1914,7 @@ class IPUGenerationMixin(GenerationMixin):
         while True:
 
             input_ids = self._pad_tensors_to_max_len(input_ids, max_length, pad_token_id)
-            # For a seq2seq model such as BART, the "attention_mask" is the enocder/cross attention mask and it does not require padding.
+            # For a seq2seq model such as BART, the "attention_mask" is the encoder/cross attention mask and it does not require padding.
             if not self.config.is_encoder_decoder:
                 model_kwargs["attention_mask"] = self._pad_tensors_to_max_len(
                     model_kwargs["attention_mask"], max_length, 0
@@ -2233,7 +2233,7 @@ class IPUGenerationMixin(GenerationMixin):
         while True:
 
             input_ids = self._pad_tensors_to_max_len(input_ids, max_length, pad_token_id)
-            # For a seq2seq model such as BART, the "attention_mask" is the enocder/cross attention mask and it does not require padding.
+            # For a seq2seq model such as BART, the "attention_mask" is the encoder/cross attention mask and it does not require padding.
             if not self.config.is_encoder_decoder:
                 model_kwargs["attention_mask"] = self._pad_tensors_to_max_len(
                     model_kwargs["attention_mask"], max_length, 0
@@ -2562,7 +2562,7 @@ class IPUGenerationMixin(GenerationMixin):
         while True:
 
             input_ids = self._pad_tensors_to_max_len(input_ids, max_length, pad_token_id)
-            # For a seq2seq model such as BART, the "attention_mask" is the enocder/cross attention mask and it does not require padding.
+            # For a seq2seq model such as BART, the "attention_mask" is the encoder/cross attention mask and it does not require padding.
             if not self.config.is_encoder_decoder:
                 model_kwargs["attention_mask"] = self._pad_tensors_to_max_len(
                     model_kwargs["attention_mask"], max_length, 0
@@ -2926,7 +2926,7 @@ class IPUGenerationMixin(GenerationMixin):
         while True:
 
             input_ids = self._pad_tensors_to_max_len(input_ids, max_length, pad_token_id)
-            # For a seq2seq model such as BART, the "attention_mask" is the enocder/cross attention mask and it does not require padding.
+            # For a seq2seq model such as BART, the "attention_mask" is the encoder/cross attention mask and it does not require padding.
             if not self.config.is_encoder_decoder:
                 model_kwargs["attention_mask"] = self._pad_tensors_to_max_len(
                     model_kwargs["attention_mask"], max_length, 0
