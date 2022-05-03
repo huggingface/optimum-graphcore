@@ -146,15 +146,8 @@ class IPUGenerationMixin(GenerationMixin):
 
         return model
 
-    def _pad_input_ids_to_max_length(self, input_ids: torch.Tensor, max_length: int) -> torch.Tensor:
-        return torch.cat(
-            [
-                input_ids,
-                self.config.pad_token_id
-                * torch.ones((input_ids.shape[0], max_length - input_ids.shape[1]), dtype=torch.long),
-            ],
-            dim=1,
-        )
+    def _pad_tensors_to_max_len(self, tensor: torch.Tensor, max_length: int, pad_token_id: int) -> torch.Tensor:
+        return nn.functional.pad(tensor, (0, max_length - tensor.shape[1]), "constant", pad_token_id)
 
     def _prepare_model_inputs(
         self,
@@ -362,7 +355,7 @@ class IPUGenerationMixin(GenerationMixin):
     ) -> Dict[str, Any]:
         # update past
         if "past_key_values" in outputs:
-            model_kwargs["past"] = outputs["past_key_values"]
+            model_kwargs["past"] = outputs.past_key_values
         elif "mems" in outputs:
             model_kwargs["past"] = outputs.mems
         elif "past_buckets_states" in outputs:
@@ -591,10 +584,15 @@ class IPUGenerationMixin(GenerationMixin):
 
     @staticmethod
     def _poptorch_outputs_to_model_outputs(outputs):
-        keys = ["logits"]
-        if len(outputs) == 2:
-            keys = ["loss"] + keys
-        return dict(zip(keys, outputs))
+        if len(outputs) == 1:
+            return ModelOutput(
+                logits=outputs[0].float(),
+            )
+        else:
+            return ModelOutput(
+                loss=outputs[0].float(),
+                logits=outputs[1].float(),
+            )
 
     @torch.no_grad()
     def generate(
@@ -1387,11 +1385,17 @@ class IPUGenerationMixin(GenerationMixin):
 
         # keep track of which sequences are already finished
         unfinished_sequences = input_ids.new(input_ids.shape[0]).fill_(1)
-        input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
-
-        cur_len = torch.argmax((input_ids == self.config.pad_token_id).to(torch.long), dim=1)[0]
+        cur_len = input_ids.shape[-1]
 
         while True:
+
+            input_ids = self._pad_tensors_to_max_len(input_ids, max_length, pad_token_id)
+            # For a seq2seq model such as BART, the "attention_mask" is the encoder/cross attention mask and it does not require padding.
+            if not self.config.is_encoder_decoder:
+                model_kwargs["attention_mask"] = self._pad_tensors_to_max_len(
+                    model_kwargs["attention_mask"], max_length, 0
+                )
+
             # prepare model inputs
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
@@ -1404,7 +1408,16 @@ class IPUGenerationMixin(GenerationMixin):
             )
             outputs = self._poptorch_outputs_to_model_outputs(outputs)
 
-            next_token_logits = outputs["logits"][:, cur_len - 1, :].to(torch.float32)
+            # Remove padding and restore to actual length
+            input_ids = input_ids[:, :cur_len]
+            if not self.config.is_encoder_decoder:
+                model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
+
+            if outputs.logits.dim() == 3:
+                next_token_logits = outputs.logits[:, cur_len - 1, :]
+            # If the dimension of logits is 2, then only the logits of the last non-padding token is returned, so no need to slice.
+            else:
+                next_token_logits = outputs.logits
 
             # Store scores, attentions and hidden_states when required
             if return_dict_in_generate:
@@ -1425,7 +1438,6 @@ class IPUGenerationMixin(GenerationMixin):
                     )
 
             # pre-process distribution
-            input_ids = input_ids[:, :cur_len]
             next_tokens_scores = logits_processor(input_ids, next_token_logits)
 
             # argmax
@@ -1451,8 +1463,6 @@ class IPUGenerationMixin(GenerationMixin):
             # stop when each sentence is finished, or if we exceed the maximum length
             if unfinished_sequences.max() == 0 or stopping_criteria(input_ids, scores):
                 break
-
-            input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
 
         if return_dict_in_generate:
             if self.config.is_encoder_decoder:
@@ -1629,12 +1639,18 @@ class IPUGenerationMixin(GenerationMixin):
 
         # keep track of which sequences are already finished
         unfinished_sequences = input_ids.new(input_ids.shape[0]).fill_(1)
-
-        input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
-        cur_len = torch.argmax((input_ids == self.config.pad_token_id).to(torch.long), dim=1)[0] + 1
+        cur_len = input_ids.shape[-1]
 
         # auto-regressive generation
         while True:
+
+            input_ids = self._pad_tensors_to_max_len(input_ids, max_length, pad_token_id)
+            # For a seq2seq model such as BART, the "attention_mask" is the encoder/cross attention mask and it does not require padding.
+            if not self.config.is_encoder_decoder:
+                model_kwargs["attention_mask"] = self._pad_tensors_to_max_len(
+                    model_kwargs["attention_mask"], max_length, 0
+                )
+
             # prepare model inputs
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
@@ -1647,10 +1663,18 @@ class IPUGenerationMixin(GenerationMixin):
             )
             outputs = self._poptorch_outputs_to_model_outputs(outputs)
 
-            next_token_logits = outputs["logits"][:, cur_len - 1, :].to(torch.float32)
+            # Remove padding and restore to actual length
+            input_ids = input_ids[:, :cur_len]
+            if not self.config.is_encoder_decoder:
+                model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
+
+            if outputs.logits.dim() == 3:
+                next_token_logits = outputs.logits[:, cur_len - 1, :]
+            # If the dimension of logits is 2, then only the logits of the last non-padding token is returned, so no need to slice.
+            else:
+                next_token_logits = outputs.logits
 
             # pre-process distribution
-            input_ids = input_ids[:, :cur_len]
             next_token_scores = logits_processor(input_ids, next_token_logits)
             next_token_scores = logits_warper(input_ids, next_token_scores)
 
@@ -1696,8 +1720,6 @@ class IPUGenerationMixin(GenerationMixin):
             # stop when each sentence is finished, or if we exceed the maximum length
             if unfinished_sequences.max() == 0 or stopping_criteria(input_ids, scores):
                 break
-
-            input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
 
         if return_dict_in_generate:
             if self.config.is_encoder_decoder:
@@ -1862,10 +1884,7 @@ class IPUGenerationMixin(GenerationMixin):
         batch_size = len(beam_scorer._beam_hyps)
         num_beams = beam_scorer.num_beams
 
-        batch_beam_size = input_ids.shape[0]
-        input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
-
-        cur_len = torch.argmax((input_ids == self.config.pad_token_id).to(torch.long), dim=1)[0] + 1
+        batch_beam_size, cur_len = input_ids.shape
 
         if num_beams * batch_size != batch_beam_size:
             raise ValueError(
@@ -1894,6 +1913,13 @@ class IPUGenerationMixin(GenerationMixin):
 
         while True:
 
+            input_ids = self._pad_tensors_to_max_len(input_ids, max_length, pad_token_id)
+            # For a seq2seq model such as BART, the "attention_mask" is the encoder/cross attention mask and it does not require padding.
+            if not self.config.is_encoder_decoder:
+                model_kwargs["attention_mask"] = self._pad_tensors_to_max_len(
+                    model_kwargs["attention_mask"], max_length, 0
+                )
+
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
             if "encoder_outputs" in model_inputs and isinstance(model_inputs["encoder_outputs"], dict):
@@ -1904,7 +1930,16 @@ class IPUGenerationMixin(GenerationMixin):
             )
             outputs = self._poptorch_outputs_to_model_outputs(outputs)
 
-            next_token_logits = outputs["logits"][:, cur_len - 1, :].to(torch.float32)
+            # Remove padding and restore to actual length
+            input_ids = input_ids[:, :cur_len]
+            if not self.config.is_encoder_decoder:
+                model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
+
+            if outputs.logits.dim() == 3:
+                next_token_logits = outputs.logits[:, cur_len - 1, :]
+            # If the dimension of logits is 2, then only the logits of the last non-padding token is returned, so no need to slice.
+            else:
+                next_token_logits = outputs.logits
 
             # hack: adjust tokens for Marian. For Marian we have to make sure that the `pad_token_id`
             # cannot be generated both before and after the `nn.functional.log_softmax` operation.
@@ -1913,7 +1948,6 @@ class IPUGenerationMixin(GenerationMixin):
                 next_token_logits, dim=-1
             )  # (batch_size * num_beams, vocab_size)
 
-            input_ids = input_ids[:, :cur_len]
             next_token_scores_processed = logits_processor(input_ids, next_token_scores)
             next_token_scores = next_token_scores_processed + beam_scores[:, None].expand_as(next_token_scores)
 
@@ -1976,8 +2010,6 @@ class IPUGenerationMixin(GenerationMixin):
 
             if beam_scorer.is_done or stopping_criteria(input_ids, scores):
                 break
-
-            input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
 
         sequence_outputs = beam_scorer.finalize(
             input_ids,
@@ -2177,10 +2209,7 @@ class IPUGenerationMixin(GenerationMixin):
         batch_size = len(beam_scorer._beam_hyps)
         num_beams = beam_scorer.num_beams
 
-        batch_beam_size = input_ids.shape[0]
-        input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
-
-        cur_len = torch.argmax((input_ids == self.config.pad_token_id).to(torch.long), dim=1)[0] + 1
+        batch_beam_size, cur_len = input_ids.shape
 
         # init attention / hidden states / scores tuples
         scores = () if (return_dict_in_generate and output_scores) else None
@@ -2203,6 +2232,13 @@ class IPUGenerationMixin(GenerationMixin):
 
         while True:
 
+            input_ids = self._pad_tensors_to_max_len(input_ids, max_length, pad_token_id)
+            # For a seq2seq model such as BART, the "attention_mask" is the encoder/cross attention mask and it does not require padding.
+            if not self.config.is_encoder_decoder:
+                model_kwargs["attention_mask"] = self._pad_tensors_to_max_len(
+                    model_kwargs["attention_mask"], max_length, 0
+                )
+
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
             if "encoder_outputs" in model_inputs and isinstance(model_inputs["encoder_outputs"], dict):
@@ -2213,7 +2249,16 @@ class IPUGenerationMixin(GenerationMixin):
             )
             outputs = self._poptorch_outputs_to_model_outputs(outputs)
 
-            next_token_logits = outputs["logits"][:, cur_len - 1, :].to(torch.float32)
+            # Remove padding and restore to actual length
+            input_ids = input_ids[:, :cur_len]
+            if not self.config.is_encoder_decoder:
+                model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
+
+            if outputs.logits.dim() == 3:
+                next_token_logits = outputs.logits[:, cur_len - 1, :]
+            # If the dimension of logits is 2, then only the logits of the last non-padding token is returned, so no need to slice.
+            else:
+                next_token_logits = outputs.logits
 
             # hack: adjust tokens for Marian. For Marian we have to make sure that the `pad_token_id`
             # cannot be generated both before and after the `nn.functional.log_softmax` operation.
@@ -2222,7 +2267,6 @@ class IPUGenerationMixin(GenerationMixin):
                 next_token_logits, dim=-1
             )  # (batch_size * num_beams, vocab_size)
 
-            input_ids = input_ids[:, :cur_len]
             next_token_scores_processed = logits_processor(input_ids, next_token_scores)
             next_token_scores = next_token_scores_processed + beam_scores[:, None].expand_as(next_token_scores)
             next_token_scores = logits_warper(input_ids, next_token_scores)
@@ -2289,8 +2333,6 @@ class IPUGenerationMixin(GenerationMixin):
 
             if beam_scorer.is_done or stopping_criteria(input_ids, scores):
                 break
-
-            input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
 
         sequence_outputs = beam_scorer.finalize(
             input_ids,
@@ -2486,10 +2528,7 @@ class IPUGenerationMixin(GenerationMixin):
         num_sub_beams = num_beams // num_beam_groups
         device = input_ids.device
 
-        batch_beam_size = input_ids.shape[0]
-        input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
-
-        cur_len = torch.argmax((input_ids == self.config.pad_token_id).to(torch.long), dim=1)[0] + 1
+        batch_beam_size, cur_len = input_ids.shape
 
         if return_dict_in_generate and output_scores:
             beam_indices = [tuple(() for _ in range(num_sub_beams * batch_size)) for _ in range(num_beam_groups)]
@@ -2522,6 +2561,13 @@ class IPUGenerationMixin(GenerationMixin):
 
         while True:
 
+            input_ids = self._pad_tensors_to_max_len(input_ids, max_length, pad_token_id)
+            # For a seq2seq model such as BART, the "attention_mask" is the encoder/cross attention mask and it does not require padding.
+            if not self.config.is_encoder_decoder:
+                model_kwargs["attention_mask"] = self._pad_tensors_to_max_len(
+                    model_kwargs["attention_mask"], max_length, 0
+                )
+
             # predicted tokens in cur_len step
             current_tokens = torch.zeros(batch_size * num_beams, dtype=input_ids.dtype, device=device)
 
@@ -2539,8 +2585,13 @@ class IPUGenerationMixin(GenerationMixin):
             )
             outputs = self._poptorch_outputs_to_model_outputs(outputs)
 
+            # Remove padding and restore to actual length
+            input_ids = input_ids[:, :cur_len]
+            if not self.config.is_encoder_decoder:
+                model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
+
             if output_scores:
-                processed_score = torch.zeros_like(outputs["logits"][:, cur_len - 1, :].to(torch.float32))
+                processed_score = torch.zeros_like(outputs.logits[:, cur_len - 1, :])
 
             for beam_group_idx in range(num_beam_groups):
                 group_start_idx = beam_group_idx * num_sub_beams
@@ -2557,7 +2608,11 @@ class IPUGenerationMixin(GenerationMixin):
                 group_input_ids = input_ids[batch_group_indices]
 
                 # select outputs of beams of current group only
-                next_token_logits = outputs["logits"][batch_group_indices, cur_len - 1, :].to(torch.float32)
+                if outputs.logits.dim() == 3:
+                    next_token_logits = outputs.logits[batch_group_indices, cur_len - 1, :]
+                # If the dimension of logits is 2, then only the logits of the last non-padding token is returned, so no need to slice.
+                else:
+                    next_token_logits = outputs.logits[batch_group_indices, :]
 
                 # hack: adjust tokens for Marian. For Marian we have to make sure that the `pad_token_id`
                 # cannot be generated both before and after the `nn.functional.log_softmax` operation.
@@ -2645,8 +2700,6 @@ class IPUGenerationMixin(GenerationMixin):
 
             if beam_scorer.is_done or stopping_criteria(input_ids, scores):
                 break
-
-            input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
 
         sequence_outputs = beam_scorer.finalize(
             input_ids,
@@ -2859,10 +2912,7 @@ class IPUGenerationMixin(GenerationMixin):
         batch_size = len(constrained_beam_scorer._beam_hyps)
         num_beams = constrained_beam_scorer.num_beams
 
-        batch_beam_size = input_ids.shape[0]
-        input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
-
-        cur_len = torch.argmax((input_ids == self.config.pad_token_id).to(torch.long), dim=1)[0] + 1
+        batch_beam_size, cur_len = input_ids.shape
 
         if num_beams * batch_size != batch_beam_size:
             raise ValueError(
@@ -2875,6 +2925,13 @@ class IPUGenerationMixin(GenerationMixin):
 
         while True:
 
+            input_ids = self._pad_tensors_to_max_len(input_ids, max_length, pad_token_id)
+            # For a seq2seq model such as BART, the "attention_mask" is the encoder/cross attention mask and it does not require padding.
+            if not self.config.is_encoder_decoder:
+                model_kwargs["attention_mask"] = self._pad_tensors_to_max_len(
+                    model_kwargs["attention_mask"], max_length, 0
+                )
+
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
             if "encoder_outputs" in model_inputs and isinstance(model_inputs["encoder_outputs"], dict):
@@ -2885,7 +2942,16 @@ class IPUGenerationMixin(GenerationMixin):
             )
             outputs = self._poptorch_outputs_to_model_outputs(outputs)
 
-            next_token_logits = outputs["logits"][:, cur_len - 1, :].to(torch.float32)
+            # Remove padding and restore to actual length
+            input_ids = input_ids[:, :cur_len]
+            if not self.config.is_encoder_decoder:
+                model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
+
+            if outputs.logits.dim() == 3:
+                next_token_logits = outputs.logits[:, cur_len - 1, :]
+            # If the dimension of logits is 2, then only the logits of the last non-padding token is returned, so no need to slice.
+            else:
+                next_token_logits = outputs.logits
 
             # hack: adjust tokens for Marian. For Marian we have to make sure that the `pad_token_id`
             # cannot be generated both before and after the `nn.functional.log_softmax` operation.
@@ -2894,7 +2960,6 @@ class IPUGenerationMixin(GenerationMixin):
                 next_token_logits, dim=-1
             )  # (batch_size * num_beams, vocab_size)
 
-            input_ids = input_ids[:, :cur_len]
             next_token_scores_processed = logits_processor(input_ids, next_token_scores)
 
             scores_for_all_vocab = next_token_scores_processed.clone()
@@ -2956,8 +3021,6 @@ class IPUGenerationMixin(GenerationMixin):
 
             if constrained_beam_scorer.is_done or stopping_criteria(input_ids, scores):
                 break
-
-            input_ids = self._pad_input_ids_to_max_length(input_ids, max_length)
 
         sequence_outputs = constrained_beam_scorer.finalize(
             input_ids,
