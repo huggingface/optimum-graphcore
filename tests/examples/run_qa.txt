@@ -10,7 +10,7 @@
 ---
 > from transformers.utils import check_min_version as tf_check_min_version
 51c54,57
-< check_min_version("4.19.0.dev0")
+< check_min_version("4.18.0")
 ---
 > tf_check_min_version("4.18.0")
 > 
