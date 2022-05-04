@@ -48,12 +48,12 @@ from transformers import (
 )
 from transformers.testing_utils import CaptureLogger
 from transformers.trainer_utils import get_last_checkpoint
-from transformers.utils import check_min_version
+from transformers.utils import check_min_version as tf_check_min_version
 from transformers.utils.versions import require_version
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-check_min_version("4.12.0.dev0")
+tf_check_min_version("4.18.0")
 
 require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/language-modeling/requirements.txt")
 
