@@ -12,9 +12,9 @@
 ---
 > from transformers.utils import check_min_version as tf_check_min_version
 55c56,59
-< check_min_version("4.19.0.dev0")
+< check_min_version("4.18.0")
 ---
-> tf_check_min_version("4.19.0.dev0")
+> tf_check_min_version("4.18.0")
 > 
 > # Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
 > check_min_version("0.2.4.dev")

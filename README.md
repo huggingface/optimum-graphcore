@@ -29,7 +29,7 @@ Optimum Graphcore is a fast-moving project, and you may want to install from sou
 
 There are a number of examples provided in the `examples` directory. Each of these contains a README with command lines for running them on IPUs with Optimum Graphcore.
 
-**To run the examples you are required to install `optimum-graphcore` from source.** Don't forget to also install the requirements for every example:
+Please install the requirements for every example:
 
 ```
 cd <example-folder>
