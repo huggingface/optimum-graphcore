@@ -51,6 +51,12 @@ class IPUConfig(BaseConfig):
         self.optimizer_state_offchip = kwargs.pop("optimizer_state_offchip", True)
         self.replicated_tensor_sharding = kwargs.pop("replicated_tensor_sharding", False)
 
+        if self.replicated_tensor_sharding and self.replication_factor == 1:
+            logger.warning("Setting replicated_tensor_sharding to False when replication_factor=1")
+            self.replicated_tensor_sharding = False
+
+        self.sharded_execution_for_inference = kwargs.pop("sharded_execution_for_inference", False)
+
         self.matmul_proportion = kwargs.pop("matmul_proportion", 0.6)
 
         self.enable_half_first_order_momentum = kwargs.pop("enable_half_first_order_momentum", False)
@@ -63,6 +69,8 @@ class IPUConfig(BaseConfig):
 
         self.recompute_checkpoint_every_layer = kwargs.pop("recompute_checkpoint_every_layer", False)
         self.output_mode = kwargs.pop("output_mode", "final")
+
+        self.execute_encoder_on_cpu_for_generation = kwargs.pop("execute_encoder_on_cpu_for_generation", False)
 
     def _prepare_config_attribute_for_pod_type(
         self, config_attribute_name: str, config_attribute: Union[Any, Dict[str, Any]], pod_type: Optional[str]
@@ -120,10 +128,8 @@ class IPUConfig(BaseConfig):
         if not compile_only and poptorch.ipuHardwareVersion() != 2:
             raise RuntimeError("This requires an IPU Mk2 system to run.")
 
-        # TODO: fix that with popdist.
-        # if self.use_popdist:
-        #     opts = popdist.poptorch.Options(ipus_per_replica=self.ipus_per_replica)
-        # else:
+        if self.execute_encoder_on_cpu_for_generation:
+            raise NotImplementedError("execute_encoder_on_cpu_for_generation is not supported yet.")
 
         opts = Options()
 
@@ -170,8 +176,11 @@ class IPUConfig(BaseConfig):
             .useReplicatedTensorSharding(self.replicated_tensor_sharding)
         )
 
-        # Use Pipelined Execution
-        opts.setExecutionStrategy(poptorch.PipelinedExecution(poptorch.AutoStage.AutoIncrement))
+        if for_inference and self.sharded_execution_for_inference:
+            opts.setExecutionStrategy(poptorch.ShardedExecution(poptorch.AutoStage.AutoIncrement))
+        else:
+            # Use Pipelined Execution
+            opts.setExecutionStrategy(poptorch.PipelinedExecution(poptorch.AutoStage.AutoIncrement))
 
         # Compile offline (no IPUs required)
         if compile_only:

@@ -1,28 +1,40 @@
-31a32,33
+31a32,34
 > from optimum.graphcore import IPUConfig, IPUTrainer
 > from optimum.graphcore import IPUTrainingArguments as TrainingArguments
-39,40d40
+> from optimum.graphcore.utils import check_min_version
+39,40d41
 <     Trainer,
 <     TrainingArguments,
-186,190d185
+45c46
+< from transformers.utils import check_min_version
+---
+> from transformers.utils import check_min_version as tf_check_min_version
+50c51,54
+< check_min_version("4.18.0")
+---
+> tf_check_min_version("4.18.0")
+> 
+> # Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
+> check_min_version("0.2.4.dev")
+186,190d189
 <     # Log on each process the small summary:
 <     logger.warning(
 <         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
 <         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
 <     )
-244a240,245
+266a266,271
 >     ipu_config = IPUConfig.from_pretrained(
 >         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
 >         cache_dir=model_args.cache_dir,
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
-332,333d332
+354,355d358
 <     elif training_args.fp16:
 <         data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8)
-338c337
+360c363
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-339a339
+361a365
 >         ipu_config=ipu_config,

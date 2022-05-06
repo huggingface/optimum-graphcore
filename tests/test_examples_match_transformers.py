@@ -26,6 +26,7 @@ from .create_diff_file_for_example import DIFF_DIRECTORY, diff
 
 TRANSFORMERS_REPO_URL = "https://github.com/huggingface/transformers.git"
 TRANSFORMERS_REPO_PATH = Path("transformers")
+TRANSFORMERS_REPO_BRANCH = "v4.18-release"
 
 
 def get_examples(
@@ -48,7 +49,8 @@ def get_examples(
     return list(zip(transformer_files, optimum_files))
 
 
-Repo.clone_from(TRANSFORMERS_REPO_URL, TRANSFORMERS_REPO_PATH)
+repo = Repo.clone_from(TRANSFORMERS_REPO_URL, TRANSFORMERS_REPO_PATH)
+repo.git.checkout(TRANSFORMERS_REPO_BRANCH)
 EXAMPLES = get_examples(TRANSFORMERS_REPO_PATH / "examples" / "pytorch", "examples")
 
 

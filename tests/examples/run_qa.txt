@@ -1,16 +1,28 @@
-30a31,33
+30a31,34
 > from optimum.graphcore import IPUConfig
 > from optimum.graphcore import IPUTrainingArguments as TrainingArguments
 > from optimum.graphcore.data import pad_on_batch_axis
-40d42
+> from optimum.graphcore.utils import check_min_version
+40d43
 <     TrainingArguments,
-228,232d229
+45c48
+< from transformers.utils import check_min_version
+---
+> from transformers.utils import check_min_version as tf_check_min_version
+51c54,57
+< check_min_version("4.18.0")
+---
+> tf_check_min_version("4.18.0")
+> 
+> # Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
+> check_min_version("0.2.4.dev")
+228,232d233
 <     # Log on each process the small summary:
 <     logger.warning(
 <         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
 <         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
 <     )
-293a291,297
+302a304,310
 >     ipu_config = IPUConfig.from_pretrained(
 >         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
 >         cache_dir=model_args.cache_dir,
@@ -18,7 +30,7 @@
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
 > 
-541a546,558
+550a559,571
 >     if training_args.do_train and training_args.pad_on_batch_axis:
 >         logger.info(
 >             "Padding on batch axis enabled, each batch feeded to the compiled model during training will have the proper size"
@@ -32,5 +44,5 @@
 >         )
 >         data_collator = data_collator_wrapper(data_collator)
 > 
-575a593
+584a606
 >         ipu_config=ipu_config,

@@ -1,4 +1,4 @@
-#  Copyright 2021 The HuggingFace Team. All rights reserved.
+#  Copyright 2022 The HuggingFace Team. All rights reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -27,6 +27,7 @@ from transformers.models.t5.modeling_t5 import __HEAD_MASK_WARNING_MSG, T5LayerN
 
 from ...generation_utils import IPUGenerationMixin
 from ...modeling_utils import (
+    GenerationMethodsMixin,
     PipelineMixin,
     SerializedLinear,
     SharedEmbedding,
@@ -264,7 +265,9 @@ class T5StackWithoutPositionBiasSharing(T5Stack):
 
 
 @register(T5ForConditionalGeneration)
-class PipelinedT5ForConditionalGeneration(IPUGenerationMixin, T5ForConditionalGeneration, PipelineMixin):
+class PipelinedT5ForConditionalGeneration(
+    GenerationMethodsMixin, T5ForConditionalGeneration, PipelineMixin, IPUGenerationMixin
+):
     @property
     def is_encoder_and_decoder_embeddings_computation_shared(self):
         return isinstance(self.shared, SharedEmbedding)
@@ -281,8 +284,6 @@ class PipelinedT5ForConditionalGeneration(IPUGenerationMixin, T5ForConditionalGe
                 logger.warning("encoder and decoder embeddings computation is already shared")
             else:
                 self.shared = SharedEmbedding(self.shared)
-                self.encoder.embed_tokens = None
-                self.decoder.embed_tokens = None
         else:
             if isinstance(self.shared, nn.Embedding):
                 logger.warning("encoder and decoder embeddings computation is not shared")
@@ -408,6 +409,7 @@ class PipelinedT5ForConditionalGeneration(IPUGenerationMixin, T5ForConditionalGe
         """
         # T5ForConditionalGeneration has a deparallelize method, so make sure that the PipelineMixin one is used here.
         PipelineMixin.deparallelize(self)
+
         self.encoder_and_decoder_embeddings_computation(False)
         # self.scale_down_weights(factor=1, restore=True)
 
@@ -416,7 +418,7 @@ class PipelinedT5ForConditionalGeneration(IPUGenerationMixin, T5ForConditionalGe
 
         for mod in self.modules():
             if isinstance(mod, T5LayerNorm):
-                mod.forward = T5LayerNorm.forward
+                mod.forward = T5LayerNorm.forward.__get__(mod, T5LayerNorm)
 
         return self
 
@@ -437,7 +439,7 @@ class PipelinedT5ForConditionalGeneration(IPUGenerationMixin, T5ForConditionalGe
         use_cache=None,
         output_attentions=None,
         output_hidden_states=None,
-        return_dict=None,
+        return_dict=False,
     ):
         use_cache = use_cache if use_cache is not None else self.config.use_cache
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
@@ -569,15 +571,20 @@ class PipelinedT5ForConditionalGeneration(IPUGenerationMixin, T5ForConditionalGe
             return_dict=False,
         )
         # Only returning the loss to make the communication between the host and the device faster.
-        return outputs[0]
+        return outputs[0:1]
 
-    def _forward_for_generate(self, encoder_outputs, decoder_input_ids, attention_mask):
-        return super().forward(
+    def _forward_for_generate(self, encoder_outputs, decoder_input_ids, attention_mask, labels=None):
+        outputs = super().forward(
             encoder_outputs=encoder_outputs,
             attention_mask=attention_mask,
             decoder_input_ids=decoder_input_ids,
             return_dict=False,
             use_cache=False,
+            labels=labels,
         )
+        # Only returning the loss (if labels is provided) and the logits.
+        if labels is None:
+            return outputs[:1]
+        return outputs[:2]
 
     forward = _forward_for_train

@@ -20,14 +20,21 @@ To install the latest release of this package:
 
 `pip install optimum[graphcore]`
 
-Optimum Graphcore is a fast-moving project, and you may want to install from source:
+Optimum Graphcore is a fast-moving project, and you may want to install from source.
 
 `pip install git+https://github.com/huggingface/optimum-graphcore.git`
 
-Last but not least, don't forget to install requirements for every example:
 
-`cd <example-folder>
-pip install -r requirements.txt`
+## Running the examples
+
+There are a number of examples provided in the `examples` directory. Each of these contains a README with command lines for running them on IPUs with Optimum Graphcore.
+
+Please install the requirements for every example:
+
+```
+cd <example-folder>
+pip install -r requirements.txt
+```
 
 ## How to use it?
 🤗 Optimum Graphcore was designed with one goal in mind: make training and evaluation straightforward for any 🤗 Transformers user while leveraging the complete power of IPUs.
@@ -149,13 +156,11 @@ The following model architectures and tasks are currently supported by 🤗 Opti
 |---------|--------------------|--------------------|--------------------|----------------------------------------------|-------------------------|----------------------|--------------------|--------------------|----------------------|
 | BERT    | :heavy_check_mark: | :heavy_check_mark: | ✗                  |                                              | :heavy_check_mark:      | :heavy_check_mark:   | :heavy_check_mark: | :heavy_check_mark: |                      |
 | RoBERTa | :heavy_check_mark: | :heavy_check_mark: | ✗                  |                                              | :heavy_check_mark:      | :heavy_check_mark:   | :heavy_check_mark: | :heavy_check_mark: |                      |
-| Deberta | ✗                  | ✗                  |                    |                                              | :heavy_check_mark:      | :heavy_check_mark:   | :heavy_check_mark: |                    |                      |
-| GPT-2   | :heavy_check_mark: |                    | :heavy_check_mark: |                                              | :heavy_check_mark:      | :heavy_check_mark:   |                    |                    |                      |
 | BART    | :heavy_check_mark: |                    | ✗                  | :heavy_check_mark:                           | ✗                       |                      | ✗                  |                    |                      |
 | T5      | :heavy_check_mark: |                    |                    | :heavy_check_mark:                           |                         |                      |                    |                    |                      |
-| Hubert  | ✗                  |                    |                    |                                              | :heavy_check_mark:      |                      |                    |                    |                      |
 | ViT     | ✗                  |                    |                    |                                              |                         |                      |                    |                    | :heavy_check_mark:   |
 | LXMERT  | ✗                  |                    |                    |                                              |                         |                      | :heavy_check_mark: |                    |                      |
 
+Coming soon: GPT-2, HuBERT, DeBERTa, and Wav2Vec2.
 
 If you find any issue while using those, please open an issue or a pull request.

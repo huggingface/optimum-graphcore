@@ -1,29 +1,42 @@
-33a34,35
+33a34,36
 > from optimum.graphcore import IPUConfig, IPUSeq2SeqTrainer
 > from optimum.graphcore import IPUSeq2SeqTrainingArguments as Seq2SeqTrainingArguments
-44,45d45
+> from optimum.graphcore.utils import check_min_version
+44,45d46
 <     Seq2SeqTrainer,
 <     Seq2SeqTrainingArguments,
-295,299d294
+49c50,51
+< from transformers.utils import check_min_version, is_offline_mode
+---
+> from transformers.utils import check_min_version as tf_check_min_version
+> from transformers.utils import is_offline_mode
+54c56,59
+< check_min_version("4.18.0")
+---
+> tf_check_min_version("4.18.0")
+> 
+> # Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
+> check_min_version("0.2.4.dev")
+295,299d299
 <     # Log on each process the small summary:
 <     logger.warning(
 <         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
 <         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
 <     )
-371a367,372
+379a380,385
 >     ipu_config = IPUConfig.from_pretrained(
 >         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
 >         cache_dir=model_args.cache_dir,
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
-561c562
+569c575
 <         pad_to_multiple_of=8 if training_args.fp16 else None,
 ---
 >         pad_to_multiple_of=None,
-600c601
+608c614
 <     trainer = Seq2SeqTrainer(
 ---
 >     trainer = IPUSeq2SeqTrainer(
-601a603
+609a616
 >         ipu_config=ipu_config,
