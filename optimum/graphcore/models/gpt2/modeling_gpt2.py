@@ -31,6 +31,8 @@ from ...modeling_utils import (
     register,
 )
 
+from .optimized_gpt2_attn import OptimizedGPT2Attention
+
 
 logger = logging.get_logger(__name__)
 
@@ -44,6 +46,11 @@ class GPT2PipelineMixin(PipelineMixin):
         - Adds recomputation checkpoints
         """
         super().parallelize()
+
+        for layer in self.transformer.h:
+            gpt2_attn = OptimizedGPT2Attention(self.config, layer_idx=layer.attn.layer_idx)
+            gpt2_attn.load_state_dict(layer.attn.state_dict())
+            layer.attn = gpt2_attn
 
         if self.ipu_config.embedding_serialization_factor > 1:
             # Resize token embedding using padding if vocab_size is not a multiple of embedding_serialization_factor
@@ -107,6 +114,11 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
         ```
         """
         PipelineMixin.parallelize(self)
+
+        for layer in self.transformer.h:
+            gpt2_attn = OptimizedGPT2Attention(self.config, layer_idx=layer.attn.layer_idx)
+            gpt2_attn.load_state_dict(layer.attn.state_dict())
+            layer.attn = gpt2_attn
 
         if self.ipu_config.embedding_serialization_factor > 1:
             # Resize token embedding using padding if vocab_size is not a multiple of embedding_serialization_factor
