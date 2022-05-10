@@ -232,12 +232,13 @@ python examples/language-modeling/run_clm.py \
     --loss_scaling 16384 \
     --weight_decay 0.01 \
     --warmup_ratio 0.1 \
-    --ipu_config_overrides="embedding_serialization_factor=4,optimizer_state_offchip=true,inference_device_iterations=5" \
+    --config_overrides="activation_function=gelu" \
     --dataloader_drop_last \
     --pod_type pod16
 ```
 
-To fine-tune GPT2-medium on WikiText-2, we need to override a different set of IPU configurations.
+To fine-tune GPT2-medium on WikiText-2, we need to override a different set of IPU configurations. Note that `activation_function` is overridden to `gelu`
+instead of using the original `gelu_new`, which does not run efficiently on IPUS.
 
 ```bash
 python examples/language-modeling/run_clm.py \
@@ -259,7 +260,7 @@ python examples/language-modeling/run_clm.py \
     --loss_scaling 16384 \
     --weight_decay 0.01 \
     --warmup_ratio 0.1 \
-    --ipu_config_overrides="embedding_serialization_factor=5,inference_device_iterations=9,replication_factor=2,inference_replication_factor=2,ipus_per_replica=8,layers_per_ipu=[0 3 3 3 3 4 4 4],matmul_proportion=0.25" \
+    --config_overrides="activation_function=gelu" \
     --dataloader_drop_last \
     --pod_type pod16
 
