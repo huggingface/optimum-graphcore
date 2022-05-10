@@ -92,6 +92,33 @@ python examples/summarization/run_summarization.py \
 
 The task of summarization supports custom CSV and JSONLINES formats.
 
+The same tasks can be run with BART models by using arguments `--model_name_or_path facebook/bart-base --ipu_config_name Graphcore/bart-base-ipu` and removing the `--source_prefix` argument. For example, the `cnn_dailymail` summarization:
+
+```
+python examples/summarization/run_summarization.py \
+    --model_name_or_path facebook/bart-base \
+    --ipu_config_name Graphcore/bart-base-ipu \
+    --ipu_config_overrides="inference_device_iterations=1,inference_replication_factor=2,sharded_execution_for_inference=True,execute_encoder_on_cpu_for_generation=False" \
+    --do_train True \
+    --do_eval True \
+    --dataset_name cnn_dailymail \
+    --dataset_config "3.0.0" \
+    --per_device_train_batch_size 1 \
+    --per_device_eval_batch_size 4 \
+    --pod_type pod16 \
+    --num_train_epochs 2 \
+    --logging_steps 1 \
+    --learning_rate 1e-4 \
+    --lr_scheduler_type constant \
+    --max_grad_norm 0.5 \
+    --pad_to_max_length \
+    --dataloader_drop_last \
+    --predict_with_generate \
+    --generation_num_beams 2 \
+    --output_dir /tmp/bart-summarization \
+    --overwrite_output_dir
+```
+
 #### Custom CSV Files
 
 If it's a csv file the training and validation files should have a column for the inputs texts and a column for the summaries.
