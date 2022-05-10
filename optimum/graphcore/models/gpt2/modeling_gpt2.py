@@ -47,10 +47,11 @@ class GPT2PipelineMixin(PipelineMixin):
         """
         super().parallelize()
 
+        # Use optimized attention
         for layer in self.transformer.h:
-            gpt2_attn = OptimizedGPT2Attention(self.config, layer_idx=layer.attn.layer_idx)
-            gpt2_attn.load_state_dict(layer.attn.state_dict())
-            layer.attn = gpt2_attn
+            optim_attn = OptimizedGPT2Attention(self.config, layer_idx=layer.attn.layer_idx)
+            optim_attn.load_state_dict(layer.attn.state_dict())
+            layer.attn = optim_attn
 
         if self.ipu_config.embedding_serialization_factor > 1:
             # Resize token embedding using padding if vocab_size is not a multiple of embedding_serialization_factor
@@ -115,10 +116,11 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
         """
         PipelineMixin.parallelize(self)
 
+        # Use optimized attention
         for layer in self.transformer.h:
-            gpt2_attn = OptimizedGPT2Attention(self.config, layer_idx=layer.attn.layer_idx)
-            gpt2_attn.load_state_dict(layer.attn.state_dict())
-            layer.attn = gpt2_attn
+            optim_attn = OptimizedGPT2Attention(self.config, layer_idx=layer.attn.layer_idx)
+            optim_attn.load_state_dict(layer.attn.state_dict())
+            layer.attn = optim_attn
 
         if self.ipu_config.embedding_serialization_factor > 1:
             # Resize token embedding using padding if vocab_size is not a multiple of embedding_serialization_factor
