@@ -30,7 +30,6 @@ from ...modeling_utils import (
     recomputation_checkpoint,
     register,
 )
-
 from .optimized_gpt2_attn import OptimizedGPT2Attention
 
 
