@@ -332,16 +332,15 @@ class IPUGenerationMixin:
         self,
         input_ids: jnp.ndarray,
         max_length: Optional[int] = None,
-        pad_token_id: Optional[int] = None,
-        bos_token_id: Optional[int] = None,
-        eos_token_id: Optional[int] = None,
-        decoder_start_token_id: Optional[int] = None,
-        do_sample: Optional[bool] = None,
-        prng_key: Optional[jnp.ndarray] = None,
-        top_k: Optional[int] = None,
-        top_p: Optional[float] = None,
-        temperature: Optional[float] = None,
         num_beams: Optional[int] = None,
+        # pad_token_id: Optional[int] = None,
+        # bos_token_id: Optional[int] = None,
+        # eos_token_id: Optional[int] = None,
+        # decoder_start_token_id: Optional[int] = None,
+        do_sample: Optional[bool] = None,
+        # top_k: Optional[int] = None,
+        # top_p: Optional[float] = None,
+        # temperature: Optional[float] = None,
         no_repeat_ngram_size: Optional[int] = None,
         min_length: Optional[int] = None,
         forced_bos_token_id: Optional[int] = None,
@@ -429,6 +428,10 @@ class IPUGenerationMixin:
         # set init values
         max_length = max_length if max_length is not None else self.config.max_length
         min_length = min_length if min_length is not None else self.config.min_length
+        bos_token_id = None
+        pad_token_id = None
+        eos_token_id = None
+        decoder_start_token_id = None
         bos_token_id = bos_token_id if bos_token_id is not None else self.config.bos_token_id
         pad_token_id = pad_token_id if pad_token_id is not None else self.config.pad_token_id
         eos_token_id = eos_token_id if eos_token_id is not None else self.config.eos_token_id
@@ -451,6 +454,7 @@ class IPUGenerationMixin:
                 model_kwargs = self._prepare_encoder_decoder_kwargs_for_generation(input_ids, params, model_kwargs)
             # prepare decoder_input_ids for generation
             input_ids = torch.ones((input_ids.shape[0], 1), dtype=torch.long) * decoder_start_token_id
+            # input_ids = torch.nn.functional.pad(input_ids, (0, 9), value=pad_token_id)
 
         do_sample = do_sample if do_sample is not None else self.config.do_sample
         num_beams = num_beams if num_beams is not None else self.config.num_beams
@@ -619,9 +623,7 @@ class IPUGenerationMixin:
         # model = self if self.config.is_encoder_decoder else self
         model = self.orig_forward
         # initialize model specific kwargs
-        # TODO:enable that
         model_kwargs = self.prepare_inputs_for_generation(input_ids, max_length, **model_kwargs)
-        import pdb; pdb.set_trace()
         # model_kwargs["return_dict"] = False
 
         # initialize state
@@ -659,7 +661,7 @@ class IPUGenerationMixin:
 
             # next_sequences = lax.dynamic_update_slice(state.sequences, next_token, (0, state.cur_len))
             next_sequences = state.sequences
-            next_sequences[:, cur_len:cur_len] = next_token
+            next_sequences[:, cur_len:cur_len + 1] = next_token
             next_model_kwargs = self.update_inputs_for_generation(model_outputs, state.model_kwargs)
             # next_model_kwargs = state.model_kwargs
             return GreedyState(
@@ -670,17 +672,16 @@ class IPUGenerationMixin:
                 model_kwargs=next_model_kwargs,
             )._list
 
-        state = greedy_search_body_fn(*state)
+        # state = greedy_search_body_fn(*state)
         # The very first prompt often has sequence length > 1, so run outside of `lax.while_loop` to comply with TPU
         if input_ids.shape[1] > 1:
-            state = greedy_search_body_fn(state)
+            state = greedy_search_body_fn(*state)
             state = GreedyState.from_list(state, specs)
 
         if not trace:
             state = self._run_loop_in_debug(greedy_search_cond_fn, greedy_search_body_fn, state)
         else:
             # state = lax.while_loop(greedy_search_cond_fn, greedy_search_body_fn, state)
-            import pdb; pdb.set_trace()
             state = poptorch.for_loop(max_length, greedy_search_body_fn, state)
             state = GreedyState.from_list(state, specs)
 
