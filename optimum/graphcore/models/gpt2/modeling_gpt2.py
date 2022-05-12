@@ -20,6 +20,7 @@ import torch.nn as nn
 import poptorch
 from optimum.utils import logging
 from transformers import GPT2ForSequenceClassification, GPT2ForTokenClassification, GPT2LMHeadModel
+from transformers.models.gpt2.modeling_gpt2 import GPT2Attention
 
 from ...modeling_utils import (
     PipelineMixin,
@@ -92,11 +93,19 @@ class GPT2PipelineMixin(PipelineMixin):
         fully compatible with `transformers` models.
         """
         super().deparallelize()
-        # Deserialize the serialized word embedding
+
         if self.ipu_config.embedding_serialization_factor > 1:
+            # Deserialize the serialized word embedding
             self.transformer.wte = self.transformer.wte.deserialize()
+
             # Resize token embeddings back to origianl vocab_size
             self.resize_token_embeddings(self.actual_vocab_size)
+
+        # Switch back non-optimized attention
+        for layer in self.transformer.h:
+            old_attn = GPT2Attention(self.config, layer_idx=layer.attn.layer_idx)
+            old_attn.load_state_dict(layer.attn.state_dict())
+            layer.attn = old_attn
         return self
 
 
@@ -132,15 +141,15 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
                 assert self.actual_vocab_size == new_vocab_size
             self.resize_token_embeddings(new_vocab_size)
 
-            serialized_decoder = SerializedLinear(
+            serialized_lm_head = SerializedLinear(
                 self.config.n_embd,
                 self.config.vocab_size,
                 self.ipu_config.embedding_serialization_factor,
                 bias=False,
                 mode=poptorch.MatMulSerializationMode.OutputChannels,
             )
-            serialized_decoder.load_state_dict(self.lm_head.state_dict())
-            self.lm_head = serialized_decoder
+            serialized_lm_head.load_state_dict(self.lm_head.state_dict())
+            self.lm_head = serialized_lm_head
             self.tie_weights()
 
         layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
@@ -168,9 +177,27 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
 
     def deparallelize(self):
         PipelineMixin.deparallelize(self)
+
         if self.ipu_config.embedding_serialization_factor > 1:
+            # Deserialize the serialized linear layer
+            old_lm_head = nn.Linear(
+                self.config.n_embd,
+                self.config.vocab_size,
+                bias=False,
+            )
+            old_lm_head.load_state_dict(self.lm_head.state_dict())
+            self.lm_head = old_lm_head
+            self.tie_weights()
+
             # Resize token embeddings back to origianl vocab_size
             self.resize_token_embeddings(self.actual_vocab_size)
+
+        # Switch back non-optimized attention
+        for layer in self.transformer.h:
+            old_attn = GPT2Attention(self.config, layer_idx=layer.attn.layer_idx)
+            old_attn.load_state_dict(layer.attn.state_dict())
+            layer.attn = old_attn
+        return self
 
     def forward(self, input_ids, attention_mask, labels=None):
         transformer_outputs = self.transformer(input_ids, attention_mask=attention_mask)
