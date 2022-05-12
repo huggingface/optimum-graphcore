@@ -49,9 +49,7 @@ class GPT2PipelineMixin(PipelineMixin):
 
         # Use optimized attention
         for layer in self.transformer.h:
-            optim_attn = OptimizedGPT2Attention(self.config, layer_idx=layer.attn.layer_idx)
-            optim_attn.load_state_dict(layer.attn.state_dict())
-            layer.attn = optim_attn
+            layer.attn.__class__ = OptimizedGPT2Attention
 
         if self.ipu_config.embedding_serialization_factor > 1:
             # Resize token embedding using padding if vocab_size is not a multiple of embedding_serialization_factor
@@ -101,11 +99,9 @@ class GPT2PipelineMixin(PipelineMixin):
             # Resize token embeddings back to origianl vocab_size
             self.resize_token_embeddings(self.actual_vocab_size)
 
-        # Switch back non-optimized attention
+        # Switch back to non-optimized attention
         for layer in self.transformer.h:
-            old_attn = GPT2Attention(self.config, layer_idx=layer.attn.layer_idx)
-            old_attn.load_state_dict(layer.attn.state_dict())
-            layer.attn = old_attn
+            layer.attn.__class__ = GPT2Attention
         return self
 
 
@@ -126,9 +122,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
 
         # Use optimized attention
         for layer in self.transformer.h:
-            optim_attn = OptimizedGPT2Attention(self.config, layer_idx=layer.attn.layer_idx)
-            optim_attn.load_state_dict(layer.attn.state_dict())
-            layer.attn = optim_attn
+            layer.attn.__class__ = OptimizedGPT2Attention
 
         if self.ipu_config.embedding_serialization_factor > 1:
             # Resize token embedding using padding if vocab_size is not a multiple of embedding_serialization_factor
@@ -192,11 +186,9 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
             # Resize token embeddings back to origianl vocab_size
             self.resize_token_embeddings(self.actual_vocab_size)
 
-        # Switch back non-optimized attention
+        # Switch back to non-optimized attention
         for layer in self.transformer.h:
-            old_attn = GPT2Attention(self.config, layer_idx=layer.attn.layer_idx)
-            old_attn.load_state_dict(layer.attn.state_dict())
-            layer.attn = old_attn
+            layer.attn.__class__ = GPT2Attention
         return self
 
     def forward(self, input_ids, attention_mask, labels=None):
