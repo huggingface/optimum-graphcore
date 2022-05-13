@@ -18,9 +18,10 @@ model = model.parallelize()
 
 from optimum.graphcore.generation_utils import IPUGenerationMixin
 
-model.orig_forward = model.forward
-model.forward = IPUGenerationMixin.generate.__get__(model)
-# model = poptorch.inferenceModel(model.eval(), options=ipu_config.to_options(for_inference=True))
+# model.forward = model.generate
+model = poptorch.inferenceModel(model.eval(), options=ipu_config.to_options(for_inference=True))
+# model._model.forward = IPUGenerationMixin.generate.__get__(model)
+# model.__call__ = IPUGenerationMixin.generate.__get__(model)
 # model.forward = IPUGenerationMixin.generate.__get__(model)
 
 # Inputs for compilation
@@ -47,8 +48,8 @@ model.forward = IPUGenerationMixin.generate.__get__(model)
 max_length = 10
 num_beams = 3
 gen_kwargs = {
-    "max_length": max_length,
-    "num_beams": 1,
+    "max_length": torch.tensor(max_length).repeat(10),
+    "num_beams": torch.tensor(1).repeat(10),
     # "synced_gpus": False,  # True if is_deepspeed_zero3_enabled() else False,
 }
 
@@ -68,7 +69,7 @@ print("Starting generate")
 # }
 # kwargs = {p.name: inputs.get(p.name, p.default) for p in sig.parameters.values()}
 # model.compile(**kwargs)
-# model.compile(inputs["input_ids"].repeat(10, 1)) #, {"attention_mask": inputs["attention_mask"], **gen_kwargs})
+model.compile(inputs["input_ids"].repeat(10, 1).clone(), torch.tensor(max_length).repeat(10).clone(), torch.tensor(1).repeat(10).clone(),  attention_mask=inputs["attention_mask"].repeat(10, 1).clone())
 # generated_tokens = model.forward(inputs["input_ids"], attention_mask=inputs["attention_mask"], **gen_kwargs)
 generated_tokens = model(inputs["input_ids"].repeat(10, 1), attention_mask=inputs["attention_mask"].repeat(10, 1), **gen_kwargs)
 

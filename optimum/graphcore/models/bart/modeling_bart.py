@@ -707,7 +707,6 @@ class PipelinedBartForConditionalGeneration(
         input_ids = torch.ones((batch_size, max_length - 1), dtype=torch.long)
         attention_mask = torch.ones_like(input_ids, dtype=torch.long)
         # position_ids = torch.arange(max_length)
-        import pdb; pdb.set_trace()
         output = self.orig_forward(input_ids, attention_mask)
         return output.past_key_values
 
@@ -733,7 +732,7 @@ class PipelinedBartForConditionalGeneration(
             # extended_attention_mask = lax.dynamic_update_slice(extended_attention_mask, decoder_attention_mask, (0, 0))
             extended_attention_mask[:, :decoder_attention_mask.shape[1]] = decoder_attention_mask
         else:
-            position_ids = torch.broadcast_to(torch.arange(seq_length, dtype=torch.long)[None, :], (batch_size, seq_length))
+            position_ids = torch.broadcast_to(torch.arange(seq_length, dtype=torch.int32)[None, :], (batch_size, seq_length))
 
         return {
             "past_key_values": past_key_values,
@@ -744,14 +743,16 @@ class PipelinedBartForConditionalGeneration(
         }
 
     def update_inputs_for_generation(self, model_outputs, model_kwargs):
-        import pdb; pdb.set_trace()
-        model_kwargs["past_key_values"] = model_outputs.past_key_values
+        # model_kwargs["past_key_values"] = model_outputs.past_key_values
         # model_kwargs["position_ids"] = model_kwargs["position_ids"][:, -1:] + 1
         return model_kwargs
 
     def train(self, mode: bool = True) -> "PipelinedBartForConditionalGeneration":
         mod = super(BartForConditionalGeneration, self).train(mode=mode)
-        mod.forward = mod._forward_for_train if mode else super().forward# mod._forward_for_generate
+        if not hasattr(mod, "done"):
+            mod.orig_forward = super().forward
+        mod.forward = mod._forward_for_train if mode else mod.generate # super().forward# mod._forward_for_generate
+        mod.done = True
         return mod
 
     def _forward_for_train(self, input_ids, attention_mask, decoder_input_ids, labels=None):
