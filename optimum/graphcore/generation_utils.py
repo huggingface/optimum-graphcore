@@ -211,6 +211,7 @@ class BeamSearchState:
     model_kwargs: Dict[str, jnp.ndarray]
 
 
+
 class IPUGenerationMixin:
     """
     A class containing all functions for auto-regressive text generation, to be used as a mixin in
@@ -459,8 +460,9 @@ class IPUGenerationMixin:
             model_kwargs["attention_mask"] = attention_mask
         if self.config.is_encoder_decoder:
             # add encoder_outputs to model_kwargs
-            if model_kwargs.get("encoder_outputs") is None:
-                model_kwargs = self._prepare_encoder_decoder_kwargs_for_generation(input_ids,  model_kwargs)
+            # TODO: enable that.
+            # if model_kwargs.get("encoder_outputs") is None:
+            #     model_kwargs = self._prepare_encoder_decoder_kwargs_for_generation(input_ids,  model_kwargs)
             # prepare decoder_input_ids for generation
             input_ids = torch.ones((input_ids.shape[0], 1), dtype=torch.int32) * decoder_start_token_id
             # input_ids = torch.nn.functional.pad(input_ids, (0, 9), value=pad_token_id)
@@ -618,12 +620,14 @@ class IPUGenerationMixin:
         pad_token_id = pad_token_id if pad_token_id is not None else self.config.pad_token_id
         eos_token_id = eos_token_id if eos_token_id is not None else self.config.eos_token_id
 
-        batch_size, cur_len = input_ids.shape
+        # batch_size, cur_len = input_ids.shape
+        batch_size = input_ids.shape[0]
+        cur_len = 1
 
         with poptorch.Block(ipu_id=0):
             eos_token_id = torch.tensor(eos_token_id)
             pad_token_id = torch.tensor(pad_token_id)
-            cur_len = torch.tensor(cur_len)
+            # cur_len = torch.tensor(cur_len)
 
             # per batch-item holding current token in loop.
             # sequences = torch.full((batch_size, max_length), pad_token_id, dtype=torch.int32)
@@ -639,9 +643,9 @@ class IPUGenerationMixin:
         # and pass it the `encoder_outputs`, which are part of the `model_kwargs`.
         # TODO: adapt that to IPUs.
         # model = self if self.config.is_encoder_decoder else self
-        model = self.orig_forward
+        # model = self.orig_forward
         # initialize model specific kwargs
-        model_kwargs = self.prepare_inputs_for_generation(input_ids, max_length, **model_kwargs)
+        # model_kwargs = self.prepare_inputs_for_generation(input_ids, max_length, **model_kwargs)
         # model_kwargs["return_dict"] = False
 
         # initialize state
@@ -654,50 +658,50 @@ class IPUGenerationMixin:
         )
         specs = state._pytree_specs
 
-        def greedy_search_cond_fn(state):
-            """state termination condition fn."""
-            has_reached_max_length = state.cur_len == max_length
-            all_sequence_finished = torch.all(state.is_sent_finished)
-            finish_generation = torch.logical_or(has_reached_max_length, all_sequence_finished)
-            return ~finish_generation
+        # def greedy_search_cond_fn(state):
+        #     """state termination condition fn."""
+        #     has_reached_max_length = state.cur_len == max_length
+        #     all_sequence_finished = torch.all(state.is_sent_finished)
+        #     finish_generation = torch.logical_or(has_reached_max_length, all_sequence_finished)
+        #     return ~finish_generation
 
-        def greedy_search_body_fn(*state):
-            """state update fn."""
-            state = GreedyState.from_list(state, specs)
-            model_outputs = model(state.running_token, **state.model_kwargs)
-            logits = model_outputs[0][:, -1] # model_outputs.logits[:, -1]
+        # def greedy_search_body_fn(*state):
+        #     """state update fn."""
+        #     state = GreedyState.from_list(state, specs)
+        #     model_outputs = model(state.running_token, **state.model_kwargs)
+        #     with poptorch.Block(ipu_id=0):
+        #         logits = model_outputs[0][:, -1] # model_outputs.logits[:, -1]
 
-            # apply min_length, ...
-            # TODO: need to use that later.
-            # logits = logits_processor(state.sequences, logits, state.cur_len)
+        #     # apply min_length, ...
+        #     # TODO: need to use that later.
+        #     # logits = logits_processor(state.sequences, logits, state.cur_len)
 
-            with poptorch.Block(ipu_id=0):
-                next_token = logits.argmax(axis=-1)
+        #         next_token = logits.argmax(axis=-1)
 
-                next_token = next_token * (1 - state.is_sent_finished) + pad_token_id * state.is_sent_finished
-                # next_is_sent_finished = state.is_sent_finished | (next_token == eos_token_id)
-                # next_is_sent_finished = state.is_sent_finished + (next_token == eos_token_id).to(torch.int32)
-                next_is_sent_finished = state.is_sent_finished
-                next_token = next_token[:, None]
+        #         next_token = next_token * (1 - state.is_sent_finished) + pad_token_id * state.is_sent_finished
+        #         # next_is_sent_finished = state.is_sent_finished | (next_token == eos_token_id)
+        #         # next_is_sent_finished = state.is_sent_finished + (next_token == eos_token_id).to(torch.int32)
+        #         next_is_sent_finished = state.is_sent_finished
+        #         next_token = next_token[:, None]
 
-                # next_sequences = lax.dynamic_update_slice(state.sequences, next_token, (0, state.cur_len))
-                next_sequences = state.sequences
-                next_sequences[:, cur_len:cur_len + 1] = next_token
-                next_model_kwargs = self.update_inputs_for_generation(model_outputs, state.model_kwargs)
-                # next_model_kwargs = state.model_kwargs
-            return GreedyState(
-                cur_len=state.cur_len + 1,
-                sequences=next_sequences,
-                running_token=next_token,
-                is_sent_finished=next_is_sent_finished,
-                model_kwargs=next_model_kwargs,
-            )._list
+        #         # next_sequences = lax.dynamic_update_slice(state.sequences, next_token, (0, state.cur_len))
+        #         next_sequences = state.sequences
+        #         next_sequences[:, cur_len:cur_len + 1] = next_token
+        #         next_model_kwargs = self.update_inputs_for_generation(model_outputs, state.model_kwargs)
+        #         # next_model_kwargs = state.model_kwargs
+        #     return GreedyState(
+        #         cur_len=state.cur_len, # + 1,
+        #         sequences=next_sequences,
+        #         running_token=next_token,
+        #         is_sent_finished=next_is_sent_finished,
+        #         model_kwargs=next_model_kwargs,
+        #     )._list
 
         # state = greedy_search_body_fn(*state)
         # The very first prompt often has sequence length > 1, so run outside of `lax.while_loop` to comply with TPU
-        if input_ids.shape[1] > 1:
-            state = greedy_search_body_fn(*state)
-            state = GreedyState.from_list(state, specs)
+        # if input_ids.shape[1] > 1:
+        #     state = greedy_search_body_fn(*state)
+        #     state = GreedyState.from_list(state, specs)
 
         # if not trace:
         #     state = self._run_loop_in_debug(greedy_search_cond_fn, greedy_search_body_fn, state)

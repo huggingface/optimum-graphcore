@@ -20,6 +20,7 @@ from optimum.graphcore.generation_utils import IPUGenerationMixin
 
 # model.forward = model.generate
 model = poptorch.inferenceModel(model.eval(), options=ipu_config.to_options(for_inference=True))
+# model = model.eval()
 # model._model.forward = IPUGenerationMixin.generate.__get__(model)
 # model.__call__ = IPUGenerationMixin.generate.__get__(model)
 # model.forward = IPUGenerationMixin.generate.__get__(model)
@@ -69,8 +70,20 @@ print("Starting generate")
 # }
 # kwargs = {p.name: inputs.get(p.name, p.default) for p in sig.parameters.values()}
 # model.compile(**kwargs)
+# import torch
+# from inspect import signature
+# sig = signature(model.forward)
+# raw_inputs = {
+#     "input_ids": inputs["input_ids"].repeat(10, 1),
+#     "attention_mask": inputs["attention_mask"].repeat(10, 1),
+#     **gen_kwargs
+# }
+# import functools
+# forward = functools.partial(model.forward, **{p.name: p.default for p in sig.parameters.values() if p.name not in raw_inputs})
+# inputs = tuple(raw_inputs.get(p.name) for p in sig.parameters.values() if p.name in raw_inputs)
+# traced = torch.jit.trace(forward, inputs)
 model.compile(inputs["input_ids"].repeat(10, 1).clone(), torch.tensor(max_length).repeat(10).clone(), torch.tensor(1).repeat(10).clone(),  attention_mask=inputs["attention_mask"].repeat(10, 1).clone())
 # generated_tokens = model.forward(inputs["input_ids"], attention_mask=inputs["attention_mask"], **gen_kwargs)
-generated_tokens = model(inputs["input_ids"].repeat(10, 1), attention_mask=inputs["attention_mask"].repeat(10, 1), **gen_kwargs)
+# generated_tokens = model(inputs["input_ids"].repeat(10, 1), attention_mask=inputs["attention_mask"].repeat(10, 1), **gen_kwargs)
 
-print("Done", generated_tokens)
+# print("Done", generated_tokens)
