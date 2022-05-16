@@ -53,13 +53,14 @@ class GPT2PipelineMixin(PipelineMixin):
 
         if self.ipu_config.embedding_serialization_factor > 1:
             # Resize token embedding using padding if vocab_size is not a multiple of embedding_serialization_factor
-            if self.config.vocab_size % self.ipu_config.embedding_serialization_factor != 0:
-                self.actual_vocab_size = self.config.vocab_size
-                new_vocab_size = (
-                    math.ceil(self.config.vocab_size / self.ipu_config.embedding_serialization_factor)
-                    * self.ipu_config.embedding_serialization_factor
-                )
-                self.resize_token_embeddings(new_vocab_size)
+            self.actual_vocab_size = self.config.vocab_size
+            new_vocab_size = (
+                math.ceil(self.config.vocab_size / self.ipu_config.embedding_serialization_factor)
+                * self.ipu_config.embedding_serialization_factor
+            )
+            if self.config.vocab_size % self.ipu_config.embedding_serialization_factor == 0:
+                assert self.actual_vocab_size == new_vocab_size
+            self.resize_token_embeddings(new_vocab_size)
 
             self.transformer.wte = SerializedEmbedding(
                 self.transformer.wte, self.ipu_config.embedding_serialization_factor
@@ -96,8 +97,7 @@ class GPT2PipelineMixin(PipelineMixin):
             self.transformer.wte = self.transformer.wte.deserialize()
 
             # Resize token embeddings back to origianl vocab_size
-            if self.config.vocab_size % self.ipu_config.embedding_serialization_factor != 0:
-                self.resize_token_embeddings(self.actual_vocab_size)
+            self.resize_token_embeddings(self.actual_vocab_size)
 
         # Switch back to non-optimized attention
         for layer in self.transformer.h:
@@ -126,13 +126,14 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
 
         if self.ipu_config.embedding_serialization_factor > 1:
             # Resize token embedding using padding if vocab_size is not a multiple of embedding_serialization_factor
-            if self.config.vocab_size % self.ipu_config.embedding_serialization_factor != 0:
-                self.actual_vocab_size = self.config.vocab_size
-                new_vocab_size = (
-                    math.ceil(self.config.vocab_size / self.ipu_config.embedding_serialization_factor)
-                    * self.ipu_config.embedding_serialization_factor
-                )
-                self.resize_token_embeddings(new_vocab_size)
+            self.actual_vocab_size = self.config.vocab_size
+            new_vocab_size = (
+                math.ceil(self.config.vocab_size / self.ipu_config.embedding_serialization_factor)
+                * self.ipu_config.embedding_serialization_factor
+            )
+            if self.config.vocab_size % self.ipu_config.embedding_serialization_factor == 0:
+                assert self.actual_vocab_size == new_vocab_size
+            self.resize_token_embeddings(new_vocab_size)
 
             serialized_lm_head = SerializedLinear(
                 self.config.n_embd,
@@ -183,8 +184,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
             self.tie_weights()
 
             # Resize token embeddings back to origianl vocab_size
-            if self.config.vocab_size % self.ipu_config.embedding_serialization_factor != 0:
-                self.resize_token_embeddings(self.actual_vocab_size)
+            self.resize_token_embeddings(self.actual_vocab_size)
 
         # Switch back to non-optimized attention
         for layer in self.transformer.h:
