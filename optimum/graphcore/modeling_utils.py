@@ -194,10 +194,10 @@ def recomputation_checkpoint(module: nn.Module):
     recomputed"""
 
     def recompute_outputs(module, inputs, outputs):
-        if type(outputs) is tuple:
-            return tuple(poptorch.recomputationCheckpoint(y) for y in outputs)
-        else:
+        if isinstance(outputs, torch.Tensor):
             return poptorch.recomputationCheckpoint(outputs)
+        elif isinstance(outputs, tuple):
+            return tuple(poptorch.recomputationCheckpoint(y) for y in outputs)
 
     return module.register_forward_hook(recompute_outputs)
 

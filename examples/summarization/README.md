@@ -33,20 +33,30 @@ Here is an example on a summarization task:
 python examples/summarization/run_summarization.py \
     --model_name_or_path t5-small \
     --ipu_config_name Graphcore/t5-small-ipu \
+    --ipu_config_overrides="inference_device_iterations=1,inference_replication_factor=2,sharded_execution_for_inference=True,execute_encoder_on_cpu_for_generation=False" \
     --do_train \
     --do_eval \
     --dataset_name cnn_dailymail \
     --dataset_config "3.0.0" \
     --source_prefix "summarize: " \
-    --output_dir /tmp/tst-summarization \
-    --per_device_train_batch_size=4 \
-    --per_device_eval_batch_size=4 \
+    --per_device_train_batch_size 1 \
+    --per_device_eval_batch_size 4 \
     --pod_type pod16 \
-    --overwrite_output_dir \
-    --predict_with_generate
+    --num_train_epochs 2 \
+    --max_target_length 200 \
+    --logging_steps 1 \
+    --learning_rate 1e-4 \
+    --lr_scheduler_type constant \
+    --max_grad_norm 0.5 \
+    --pad_to_max_length \
+    --dataloader_drop_last \
+    --predict_with_generate \
+    --generation_num_beams 2 \
+    --output_dir /tmp/t5-summarization \
+    --overwrite_output_dir
 ```
 
-Only T5 models `t5-small`, `t5-base`, `t5-large`, `t5-3b` and `t5-11b` must use an additional argument: `--source_prefix "summarize: "`.
+Only T5 models `t5-small`, `t5-base`, `t5-large`, `t5-3b` and `t5-11b` must use an additional argument: `--source_prefix "summarize: "`. To abreviate the training and evaluation you can add the flags: `--max_train_samples 20000 --max_eval_samples 400`.
 
 We used CNN/DailyMail dataset in this example as `t5-small` was trained on it and one can get good scores even when pre-training with a very small sample.
 
@@ -64,15 +74,50 @@ python examples/summarization/run_summarization.py \
     --train_file path_to_csv_or_jsonlines_file \
     --validation_file path_to_csv_or_jsonlines_file \
     --source_prefix "summarize: " \
-    --output_dir /tmp/tst-summarization \
     --overwrite_output_dir \
-    --per_device_train_batch_size=4 \
+    --per_device_train_batch_size=1 \
     --per_device_eval_batch_size=4 \
+    --max_target_length 200 \
+    --num_train_epochs 2 \
     --pod_type pod16 \
-    --predict_with_generate
+    --learning_rate 1e-4 \
+    --lr_scheduler_type constant \
+    --max_grad_norm 0.5 \
+    --pad_to_max_length \
+    --dataloader_drop_last \
+    --predict_with_generate \
+    --generation_num_beams 2 \
+    --output_dir /tmp/t5-summarization \
 ```
 
 The task of summarization supports custom CSV and JSONLINES formats.
+
+The same tasks can be run with BART models by using arguments `--model_name_or_path facebook/bart-base --ipu_config_name Graphcore/bart-base-ipu` and removing the `--source_prefix` argument. For example, the `cnn_dailymail` summarization:
+
+```
+python examples/summarization/run_summarization.py \
+    --model_name_or_path facebook/bart-base \
+    --ipu_config_name Graphcore/bart-base-ipu \
+    --ipu_config_overrides="inference_device_iterations=1,inference_replication_factor=2,sharded_execution_for_inference=True,execute_encoder_on_cpu_for_generation=False" \
+    --do_train True \
+    --do_eval True \
+    --dataset_name cnn_dailymail \
+    --dataset_config "3.0.0" \
+    --per_device_train_batch_size 1 \
+    --per_device_eval_batch_size 4 \
+    --pod_type pod16 \
+    --num_train_epochs 2 \
+    --logging_steps 1 \
+    --learning_rate 1e-4 \
+    --lr_scheduler_type constant \
+    --max_grad_norm 0.5 \
+    --pad_to_max_length \
+    --dataloader_drop_last \
+    --predict_with_generate \
+    --generation_num_beams 2 \
+    --output_dir /tmp/bart-summarization \
+    --overwrite_output_dir
+```
 
 #### Custom CSV Files
 

@@ -29,13 +29,26 @@
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
-501c506
+494,502c499,504
+<     if data_args.pad_to_max_length:
+<         data_collator = default_data_collator
+<     else:
+<         data_collator = DataCollatorForSeq2Seq(
+<             tokenizer,
+<             model=model,
+<             label_pad_token_id=label_pad_token_id,
 <             pad_to_multiple_of=8 if training_args.fp16 else None,
+<         )
 ---
->             pad_to_multiple_of=None,
-535c540
+>     data_collator = DataCollatorForSeq2Seq(
+>         tokenizer,
+>         model=model,
+>         label_pad_token_id=label_pad_token_id,
+>         pad_to_multiple_of=None,
+>     )
+535c537
 <     trainer = Seq2SeqTrainer(
 ---
 >     trainer = IPUSeq2SeqTrainer(
-536a542
+536a539
 >         ipu_config=ipu_config,
