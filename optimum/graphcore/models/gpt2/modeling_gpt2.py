@@ -216,7 +216,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
         hidden_states = transformer_outputs[0]
 
         lm_logits = self.lm_head(hidden_states)
-        if self.padding_size > 0:
+        if self.ipu_config.embedding_serialization_factor > 1 and self.padding_size > 0:
             # Ignore the padding logits. Use masking because in-place modification on a slice is not supported yet.
             padding_mask = torch.cat(
                 (
@@ -238,7 +238,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
             loss_fct = nn.CrossEntropyLoss()
             loss = loss_fct(lm_logits.view(-1, lm_logits.size(-1)), labels.view(-1))
 
-        if self.padding_size > 0:
+        if self.ipu_config.embedding_serialization_factor > 1 and self.padding_size > 0:
             output = (lm_logits[:, :, : self.config.vocab_size],) + transformer_outputs[1:]
         else:
             output = (lm_logits,) + transformer_outputs[1:]
