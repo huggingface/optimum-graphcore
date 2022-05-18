@@ -53,11 +53,11 @@ class GPT2PipelineMixin(PipelineMixin):
 
         if self.ipu_config.embedding_serialization_factor > 1:
             # Resize token embedding using padding if vocab_size is not a multiple of embedding_serialization_factor
-            new_vocab_size = (
+            self.new_vocab_size = (
                 math.ceil(self.config.vocab_size / self.ipu_config.embedding_serialization_factor)
                 * self.ipu_config.embedding_serialization_factor
             )
-            self.padding_size = new_vocab_size - self.config.vocab_size
+            self.padding_size = self.new_vocab_size - self.config.vocab_size
             if self.padding_size > 0:
                 embedding_dim = self.transformer.wte.weight.size()[-1]
                 padding_weight = torch.zeros(
@@ -134,11 +134,11 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
 
         if self.ipu_config.embedding_serialization_factor > 1:
             # Resize token embedding using padding if vocab_size is not a multiple of embedding_serialization_factor
-            new_vocab_size = (
+            self.new_vocab_size = (
                 math.ceil(self.config.vocab_size / self.ipu_config.embedding_serialization_factor)
                 * self.ipu_config.embedding_serialization_factor
             )
-            self.padding_size = new_vocab_size - self.config.vocab_size
+            self.padding_size = self.new_vocab_size - self.config.vocab_size
             if self.padding_size > 0:
                 embedding_dim = self.transformer.wte.weight.size()[-1]
                 padding_weight = torch.zeros(
@@ -147,10 +147,12 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
                 self.transformer.wte = nn.Embedding.from_pretrained(
                     torch.vstack([self.transformer.wte.weight, padding_weight]).detach()
                 )
+                # tie_weights() adds padding to lm_head's weight
+                self.tie_weights()
 
             serialized_lm_head = SerializedLinear(
                 self.config.n_embd,
-                self.config.vocab_size,
+                self.new_vocab_size,
                 self.ipu_config.embedding_serialization_factor,
                 bias=False,
                 mode=poptorch.MatMulSerializationMode.OutputChannels,
@@ -189,7 +191,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
             # Deserialize the serialized linear layer
             old_lm_head = nn.Linear(
                 self.config.n_embd,
-                self.config.vocab_size,
+                self.new_vocab_size,
                 bias=False,
             )
             old_lm_head.load_state_dict(self.lm_head.state_dict())
@@ -201,6 +203,8 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
                 self.transformer.wte = nn.Embedding.from_pretrained(
                     self.transformer.wte.weight[: self.config.vocab_size, :].detach()
                 )
+            # tie_weights() removes padding from lm_head's weight
+            self.tie_weights()
 
         # Switch back to non-optimized attention
         for layer in self.transformer.h:
