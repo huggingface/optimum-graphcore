@@ -53,19 +53,14 @@ class GPT2PipelineMixin(PipelineMixin):
 
         if self.ipu_config.embedding_serialization_factor > 1:
             # Resize token embedding using padding if vocab_size is not a multiple of embedding_serialization_factor
-            self.new_vocab_size = (
+            self.actual_vocab_size = self.config.vocab_size
+            new_vocab_size = (
                 math.ceil(self.config.vocab_size / self.ipu_config.embedding_serialization_factor)
                 * self.ipu_config.embedding_serialization_factor
             )
-            self.padding_size = self.new_vocab_size - self.config.vocab_size
-            if self.padding_size > 0:
-                embedding_dim = self.transformer.wte.weight.size()[-1]
-                padding_weight = torch.zeros(
-                    (self.padding_size, embedding_dim), dtype=self.transformer.wte.weight.dtype
-                )
-                self.transformer.wte = nn.Embedding.from_pretrained(
-                    torch.vstack([self.transformer.wte.weight, padding_weight]).detach()
-                )
+            if self.config.vocab_size % self.ipu_config.embedding_serialization_factor == 0:
+                assert self.actual_vocab_size == new_vocab_size
+            self.resize_token_embeddings(new_vocab_size)
 
             self.transformer.wte = SerializedEmbedding(
                 self.transformer.wte, self.ipu_config.embedding_serialization_factor
@@ -102,10 +97,7 @@ class GPT2PipelineMixin(PipelineMixin):
             self.transformer.wte = self.transformer.wte.deserialize()
 
             # Resize token embeddings back to origianl vocab_size
-            if self.padding_size > 0:
-                self.transformer.wte = nn.Embedding.from_pretrained(
-                    self.transformer.wte.weight[: self.config.vocab_size, :].detach()
-                )
+            self.resize_token_embeddings(self.actual_vocab_size)
 
         # Switch back to non-optimized attention
         for layer in self.transformer.h:
@@ -134,25 +126,18 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
 
         if self.ipu_config.embedding_serialization_factor > 1:
             # Resize token embedding using padding if vocab_size is not a multiple of embedding_serialization_factor
-            self.new_vocab_size = (
+            self.actual_vocab_size = self.config.vocab_size
+            new_vocab_size = (
                 math.ceil(self.config.vocab_size / self.ipu_config.embedding_serialization_factor)
                 * self.ipu_config.embedding_serialization_factor
             )
-            self.padding_size = self.new_vocab_size - self.config.vocab_size
-            if self.padding_size > 0:
-                embedding_dim = self.transformer.wte.weight.size()[-1]
-                padding_weight = torch.zeros(
-                    (self.padding_size, embedding_dim), dtype=self.transformer.wte.weight.dtype
-                )
-                self.transformer.wte = nn.Embedding.from_pretrained(
-                    torch.vstack([self.transformer.wte.weight, padding_weight]).detach()
-                )
-                # tie_weights() adds padding to lm_head's weight
-                self.tie_weights()
+            if self.config.vocab_size % self.ipu_config.embedding_serialization_factor == 0:
+                assert self.actual_vocab_size == new_vocab_size
+            self.resize_token_embeddings(new_vocab_size)
 
             serialized_lm_head = SerializedLinear(
                 self.config.n_embd,
-                self.new_vocab_size,
+                self.config.vocab_size,
                 self.ipu_config.embedding_serialization_factor,
                 bias=False,
                 mode=poptorch.MatMulSerializationMode.OutputChannels,
@@ -191,7 +176,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
             # Deserialize the serialized linear layer
             old_lm_head = nn.Linear(
                 self.config.n_embd,
-                self.new_vocab_size,
+                self.config.vocab_size,
                 bias=False,
             )
             old_lm_head.load_state_dict(self.lm_head.state_dict())
@@ -199,12 +184,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
             self.tie_weights()
 
             # Resize token embeddings back to origianl vocab_size
-            if self.padding_size > 0:
-                self.transformer.wte = nn.Embedding.from_pretrained(
-                    self.transformer.wte.weight[: self.config.vocab_size, :].detach()
-                )
-            # tie_weights() removes padding from lm_head's weight
-            self.tie_weights()
+            self.resize_token_embeddings(self.actual_vocab_size)
 
         # Switch back to non-optimized attention
         for layer in self.transformer.h:
@@ -216,18 +196,18 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
         hidden_states = transformer_outputs[0]
 
         lm_logits = self.lm_head(hidden_states)
-        if self.ipu_config.embedding_serialization_factor > 1 and self.padding_size > 0:
+        if self.ipu_config.embedding_serialization_factor > 1:
             # Ignore the padding logits. Use masking because in-place modification on a slice is not supported yet.
             padding_mask = torch.cat(
                 (
-                    torch.ones(self.config.vocab_size),
-                    torch.zeros(self.padding_size),
+                    torch.ones(self.actual_vocab_size),
+                    torch.zeros(self.config.vocab_size - self.actual_vocab_size),
                 )
             )
             lm_logits = lm_logits * padding_mask + (1 - padding_mask) * -10000.0
 
             # TODO: Use the following line instead to ignore the padding logits
-            # lm_logits[:, :, self.config.vocab_size:] = -10000
+            # lm_logits[:, :, self.actual_vocab_size:] = -10000
 
         loss = None
         if labels is not None:
@@ -238,8 +218,8 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
             loss_fct = nn.CrossEntropyLoss()
             loss = loss_fct(lm_logits.view(-1, lm_logits.size(-1)), labels.view(-1))
 
-        if self.ipu_config.embedding_serialization_factor > 1 and self.padding_size > 0:
-            output = (lm_logits[:, :, : self.config.vocab_size],) + transformer_outputs[1:]
+        if self.ipu_config.embedding_serialization_factor > 1:
+            output = (lm_logits[:, :, : self.actual_vocab_size],) + transformer_outputs[1:]
         else:
             output = (lm_logits,) + transformer_outputs[1:]
         return (loss,) if loss is not None else output
