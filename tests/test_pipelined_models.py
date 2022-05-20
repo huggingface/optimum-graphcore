@@ -162,6 +162,7 @@ class PipelinedModelsTester(TestCase):
         model.parallelize()
         model.deparallelize()
         items_after = list(model._modules.items())
+        # Test that parallelize and deparallelize won't change the model's modules
         self.assertEqual(len(items_before), len(items_after))
         for i in range(len(items_before)):
             key_before, module_before = items_before[i]
