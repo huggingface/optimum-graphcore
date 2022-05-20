@@ -14,6 +14,7 @@
 # limitations under the License.
 from unittest import TestCase
 
+import copy
 import torch
 from PIL import Image
 
@@ -155,19 +156,26 @@ class PipelinedModelsTester(TestCase):
     def test_parallelize_deparallelize(
         self, test_name, model_name_or_path, ipu_config_name_or_path, pretrained_class, pipelined_class, config_class
     ):
+        def _recursive_check_module_name_match(model_1_iterms, model_2_iterms):
+            # If empty lists then stop recursion
+            if not (len(model_1_iterms) == 0 and len(model_2_iterms) == 0):
+                assert len(model_1_iterms) == len(model_2_iterms)
+                for i in range(len(model_1_iterms)):
+                    key_1, module_1 = model_1_iterms[i]
+                    key_2, module_2 = model_2_iterms[i]
+                    assert key_1 == key_2
+                    assert module_1.__class__.__name__ == module_2.__class__.__name__
+                    # Recursion
+                    _recursive_check_module_name_match(list(module_1._modules.items()), list(module_2._modules.items()))
+
         ipu_config = IPUConfig.from_pretrained(ipu_config_name_or_path)
         model = pipelined_class.from_pretrained_transformers(model_name_or_path, ipu_config)
 
-        items_before = list(model._modules.items())
+        items_before = list(copy.deepcopy(model)._modules.items())
         model.parallelize()
         model.deparallelize()
-        items_after = list(model._modules.items())
-        # Test that parallelize and deparallelize won't change the model's modules
-        self.assertEqual(len(items_before), len(items_after))
-        for i in range(len(items_before)):
-            key_before, module_before = items_before[i]
-            key_after, module_after = items_after[i]
-            self.assertEqual(key_before, key_after)
-            self.assertEqual(module_before.__class__.__name__, module_after.__class__.__name__)
+        items_after = list(copy.deepcopy(model)._modules.items())
+        # Confirm that parallelize then deparallelize won't change the model's modules
+        _recursive_check_module_name_match(items_before, items_after)
 
         model.parallelize()
