@@ -12,9 +12,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
 from unittest import TestCase
 
-import copy
 import torch
 from PIL import Image
 
@@ -166,7 +166,9 @@ class PipelinedModelsTester(TestCase):
                     assert key_1 == key_2
                     assert module_1.__class__.__name__ == module_2.__class__.__name__
                     # Recursion
-                    _recursive_check_module_name_match(list(module_1._modules.items()), list(module_2._modules.items()))
+                    _recursive_check_module_name_match(
+                        list(module_1._modules.items()), list(module_2._modules.items())
+                    )
 
         ipu_config = IPUConfig.from_pretrained(ipu_config_name_or_path)
         model = pipelined_class.from_pretrained_transformers(model_name_or_path, ipu_config)
