@@ -157,6 +157,16 @@ class PipelinedModelsTester(TestCase):
     ):
         ipu_config = IPUConfig.from_pretrained(ipu_config_name_or_path)
         model = pipelined_class.from_pretrained_transformers(model_name_or_path, ipu_config)
+
+        items_before = list(model._modules.items())
         model.parallelize()
         model.deparallelize()
+        items_after = list(model._modules.items())
+        self.assertEqual(len(items_before), len(items_after))
+        for i in range(len(items_before)):
+            key_before, module_before = items_before[i]
+            key_after, module_after = items_after[i]
+            self.assertEqual(key_before, key_after)
+            self.assertEqual(module_before.__class__.__name__, module_after.__class__.__name__)
+
         model.parallelize()
