@@ -159,12 +159,12 @@ class PipelinedModelsTester(TestCase):
         def _recursive_check_module_name_match(model_1_iterms, model_2_iterms):
             # If empty lists then stop recursion
             if not (len(model_1_iterms) == 0 and len(model_2_iterms) == 0):
-                assert len(model_1_iterms) == len(model_2_iterms)
+                self.assertEqual(len(model_1_iterms), len(model_2_iterms))
                 for i in range(len(model_1_iterms)):
                     key_1, module_1 = model_1_iterms[i]
                     key_2, module_2 = model_2_iterms[i]
-                    assert key_1 == key_2
-                    assert module_1.__class__.__name__ == module_2.__class__.__name__
+                    self.assertEqual(key_1, key_2)
+                    self.assertEqual(module_1.__class__.__name__, module_2.__class__.__name__)
                     # Recursion
                     _recursive_check_module_name_match(
                         list(module_1._modules.items()), list(module_2._modules.items())
