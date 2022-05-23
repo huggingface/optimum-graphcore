@@ -31,7 +31,7 @@ The following command shows how to fine-tune [hubert-base-ls960](https://hugging
 ```bash
 python examples/audio-classification/run_audio_classification.py \
     --model_name_or_path facebook/hubert-base-ls960 \
-    --ipu_config_name examples/audio-classification/hubert-base \
+    --ipu_config_name Graphcore/hubert-base-ipu \
     --dataset_name superb \
     --dataset_config_name ks \
     --output_dir hubert-base-superb-ks \
@@ -68,7 +68,7 @@ The following command shows how to fine-tune [hubert-base-ls960](https://hugging
 ```bash
 python examples/audio-classification/run_audio_classification.py \
     --model_name_or_path facebook/hubert-base-ls960 \
-    --ipu_config_name examples/audio-classification/hubert-base \
+    --ipu_config_name Graphcore/hubert-base-ipu \
     --dataset_name common_language \
     --audio_column_name audio \
     --label_column_name language \
