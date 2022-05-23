@@ -144,14 +144,14 @@ class ModelArguments:
         default="main",
         metadata={"help": "The specific model version to use (can be a branch name, tag name or commit id)."},
     )
-    feature_extractor_name: str = field(default=None, metadata={"help": "Name or path of preprocessor config."},
+    feature_extractor_name: str = field(
+        default=None,
+        metadata={"help": "Name or path of preprocessor config."},
     )
 
     disable_feature_extractor: bool = field(
         default=False,
-        metadata={
-            "help": "Weather or not to disable the feature extractor."
-        },
+        metadata={"help": "Weather or not to disable the feature extractor."},
     )
     use_auth_token: bool = field(
         default=False,
@@ -161,92 +161,52 @@ class ModelArguments:
         },
     )
 
+
 @dataclass
 class TrainingArguments(IPUTrainingArguments):
     """
     Subclass IPUTrainingArguments to pass extra training-related arguments such as data-augmentation.
     """
+
     input_size: Optional[int] = field(
-        default = 224,
-        metadata={
-            "help": "Image input size."
-        },
+        default=224,
+        metadata={"help": "Image input size."},
     )
     reset_weights: Optional[bool] = field(
         default=False,
-        metadata={
-            "help": "Don't load the weights from pretrained model. Train the model from scratch."
-        },
+        metadata={"help": "Don't load the weights from pretrained model. Train the model from scratch."},
     )
     disable_mixup: Optional[bool] = field(
         default=False,
-        metadata={
-            "help": "Disable the pre-processing Mixup function for data augmentation."
-        },
+        metadata={"help": "Disable the pre-processing Mixup function for data augmentation."},
     )
-    nb_classes: Optional[float] = field(
-        default=1000
-    )
-    warmup_epochs: Optional[float] = field(
-        default=0
-    )
+    nb_classes: Optional[float] = field(default=1000)
+    warmup_epochs: Optional[float] = field(default=0)
     smoothing: Optional[float] = field(
         default=0.1,
-        metadata={
-            "help": "Label smoothing."
-        },
+        metadata={"help": "Label smoothing."},
     )
     mixup: Optional[float] = field(
         default=0.8,
-        metadata={
-            "help": "'mixup alpha, mixup enabled if > 0."
-        },
+        metadata={"help": "'mixup alpha, mixup enabled if > 0."},
     )
-    cutmix: Optional[float] = field(
-        default=1.0
-    )
-    cutmix_minmax: Optional[float] = field(
-        default=None
-    )
-    mixup_prob: Optional[float] = field(
-        default=1.0
-    )
-    mixup_switch_prob: Optional[float] = field(
-        default=0.5
-    )
+    cutmix: Optional[float] = field(default=1.0)
+    cutmix_minmax: Optional[float] = field(default=None)
+    mixup_prob: Optional[float] = field(default=1.0)
+    mixup_switch_prob: Optional[float] = field(default=0.5)
     mixup_mode: Optional[str] = field(
-        default='batch',
-        metadata={
-            "help":"Probability of switching to cutmix when both mixup and cutmix enabled."
-        }
+        default="batch", metadata={"help": "Probability of switching to cutmix when both mixup and cutmix enabled."}
     )
-    load_fb_pretrained_weights: Optional[str] = field(
-        default=None
-    )
-    drop_path_rate: Optional[float]  = field(
-        default=0.0
-    )
-    wandb_entity: Optional[str] = field(
-         default=None
-    )
-    wandb_project: Optional[str] = field(
-        default=None
-    )
-    head_init_scale: Optional[float]  = field(
-        default=1
-    )
+    load_fb_pretrained_weights: Optional[str] = field(default=None)
+    drop_path_rate: Optional[float] = field(default=0.0)
+    wandb_entity: Optional[str] = field(default=None)
+    wandb_project: Optional[str] = field(default=None)
+    head_init_scale: Optional[float] = field(default=1)
     layer_scale_init_value: Optional[float] = field(
-        default=1e-6,
-        metadata={
-            "help": "The initial value for the layer scale model parameter."
-        }
+        default=1e-6, metadata={"help": "The initial value for the layer scale model parameter."}
     )
-    random_erasing: Optional[float] = field(
-        default=0.25,
-        metadata={
-            "help": "The random erasing probability"
-        }
-    )
+    random_erasing: Optional[float] = field(default=0.25, metadata={"help": "The random erasing probability"})
+
 
 def collate_fn(examples):
     # pixel_values = torch.stack([example["pixel_values"] for example in examples])
@@ -341,6 +301,7 @@ def main():
     def compute_metrics(p):
         """Computes accuracy on a batch of predictions"""
         return metric.compute(predictions=np.argmax(p.predictions, axis=1), references=p.label_ids)
+
     labels = glob.glob(os.path.join(data_args.data_files.get("train", None), "*/"))
     label2id, id2label = dict(), dict()
     for i, label in enumerate(labels):
@@ -357,19 +318,26 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
         drop_path_rate=training_args.drop_path_rate,
-
     )
-    config.smoothing=training_args.smoothing
+    config.smoothing = training_args.smoothing
     config.head_init_scale = training_args.head_init_scale
     config.layer_scale_init_value = training_args.layer_scale_init_value
     config.pretrained_weights_path = training_args.load_fb_pretrained_weights
     train_collate_fn = collate_fn
-    if (training_args.mixup > 0 or training_args.cutmix > 0. or training_args.cutmix_minmax is not None) and not training_args.disable_mixup:
+    if (
+        training_args.mixup > 0 or training_args.cutmix > 0.0 or training_args.cutmix_minmax is not None
+    ) and not training_args.disable_mixup:
         logger.info("Training with Mixup")
         mixup_fn = Mixup(
-        mixup_alpha=training_args.mixup, cutmix_alpha=training_args.cutmix, cutmix_minmax=training_args.cutmix_minmax,
-        prob=training_args.mixup_prob, switch_prob=training_args.mixup_switch_prob, mode=training_args.mixup_mode,
-        label_smoothing=training_args.smoothing, num_classes=training_args.nb_classes)
+            mixup_alpha=training_args.mixup,
+            cutmix_alpha=training_args.cutmix,
+            cutmix_minmax=training_args.cutmix_minmax,
+            prob=training_args.mixup_prob,
+            switch_prob=training_args.mixup_switch_prob,
+            mode=training_args.mixup_mode,
+            label_smoothing=training_args.smoothing,
+            num_classes=training_args.nb_classes,
+        )
         mixup_collate_fn = MixupCollateFn(mixup_fn)
         train_collate_fn = mixup_collate_fn
         config.problem_type = "multi_label_classification"
@@ -466,7 +434,6 @@ def main():
         if not training_args.fp32:
             trainer.model = trainer.model.half()
 
-
     # Training
     if training_args.do_train:
         checkpoint = None
@@ -480,11 +447,12 @@ def main():
         trainer.save_metrics("train", train_result.metrics)
         trainer.save_state()
 
-
     # Evaluation
     if training_args.do_eval:
         # disable mixup and smoothin for evaluation
-        if (training_args.mixup > 0 or training_args.cutmix > 0. or training_args.cutmix_minmax is not None) and not training_args.disable_mixup:
+        if (
+            training_args.mixup > 0 or training_args.cutmix > 0.0 or training_args.cutmix_minmax is not None
+        ) and not training_args.disable_mixup:
             logger.info("Disabling mixup for evaluation")
             trainer.data_collator = collate_fn
             trainer.model.config.problem_type = "single_label_classification"

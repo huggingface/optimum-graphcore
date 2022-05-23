@@ -1,7 +1,11 @@
 from torchvision import transforms
 import transformers
-from timm.data.constants import \
-    IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD, IMAGENET_INCEPTION_MEAN, IMAGENET_INCEPTION_STD
+from timm.data.constants import (
+    IMAGENET_DEFAULT_MEAN,
+    IMAGENET_DEFAULT_STD,
+    IMAGENET_INCEPTION_MEAN,
+    IMAGENET_INCEPTION_STD,
+)
 from timm.data import create_transform
 from torchvision.transforms import (
     CenterCrop,
@@ -13,32 +17,35 @@ from torchvision.transforms import (
     ToTensor,
 )
 
+
 def get_transforms(model, training_args, feature_extractor):
     normalize = Normalize(mean=feature_extractor.image_mean, std=feature_extractor.image_std)
     if isinstance(model, transformers.models.convnext.ConvNextForImageClassification):
         mean = IMAGENET_DEFAULT_MEAN
         std = IMAGENET_DEFAULT_STD
         resize_img = training_args.input_size > 32
-        _train_transforms  = create_transform(
-                    input_size= training_args.input_size,
-                    is_training=True,
-                    color_jitter=0.4,
-                    auto_augment='rand-m9-mstd0.5-inc1',
-                    interpolation='bicubic',
-                    re_prob=training_args.random_erasing,
-                    re_mode='pixel',
-                    re_count=1,
-                    mean=mean,
-                    std=std,
-                )
-        t= []
+        _train_transforms = create_transform(
+            input_size=training_args.input_size,
+            is_training=True,
+            color_jitter=0.4,
+            auto_augment="rand-m9-mstd0.5-inc1",
+            interpolation="bicubic",
+            re_prob=training_args.random_erasing,
+            re_mode="pixel",
+            re_count=1,
+            mean=mean,
+            std=std,
+        )
+        t = []
         if resize_img:
             # warping (no cropping) when evaluated at 384 or larger
             if training_args.input_size >= 384:
                 t.append(
-                transforms.Resize((training_args.input_size, training_args.input_size),
-                                interpolation=transforms.InterpolationMode.BICUBIC),
-            )
+                    transforms.Resize(
+                        (training_args.input_size, training_args.input_size),
+                        interpolation=transforms.InterpolationMode.BICUBIC,
+                    ),
+                )
                 print(f"Warping {training_args.input_size} size input images...")
             else:
                 crop_pct = 224 / 256
@@ -54,7 +61,7 @@ def get_transforms(model, training_args, feature_extractor):
         _val_transforms = transforms.Compose(t)
 
     else:
-        #default transforms
+        # default transforms
         _train_transforms = Compose(
             [
                 RandomResizedCrop(feature_extractor.size),
@@ -73,8 +80,3 @@ def get_transforms(model, training_args, feature_extractor):
         )
 
     return (_train_transforms, _val_transforms)
-
-
-
-
-

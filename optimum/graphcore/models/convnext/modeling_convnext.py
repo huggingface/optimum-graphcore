@@ -13,6 +13,7 @@ from .fb_to_hf_map_util import fb_to_hf_name
 
 logger = logging.get_logger(__name__)
 
+
 def extend_hf_convnext_init(self, config):
     # call transformers.ConvNextForImageClassification.__init__()
     transformers.ConvNextForImageClassification.original_init(self, config)
@@ -24,8 +25,10 @@ def extend_hf_convnext_init(self, config):
     if hasattr(config, "pretrained_weights_path") and config.pretrained_weights_path:
         load_weights_from_fb_model(self, config.pretrained_weights_path)
 
+
 transformers.ConvNextForImageClassification.original_init = transformers.ConvNextForImageClassification.__init__
 transformers.ConvNextForImageClassification.__init__ = extend_hf_convnext_init
+
 
 def load_weights_from_fb_model(model, fb_model_path, load_classifier=False):
     fb_state_dict = torch.load(fb_model_path)["model"]
@@ -44,6 +47,7 @@ def load_weights_from_fb_model(model, fb_model_path, load_classifier=False):
             new_state_dict[hf_tensor_name] = current_state_dict[hf_tensor_name]
 
     model.load_state_dict(new_state_dict)
+
 
 class ConvNextPipelineMixin(PipelineMixin):
     def parallelize(self):
@@ -75,7 +79,7 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
         """Initialize the weights"""
         if isinstance(module, (torch.nn.Linear, torch.nn.Conv2d)):
             # Use truncated normal init as in the paper code.
-            torch.nn.init.trunc_normal_(module.weight.data, std=.02)
+            torch.nn.init.trunc_normal_(module.weight.data, std=0.02)
             if module.bias is not None:
                 module.bias.data.zero_()
         elif isinstance(module, torch.nn.LayerNorm):
@@ -133,7 +137,7 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
             elif self.config.problem_type == "multi_label_classification":
                 loss_fct = SoftTargetCrossEntropy()
                 loss = loss_fct(logits, labels)
-                loss = poptorch.identity_loss(loss, 'none')
+                loss = poptorch.identity_loss(loss, "none")
         if not return_dict:
             output = (logits,) + outputs[2:]
             return ((loss,) + output) if loss is not None else output

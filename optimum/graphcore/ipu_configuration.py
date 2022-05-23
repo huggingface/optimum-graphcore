@@ -215,9 +215,7 @@ class IPUConfig(BaseConfig):
 
         # Set prefetch depth to 3 to improve IO
         # (value suggested by the memory & performance optimisation guide)
-        opts._Popart.set("defaultBufferingDepth", 3) 
-        
-
+        opts._Popart.set("defaultBufferingDepth", 3)
 
         # Options for profiling with Popvision
         engine_options = {

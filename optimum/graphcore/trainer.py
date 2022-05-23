@@ -489,12 +489,12 @@ class IPUTrainer:
                 self.opts,
                 train_dataset,
                 batch_size=self.args.train_batch_size,
-                collate_fn=self.data_collator, 
+                collate_fn=self.data_collator,
                 num_workers=self.args.dataloader_num_workers,
                 pin_memory=self.args.dataloader_pin_memory,
                 **poptorch_specific_kwargs,
             )
-        
+
         train_sampler = self._get_train_sampler()
         combined_batch_size = self.args.per_device_train_batch_size * self.ipu_config.batch_size_factor()
         rebatched_worker_size = (
