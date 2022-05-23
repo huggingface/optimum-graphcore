@@ -57,10 +57,6 @@ python examples/audio-classification/run_audio_classification.py \
     --seed 0
 ```
 
-<!-- On a single V100 GPU (16GB), this script should run in ~14 minutes and yield accuracy of **98.26%**.
-
-👀 See the results here: [anton-l/wav2vec2-base-ft-keyword-spotting](https://huggingface.co/anton-l/wav2vec2-base-ft-keyword-spotting) -->
-
 ## Common Language
 
 The following command shows how to fine-tune [hubert-base-ls960](https://huggingface.co/facebook/hubert-base-ls960) for 🌎 **Language Identification** on the [CommonLanguage dataset](https://huggingface.co/datasets/anton-l/common_language).
@@ -72,30 +68,28 @@ python examples/audio-classification/run_audio_classification.py \
     --dataset_name common_language \
     --audio_column_name audio \
     --label_column_name language \
-    --output_dir hubert-base-lang-id \
+    --output_dir /tmp/hubert-base-common-language \
     --overwrite_output_dir \
     --remove_unused_columns False \
     --do_train \
     --do_eval \
-    --learning_rate 3e-5 \
-    --loss_scaling 1.0 \
-    --max_length_seconds 16 \
-    --attention_mask True \
-    --warmup_ratio 0.1 \
+    --max_length_seconds 13 \
+    --attention_mask False \
+    --learning_rate 1e-4 \
+    --warmup_ratio 0.25 \
+    --lr_schedule linear \
     --num_train_epochs 10 \
     --per_device_train_batch_size 1 \
     --gradient_accumulation_steps 32 \
     --per_device_eval_batch_size 4 \
-    --dataloader_num_workers 0 \
-    --pod_type pod4 \
+    --dataloader_num_workers 64 \
+    --dataloader_drop_last True \
+    --pod_type pod16 \
     --logging_strategy steps \
     --logging_steps 10 \
     --seed 0
 ```
 
-<!-- On 4 V100 GPUs (16GB), this script should run in ~1 hour and yield accuracy of **79.45%**.
-
-👀 See the results here: [anton-l/wav2vec2-base-lang-id](https://huggingface.co/anton-l/wav2vec2-base-lang-id) -->
 
 ## Sharing your model on 🤗 Hub
 
@@ -122,19 +116,3 @@ python run_audio_classification.py \
     --hub_model_id <username/model_id> \
     ...
 ```
-
-### Examples
-
-The following table shows a couple of demonstration fine-tuning runs.
-It has been verified that the script works for the following datasets:
-
-- [SUPERB Keyword Spotting](https://huggingface.co/datasets/superb#ks)
-- [Common Language](https://huggingface.co/datasets/common_language)
-
-| Dataset | Pretrained Model | # transformer layers | Accuracy on eval | GPU setup | Training time | Fine-tuned Model & Logs |
-|---------|------------------|----------------------|------------------|-----------|---------------|--------------------------|
-| Keyword Spotting | [ntu-spml/distilhubert](https://huggingface.co/ntu-spml/distilhubert) | 2 | 0.9706 | 1 V100 GPU | 11min  | [here](https://huggingface.co/anton-l/distilhubert-ft-keyword-spotting) | 
-| Keyword Spotting | [facebook/wav2vec2-base](https://huggingface.co/facebook/wav2vec2-base) | 12 | 0.9826 | 1 V100 GPU | 14min  | [here](https://huggingface.co/anton-l/wav2vec2-base-ft-keyword-spotting) |
-| Keyword Spotting | [facebook/hubert-base-ls960](https://huggingface.co/facebook/hubert-base-ls960) | 12 | 0.9819 | 1 V100 GPU | 14min  | [here](https://huggingface.co/anton-l/hubert-base-ft-keyword-spotting) |
-| Keyword Spotting | [asapp/sew-mid-100k](https://huggingface.co/asapp/sew-mid-100k) | 24 | 0.9757 | 1 V100 GPU | 15min  | [here](https://huggingface.co/anton-l/sew-mid-100k-ft-keyword-spotting) |
-| Common Language | [facebook/wav2vec2-base](https://huggingface.co/facebook/wav2vec2-base) | 12 | 0.7945 | 4 V100 GPUs | 1h10m  | [here](https://huggingface.co/anton-l/wav2vec2-base-lang-id) |
