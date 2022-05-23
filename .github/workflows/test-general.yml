@@ -29,13 +29,13 @@ jobs:
       run: |
         source venv/bin/activate
         pip install --upgrade pip
-        export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_18_04-2\.4\.0*
+        export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_18_04-2\.5\.1*
         pip install ${SDK_PATH}/poptorch-*.whl
         pip install .[testing]
     - name: Test with Pytest
       run: |
         source venv/bin/activate
-        export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_18_04-2\.4\.0*
-        . ${SDK_PATH}/poplar-ubuntu_18_04-2\.4\.0**/enable.sh
-        . ${SDK_PATH}/popart-ubuntu_18_04-*2\.4\.0*/enable.sh
+        export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_18_04-2\.5\.1*
+        . ${SDK_PATH}/poplar-ubuntu_18_04-2\.5\.1**/enable.sh
+        . ${SDK_PATH}/popart-ubuntu_18_04-*2\.5\.1*/enable.sh
         pytest tests/
