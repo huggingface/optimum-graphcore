@@ -36,7 +36,7 @@ jobs:
       run: |
         source venv/bin/activate
         export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_18_04-2\.5\.1*
-        . ${SDK_PATH}/poplar-ubuntu_18_04-2\.5\.1**/enable.sh
+        . ${SDK_PATH}/poplar-ubuntu_18_04-2\.5\.0**/enable.sh
         . ${SDK_PATH}/popart-ubuntu_18_04-*2\.5\.1*/enable.sh
         export RUN_SLOW=true
         pytest tests/test_examples_match_transformers.py
