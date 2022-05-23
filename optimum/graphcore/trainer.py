@@ -231,6 +231,9 @@ class IPUTrainer:
         if self.args.push_to_hub:
             self.init_git_repo()
 
+        if self.args.should_save:
+            os.makedirs(self.args.output_dir, exist_ok=True)
+
         if not callable(self.data_collator) and callable(getattr(self.data_collator, "collate_batch", None)):
             raise ValueError("The `data_collator` should be a simple callable (function, class with `__call__`).")
 
@@ -1521,6 +1524,11 @@ class IPUTrainer:
 
         return PredictionOutput(predictions=output.predictions, label_ids=output.label_ids, metrics=output.metrics)
 
+    def _wrap_and_compile_model_for_evaluation(self, dataloader, prediction_loss_only):
+        model = self._wrap_model(self.model, training=False)
+        self._compile_model(model, next(iter(dataloader)), log=True)
+        return model
+
     def evaluation_loop(
         self,
         dataloader: poptorch.DataLoader,
@@ -1538,8 +1546,7 @@ class IPUTrainer:
             prediction_loss_only if prediction_loss_only is not None else self.args.prediction_loss_only
         )
 
-        model = self._wrap_model(self.model, training=False)
-        self._compile_model(model, next(iter(dataloader)), log=True)
+        model = self._wrap_and_compile_model_for_evaluation(dataloader, prediction_loss_only)
 
         batch_size = dataloader.batch_size
 
@@ -1549,8 +1556,6 @@ class IPUTrainer:
         else:
             logger.info("  Num examples: Unknown")
         logger.info(f"  Batch size = {batch_size}")
-
-        model.eval()
 
         self.callback_handler.eval_dataloader = dataloader
         # Do this before wrapping.
@@ -1590,16 +1595,17 @@ class IPUTrainer:
                 model, inputs, prediction_loss_only, ignore_keys=ignore_keys, is_last_batch=is_last_batch
             )
 
-            loss = loss.mean(dim=0, keepdim=True)
-
-            # If only one IPU is used, loss is a zero dimensional tensor, we unsqueeze to be able to concatenate.
-            if loss.dim() == 0:
-                loss = loss.unsqueeze(0)
-
             # Update containers on host
             if loss is not None:
+                loss = loss.mean(dim=0, keepdim=True)
+                # If only one IPU is used, loss is a zero dimensional tensor, we unsqueeze to be able to concatenate.
+                if loss.dim() == 0:
+                    loss = loss.unsqueeze(0)
+
                 losses_host = loss if losses_host is None else torch.cat((losses_host, loss), dim=0)
             if logits is not None:
+                if self.preprocess_logits_for_metrics is not None:
+                    logits = self.preprocess_logits_for_metrics(logits, labels)
                 preds_host = logits if preds_host is None else nested_concat(preds_host, logits, padding_index=-100)
             if labels is not None:
                 labels_host = labels if labels_host is None else nested_concat(labels_host, labels, padding_index=-100)
@@ -1657,7 +1663,12 @@ class IPUTrainer:
                 metrics[f"{metric_key_prefix}_{key}"] = metrics.pop(key)
 
         # Detaching model from device to let the training model attach itself
-        model.detachFromDevice()
+        if isinstance(model, PoplarExecutor):
+            model.detachFromDevice()
+        else:
+            if not self.ipu_config.execute_encoder_on_cpu_for_generation:
+                model.get_encoder().detachFromDevice()
+            model.poptorch_model.detachFromDevice()
 
         return EvalLoopOutput(predictions=all_preds, label_ids=all_labels, metrics=metrics, num_samples=num_samples)
 

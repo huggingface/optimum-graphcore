@@ -31,6 +31,7 @@ from datasets import load_dataset, load_metric
 import transformers
 from optimum.graphcore import IPUConfig, IPUTrainer
 from optimum.graphcore import IPUTrainingArguments as TrainingArguments
+from optimum.graphcore.utils import check_min_version
 from transformers import (
     AutoConfig,
     AutoModelForSequenceClassification,
@@ -42,12 +43,15 @@ from transformers import (
     set_seed,
 )
 from transformers.trainer_utils import get_last_checkpoint
-from transformers.utils import check_min_version
+from transformers.utils import check_min_version as tf_check_min_version
 from transformers.utils.versions import require_version
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-check_min_version("4.18.0.dev0")
+tf_check_min_version("4.18.0")
+
+# Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
+check_min_version("0.2.4.dev")
 
 require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/text-classification/requirements.txt")
 
@@ -208,19 +212,41 @@ def main():
     # Downloading and loading xnli dataset from the hub.
     if training_args.do_train:
         if model_args.train_language is None:
-            train_dataset = load_dataset("xnli", model_args.language, split="train", cache_dir=model_args.cache_dir)
+            train_dataset = load_dataset(
+                "xnli",
+                model_args.language,
+                split="train",
+                cache_dir=model_args.cache_dir,
+                use_auth_token=True if model_args.use_auth_token else None,
+            )
         else:
             train_dataset = load_dataset(
-                "xnli", model_args.train_language, split="train", cache_dir=model_args.cache_dir
+                "xnli",
+                model_args.train_language,
+                split="train",
+                cache_dir=model_args.cache_dir,
+                use_auth_token=True if model_args.use_auth_token else None,
             )
         label_list = train_dataset.features["label"].names
 
     if training_args.do_eval:
-        eval_dataset = load_dataset("xnli", model_args.language, split="validation", cache_dir=model_args.cache_dir)
+        eval_dataset = load_dataset(
+            "xnli",
+            model_args.language,
+            split="validation",
+            cache_dir=model_args.cache_dir,
+            use_auth_token=True if model_args.use_auth_token else None,
+        )
         label_list = eval_dataset.features["label"].names
 
     if training_args.do_predict:
-        predict_dataset = load_dataset("xnli", model_args.language, split="test", cache_dir=model_args.cache_dir)
+        predict_dataset = load_dataset(
+            "xnli",
+            model_args.language,
+            split="test",
+            cache_dir=model_args.cache_dir,
+            use_auth_token=True if model_args.use_auth_token else None,
+        )
         label_list = predict_dataset.features["label"].names
 
     # Labels

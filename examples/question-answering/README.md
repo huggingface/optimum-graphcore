@@ -28,35 +28,44 @@ Note that if your dataset contains samples with no possible answers (like SQUAD 
 
 ## Fine-tuning BERT on SQuAD1.0
 
-This example code fine-tunes BERT on the SQuAD1.0 dataset.
+This example code fine-tunes BERT base on the SQuAD1.0 dataset.
 <!-- Add execution time once it is available.
 It runs in 4 min (with BERT-base) or 68 min (with BERT-large)
 on a single tesla V100 16GB.
 -->
 
 ```bash
-python run_qa.py \
-  --model_name_or_path bert-base-uncased \
+python examples/question-answering/run_qa.py \
+  --model_name_or_path Graphcore/bert-base-uncased \
   --ipu_config_name Graphcore/bert-base-ipu \
   --dataset_name squad \
   --do_train \
   --do_eval \
-  --per_device_train_batch_size 12 \
+  --num_train_epochs 3 \
+  --per_device_train_batch_size 2 \
+  --per_device_eval_batch_size 16 \
+  --gradient_accumulation_steps 16 \
   --pod_type pod16 \
-  --learning_rate 3e-5 \
-  --num_train_epochs 2 \
+  --learning_rate 7e-5 \
   --max_seq_length 384 \
   --doc_stride 128 \
-  --output_dir ./output/debug_squad/
+  --seed 42 \
+  --lr_scheduler_type linear \
+  --loss_scaling 64 \
+  --weight_decay 0.01 \
+  --warmup_ratio 0.1 \
+  --logging_steps 1 \
+  --save_steps -1 \
+  --dataloader_num_workers 64 \
+  --output_dir ./output/squad_bert_base \
+  --overwrite_output_dir
 ```
 
-<!-- Insert performance on IPU once final values are available.
 Training with the previously defined hyper-parameters yields the following results:
 ```bash
-f1 = 88.52
-exact_match = 81.22
+f1 = 88.72
+exact_match = 81.59
 ```
--->
 
 # Visual question answering
 

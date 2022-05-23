@@ -33,6 +33,7 @@ from datasets import load_dataset
 import transformers
 from optimum.graphcore import IPUConfig, IPUTrainer
 from optimum.graphcore import IPUTrainingArguments as TrainingArguments
+from optimum.graphcore.utils import check_min_version
 from transformers import (
     AutoConfig,
     AutoModelForMultipleChoice,
@@ -43,11 +44,15 @@ from transformers import (
 )
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from transformers.trainer_utils import get_last_checkpoint
-from transformers.utils import PaddingStrategy, check_min_version
+from transformers.utils import PaddingStrategy
+from transformers.utils import check_min_version as tf_check_min_version
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-check_min_version("4.18.0.dev0")
+tf_check_min_version("4.18.0")
+
+# Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
+check_min_version("0.2.4.dev")
 
 logger = logging.getLogger(__name__)
 
@@ -264,10 +269,20 @@ def main():
         if data_args.validation_file is not None:
             data_files["validation"] = data_args.validation_file
         extension = data_args.train_file.split(".")[-1]
-        raw_datasets = load_dataset(extension, data_files=data_files, cache_dir=model_args.cache_dir)
+        raw_datasets = load_dataset(
+            extension,
+            data_files=data_files,
+            cache_dir=model_args.cache_dir,
+            use_auth_token=True if model_args.use_auth_token else None,
+        )
     else:
         # Downloading and loading the swag dataset from the hub.
-        raw_datasets = load_dataset("swag", "regular", cache_dir=model_args.cache_dir)
+        raw_datasets = load_dataset(
+            "swag",
+            "regular",
+            cache_dir=model_args.cache_dir,
+            use_auth_token=True if model_args.use_auth_token else None,
+        )
     # See more about loading any type of standard or custom dataset (from files, python dict, pandas DataFrame, etc) at
     # https://huggingface.co/docs/datasets/loading_datasets.html.
 

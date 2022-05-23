@@ -21,11 +21,16 @@ import torch.nn as nn
 import poptorch
 from optimum.utils import logging
 from transformers import BartForConditionalGeneration, BartModel
-from transformers.modeling_outputs import BaseModelOutput, Seq2SeqModelOutput
+from transformers.modeling_outputs import (
+    BaseModelOutput,
+    BaseModelOutputWithPastAndCrossAttentions,
+    Seq2SeqModelOutput,
+)
 from transformers.models.bart.modeling_bart import BartAttention, BartDecoder, BartEncoder, shift_tokens_right
 
 from ...generation_utils import IPUGenerationMixin
 from ...modeling_utils import (
+    GenerationMethodsMixin,
     PipelineMixin,
     SerializedLinear,
     SharedEmbedding,
@@ -199,7 +204,7 @@ class _BartEncoderWithCustomExpandMask(BartEncoder):
         inputs_embeds=None,
         output_attentions=None,
         output_hidden_states=None,
-        return_dict=None,
+        return_dict=False,
     ):
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -480,15 +485,11 @@ class _BartModelWithSharedEmbedding(BartModel):
                 logger.warning("encoder and decoder embeddings computation is already shared")
             else:
                 self.shared = SharedEmbedding(self.shared)
-                self.encoder.embed_tokens = None
-                self.decoder.embed_tokens = None
         else:
             if isinstance(self.shared, nn.Embedding):
                 logger.warning("encoder and decoder embeddings computation is not shared")
             else:
                 self.shared = self.shared.shared
-                self.encoder.embed_tokens = self.shared
-                self.decoder.embed_tokens = self.shared
 
     def change_bart_encoder_and_decoder_classes(self, restore: bool):
         """Changes the encoder and decoder classes to update their forward pass so that they use our custom versions of
@@ -552,19 +553,18 @@ class _BartModelWithSharedEmbedding(BartModel):
         use_cache = use_cache if use_cache is not None else self.config.use_cache
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
-        if self.is_encoder_and_decoder_embeddings_computation_shared:
-            inputs_embeds, decoder_inputs_embeds = self.shared(
-                input_ids=input_ids,
-                decoder_input_ids=decoder_input_ids,
-                encoder_embed_scale=self.encoder.embed_scale,
-                decoder_embed_scale=self.decoder.embed_scale,
-            )
-            if inputs_embeds is not None:
-                input_ids = None
-            if decoder_inputs_embeds is not None:
-                decoder_input_ids = None
-
         if encoder_outputs is None:
+            if self.is_encoder_and_decoder_embeddings_computation_shared:
+                inputs_embeds, decoder_inputs_embeds = self.shared(
+                    input_ids=input_ids,
+                    decoder_input_ids=decoder_input_ids,
+                    encoder_embed_scale=self.encoder.embed_scale,
+                    decoder_embed_scale=self.decoder.embed_scale,
+                )
+                if inputs_embeds is not None:
+                    input_ids = None
+                if decoder_inputs_embeds is not None:
+                    decoder_input_ids = None
             encoder_outputs = self.encoder(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
@@ -614,7 +614,9 @@ class _BartModelWithSharedEmbedding(BartModel):
 
 
 @register(BartForConditionalGeneration)
-class PipelinedBartForConditionalGeneration(IPUGenerationMixin, BartForConditionalGeneration, PipelineMixin):
+class PipelinedBartForConditionalGeneration(
+    GenerationMethodsMixin, BartForConditionalGeneration, PipelineMixin, IPUGenerationMixin
+):
     def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.
@@ -713,15 +715,20 @@ class PipelinedBartForConditionalGeneration(IPUGenerationMixin, BartForCondition
             return_dict=False,
         )
         # Only returning the loss to make the communication between the host and the device faster.
-        return outputs[0]
+        return outputs[0:1]
 
-    def _forward_for_generate(self, encoder_outputs, decoder_input_ids, attention_mask):
-        return super().forward(
+    def _forward_for_generate(self, encoder_outputs, decoder_input_ids, attention_mask, labels=None):
+        outputs = super().forward(
             encoder_outputs=encoder_outputs,
             attention_mask=attention_mask,
             decoder_input_ids=decoder_input_ids,
             return_dict=False,
             use_cache=False,
+            labels=labels,
         )
+        # Only returning the loss (if labels is provided) and the logits.
+        if labels is None:
+            return outputs[:1]
+        return outputs[:2]
 
     forward = _forward_for_train

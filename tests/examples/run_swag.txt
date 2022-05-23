@@ -1,40 +1,53 @@
-33a34,35
+33a34,36
 > from optimum.graphcore import IPUConfig, IPUTrainer
 > from optimum.graphcore import IPUTrainingArguments as TrainingArguments
-39,40d40
+> from optimum.graphcore.utils import check_min_version
+39,40d41
 <     Trainer,
 <     TrainingArguments,
-117c117
+46c47,48
+< from transformers.utils import PaddingStrategy, check_min_version
+---
+> from transformers.utils import PaddingStrategy
+> from transformers.utils import check_min_version as tf_check_min_version
+50c52,55
+< check_min_version("4.18.0")
+---
+> tf_check_min_version("4.18.0")
+> 
+> # Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
+> check_min_version("0.2.4.dev")
+117c122
 <         default=False,
 ---
 >         default=True,
-231,235d230
+231,235d235
 <     # Log on each process the small summary:
 <     logger.warning(
 <         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
 <         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
 <     )
-289a285,290
+299a300,305
 >     ipu_config = IPUConfig.from_pretrained(
 >         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
 >         cache_dir=model_args.cache_dir,
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
-384c385
+394c400
 <         else DataCollatorForMultipleChoice(tokenizer=tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None)
 ---
 >         else DataCollatorForMultipleChoice(tokenizer=tokenizer, pad_to_multiple_of=None)
-386a388,393
+396a403,408
 >     if not data_args.pad_to_max_length:
 >         logging.warning(
 >             "Not padding to max length might lead to batches with difference sequence lengths, which might not work as"
 >             "expected on IPUs"
 >         )
 > 
-394c401
+404c416
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-395a403
+405a418
 >         ipu_config=ipu_config,

@@ -1,27 +1,147 @@
-37a38,39
+37a38,40
 > from optimum.graphcore import IPUConfig, IPUTrainer
 > from optimum.graphcore import IPUTrainingArguments as TrainingArguments
-44,45d45
+> from optimum.graphcore.utils import check_min_version
+44,45d46
 <     Trainer,
 <     TrainingArguments,
-181,185d180
+48c49
+< from transformers.utils import check_min_version
+---
+> from transformers.utils import check_min_version as tf_check_min_version
+57c58,61
+< check_min_version("4.18.0")
+---
+> tf_check_min_version("4.18.0")
+> 
+> # Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
+> check_min_version("0.2.4.dev")
+75,77c79,80
+<     Using `HfArgumentParser` we can turn this class
+<     into argparse arguments to be able to specify them on
+<     the command line.
+---
+>     Using `HfArgumentParser` we can turn this class into argparse arguments to be able to specify
+>     them on the command line.
+81c84,87
+<         default="nateraw/image-folder", metadata={"help": "Name of a dataset from the datasets package"}
+---
+>         default=None,
+>         metadata={
+>             "help": "Name of a dataset from the hub (could be your own, possibly private dataset hosted on the hub)."
+>         },
+107,112c113,116
+<         data_files = dict()
+<         if self.train_dir is not None:
+<             data_files["train"] = self.train_dir
+<         if self.validation_dir is not None:
+<             data_files["val"] = self.validation_dir
+<         self.data_files = data_files if data_files else None
+---
+>         if self.dataset_name is None and (self.train_dir is None and self.validation_dir is None):
+>             raise ValueError(
+>                 "You must specify either a dataset name from the hub or a train and/or validation directory."
+>             )
+181,185d184
 <     # Log on each process the small summary:
 <     logger.warning(
 <         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
 <         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
 <     )
-245a241,248
-> 
+204,211c203,222
+<     ds = load_dataset(
+<         data_args.dataset_name,
+<         data_args.dataset_config_name,
+<         data_files=data_args.data_files,
+<         cache_dir=model_args.cache_dir,
+<         task="image-classification",
+<         use_auth_token=True if model_args.use_auth_token else None,
+<     )
+---
+>     if data_args.dataset_name is not None:
+>         dataset = load_dataset(
+>             data_args.dataset_name,
+>             data_args.dataset_config_name,
+>             cache_dir=model_args.cache_dir,
+>             task="image-classification",
+>             use_auth_token=True if model_args.use_auth_token else None,
+>         )
+>     else:
+>         data_files = {}
+>         if data_args.train_dir is not None:
+>             data_files["train"] = os.path.join(data_args.train_dir, "**")
+>         if data_args.validation_dir is not None:
+>             data_files["validation"] = os.path.join(data_args.validation_dir, "**")
+>         dataset = load_dataset(
+>             "imagefolder",
+>             data_files=data_files,
+>             cache_dir=model_args.cache_dir,
+>             task="image-classification",
+>         )
+214c225
+<     data_args.train_val_split = None if "validation" in ds.keys() else data_args.train_val_split
+---
+>     data_args.train_val_split = None if "validation" in dataset.keys() else data_args.train_val_split
+216,218c227,229
+<         split = ds["train"].train_test_split(data_args.train_val_split)
+<         ds["train"] = split["train"]
+<         ds["validation"] = split["test"]
+---
+>         split = dataset["train"].train_test_split(data_args.train_val_split)
+>         dataset["train"] = split["train"]
+>         dataset["validation"] = split["test"]
+222c233
+<     labels = ds["train"].features["labels"].names
+---
+>     labels = dataset["train"].features["labels"].names
+246a258,263
 >     ipu_config = IPUConfig.from_pretrained(
 >         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
 >         cache_dir=model_args.cache_dir,
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
-> 
-311c314
+294c311
+<         if "train" not in ds:
+---
+>         if "train" not in dataset:
+297c314,316
+<             ds["train"] = ds["train"].shuffle(seed=training_args.seed).select(range(data_args.max_train_samples))
+---
+>             dataset["train"] = (
+>                 dataset["train"].shuffle(seed=training_args.seed).select(range(data_args.max_train_samples))
+>             )
+299c318
+<         ds["train"].set_transform(train_transforms)
+---
+>         dataset["train"].set_transform(train_transforms)
+302c321
+<         if "validation" not in ds:
+---
+>         if "validation" not in dataset:
+305,306c324,325
+<             ds["validation"] = (
+<                 ds["validation"].shuffle(seed=training_args.seed).select(range(data_args.max_eval_samples))
+---
+>             dataset["validation"] = (
+>                 dataset["validation"].shuffle(seed=training_args.seed).select(range(data_args.max_eval_samples))
+309c328
+<         ds["validation"].set_transform(val_transforms)
+---
+>         dataset["validation"].set_transform(val_transforms)
+312c331
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-312a316
+313a333
 >         ipu_config=ipu_config,
+315,316c335,336
+<         train_dataset=ds["train"] if training_args.do_train else None,
+<         eval_dataset=ds["validation"] if training_args.do_eval else None,
+---
+>         train_dataset=dataset["train"] if training_args.do_train else None,
+>         eval_dataset=dataset["validation"] if training_args.do_eval else None,
+346c366
+<         "tags": ["image-classification"],
+---
+>         "tags": ["image-classification", "vision"],

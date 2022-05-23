@@ -1,4 +1,4 @@
-# Copyright 2020 The HuggingFace Team. All rights reserved.
+# Copyright 2022 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,7 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, List, Optional, Tuple, Union
+import inspect
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
 import torch
 from torch import nn
@@ -27,6 +28,12 @@ logger = logging.get_logger(__name__)
 
 
 class IPUSeq2SeqTrainer(IPUTrainer):
+    def _wrap_and_compile_model_for_evaluation(self, dataloader, prediction_loss_only):
+        if prediction_loss_only:
+            return super()._wrap_and_compile_model_for_evaluation(dataloader)
+        self.model.compile_for_generate(next(iter(dataloader)), self.args.generation_num_beams)
+        return self.model
+
     def evaluate(
         self,
         eval_dataset: Optional[Dataset] = None,
@@ -161,7 +168,7 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         gen_kwargs = {
             "max_length": self._max_length if self._max_length is not None else self.model.config.max_length,
             # TODO: disabled beam search for now.
-            # "num_beams": self._num_beams if self._num_beams is not None else self.model.config.num_beams,
+            "num_beams": self._num_beams if self._num_beams is not None else self.model.config.num_beams,
             "synced_gpus": False,
         }
 
@@ -173,7 +180,7 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         else:
             generation_inputs = inputs[self.model.main_input_name]
 
-        generated_tokens = self.model.generate(
+        generated_tokens = model.generate(
             generation_inputs,
             attention_mask=inputs.get("attention_mask", None),
             **gen_kwargs,
@@ -182,26 +189,28 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         if generated_tokens.shape[-1] < gen_kwargs["max_length"]:
             generated_tokens = self._pad_tensors_to_max_len(generated_tokens, gen_kwargs["max_length"])
 
-        with torch.no_grad():
-            with self.autocast_smart_context_manager():
-                outputs = model(**inputs)
-            if has_labels:
-                if self.label_smoother is not None:
-                    loss = self.label_smoother(outputs, inputs["labels"]).mean().detach()
-                else:
-                    loss = (outputs["loss"] if isinstance(outputs, dict) else outputs[0]).mean().detach()
-            else:
-                loss = None
+        # with torch.no_grad():
+        #     # with self.autocast_smart_context_manager():
+        #     outputs = model(**inputs)
+        #     if has_labels:
+        #         if self.label_smoother is not None:
+        #             loss = self.label_smoother(outputs, inputs["labels"]).mean().detach()
+        #         else:
+        #             loss = (outputs["loss"] if isinstance(outputs, dict) else outputs[0]).mean().detach()
+        #     else:
+        #         loss = None
 
-        if self.args.prediction_loss_only:
-            return (loss, None, None)
+        # if self.args.prediction_loss_only:
+        #     return (loss, None, None)
 
-        if has_labels:
-            labels = inputs["labels"]
-            if labels.shape[-1] < gen_kwargs["max_length"]:
-                labels = self._pad_tensors_to_max_len(labels, gen_kwargs["max_length"])
-        else:
-            labels = None
+        # if has_labels:
+        #     labels = inputs["labels"]
+        #     if labels.shape[-1] < gen_kwargs["max_length"]:
+        #         labels = self._pad_tensors_to_max_len(labels, gen_kwargs["max_length"])
+        # else:
+        #     labels = None
+        loss = None
+        labels = inputs["labels"]
 
         return (loss, generated_tokens, labels)
 
