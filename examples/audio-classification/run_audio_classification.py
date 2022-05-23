@@ -323,7 +323,6 @@ def main():
             sampling_rate=feature_extractor.sampling_rate,
             padding="max_length",
         )
-        # examples.update(inputs)
         examples["input_values"] = inputs["input_values"][0]
         examples["labels"] = examples[data_args.label_column_name]
         return examples

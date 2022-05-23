@@ -41,8 +41,9 @@ class PipelinedHubertForSequenceClassification(HubertForSequenceClassification, 
             ipu = layer_ipu[index]
             self.hubert.encoder.layers[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
 
-        self.projector = poptorch.BeginBlock(self.projector, ipu_id=3)
-        self.classifier = poptorch.BeginBlock(self.classifier, ipu_id=3)
+        last_ipu = self.ipu_config.ipus_per_replica - 1
+        self.projector = poptorch.BeginBlock(self.projector, ipu_id=last_ipu)
+        self.classifier = poptorch.BeginBlock(self.classifier, ipu_id=last_ipu)
         return self
 
     @poptorch.autocast(enabled=True)
