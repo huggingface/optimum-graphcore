@@ -10,7 +10,7 @@
 ---
 > from transformers.utils import check_min_version as tf_check_min_version
 51c52,55
-< check_min_version("4.18.0")
+< check_min_version("4.18.0.dev0")
 ---
 > tf_check_min_version("4.18.0")
 > 
@@ -26,48 +26,54 @@
 <         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
 <         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
 <     )
-325a325,330
+252c251,254
+<             data_args.dataset_name, data_args.dataset_config_name, cache_dir=model_args.cache_dir
+---
+>             data_args.dataset_name,
+>             data_args.dataset_config_name,
+>             cache_dir=model_args.cache_dir,
+>             use_auth_token=True if model_args.use_auth_token else None,
+322a325,330
 >     ipu_config = IPUConfig.from_pretrained(
 >         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
 >         cache_dir=model_args.cache_dir,
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
-<<<<<<< HEAD
-394a400,404
-=======
-351a353,357
+351a360,364
 >     # Customize tokenization for GPT2. We reuse the EOS token as the PAD token.
 >     if config.model_type == "gpt2":
 >         tokenizer.pad_token = tokenizer.eos_token
 >         model.config.pad_token_id = model.config.eos_token_id
 > 
-391a398,402
->>>>>>> Update diff files for glue, xnli, ner
+391a405,409
 >     if not data_args.pad_to_max_length:
 >         logging.warning(
 >             "Not padding to max length might lead to batches with difference sequence lengths, which might not work as"
 >             "expected on IPUs"
 >         )
-<<<<<<< HEAD
-481c491
+434c452,453
+<             train_dataset = train_dataset.select(range(data_args.max_train_samples))
+---
+>             max_train_samples = min(len(train_dataset), data_args.max_train_samples)
+>             train_dataset = train_dataset.select(range(max_train_samples))
+449c468,469
+<             eval_dataset = eval_dataset.select(range(data_args.max_eval_samples))
+---
+>             max_eval_samples = min(len(eval_dataset), data_args.max_eval_samples)
+>             eval_dataset = eval_dataset.select(range(max_eval_samples))
+464c484,485
+<             predict_dataset = predict_dataset.select(range(data_args.max_predict_samples))
+---
+>             max_predict_samples = min(len(predict_dataset), data_args.max_predict_samples)
+>             predict_dataset = predict_dataset.select(range(max_predict_samples))
+475c496
 <     data_collator = DataCollatorForTokenClassification(tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None)
 ---
 >     data_collator = DataCollatorForTokenClassification(tokenizer, pad_to_multiple_of=None)
-520c530
+514c535
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-521a532
-=======
-475c486
-<     data_collator = DataCollatorForTokenClassification(tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None)
----
->     data_collator = DataCollatorForTokenClassification(tokenizer, pad_to_multiple_of=None)
-514c525
-<     trainer = Trainer(
----
->     trainer = IPUTrainer(
-515a527
->>>>>>> Update diff files for glue, xnli, ner
+515a537
 >         ipu_config=ipu_config,
