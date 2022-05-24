@@ -69,6 +69,7 @@ def _get_supported_models_for_script(
 
 
 _SCRIPT_TO_MODEL_MAPPING = {
+    "run_clm": _get_supported_models_for_script(MODELS_TO_TEST_MAPPING, MODEL_FOR_CAUSAL_LM_MAPPING),
     "run_mlm": _get_supported_models_for_script(MODELS_TO_TEST_MAPPING, MODEL_FOR_MASKED_LM_MAPPING),
     "run_swag": _get_supported_models_for_script(MODELS_TO_TEST_MAPPING, MODEL_FOR_MULTIPLE_CHOICE_MAPPING),
     "run_qa": _get_supported_models_for_script(MODELS_TO_TEST_MAPPING, MODEL_FOR_QUESTION_ANSWERING_MAPPING),

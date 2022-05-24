@@ -238,7 +238,7 @@ python examples/language-modeling/run_clm.py \
 ```
 
 To fine-tune GPT2-medium on WikiText-2, we need to override a different set of IPU configurations. Note that `activation_function` is overridden to `gelu`
-instead of using the original `gelu_new`, which does not run efficiently on IPUS.
+instead of using the original `gelu_new`, which does not run efficiently on IPUs.
 
 ```bash
 python examples/language-modeling/run_clm.py \
