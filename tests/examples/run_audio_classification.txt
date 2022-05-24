@@ -55,7 +55,7 @@
 >     )
 324d303
 <         from_tf=bool(".ckpt" in model_args.model_name_or_path),
-334a314,330
+334a314,329
 >     def preprocess_function(examples):
 >         audio = examples[data_args.audio_column_name]
 >         subsampled_audio = random_subsample(
@@ -72,21 +72,21 @@
 >         examples["labels"] = examples[data_args.label_column_name]
 >         return examples
 > 
-341c337,339
+341c336,338
 <         raw_datasets["train"].set_transform(train_transforms, output_all_columns=False)
 ---
 >         raw_datasets["train"] = raw_datasets["train"].map(
 >             preprocess_function, remove_columns=raw_datasets["train"].column_names
 >         )
-349c347,349
+349c346,348
 <         raw_datasets["eval"].set_transform(val_transforms, output_all_columns=False)
 ---
 >         raw_datasets["eval"] = raw_datasets["eval"].map(
 >             preprocess_function, remove_columns=raw_datasets["eval"].column_names
 >         )
-352c352
+352c351
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-353a354
+353a353
 >         ipu_config=ipu_config,
