@@ -213,6 +213,18 @@ class PipelinedT5ForConditionalGeneration(
             if isinstance(mod, T5LayerNorm):
                 mod.forward = T5LayerNorm.forward.__get__(mod, T5LayerNorm)
 
+        if self.ipu_config.embedding_serialization_factor > 1:
+            old_lm_head = nn.Linear(
+                self.config.d_model,
+                self.shared.num_embeddings,
+                bias=False,
+            )
+            old_lm_head.load_state_dict(self.lm_head.state_dict())
+            self.lm_head = old_lm_head
+            # TODO: is it needed to check?
+            if self.config.tie_word_embeddings:
+                self.tie_weights()
+
         return self
 
     def _forward(
