@@ -148,7 +148,7 @@ class PipelinedModelsTester(TestCase):
         for idx, t in enumerate(zip(pretrained_model_outputs, pipelined_model_outputs)):
             pretrained_output, pipelined_output = t
             self.assertTrue(
-                torch.allclose(pretrained_output, pipelined_output),
+                torch.allclose(pretrained_output, pipelined_output, atol=1e-5),
                 f"Pretrained and pipelined model {idx}th outputs do not match, max difference = {(pretrained_output - pipelined_output).abs().max()}",
             )
 
