@@ -37,32 +37,7 @@
 <         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
 <         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
 <     )
-257,260c252
-<             data_args.dataset_name,
-<             data_args.dataset_config_name,
-<             cache_dir=model_args.cache_dir,
-<             use_auth_token=True if model_args.use_auth_token else None,
----
->             data_args.dataset_name, data_args.dataset_config_name, cache_dir=model_args.cache_dir
-268d259
-<                 use_auth_token=True if model_args.use_auth_token else None,
-275d265
-<                 use_auth_token=True if model_args.use_auth_token else None,
-292,298c282
-<         raw_datasets = load_dataset(
-<             extension,
-<             data_files=data_files,
-<             cache_dir=model_args.cache_dir,
-<             use_auth_token=True if model_args.use_auth_token else None,
-<             **dataset_args,
-<         )
----
->         raw_datasets = load_dataset(extension, data_files=data_files, cache_dir=model_args.cache_dir, **dataset_args)
-306d289
-<                 use_auth_token=True if model_args.use_auth_token else None,
-314d296
-<                 use_auth_token=True if model_args.use_auth_token else None,
-339,342c321,333
+339,342c334,347
 <         if model_args.config_overrides is not None:
 <             logger.info(f"Overriding config: {model_args.config_overrides}")
 <             config.update_from_string(model_args.config_overrides)
@@ -72,6 +47,7 @@
 >     if model_args.config_overrides is not None:
 >         logger.info(f"Overriding config: {model_args.config_overrides}")
 >         config.update_from_string(model_args.config_overrides)
+>         logger.info(f"New config: {config}")
 > 
 >     if training_args.ipu_config_name:
 >         ipu_config = IPUConfig.from_pretrained(training_args.ipu_config_name, **config_kwargs)
@@ -81,12 +57,12 @@
 >         raise RuntimeError(
 >             "You must provide an IPUConfig. If the pretrained model does not contain an IPUConfig, you can load an IPUConfig using --ipu_config_name."
 >         )
-461,462c452
+461,462c466
 <             max_train_samples = min(len(train_dataset), data_args.max_train_samples)
 <             train_dataset = train_dataset.select(range(max_train_samples))
 ---
 >             train_dataset = train_dataset.select(range(data_args.max_train_samples))
-469,487c459
+469,487c473
 <             max_eval_samples = min(len(eval_dataset), data_args.max_eval_samples)
 <             eval_dataset = eval_dataset.select(range(max_eval_samples))
 < 
@@ -108,15 +84,15 @@
 <             return metric.compute(predictions=preds, references=labels)
 ---
 >             eval_dataset = eval_dataset.select(range(data_args.max_eval_samples))
-490c462
+490c476
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-491a464
+491a478
 >         ipu_config=ipu_config,
-496d468
+496d482
 <         # Data collator will default to DataCollatorWithPadding, so we change it.
-498,501d469
+498,501d483
 <         compute_metrics=compute_metrics if training_args.do_eval and not is_torch_tpu_available() else None,
 <         preprocess_logits_for_metrics=preprocess_logits_for_metrics
 <         if training_args.do_eval and not is_torch_tpu_available()
