@@ -269,10 +269,17 @@ class DebertaPipelineMixin(PipelineMixin):
                     del mod.xsoftmax
                 else:
                     mod.xsoftmax = XSoftmax(-1)
-            if isinstance(mod, StableDropout):
-                mod.__class__ = nn.Dropout
-                mod.p = mod.drop_prob
-                mod.inplace = False
+            if restore:
+                if isinstance(mod, nn.Dropout):
+                    mod.__class__ = StableDropout
+                    mod.drop_prob = mod.p
+                    mod.count = 0
+                    mod.context_stack = None
+            else:
+                if isinstance(mod, StableDropout):
+                    mod.__class__ = nn.Dropout
+                    mod.p = mod.drop_prob
+                    mod.inplace = False
             if isinstance(mod, DebertaLayerNorm):
                 mod.forward = (
                     DebertaLayerNorm.forward.__get__(mod, DebertaLayerNorm)
