@@ -135,6 +135,7 @@ class PipelinedModelsTester(TestCase):
         ipu_config = IPUConfig.from_pretrained(ipu_config_name_or_path)
         pretrained_model = pretrained_class(config).eval()
         pipelined_model = pipelined_class.from_transformers(pretrained_model, ipu_config).eval()
+        pipelined_model.parallelize()
 
         inputs = self._generate_input_for_model_class(model_name_or_path, pretrained_class)
         pretrained_model_outputs = pretrained_model(**inputs, return_dict=False)
