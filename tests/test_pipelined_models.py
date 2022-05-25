@@ -16,6 +16,7 @@ import copy
 from unittest import TestCase
 
 import torch
+from torch.nn.utils.weight_norm import WeightNorm
 from PIL import Image
 
 import requests
@@ -198,6 +199,13 @@ class PipelinedModelsTester(TestCase):
 
         ipu_config = IPUConfig.from_pretrained(ipu_config_name_or_path)
         model = pipelined_class.from_pretrained_transformers(model_name_or_path, ipu_config)
+
+        # Remove the weight-norm hook, if present, because it doesn't work with deepcopy
+        # https://github.com/pytorch/pytorch/issues/28594
+        for module in model.modules():
+            for _, hook in module._forward_pre_hooks.items():
+                if isinstance(hook, WeightNorm):
+                    delattr(module, hook.name)
 
         items_before = list(copy.deepcopy(model)._modules.items())
         model.parallelize()
