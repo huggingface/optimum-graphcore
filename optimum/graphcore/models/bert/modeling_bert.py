@@ -224,9 +224,7 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
 
         # Use faster fused-qkv self-attention
         for layer in self.bert.encoder.layer:
-            fused = BertFusedSelfAttention(self.config)
-            fused.load_state_dict(layer.attention.self.state_dict())
-            layer.attention.self = fused
+            layer.attention.self.__class__ = BertFusedSelfAttention
 
         if self.ipu_config.embedding_serialization_factor > 1:
             serialized_decoder = SerializedLinear(
@@ -261,6 +259,28 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
         logger.info("Classifier --> IPU 0")
         self.cls = poptorch.BeginBlock(self.cls, "Classifier", ipu_id=0)
         logger.info("-----------------------------------------------------------")
+        return self
+
+    def deparallelize(self):
+        """
+        Undo the changes to the model done by `parallelize`.
+        You should call this before doing `save_pretrained` so that the `model.state_dict` is
+        compatible with the original model.
+        """
+        super().deparallelize()
+
+        for layer in self.bert.encoder.layer:
+            layer.attention.self.__class__ = BertSelfAttention
+
+        if self.ipu_config.embedding_serialization_factor > 1:
+            decoder = nn.Linear(
+                self.config.hidden_size,
+                self.config.vocab_size,
+                bias=True,
+            )
+            decoder.load_state_dict(self.cls.predictions.decoder.state_dict())
+            self.cls.predictions.decoder = decoder
+            self.tie_weights()
         return self
 
     def forward(self, input_ids, attention_mask, token_type_ids=None, labels=None):

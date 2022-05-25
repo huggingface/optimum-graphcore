@@ -12,6 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import copy
 from unittest import TestCase
 
 import torch
@@ -135,19 +136,28 @@ class PipelinedModelsTester(TestCase):
         ipu_config = IPUConfig.from_pretrained(ipu_config_name_or_path)
         pretrained_model = pretrained_class(config).eval()
         pipelined_model = pipelined_class.from_transformers(pretrained_model, ipu_config).eval()
-        pipelined_model.parallelize()
 
         inputs = self._generate_input_for_model_class(model_name_or_path, pretrained_class)
         pretrained_model_outputs = pretrained_model(**inputs, return_dict=False)
         # The forward method can be different in train and eval mode for some models (seq2seq for instance), so we make
         # sure to use the proper one.
         pipelined_forward_function = getattr(pipelined_model, "_forward_for_train", pipelined_model.forward)
-        pipelined_model_outputs = pipelined_forward_function(**inputs)
 
+        pipelined_model.parallelize()
+        pipelined_model_outputs = pipelined_forward_function(**inputs)
         for idx, t in enumerate(zip(pretrained_model_outputs, pipelined_model_outputs)):
             pretrained_output, pipelined_output = t
             self.assertTrue(
-                torch.allclose(pretrained_output, pipelined_output),
+                torch.allclose(pretrained_output, pipelined_output, atol=1e-5),
+                f"Pretrained and pipelined model {idx}th outputs do not match, max difference = {(pretrained_output - pipelined_output).abs().max()}",
+            )
+
+        pipelined_model.deparallelize()
+        pipelined_model_outputs = pipelined_forward_function(**inputs)
+        for idx, t in enumerate(zip(pretrained_model_outputs, pipelined_model_outputs)):
+            pretrained_output, pipelined_output = t
+            self.assertTrue(
+                torch.equal(pretrained_output, pipelined_output),
                 f"Pretrained and pipelined model {idx}th outputs do not match, max difference = {(pretrained_output - pipelined_output).abs().max()}",
             )
 
@@ -155,8 +165,28 @@ class PipelinedModelsTester(TestCase):
     def test_parallelize_deparallelize(
         self, test_name, model_name_or_path, ipu_config_name_or_path, pretrained_class, pipelined_class, config_class
     ):
+        def _recursive_check_module_name_match(model_1_iterms, model_2_iterms):
+            # If empty lists then stop recursion
+            if not (len(model_1_iterms) == 0 and len(model_2_iterms) == 0):
+                self.assertEqual(len(model_1_iterms), len(model_2_iterms))
+                for i in range(len(model_1_iterms)):
+                    key_1, module_1 = model_1_iterms[i]
+                    key_2, module_2 = model_2_iterms[i]
+                    self.assertEqual(key_1, key_2)
+                    self.assertEqual(module_1.__class__.__name__, module_2.__class__.__name__)
+                    # Recursion
+                    _recursive_check_module_name_match(
+                        list(module_1._modules.items()), list(module_2._modules.items())
+                    )
+
         ipu_config = IPUConfig.from_pretrained(ipu_config_name_or_path)
         model = pipelined_class.from_pretrained_transformers(model_name_or_path, ipu_config)
+
+        items_before = list(copy.deepcopy(model)._modules.items())
         model.parallelize()
         model.deparallelize()
+        items_after = list(copy.deepcopy(model)._modules.items())
+        # Confirm that parallelize then deparallelize won't change the model's modules
+        _recursive_check_module_name_match(items_before, items_after)
+
         model.parallelize()

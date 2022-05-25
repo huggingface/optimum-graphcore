@@ -698,6 +698,17 @@ class PipelinedBartForConditionalGeneration(
         self.model.change_bart_encoder_and_decoder_classes(True)
         self.model.change_bart_attention_class(True)
         self.model.__class__ = BartModel
+
+        if self.ipu_config.embedding_serialization_factor > 1:
+            old_lm_head = nn.Linear(
+                self.config.d_model,
+                self.model.shared.num_embeddings,
+                bias=False,
+            )
+            old_lm_head.load_state_dict(self.lm_head.state_dict())
+            self.lm_head = old_lm_head
+            self.tie_weights()
+
         return self
 
     def train(self, mode: bool = True) -> "PipelinedBartForConditionalGeneration":

@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 
 import poptorch
@@ -138,6 +139,25 @@ class PipelinedRobertaForMaskedLM(RobertaForMaskedLM, PipelineMixin):
         logger.info("LM Head    --> IPU 0")
         self.lm_head = poptorch.BeginBlock(self.lm_head, "LM Head", ipu_id=0)
         logger.info("-----------------------------------------------------------")
+        return self
+
+    def deparallelize(self):
+        """
+        Undo the changes to the model done by `parallelize`.
+        You should call this before doing `save_pretrained` so that the `model.state_dict` is
+        compatible with the original model.
+        """
+        super().deparallelize()
+
+        if self.ipu_config.embedding_serialization_factor > 1:
+            decoder = nn.Linear(
+                self.config.hidden_size,
+                self.config.vocab_size,
+                bias=True,
+            )
+            decoder.load_state_dict(self.lm_head.decoder.state_dict())
+            self.lm_head.decoder = decoder
+            self.tie_weights()
         return self
 
     def forward(self, input_ids, attention_mask, labels=None):
