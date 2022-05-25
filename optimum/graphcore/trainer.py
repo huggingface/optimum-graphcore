@@ -512,6 +512,7 @@ class IPUTrainer:
             batch_size=self.args.per_device_train_batch_size,
             sampler=train_sampler,
             collate_fn=self.data_collator,
+            persistent_workers=True,
             num_workers=self.args.dataloader_num_workers,
             pin_memory=self.args.dataloader_pin_memory,
             rebatched_worker_size=rebatched_worker_size,
