@@ -136,19 +136,28 @@ class PipelinedModelsTester(TestCase):
         ipu_config = IPUConfig.from_pretrained(ipu_config_name_or_path)
         pretrained_model = pretrained_class(config).eval()
         pipelined_model = pipelined_class.from_transformers(pretrained_model, ipu_config).eval()
-        pipelined_model.parallelize()
 
         inputs = self._generate_input_for_model_class(model_name_or_path, pretrained_class)
         pretrained_model_outputs = pretrained_model(**inputs, return_dict=False)
         # The forward method can be different in train and eval mode for some models (seq2seq for instance), so we make
         # sure to use the proper one.
         pipelined_forward_function = getattr(pipelined_model, "_forward_for_train", pipelined_model.forward)
-        pipelined_model_outputs = pipelined_forward_function(**inputs)
 
+        pipelined_model.parallelize()
+        pipelined_model_outputs = pipelined_forward_function(**inputs)
         for idx, t in enumerate(zip(pretrained_model_outputs, pipelined_model_outputs)):
             pretrained_output, pipelined_output = t
             self.assertTrue(
                 torch.allclose(pretrained_output, pipelined_output, atol=1e-5),
+                f"Pretrained and pipelined model {idx}th outputs do not match, max difference = {(pretrained_output - pipelined_output).abs().max()}",
+            )
+
+        pipelined_model.deparallelize()
+        pipelined_model_outputs = pipelined_forward_function(**inputs)
+        for idx, t in enumerate(zip(pretrained_model_outputs, pipelined_model_outputs)):
+            pretrained_output, pipelined_output = t
+            self.assertTrue(
+                torch.equal(pretrained_output, pipelined_output),
                 f"Pretrained and pipelined model {idx}th outputs do not match, max difference = {(pretrained_output - pipelined_output).abs().max()}",
             )
 
