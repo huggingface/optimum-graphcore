@@ -19,14 +19,21 @@
 from .ipu_configuration import IPUConfig
 from .models.bart import PipelinedBartForConditionalGeneration
 from .models.bert import (
+    PipelinedBertForMaskedLM,
     PipelinedBertForMultipleChoice,
     PipelinedBertForPreTraining,
     PipelinedBertForQuestionAnswering,
     PipelinedBertForSequenceClassification,
     PipelinedBertForTokenClassification,
 )
+from .models.gpt2 import (
+    PipelinedGPT2ForSequenceClassification,
+    PipelinedGPT2ForTokenClassification,
+    PipelinedGPT2LMHeadModel,
+)
 from .models.lxmert import PipelinedLxmertForQuestionAnswering
 from .models.roberta import (
+    PipelinedRobertaForMaskedLM,
     PipelinedRobertaForMultipleChoice,
     PipelinedRobertaForQuestionAnswering,
     PipelinedRobertaForSequenceClassification,

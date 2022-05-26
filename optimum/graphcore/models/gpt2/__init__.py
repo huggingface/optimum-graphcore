@@ -1,5 +1,8 @@
-# coding=utf-8
-# Copyright 2021 HuggingFace Inc.
+# flake8: noqa
+# There's no way to ignore "F401 '...' imported but unused" warnings in this
+# module, but to preserve other warnings. So, don't check this module at all.
+
+# Copyright 2021 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,12 +16,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-MODELS_TO_TEST_MAPPING = {
-    "bart": ("facebook/bart-base", "Graphcore/bart-base-ipu"),
-    "bert": ("bert-base-uncased", "Graphcore/bert-base-ipu"),
-    "gpt2": ("gpt2", "Graphcore/gpt2-small-ipu"),
-    "lxmert": ("unc-nlp/lxmert-base-uncased", "Graphcore/lxmert-base-ipu"),
-    "roberta": ("roberta-base", "Graphcore/roberta-base-ipu"),
-    "t5": ("t5-small", "Graphcore/t5-small-ipu"),
-    "vit": ("google/vit-base-patch16-224-in21k", "Graphcore/vit-base-ipu"),
-}
+from .modeling_gpt2 import (
+    PipelinedGPT2ForSequenceClassification,
+    PipelinedGPT2ForTokenClassification,
+    PipelinedGPT2LMHeadModel,
+)

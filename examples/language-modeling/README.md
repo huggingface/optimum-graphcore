@@ -167,7 +167,7 @@ When training a model from scratch, configuration values may be overridden with 
 python run_pretraining.py --config_overrides="hidden_size=1024,num_attention_heads=16,num_hidden_layers=24" [...]
 ```
 
-## RoBERTa and masked language modeling
+## RoBERTa/BERT and masked language modeling
 
 The following example fine-tunes RoBERTa-base on WikiText-2. We're using the raw WikiText-2. Note that some IPU configurations are overridden.
 
@@ -208,3 +208,60 @@ python run_mlm.py \
 ```
 
 The same can be done with the BERT model by changing the flags: `--model_name_or_path bert-base-uncased --ipu_config_name Graphcore/bert-base-ipu`. 
+## GPT2 and causal language modeling
+
+The following example fine-tunes GPT2-small on WikiText-2. We're using the raw WikiText-2. Note that some IPU configurations are overridden.
+
+```bash
+python examples/language-modeling/run_clm.py \
+    --model_name_or_path gpt2 \
+    --ipu_config_name Graphcore/gpt2-small-ipu \
+    --dataset_name wikitext \
+    --dataset_config_name wikitext-2-raw-v1 \
+    --do_train \
+    --do_eval \
+    --num_train_epochs 30 \
+    --dataloader_num_workers 64 \
+    --per_device_train_batch_size 1 \
+    --per_device_eval_batch_size 1 \
+    --gradient_accumulation_steps 128 \
+    --output_dir /tmp/clm_gpt2 \
+    --logging_steps 1 \
+    --learning_rate 1e-5 \
+    --lr_scheduler_type linear \
+    --loss_scaling 16384 \
+    --weight_decay 0.01 \
+    --warmup_ratio 0.1 \
+    --config_overrides="activation_function=gelu" \
+    --dataloader_drop_last \
+    --pod_type pod16
+```
+
+To fine-tune GPT2-medium on WikiText-2, we need to override a different set of IPU configurations. Note that `activation_function` is overridden to `gelu`
+instead of using the original `gelu_new`, which does not run efficiently on IPUs.
+
+```bash
+python examples/language-modeling/run_clm.py \
+    --model_name_or_path gpt2-medium \
+    --ipu_config_name Graphcore/gpt2-medium-ipu \
+    --dataset_name wikitext \
+    --dataset_config_name wikitext-2-raw-v1 \
+    --do_train \
+    --do_eval \
+    --num_train_epochs 30 \
+    --dataloader_num_workers 64 \
+    --per_device_train_batch_size 1 \
+    --per_device_eval_batch_size 1 \
+    --gradient_accumulation_steps 256 \
+    --output_dir /tmp/clm_gpt2_medium \
+    --logging_steps 1 \
+    --learning_rate 1e-5 \
+    --lr_scheduler_type linear \
+    --loss_scaling 16384 \
+    --weight_decay 0.01 \
+    --warmup_ratio 0.1 \
+    --config_overrides="activation_function=gelu" \
+    --dataloader_drop_last \
+    --pod_type pod16
+
+```

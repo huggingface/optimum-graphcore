@@ -147,6 +147,13 @@ class PipelinedModelsTester(TestCase):
         pipelined_model_outputs = pipelined_forward_function(**inputs)
         for idx, t in enumerate(zip(pretrained_model_outputs, pipelined_model_outputs)):
             pretrained_output, pipelined_output = t
+            # Handle tuple outputs. Outputs such as past_key_values are returned as tuples.
+            if isinstance(pretrained_output, tuple):
+                # If tuples in tuple
+                if isinstance(pretrained_output[0], tuple):
+                    pretrained_output = [torch.stack(x) for x in pretrained_output]
+                    pipelined_output = [torch.stack(x) for x in pipelined_output]
+                pretrained_output, pipelined_output = torch.stack(pretrained_output), torch.stack(pipelined_output)
             self.assertTrue(
                 torch.allclose(pretrained_output, pipelined_output, atol=1e-5),
                 f"Pretrained and pipelined model {idx}th outputs do not match, max difference = {(pretrained_output - pipelined_output).abs().max()}",
@@ -156,6 +163,13 @@ class PipelinedModelsTester(TestCase):
         pipelined_model_outputs = pipelined_forward_function(**inputs)
         for idx, t in enumerate(zip(pretrained_model_outputs, pipelined_model_outputs)):
             pretrained_output, pipelined_output = t
+            # Handle tuple outputs. Outputs such as past_key_values are returned as tuples.
+            if isinstance(pretrained_output, tuple):
+                # If tuples in tuple
+                if isinstance(pretrained_output[0], tuple):
+                    pretrained_output = [torch.stack(x) for x in pretrained_output]
+                    pipelined_output = [torch.stack(x) for x in pipelined_output]
+                pretrained_output, pipelined_output = torch.stack(pretrained_output), torch.stack(pipelined_output)
             self.assertTrue(
                 torch.equal(pretrained_output, pipelined_output),
                 f"Pretrained and pipelined model {idx}th outputs do not match, max difference = {(pretrained_output - pipelined_output).abs().max()}",
