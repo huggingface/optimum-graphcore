@@ -31,6 +31,7 @@ from .models.gpt2 import (
     PipelinedGPT2ForTokenClassification,
     PipelinedGPT2LMHeadModel,
 )
+from .models.hubert import PipelinedHubertForSequenceClassification
 from .models.lxmert import PipelinedLxmertForQuestionAnswering
 from .models.roberta import (
     PipelinedRobertaForMaskedLM,

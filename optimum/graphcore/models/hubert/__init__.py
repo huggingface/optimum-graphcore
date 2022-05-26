@@ -16,5 +16,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-
-from . import bart, bert, gpt2, hubert, lxmert, roberta, t5, vit
+from .modeling_hubert import PipelinedHubertForSequenceClassification
