@@ -18,13 +18,14 @@
 > 
 > # Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
 > check_min_version("0.2.4.dev")
-228,232d231
+228,233d231
 <     # Log on each process the small summary:
 <     logger.warning(
 <         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
 <         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
 <     )
-344a344,350
+<     # Set the verbosity to info of the Transformers logger (on main process only):
+344a343,349
 >     if training_args.ipu_config_name:
 >         ipu_config = IPUConfig.from_pretrained(training_args.ipu_config_name, **config_kwargs)
 >     elif model_args.model_name_or_path:
@@ -32,29 +33,29 @@
 >     else:
 >         raise RuntimeError("You must provide an IPUConfig")
 > 
-516,517c522
+516,517c521
 <     pad_to_multiple_of_8 = data_args.line_by_line and training_args.fp16 and not data_args.pad_to_max_length
 <     data_collator = DataCollatorForLanguageModeling(
 ---
 >     data_collator = DataCollatorForLanguageModelingWithMaxTokensMasked(
-520c525
+520c524
 <         pad_to_multiple_of=8 if pad_to_multiple_of_8 else None,
 ---
 >         pad_to_multiple_of=None,
-522a528,533
+522a527,532
 >     if training_args.do_eval and not training_args.prediction_loss_only:
 >         logging.warning(
 >             "Because pipelined models return only the loss sometimes (due to performance reasons), evaluation might not"
 >             " work as expected, set --prediction_loss_only to fix that."
 >         )
 > 
-524c535
+524c534
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-525a537
+525a536
 >         ipu_config=ipu_config,
-531,534c543,544
+531,534c542,543
 <         compute_metrics=compute_metrics if training_args.do_eval and not is_torch_tpu_available() else None,
 <         preprocess_logits_for_metrics=preprocess_logits_for_metrics
 <         if training_args.do_eval and not is_torch_tpu_available()

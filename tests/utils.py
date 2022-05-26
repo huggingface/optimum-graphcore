@@ -16,6 +16,7 @@
 MODELS_TO_TEST_MAPPING = {
     "bart": ("facebook/bart-base", "Graphcore/bart-base-ipu"),
     "bert": ("bert-base-uncased", "Graphcore/bert-base-ipu"),
+    "gpt2": ("gpt2", "Graphcore/gpt2-small-ipu"),
     "hubert": ("facebook/hubert-base-ls960", "Graphcore/hubert-base-ipu"),
     "lxmert": ("unc-nlp/lxmert-base-uncased", "Graphcore/lxmert-base-ipu"),
     "roberta": ("roberta-base", "Graphcore/roberta-base-ipu"),

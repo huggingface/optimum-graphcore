@@ -29,12 +29,18 @@
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
-354,355d358
+283a289,293
+>     # Customize tokenization for GPT2. We reuse the EOS token as the PAD token.
+>     if config.model_type == "gpt2":
+>         tokenizer.pad_token = tokenizer.eos_token
+>         model.config.pad_token_id = model.config.eos_token_id
+> 
+354,355d363
 <     elif training_args.fp16:
 <         data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8)
-360c363
+360c368
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-361a365
+361a370
 >         ipu_config=ipu_config,

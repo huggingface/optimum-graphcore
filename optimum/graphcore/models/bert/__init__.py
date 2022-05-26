@@ -17,6 +17,7 @@
 # limitations under the License.
 
 from .modeling_bert import (
+    PipelinedBertForMaskedLM,
     PipelinedBertForMultipleChoice,
     PipelinedBertForPreTraining,
     PipelinedBertForQuestionAnswering,
