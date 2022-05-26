@@ -424,10 +424,16 @@ class PipelinedDebertaForTokenClassification(DebertaForTokenClassification, Debe
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
         return self
-    
+
     def deparallelize(self):
         super().deparallelize()
-        self.dropout = nn.Dropout(self.dropout.drop_prob)
+        # Last dropout isn't a StableDropout so undo its replacement
+        # made by change_modules_for_ipu
+        mod = self.dropout
+        if isinstance(mod, StableDropout):
+            mod.__class__ = nn.Dropout
+            mod.p = mod.drop_prob
+            mod.inplace = False
 
     def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
         return super().forward(
