@@ -16,8 +16,8 @@ import copy
 from unittest import TestCase
 
 import torch
-from torch.nn.utils.weight_norm import WeightNorm
 from PIL import Image
+from torch.nn.utils.weight_norm import WeightNorm
 
 import requests
 import transformers
