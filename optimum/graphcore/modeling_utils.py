@@ -189,7 +189,7 @@ def get_layer_ipu(layers_per_ipu):
     return layer_ipu
 
 
-def recomputation_checkpoint(module: nn.Module):
+def recomputation_checkpoint(module: nn.Module) -> torch.utils.hooks.RemovableHandle:
     """Annotates the output of a module to be checkpointed instead of
     recomputed"""
 

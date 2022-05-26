@@ -202,6 +202,7 @@ class IPUTrainer:
         if not self.args.fp32:
             self.model = self.model.half()
 
+        self.model_wrapped = self.model
         self.training_model = None
         self.inference_model = None
 
@@ -866,7 +867,19 @@ class IPUTrainer:
             trial = None
         self.state.is_hyper_param_search = trial is not None
 
-        model = self._wrap_model(self.model)
+        # Activate gradient checkpointing if needed
+        if args.gradient_checkpointing:
+            self.model.gradient_checkpointing_enable()
+
+        model = self._wrap_model(self.model_wrapped)
+
+        # for the rest of this function `model` is the outside model, whether it was wrapped or not
+        if model is not self.model:
+            self.model_wrapped = model
+
+        # TODO: handle optimizer and scheduler creation
+        # if delay_optimizer_creation:
+        #     self.create_optimizer_and_scheduler(num_training_steps=max_steps)
 
         # Check if saved optimizer or scheduler states exist
         self._load_optimizer_and_scheduler(resume_from_checkpoint)
@@ -1067,7 +1080,10 @@ class IPUTrainer:
             self.model.half()
 
         if len(load_result.missing_keys) != 0:
-            logger.warn(f"There were missing keys in the checkpoint model loaded: {load_result.missing_keys}.")
+            if self.model._keys_to_ignore_on_save is not None and set(load_result.missing_keys) != set(
+                self.model._keys_to_ignore_on_save
+            ):
+                logger.warn(f"There were missing keys in the checkpoint model loaded: {load_result.missing_keys}.")
         if len(load_result.unexpected_keys) != 0:
             logger.warn(f"There were unexpected keys in the checkpoint model loaded: {load_result.unexpected_keys}.")
 
