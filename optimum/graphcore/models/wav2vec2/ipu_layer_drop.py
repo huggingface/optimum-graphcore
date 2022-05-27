@@ -46,6 +46,7 @@ class IPUWav2Vec2Encoder(Wav2Vec2Encoder):
         if output_hidden_states:
             raise ValueError("output_hidden_states=True is not supported " "for IPUWav2Vec2Encoder")
 
+        pad_length = 0
         if attention_mask is not None:
             # make sure padded tokens output 0
             hidden_states[~attention_mask] = 0.0
@@ -62,8 +63,6 @@ class IPUWav2Vec2Encoder(Wav2Vec2Encoder):
                     pad=(0, pad_length),
                     value=0.0,
                 )
-            else:
-                pad_length = 0
 
             # extend attention_mask
             attention_mask = (1.0 - attention_mask[:, None, None, :].to(dtype=hidden_states.dtype)) * -10000.0
@@ -87,7 +86,7 @@ class IPUWav2Vec2Encoder(Wav2Vec2Encoder):
             dropout_probability = torch.rand(tuple())
             skip_the_layer = self.training and (dropout_probability < self.config.layerdrop)
             layer_outputs = layer(hidden_states, attention_mask=attention_mask, output_attentions=output_attentions)
-            hidden_states = torch.where(skip_the_layer, hidden_states, layer_outputs[0])
+            hidden_states = torch.where(torch.BoolTensor([skip_the_layer]), hidden_states, layer_outputs[0])
 
         # Remove padded values
         # Want e.g. (..., 1000, 768) -> (..., 999, 768)
@@ -121,6 +120,7 @@ class IPUWav2Vec2EncoderStableLayerNorm(Wav2Vec2EncoderStableLayerNorm):
         if output_hidden_states:
             raise ValueError("output_hidden_states=True is not supported " "for IPUWav2Vec2EncoderStableLayerNorm")
 
+        pad_length = 0
         if attention_mask is not None:
             # make sure padded tokens output 0
             hidden_states[~attention_mask] = 0.0
@@ -137,8 +137,6 @@ class IPUWav2Vec2EncoderStableLayerNorm(Wav2Vec2EncoderStableLayerNorm):
                     pad=(0, pad_length),
                     value=0.0,
                 )
-            else:
-                pad_length = 0
 
             # extend attention_mask
             attention_mask = (1.0 - attention_mask[:, None, None, :].to(dtype=hidden_states.dtype)) * -10000.0
@@ -161,7 +159,7 @@ class IPUWav2Vec2EncoderStableLayerNorm(Wav2Vec2EncoderStableLayerNorm):
             dropout_probability = torch.rand(tuple())
             skip_the_layer = self.training and (dropout_probability < self.config.layerdrop)
             layer_outputs = layer(hidden_states, attention_mask=attention_mask, output_attentions=output_attentions)
-            hidden_states = torch.where(skip_the_layer, hidden_states, layer_outputs[0])
+            hidden_states = torch.where(torch.BoolTensor([skip_the_layer]), hidden_states, layer_outputs[0])
 
         # Remove padded values
         # Want e.g. (..., 1000, 768) -> (..., 999, 768)
@@ -193,7 +191,7 @@ class IPUWav2Vec2Adapter(Wav2Vec2Adapter):
             layerdrop_prob = torch.rand(tuple())
             layer_output = layer(hidden_states)
             use_the_layer = not self.training or (layerdrop_prob > self.layerdrop)
-            hidden_states = torch.where(use_the_layer, layer_output, hidden_states)
+            hidden_states = torch.where(torch.BoolTensor([use_the_layer]), layer_output, hidden_states)
 
         hidden_states = hidden_states.transpose(1, 2)
         return hidden_states
