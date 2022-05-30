@@ -1455,6 +1455,15 @@ class IPUTrainer:
         self._memory_tracker.start()
 
         eval_dataloader = self.get_eval_dataloader(eval_dataset)
+
+        prediction_loss_only = True if self.compute_metrics is None else None
+        if prediction_loss_only is None:
+            prediction_loss_only = self.args.prediction_loss_only
+
+        # Running this here (even though it is being recalled in self.evaluation_loop to make compilation happen here.
+        # That way, compilation will not mess inference speed metrics.
+        _ = self._wrap_and_compile_model_for_evaluation(eval_dataloader, prediction_loss_only)
+
         start_time = time.time()
 
         output = self.evaluation_loop(
@@ -1462,7 +1471,7 @@ class IPUTrainer:
             description="Evaluation",
             # No point gathering the predictions if there are no metrics, otherwise we defer to
             # self.args.prediction_loss_only
-            prediction_loss_only=True if self.compute_metrics is None else None,
+            prediction_loss_only=prediction_loss_only,
             ignore_keys=ignore_keys,
             metric_key_prefix=metric_key_prefix,
         )
