@@ -62,3 +62,9 @@ class IPUSeq2SeqTrainingArguments(IPUTrainingArguments):
             "to the `num_beams` value of the model configuration."
         },
     )
+
+    def __post_init__(self):
+        if self.predict_with_generate:
+            raise NotImplementedError(
+                "--predict_with_generate is not supported on IPUs yet, please run your evaluation on another device or set predict_with_generate to False"
+            )
