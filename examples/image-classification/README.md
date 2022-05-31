@@ -23,7 +23,7 @@ The following examples showcase how to fine-tune a `ViT` for image-classificatio
 Here we show how to fine-tune a `ViT` on the [cifar10](https://huggingface.co/datasets/cifar10) dataset.
 
 ```
-python run_image_classification.py \
+python examples/image-classification/run_image_classification.py \
     --dataset_name cifar10 \
     --output_dir ./cifar10_outputs/ \
     --model_name_or_path google/vit-base-patch16-224-in21k \
@@ -53,7 +53,7 @@ Here we show how to fine-tune a `ViT` on the [beans](https://huggingface.co/data
 👀 See the results here: [nateraw/vit-base-beans](https://huggingface.co/nateraw/vit-base-beans).
 
 ```bash
-python run_image_classification.py \
+python examples/image-classification/run_image_classification.py \
     --dataset_name beans \
     --output_dir ./beans_outputs/ \
     --model_name_or_path google/vit-base-patch16-224-in21k \
@@ -80,7 +80,7 @@ Here we show how to fine-tune a `ViT` on the [cats_vs_dogs](https://huggingface.
 👀 See the results here: [nateraw/vit-base-cats-vs-dogs](https://huggingface.co/nateraw/vit-base-cats-vs-dogs).
 
 ```bash
-python run_image_classification.py \
+python examples/image-classification/run_image_classification.py \
     --dataset_name cats_vs_dogs \
     --output_dir ./cats_vs_dogs_outputs/ \
     --model_name_or_path google/vit-base-patch16-224-in21k \
@@ -121,7 +121,7 @@ root/cat/[...]/asd932_.png
 Once you've prepared your dataset, you can can run the script like this:
 
 ```bash
-python run_image_classification_on_local_data.py \
+python examples/image-classification/run_image_classification.py \
     --ipu_config_name Graphcore/vit-base-ipu \
     --train_dir <path-to-train-root> \
     --train_val_split 0.1 \
@@ -135,7 +135,8 @@ python run_image_classification_on_local_data.py \
     --pod_type pod16 \
     --dataloader_num_workers 8 \
     --dataloader_drop_last \
-    --seed 1337
+    --seed 1337 \
+    --remove_unused_columns False
 ```
 
 ### 💡 The above will split the train dir into training and evaluation sets
@@ -164,7 +165,7 @@ $ huggingface-cli login
 3. When running the script, pass the following arguments:
 
 ```bash
-python run_image_classification.py \
+python examples/image-classification/run_image_classification.py \
     --push_to_hub \
     --push_to_hub_model_id <name-your-model> \
     ...
