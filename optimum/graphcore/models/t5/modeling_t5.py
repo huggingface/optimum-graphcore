@@ -363,7 +363,9 @@ class PipelinedT5ForConditionalGeneration(
 
     def train(self, mode: bool = True) -> "PipelinedT5ForConditionalGeneration":
         mod = super(T5ForConditionalGeneration, self).train(mode=mode)
-        mod.forward = mod._forward_for_train if mode else mod._forward_for_generate
+        # TODO: enable that once generation is supported.
+        # mod.forward = mod._forward_for_train if mode else mod._forward_for_generate
+        mod.forward = mod._forward_for_train
         return mod
 
     def _forward_for_train(self, input_ids, attention_mask, decoder_input_ids, labels=None):

@@ -30,7 +30,7 @@ logger = logging.get_logger(__name__)
 class IPUSeq2SeqTrainer(IPUTrainer):
     def _wrap_and_compile_model_for_evaluation(self, dataloader, prediction_loss_only):
         if prediction_loss_only:
-            return super()._wrap_and_compile_model_for_evaluation(dataloader)
+            return super()._wrap_and_compile_model_for_evaluation(dataloader, prediction_loss_only)
         self.model.compile_for_generate(next(iter(dataloader)), self.args.generation_num_beams)
         return self.model
 
