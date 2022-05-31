@@ -18,6 +18,8 @@ import inspect
 import unittest
 from typing import TYPE_CHECKING, List, Optional, Union
 
+import pytest
+
 from optimum.graphcore import IPUConfig
 from transformers import is_torch_available
 from transformers.testing_utils import require_torch, slow, torch_device
@@ -1529,6 +1531,7 @@ class GenerationTesterMixin:
         self.assertTrue(flag)
 
 
+@pytest.mark.skip(reason="Generation not supported yet")
 @require_torch
 class UtilsFunctionsTest(unittest.TestCase):
 
@@ -1634,6 +1637,7 @@ class UtilsFunctionsTest(unittest.TestCase):
         self.assertTrue(torch.all(torch.eq(non_inf_expected_idx, non_inf_idx)))
 
 
+@pytest.mark.skip(reason="Generation not supported yet")
 @require_torch
 class GenerationIntegrationTests(unittest.TestCase):
     def _compile_pipelined_model_and_return_input_ids(
