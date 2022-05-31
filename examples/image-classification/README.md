@@ -42,7 +42,7 @@ python run_image_classification.py \
     --logging_strategy steps \
     --logging_steps 10 \
     --save_total_limit 3 \
-    --dataloader_num_workers 128 \
+    --dataloader_num_workers 64 \
     --dataloader_mode async_rebatched \
     --dataloader_drop_last \
     --seed 1337

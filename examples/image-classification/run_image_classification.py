@@ -156,6 +156,21 @@ def collate_fn(examples):
     return {"pixel_values": pixel_values, "labels": labels}
 
 
+# Implement transforms as a functor instead of a function because the Async Dataloader
+# can't handle functions with closures because it uses pickle underneath.
+class ApplyTransforms:
+    """
+    Functor that applies image transforms across a batch.
+    """
+
+    def __init__(self, transforms):
+        self.transforms = transforms
+
+    def __call__(self, example_batch):
+        example_batch["pixel_values"] = [self.transforms(pil_img.convert("RGB")) for pil_img in example_batch["image"]]
+        return example_batch
+
+
 def main():
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
@@ -295,18 +310,6 @@ def main():
         ]
     )
 
-    def train_transforms(example_batch):
-        """Apply _train_transforms across a batch."""
-        example_batch["pixel_values"] = [
-            _train_transforms(pil_img.convert("RGB")) for pil_img in example_batch["image"]
-        ]
-        return example_batch
-
-    def val_transforms(example_batch):
-        """Apply _val_transforms across a batch."""
-        example_batch["pixel_values"] = [_val_transforms(pil_img.convert("RGB")) for pil_img in example_batch["image"]]
-        return example_batch
-
     if training_args.do_train:
         if "train" not in dataset:
             raise ValueError("--do_train requires a train dataset")
@@ -315,7 +318,7 @@ def main():
                 dataset["train"].shuffle(seed=training_args.seed).select(range(data_args.max_train_samples))
             )
         # Set the training transforms
-        dataset["train"].set_transform(train_transforms)
+        dataset["train"].set_transform(ApplyTransforms(_train_transforms))
 
     if training_args.do_eval:
         if "validation" not in dataset:
@@ -325,7 +328,7 @@ def main():
                 dataset["validation"].shuffle(seed=training_args.seed).select(range(data_args.max_eval_samples))
             )
         # Set the validation transforms
-        dataset["validation"].set_transform(val_transforms)
+        dataset["validation"].set_transform(ApplyTransforms(_val_transforms))
 
     # Initalize our trainer
     trainer = IPUTrainer(
