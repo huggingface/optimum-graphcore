@@ -50,53 +50,5 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
         return self
 
     @poptorch.autocast()
-    def forward(self, pixel_values=None, labels=None, output_hidden_states=None, return_dict=False):
-        # return super().forward(pixel_values=pixel_values, labels=labels, output_hidden_states=output_hidden_states, return_dict=False)
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
-        outputs = self.convnext(pixel_values, output_hidden_states=output_hidden_states, return_dict=return_dict)
-
-        pooled_output = outputs.pooler_output if return_dict else outputs[1]
-
-        logits = self.classifier(pooled_output)
-
-        smoothing = 0.0
-        if hasattr(self.config, "smoothing"):
-            smoothing = self.config.smoothing
-
-        loss = None
-        if labels is not None:
-            if self.config.problem_type is None:
-                if self.num_labels == 1:
-                    self.config.problem_type = "regression"
-                elif self.num_labels > 1 and (labels.dtype == torch.long or labels.dtype == torch.int):
-                    #
-                    self.config.problem_type = "single_label_classification"
-                else:
-                    # Using mixup
-                    self.config.problem_type = "multi_label_classification"
-
-            if self.config.problem_type == "regression":
-                loss_fct = MSELoss()
-                if self.num_labels == 1:
-                    loss = loss_fct(logits.squeeze(), labels.squeeze())
-                else:
-                    loss = loss_fct(logits, labels)
-            elif self.config.problem_type == "single_label_classification":
-                loss_fct = CrossEntropyLoss(label_smoothing=smoothing)
-                if self.eval:
-                    loss_fct = CrossEntropyLoss()
-                loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
-            elif self.config.problem_type == "multi_label_classification":
-                loss_fct = SoftTargetCrossEntropy()
-                loss = loss_fct(logits, labels)
-                loss = poptorch.identity_loss(loss, "none")
-        if not return_dict:
-            output = (logits,) + outputs[2:]
-            return ((loss,) + output) if loss is not None else output
-
-        return ImageClassifierOutputWithNoAttention(
-            loss=loss,
-            logits=logits,
-            hidden_states=outputs.hidden_states,
-        )
+    def forward(self, pixel_values=None, labels=None):
+        return super().forward(pixel_values=pixel_values, labels=labels, return_dict=False)
