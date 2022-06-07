@@ -17,6 +17,7 @@ Here is the list of the examples:
 | [translation](translation)                   | WMT                  |
 | [audio-classification](audio-classification) | SUPERB KS            |
 | [image-classification](image-classification) | CIFAR-10             |
+| [speech-pretraining](speech-pretraining)     | LibriSpeech ASR      |
 
 
 ## Tips
