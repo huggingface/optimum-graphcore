@@ -60,8 +60,8 @@ python run_pretraining.py \
 	--train_split_name "validation" \
 	--ipu_config_name Graphcore/wav2vec2-base-ipu \
 	--output_dir "./wav2vec2-pretrained-demo" \
-	--max_duration_in_seconds "20.0" \
-	--min_duration_in_seconds "2.0" \
+	--max_duration_in_seconds 20.0 \
+	--min_duration_in_seconds 2.0 \
 	--do_train \
 	--overwrite_output_dir \
 	--layerdrop 0.05 \
@@ -69,7 +69,7 @@ python run_pretraining.py \
 	--dataloader_mode "async_rebatched" \
 	--dataloader_num_workers 8 \
 	--num_train_epochs 1 \
-	--weight_decay "0.01"
+	--weight_decay 0.01
 ```
 
 ### Base
@@ -85,8 +85,8 @@ python run_pretraining.py \
 	--train_split_name "train.100" \
 	--ipu_config_name Graphcore/wav2vec2-base-ipu \
 	--output_dir "./wav2vec2-pretrained-base" \
-	--max_duration_in_seconds "20.0" \
-	--min_duration_in_seconds "2.0" \
+	--max_duration_in_seconds 20.0 \
+	--min_duration_in_seconds 2.0 \
 	--do_train \
 	--overwrite_output_dir \
 	--layerdrop 0.05 \
@@ -94,12 +94,12 @@ python run_pretraining.py \
 	--dataloader_mode "async_rebatched" \
 	--dataloader_num_workers 8 \
 	--num_train_epochs 10 \
-	--warmup_steps "1000" \
-	--weight_decay "0.01" \
-	--learning_rate "0.001" \
-	--adam_beta1 "0.9" \
-	--adam_beta2 "0.98" \
-	--adam_epsilon "1e-04"
+	--warmup_steps 1000 \
+	--weight_decay 0.01 \
+	--learning_rate 0.001 \
+	--adam_beta1 0.9 \
+	--adam_beta2 0.98 \
+	--adam_epsilon 1e-04
 ```
 
 If you increase the effective `batch_size`, for example by increasing the `gradient_accumulation_steps`,
