@@ -165,6 +165,6 @@ The following model architectures and tasks are currently supported by 🤗 Opti
 | LXMERT  | ✗                  |                    |                    |                                              |                         |                      | :heavy_check_mark: |                    |                      |
 | Wav2Vec2| :heavy_check_mark: |                    |                    |                                              |                         |                      |                    |                    |                      |
 
-Coming soon: Wav2Vec2 and ConvNeXt
+Coming soon: ConvNeXt
 
 If you find any issue while using those, please open an issue or a pull request.
