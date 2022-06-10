@@ -148,6 +148,10 @@ class ModelArguments:
             "with private models)."
         },
     )
+    ignore_mismatched_sizes: bool = field(
+        default=False,
+        metadata={"help": "Will enable to load a pretrained model whose head dimensions are different."},
+    )
 
 
 def collate_fn(examples):
@@ -283,6 +287,7 @@ def main():
         cache_dir=model_args.cache_dir,
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
+        ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
     )
     feature_extractor = AutoFeatureExtractor.from_pretrained(
         model_args.feature_extractor_name or model_args.model_name_or_path,
