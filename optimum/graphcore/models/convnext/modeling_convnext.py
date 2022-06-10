@@ -51,7 +51,7 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
     def parallelize(self):
         """Set pipeline mapping for the head (layernorm + classifier layers)"""
         super().parallelize()
-        
+
         last_ipu = self.ipu_config.ipus_per_replica - 1
         logger.info(f"Head --> IPU {last_ipu}")
         logger.info("---------------------------------------")
