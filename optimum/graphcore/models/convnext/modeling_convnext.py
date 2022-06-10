@@ -42,10 +42,12 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
     def parallelize(self):
         """Set pipeline mapping for the head (layernorm + classifier layers)"""
         super().parallelize()
+        
         last_ipu = self.ipu_config.ipus_per_replica - 1
         logger.info(f"Head --> IPU {last_ipu}")
-        self.convnext.layernorm = poptorch.BeginBlock(self.convnext.layernorm, "LayerNorm", last_ipu)
-        self.classifier = poptorch.BeginBlock(self.classifier, "Classifier", last_ipu)
+        logger.info("---------------------------------------")
+        self.convnext.layernorm = poptorch.BeginBlock(self.convnext.layernorm, "LayerNorm", ipu_id=last_ipu)
+        self.classifier = poptorch.BeginBlock(self.classifier, "Classifier", ipu_id=last_ipu)
 
         return self
 
