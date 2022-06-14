@@ -27,20 +27,16 @@ class ConvNextPipelineMixin(PipelineMixin):
         """Transform the model into an IPU pipeline"""
         super().parallelize()
         logger.info("---------- Device Allocation -----------")
-        # Set embedding pipeline mapping
         logger.info(f"Embedding  --> IPU 0")
         self.convnext.embeddings = poptorch.BeginBlock(self.convnext.embeddings, "Embedding", ipu_id=0)
 
-        # Set encoder pipeline mappings
-        # get the mapping of encoder layers --> IPU
-        encoder_layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
         global_layer_idx = 0
-        for stage_nr, stage in enumerate(self.convnext.encoder.stages):
-            for stage_layer_idx, layer in enumerate(stage.layers):
-                # Set encoder convnext layer mapping
-                ipu_id = encoder_layer_ipu[global_layer_idx]
-                logger.info(f"Encoder stage {stage_nr}, convnext layer {stage_layer_idx} --> IPU {ipu_id}")
-                layer = poptorch.BeginBlock(layer, f"Encoder_stage_{stage_nr}_layer_{stage_layer_idx}", ipu_id=ipu_id)
+        for stage_idx, stage in enumerate(self.convnext.encoder.stages):
+            for layer_idx, layer in enumerate(stage.layers):
+                ipu = layer_ipu[global_layer_idx]
+                logger.info(f"Encoder stage {stage_idx}, convnext layer {layer_idx} --> IPU {ipu}")
+                layer = poptorch.BeginBlock(layer, f"Encoder_stage_{stage_idx}_layer_{layer_idx}", ipu_id=ipu)
                 global_layer_idx += 1
 
         return self
