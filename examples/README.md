@@ -34,8 +34,3 @@ pip install -r requirements.txt
 
 Compared to transformers, one extra argument that you will need to pass to all of the examples is `--ipu_config_name`, which specifies compilation and parallelization information for a given model.
 You can find an example for all the model architectures we support on the 🤗 Hub under the [Graphcore organization](https://huggingface.co/Graphcore). For instance, for `bert-base-uncased` you can use `Graphcore/bert-base-uncased`.
-
-
-### Run on Spell
-
-You can check the instructions on how to run a given example on Spell, a service that allows you to run commands using IPUs easily, [here](https://github.com/huggingface/optimum-graphcore#run-on-spell).
