@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Union
 
 import datasets
+import numpy as np
 import torch
 from datasets import DatasetDict, load_dataset
 
@@ -406,6 +407,8 @@ def main():
             truncation=True,
         )
         batch["input_values"] = inputs.input_values[0]
+        if not training_args.fp32:
+            batch["input_values"] = batch["input_values"].astype(np.float16)
         batch["input_length"] = len(inputs.input_values[0])
 
         return batch
