@@ -64,7 +64,7 @@ if is_torch_available():
     from torch.utils.data import IterableDataset
 
     import poptorch
-    from optimum.graphcore import IPUTrainer
+    from optimum.graphcore import IPUTrainer, IPUTrainerState
     from transformers import (
         AutoModelForSequenceClassification,
         EarlyStoppingCallback,
@@ -74,7 +74,6 @@ if is_torch_available():
         GPT2LMHeadModel,
         LineByLineTextDataset,
         PreTrainedModel,
-        TrainerState,
     )
     from transformers.modeling_utils import unwrap_model
 
@@ -324,7 +323,7 @@ class IPUTrainerIntegrationCommon:
         self, output_dir, freq, total, trainer, metric, greater_is_better=False, is_pretrained=True
     ):
         checkpoint = os.path.join(output_dir, f"checkpoint-{(total // freq) * freq}")
-        log_history = TrainerState.load_from_json(os.path.join(checkpoint, "trainer_state.json")).log_history
+        log_history = IPUTrainerState.load_from_json(os.path.join(checkpoint, "trainer_state.json")).log_history
 
         values = [d[metric] for d in log_history]
         best_value = max(values) if greater_is_better else min(values)
