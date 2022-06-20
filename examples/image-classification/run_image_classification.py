@@ -153,7 +153,7 @@ class ModelArguments:
 def collate_fn(examples):
     pixel_values = torch.stack([example["pixel_values"] for example in examples])
     labels = torch.tensor([example["labels"] for example in examples])
-    return {"pixel_values": pixel_values, "labels": labels}
+    return {"pixel_values": pixel_values.half(), "labels": labels}
 
 
 # Implement transforms as a functor instead of a function because the Async Dataloader

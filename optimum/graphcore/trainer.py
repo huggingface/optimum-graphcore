@@ -484,6 +484,7 @@ class IPUTrainer:
         poptorch_specific_kwargs = {
             "drop_last": should_drop_last,  # Not dropping last will end up causing NaN during training if the combined batch size does not divide the number of steps
             "auto_distributed_partitioning": not isinstance(train_dataset, torch.utils.data.IterableDataset),
+            "persistent_workers": True,
             "mode": self.args.dataloader_mode,
             "worker_init_fn": _WorkerInit(123),
         }
@@ -506,6 +507,14 @@ class IPUTrainer:
             if self.args.dataloader_num_workers
             else combined_batch_size
         )
+        rebatched_worker_size = 256
+        async_options = {
+            "sharing_strategy": poptorch.SharingStrategy.SharedMemory,
+            "load_indefinitely": True,
+            "early_preload": True,
+            "miss_sleep_time_in_ms": 0,
+            "buffer_size": 8
+        }
 
         return poptorch.DataLoader(
             self.opts,
@@ -516,6 +525,7 @@ class IPUTrainer:
             num_workers=self.args.dataloader_num_workers,
             pin_memory=self.args.dataloader_pin_memory,
             rebatched_worker_size=rebatched_worker_size,
+            async_options=async_options,
             **poptorch_specific_kwargs,
         )
 
