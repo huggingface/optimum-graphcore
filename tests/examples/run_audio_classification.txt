@@ -19,7 +19,7 @@
 > from transformers.utils import check_min_version as tf_check_min_version
 > from transformers.utils import send_example_telemetry
 47c43,46
-< check_min_version("4.20.0.dev0")
+< check_min_version("4.21.0.dev0")
 ---
 > tf_check_min_version("4.19.0")
 > 
