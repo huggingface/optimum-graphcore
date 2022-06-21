@@ -832,7 +832,6 @@ class IPUTrainer:
         total_train_batch_size = args.per_device_train_batch_size * self.ipu_config.batch_size_factor()
         if train_dataset_is_sized:
             # No need to divide by the number of gradient accumulation steps as poptorch already accounts for that.
-            # num_update_steps_per_epoch = len(train_dataloader) // args.gradient_accumulation_steps
             num_update_steps_per_epoch = len(train_dataloader)
             num_update_steps_per_epoch = max(num_update_steps_per_epoch, 1)
             if args.max_steps > 0:
@@ -840,14 +839,12 @@ class IPUTrainer:
                 num_train_epochs = args.max_steps // num_update_steps_per_epoch + int(
                     args.max_steps % num_update_steps_per_epoch > 0
                 )
-
-                # May be slightly incorrect if the last batch in the training datalaoder has a smaller size but it's
-                # the best we can do.
-                num_train_samples = args.max_steps * total_train_batch_size
             else:
                 max_steps = math.ceil(args.num_train_epochs * num_update_steps_per_epoch)
                 num_train_epochs = math.ceil(args.num_train_epochs)
-                num_train_samples = len(self.train_dataset) * args.num_train_epochs
+            # May be slightly incorrect if the last batch in the training dataloader has a smaller size but it's
+            # the best we can do.
+            num_train_samples = max_steps * total_train_batch_size
         else:
             # see __init__. max_steps is set when the dataset has no __len__
             max_steps = args.max_steps
