@@ -23,6 +23,7 @@ import shutil
 import sys
 import time
 import warnings
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
@@ -119,6 +120,11 @@ _is_torch_generator_available = False
 
 DEFAULT_CALLBACKS = [DefaultFlowCallback]
 DEFAULT_PROGRESS_CALLBACK = ProgressCallback
+
+
+@dataclass
+class IPUTrainerState(TrainerState):
+    start_time: float = -1.0
 
 
 class IPUTrainer:
@@ -252,7 +258,7 @@ class IPUTrainer:
         else:
             self.label_smoother = None
 
-        self.state = TrainerState()
+        self.state = IPUTrainerState()
         self.control = TrainerControl()
         # Internal variable to count flos in each process, will be accumulated in `self.state.total_flos` then
         # returned to 0 every time flos need to be logged
@@ -861,7 +867,7 @@ class IPUTrainer:
 
         self.create_optimizer_and_scheduler(num_training_steps=max_steps)
 
-        self.state = TrainerState()
+        self.state = IPUTrainerState()
         if trial is not None:
             raise ValueError("Hyperparameter tuning is not supported by the IPUTrainer.")
             trial = None
@@ -911,7 +917,10 @@ class IPUTrainer:
         if resume_from_checkpoint is not None and os.path.isfile(
             os.path.join(resume_from_checkpoint, TRAINER_STATE_NAME)
         ):
-            self.state = TrainerState.load_from_json(os.path.join(resume_from_checkpoint, TRAINER_STATE_NAME))
+            self.state = IPUTrainerState.load_from_json(os.path.join(resume_from_checkpoint, TRAINER_STATE_NAME))
+            if self.state.start_time < 0:
+                self.state.start_time = start_time
+            start_time = self.state.start_time
             epochs_trained = self.state.global_step // num_update_steps_per_epoch
             if not args.ignore_data_skip:
                 steps_trained_in_current_epoch = self.state.global_step % (num_update_steps_per_epoch)
@@ -944,6 +953,7 @@ class IPUTrainer:
         # to set this after the load.
         self.state.max_steps = max_steps
         self.state.num_train_epochs = num_train_epochs
+        self.state.start_time = start_time
 
         # tr_loss is a tensor to avoid synchronization of TPUs through .item()
         tr_loss = torch.tensor(0.0).to(args.device)
