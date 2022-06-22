@@ -15,6 +15,7 @@
 import poptorch
 import transformers
 from optimum.utils import logging
+from transformers.models.convnext.modeling_convnext import ConvNextLayer
 
 from ...modeling_utils import PipelineMixin, get_layer_ipu, recomputation_checkpoint, register
 from .optimized_covextlayer import OptimizedConvNextLayer
@@ -61,6 +62,14 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier", ipu_id=last_ipu)
 
         return self
+
+    def deparallelize(self):
+        super.deparallelize(self)
+
+        # Switch back to non-optimized ConvNextLayer
+        for stage in self.convnext.encoder.stages:
+            for layer in stage.layers:
+                layer.__class__ = ConvNextLayer
 
     @poptorch.autocast()
     def forward(self, pixel_values=None, labels=None):
