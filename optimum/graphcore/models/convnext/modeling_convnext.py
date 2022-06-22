@@ -24,10 +24,16 @@ from .optimized_covextlayer import OptimizedConvNextLayer
 logger = logging.get_logger(__name__)
 
 
-class ConvNextPipelineMixin(PipelineMixin):
+@register(transformers.ConvNextForImageClassification)
+class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClassification, PipelineMixin):
     def parallelize(self):
-        """Transform the model into an IPU pipeline"""
         super().parallelize()
+
+        # Use optimized ConvNextLayer
+        for stage in self.convnext.encoder.stages:
+            for layer in stage.layers:
+                layer.__class__ = OptimizedConvNextLayer
+
         logger.info("---------- Device Allocation -----------")
         logger.info(f"Embedding  --> IPU 0")
         self.convnext.embeddings = poptorch.BeginBlock(self.convnext.embeddings, "Embedding", ipu_id=0)
@@ -41,20 +47,6 @@ class ConvNextPipelineMixin(PipelineMixin):
                 layer = poptorch.BeginBlock(layer, f"Encoder_stage_{stage_idx}_layer_{layer_idx}", ipu_id=ipu)
                 global_layer_idx += 1
 
-        return self
-
-
-@register(transformers.ConvNextForImageClassification)
-class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClassification, ConvNextPipelineMixin):
-    def parallelize(self):
-        """Set pipeline mapping for the head (layernorm + classifier layers)"""
-        super().parallelize()
-
-        # Use optimized ConvNextLayer
-        for stage in self.convnext.encoder.stages:
-            for layer in stage.layers:
-                layer.__class__ = OptimizedConvNextLayer
-
         last_ipu = self.ipu_config.ipus_per_replica - 1
         logger.info(f"Head --> IPU {last_ipu}")
         logger.info("---------------------------------------")
@@ -64,7 +56,7 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
         return self
 
     def deparallelize(self):
-        super.deparallelize(self)
+        super().deparallelize(self)
 
         # Switch back to non-optimized ConvNextLayer
         for stage in self.convnext.encoder.stages:
