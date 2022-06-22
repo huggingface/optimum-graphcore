@@ -17,6 +17,7 @@ import transformers
 from optimum.utils import logging
 
 from ...modeling_utils import PipelineMixin, get_layer_ipu, recomputation_checkpoint, register
+from .optimized_covextlayer import OptimizedConvNextLayer
 
 
 logger = logging.get_logger(__name__)
@@ -47,6 +48,11 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
     def parallelize(self):
         """Set pipeline mapping for the head (layernorm + classifier layers)"""
         super().parallelize()
+
+        # Use optimized ConvNextLayer
+        for stage in self.convnext.encoder.stages:
+            for layer in stage.layers:
+                layer.__class__ = OptimizedConvNextLayer
 
         last_ipu = self.ipu_config.ipus_per_replica - 1
         logger.info(f"Head --> IPU {last_ipu}")
