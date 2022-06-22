@@ -56,7 +56,7 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
         return self
 
     def deparallelize(self):
-        super().deparallelize(self)
+        super().deparallelize()
 
         # Switch back to non-optimized ConvNextLayer
         for stage in self.convnext.encoder.stages:
