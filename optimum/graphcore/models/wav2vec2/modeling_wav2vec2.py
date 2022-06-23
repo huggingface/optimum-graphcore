@@ -29,7 +29,7 @@ from transformers.models.wav2vec2.modeling_wav2vec2 import (
     Wav2Vec2GumbelVectorQuantizer,
 )
 
-from ...modeling_utils import PipelineMixin, get_layer_ipu, register
+from ...modeling_utils import PipelineMixin, get_layer_ipu, recomputation_checkpoint, register
 from .ipu_gumbel_vector_quantizer import IPUWav2Vec2GumbelVectorQuantizer
 from .ipu_layer_drop import IPUWav2Vec2Adapter, IPUWav2Vec2Encoder, IPUWav2Vec2EncoderStableLayerNorm
 
@@ -146,6 +146,7 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
         layers.append(("Positional Embedding",self.wav2vec2.encoder.pos_conv_embed))
         # Encoder layers
         for index, layer in enumerate(self.wav2vec2.encoder.layers):
+            recomputation_checkpoint(layer)
             layers.append((f"Encoder {index:<2}", layer))
         # Project Hidden
         layers.append(("Project Hidden", self.project_hid))
