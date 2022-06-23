@@ -47,6 +47,7 @@ from transformers.utils.versions import require_version
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.15.0.dev0")
 
+require_version("transformers==4.18.0", "To fix: pip install -r examples/speech-pretraining/requirements.txt")
 require_version("datasets>=1.18.0", "To fix: pip install -r examples/speech-pretraining/requirements.txt")
 
 
