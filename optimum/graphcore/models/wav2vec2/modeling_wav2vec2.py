@@ -138,21 +138,30 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
 
         logger.info("---------- Device Allocation -----------")
         layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        layers = []
         # Conv layers
         for index, layer in enumerate(self.wav2vec2.feature_extractor.conv_layers):
-            ipu = layer_ipu[index]
-            logger.info(f"Conv {index:<2} --> IPU {ipu}")
-            self._add_begin_block(layer, f"Conv{index}", ipu_id=ipu)
-        offset = index + 1
+            layers.append((f"Conv {index:<2}", layer))
+        # Positional Embedding
+        layers.append(("Positional Embedding",self.wav2vec2.encoder.pos_conv_embed))
         # Encoder layers
         for index, layer in enumerate(self.wav2vec2.encoder.layers):
-            ipu = layer_ipu[offset + index]
-            logger.info(f"Encoder {index:<2} --> IPU {ipu}")
-            self._add_begin_block(layer, f"Encoder{index}", ipu_id=ipu)
+            layers.append((f"Encoder {index:<2}", layer))
+        # Project Hidden
+        layers.append(("Project Hidden", self.project_hid))
         # Quantizer
-        last_ipu = self.ipu_config.ipus_per_replica - 1
-        logger.info(f"Quantizer --> IPU {last_ipu}")
-        self._add_begin_block(self.quantizer, "Quantizer", ipu_id=last_ipu)
+        layers.append(("Quantizer", self.quantizer))
+        # Project Quantizer
+        layers.append(("Project Quantizer", self.project_q))
+
+        if len(layer_ipu) != len(layers):
+            raise ValueError(
+                f"Layers per IPU total ({len(layer_ipu)}) must be equal to layers ({len(layers)}).")
+
+        for i, (name, layer) in enumerate(layers):
+            logger.info(f"{name} --> IPU {layer_ipu[i]}")
+            self._add_begin_block(layer, name, ipu_id=layer_ipu[i])
+
         logger.info("---------------------------------------")
 
     def deparallelize(self):
@@ -224,8 +233,8 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
             # if attention_mask is passed, make sure that padded feature vectors cannot be sampled
             # sample negative quantized vectors BTC => (BxT)C
             # Moved the negative sampling batch offsetting into the model
-            # Commenting this out because of Poptorch issue. With batch size 1 it's not needed anyway
-            # sampled_negative_indices += torch.arange(batch_size)[:, None, None] * sequence_length
+            if batch_size > 1:
+                sampled_negative_indices += torch.arange(batch_size)[:, None, None] * sequence_length
             negative_quantized_features = quantized_features.view(-1, hidden_size)[
                 sampled_negative_indices.long().view(-1)
             ]

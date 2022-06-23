@@ -58,7 +58,7 @@ python run_pretraining.py \
 	--dataset_name "librispeech_asr" \
 	--dataset_config_name "clean" \
 	--train_split_name "validation" \
-	--ipu_config_name Graphcore/wav2vec2-base-ipu \
+	--ipu_config_name "./base_4-ipu_config.json" \
 	--output_dir "./wav2vec2-pretrained-demo" \
 	--max_duration_in_seconds 20.0 \
 	--min_duration_in_seconds 2.0 \
@@ -83,7 +83,7 @@ python run_pretraining.py \
 	--dataset_name "librispeech_asr" \
 	--dataset_config_name "clean" \
 	--train_split_name "train.100" \
-	--ipu_config_name Graphcore/wav2vec2-base-ipu \
+	--ipu_config_name "./base_4-ipu_config.json" \
 	--output_dir "./wav2vec2-pretrained-base" \
 	--max_duration_in_seconds 20.0 \
 	--min_duration_in_seconds 2.0 \
