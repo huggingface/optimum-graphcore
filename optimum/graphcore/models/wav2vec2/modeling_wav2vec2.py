@@ -33,13 +33,12 @@ from ...modeling_utils import PipelineMixin, get_layer_ipu, recomputation_checkp
 from .ipu_gumbel_vector_quantizer import IPUWav2Vec2GumbelVectorQuantizer
 from .ipu_layer_drop import IPUWav2Vec2Adapter, IPUWav2Vec2Encoder, IPUWav2Vec2EncoderStableLayerNorm
 
-
 logger = logging.get_logger(__name__)
 
 
 class IPUWav2Vec2Model(Wav2Vec2Model):
     def _get_feature_vector_attention_mask(
-        self, feature_vector_length: int, attention_mask: torch.LongTensor, add_adapter=None
+            self, feature_vector_length: int, attention_mask: torch.LongTensor, add_adapter=None
     ):
         # Effectively attention_mask.sum(-1), but not inplace to be able to run
         # on inference mode.
@@ -143,7 +142,7 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
         for index, layer in enumerate(self.wav2vec2.feature_extractor.conv_layers):
             layers.append((f"Conv {index:<2}", layer))
         # Positional Embedding
-        layers.append(("Positional Embedding",self.wav2vec2.encoder.pos_conv_embed))
+        layers.append(("Positional Embedding", self.wav2vec2.encoder.pos_conv_embed))
         # Encoder layers
         for index, layer in enumerate(self.wav2vec2.encoder.layers):
             recomputation_checkpoint(layer)
@@ -180,15 +179,17 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
         return self
 
     def forward(
-        self,
-        input_values,
-        attention_mask=None,
-        mask_time_indices=None,
-        sampled_negative_indices=None,
-        gumbel_temperature=None,
-        output_attentions=None,
-        output_hidden_states=None,
-        return_dict=None,
+            self,
+            input_values,
+            gumbel_temperature,
+            attention_mask=None,
+            mask_time_indices=None,
+            sampled_negative_indices=None,
+            reduce_selector=None,
+            mask_reduced=None,
+            output_attentions=None,
+            output_hidden_states=None,
+            return_dict=None,
     ):
         # Override the return_dict argument
         return_dict = False
@@ -205,11 +206,7 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
             return_dict=return_dict,
         )
 
-        # 1. project all transformed features (including masked) to final vq dim
-        transformer_features = self.project_hid(outputs[0])
-
-        # 2. quantize all (unmasked) extracted features and project to final vq dim
-        extract_features = self.dropout_features(outputs[1])
+        transformer_features, extract_features = outputs[0], outputs[1]
 
         if attention_mask is not None:
             # compute reduced attention_mask correponding to feature vectors
@@ -217,6 +214,30 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
                 extract_features.shape[1], attention_mask, add_adapter=False
             )
 
+        if reduce_selector is not None:
+            batch_size, sequence_length, _ = extract_features.shape
+            cropped_length = reduce_selector.shape[1]
+
+            reduce_selector += torch.arange(batch_size).unsqueeze(1) * sequence_length
+            mask_time_indices = mask_reduced
+
+            extract_features = torch.index_select(extract_features.view(batch_size * sequence_length, -1), 0,
+                                                  reduce_selector.view(-1)).unsqueeze(0)
+            extract_features = extract_features.reshape(batch_size, cropped_length, -1)
+
+            extract_features = self.dropout_features(extract_features)
+
+            transformer_features = torch.index_select(transformer_features.view(batch_size * sequence_length, -1),
+                                                      0,
+                                                      reduce_selector.view(-1)).unsqueeze(0)
+            transformer_features = transformer_features.reshape(batch_size, cropped_length, -1)
+        else:
+            extract_features = self.dropout_features(extract_features)
+
+        # 1. project all transformed features (including masked) to final vq dim
+        transformer_features = self.project_hid(transformer_features)
+
+        # 2. quantize all (unmasked) extracted features and project to final vq dim
         quantizer_inputs = [extract_features]
         if gumbel_temperature:
             quantizer_inputs.append(gumbel_temperature)
@@ -291,10 +312,10 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
 
     @staticmethod
     def compute_contrastive_logits(
-        target_features: torch.FloatTensor,
-        negative_features: torch.FloatTensor,
-        predicted_features: torch.FloatTensor,
-        temperature: int = 0.1,
+            target_features: torch.FloatTensor,
+            negative_features: torch.FloatTensor,
+            predicted_features: torch.FloatTensor,
+            temperature: int = 0.1,
     ):
         """
         Compute logits for contrastive loss based using cosine similarity as the distance measure between
@@ -312,7 +333,7 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
 
 
 def _sample_negative_indices(
-    features_shape: Tuple, num_negatives: int, mask_time_indices: Optional[np.ndarray] = None
+        features_shape: Tuple, num_negatives: int, mask_time_indices: Optional[np.ndarray] = None
 ):
     """
     Sample `num_negatives` vectors from feature vectors.

@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Union
 
 import datasets
+import numpy as np
 import torch
 from datasets import DatasetDict, load_dataset
 
@@ -43,13 +44,11 @@ from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version
 from transformers.utils.versions import require_version
 
-
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.15.0.dev0")
 
 require_version("transformers==4.18.0", "To fix: pip install -r examples/speech-pretraining/requirements.txt")
 require_version("datasets>=1.18.0", "To fix: pip install -r examples/speech-pretraining/requirements.txt")
-
 
 logger = logging.getLogger(__name__)
 
@@ -88,8 +87,8 @@ class ModelArguments:
         default=0.65,
         metadata={
             "help": "Probability of each feature vector along the time axis to be chosen as the start of the vector"
-            "span to be masked. Approximately ``mask_time_prob * sequence_length // mask_time_length`` feature"
-            "vectors will be masked along the time axis."
+                    "span to be masked. Approximately ``mask_time_prob * sequence_length // mask_time_length`` feature"
+                    "vectors will be masked along the time axis."
         },
     )
     mask_time_length: int = field(
@@ -100,7 +99,7 @@ class ModelArguments:
         default=0.0,
         metadata={
             "help": "Probability of each feature vector along the feature axis to be chosen as the start of the vector"
-            "span to be masked. Approximately ``mask_feature_prob * sequence_length // mask_feature_length`` feature bins will be masked along the time axis."
+                    "span to be masked. Approximately ``mask_feature_prob * sequence_length // mask_feature_length`` feature bins will be masked along the time axis."
         },
     )
     mask_feature_length: int = field(
@@ -142,7 +141,7 @@ class DataTrainingArguments:
         default="train+validation",
         metadata={
             "help": "The name of the training data set split to use (via the datasets library). Defaults to "
-            "'train+validation'"
+                    "'train+validation'"
         },
     )
     eval_split_name: str = field(
@@ -166,14 +165,14 @@ class DataTrainingArguments:
         default=None,
         metadata={
             "help": "For debugging purposes or quicker training, truncate the number of training examples to this "
-            "value if set."
+                    "value if set."
         },
     )
     max_eval_samples: Optional[int] = field(
         default=None,
         metadata={
             "help": "For debugging purposes or quicker training, truncate the number of validation examples to this "
-            "value if set."
+                    "value if set."
         },
     )
     max_duration_in_seconds: float = field(
@@ -189,16 +188,16 @@ class DataTrainingArguments:
         default=False,
         metadata={
             "help": "Whether to only do data preprocessing and skip training. "
-            "This is especially useful when data preprocessing errors out in distributed training due to timeout. "
-            "In this case, one should run the preprocessing in a non-distributed setup with `preprocessing_only=True` "
-            "so that the cached datasets can consequently be loaded in distributed training"
+                    "This is especially useful when data preprocessing errors out in distributed training due to timeout. "
+                    "In this case, one should run the preprocessing in a non-distributed setup with `preprocessing_only=True` "
+                    "so that the cached datasets can consequently be loaded in distributed training"
         },
     )
     use_auth_token: bool = field(
         default=False,
         metadata={
             "help": "If :obj:`True`, will use the token generated when running"
-            ":obj:`transformers-cli login` as HTTP bearer authorization for remote files."
+                    ":obj:`transformers-cli login` as HTTP bearer authorization for remote files."
         },
     )
 
@@ -276,17 +275,26 @@ class DataCollatorForWav2Vec2Pretraining:
             min_masks=1,
         )
 
+        cropped_length = int(mask_indices_seq_length * self.model.config.mask_time_prob) + 1
+        # position true masked indexes first and crop, we mask the false indexes later
+        reduce_selector = np.argsort(~mask_time_indices, 1)[:, :cropped_length]
+        num_masked = np.sum(mask_time_indices, 1)
+        mask_reduced = np.expand_dims(np.arange(cropped_length), 0) < np.expand_dims(num_masked, 1)
+
         # sample negative indices
         sampled_negative_indices = _sample_negative_indices(
-            features_shape,
+            (batch_size, cropped_length),
             self.model.config.num_negatives,
-            mask_time_indices=mask_time_indices,
+            mask_time_indices=mask_reduced,
         )
+
         batch["mask_time_indices"] = torch.tensor(mask_time_indices, dtype=torch.long, device=device)
         batch["sampled_negative_indices"] = torch.tensor(sampled_negative_indices, dtype=torch.long, device=device)
+        batch["reduce_selector"] = torch.tensor(reduce_selector, dtype=torch.int, device=device)
+        batch["mask_reduced"] = torch.tensor(mask_reduced, dtype=torch.bool, device=device)
         # Update the Gumbel temperature
         gumbel_temperature = max(
-            self.max_gumbel_temperature * self.gumbel_temperature_decay**self.global_step,
+            self.max_gumbel_temperature * self.gumbel_temperature_decay ** self.global_step,
             self.min_gumbel_temperature,
         )
         self.model.set_gumbel_temperature(gumbel_temperature)
