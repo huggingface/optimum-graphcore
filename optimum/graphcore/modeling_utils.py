@@ -27,7 +27,6 @@ from transformers.modeling_outputs import ModelOutput
 
 from .ipu_configuration import IPUConfig
 
-
 logger = logging.get_logger(__name__)
 
 _PRETRAINED_TO_PIPELINED_REGISTRY = {}
@@ -160,10 +159,10 @@ class PipelineMixin:
 
 class GenerationMethodsMixin:
     def get_encoder(
-        self,
-        device_iterations: Optional[int] = None,
-        replication_factor: Optional[int] = None,
-        for_inference: bool = True,
+            self,
+            device_iterations: Optional[int] = None,
+            replication_factor: Optional[int] = None,
+            for_inference: bool = True,
     ):
         if not hasattr(self, "_wrapped_encoder"):
             encoder = super().get_encoder()
@@ -196,7 +195,7 @@ def recomputation_checkpoint(module: nn.Module) -> torch.utils.hooks.RemovableHa
     def recompute_outputs(module, inputs, outputs):
         if isinstance(outputs, torch.Tensor):
             return poptorch.recomputationCheckpoint(outputs)
-        elif isinstance(outputs, tuple):
+        else:
             return tuple(poptorch.recomputationCheckpoint(y) for y in outputs)
 
     return module.register_forward_hook(recompute_outputs)
@@ -253,7 +252,7 @@ class SerializedEmbedding(nn.Module):
         self.split_embeddings = nn.ModuleList(
             [
                 nn.Embedding.from_pretrained(
-                    embedding.weight[i * self.split_size : (i + 1) * self.split_size, :].detach(),
+                    embedding.weight[i * self.split_size: (i + 1) * self.split_size, :].detach(),
                     freeze=False,
                     padding_idx=embedding.padding_idx if i == 0 else None,
                 )
@@ -318,7 +317,7 @@ class SerializedLinear(nn.Linear):
     """
 
     def __init__(
-        self, in_features, out_features, factor, bias=False, mode=poptorch.MatMulSerializationMode.OutputChannels
+            self, in_features, out_features, factor, bias=False, mode=poptorch.MatMulSerializationMode.OutputChannels
     ):
         super().__init__(in_features, out_features, bias)
         self.mode = mode
@@ -353,11 +352,11 @@ class SharedEmbedding(nn.Module):
         return embeds[:, :idx, :], embeds[:, idx:, :]
 
     def forward(
-        self,
-        input_ids: torch.Tensor,
-        decoder_input_ids: torch.Tensor,
-        encoder_embed_scale: Optional[float] = None,
-        decoder_embed_scale: Optional[float] = None,
+            self,
+            input_ids: torch.Tensor,
+            decoder_input_ids: torch.Tensor,
+            encoder_embed_scale: Optional[float] = None,
+            decoder_embed_scale: Optional[float] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # TODO: use this once the TiedGather pattern issue is solved.
         # encoder_inputs_embeds, decoder_inputs_embeds = None, None
