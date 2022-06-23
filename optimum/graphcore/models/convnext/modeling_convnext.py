@@ -18,7 +18,7 @@ from optimum.utils import logging
 from transformers.models.convnext.modeling_convnext import ConvNextLayer
 
 from ...modeling_utils import PipelineMixin, get_layer_ipu, recomputation_checkpoint, register
-from .optimized_covextlayer import OptimizedConvNextLayer
+from .optimized_convnextlayer import OptimizedConvNextLayer
 
 
 logger = logging.get_logger(__name__)
