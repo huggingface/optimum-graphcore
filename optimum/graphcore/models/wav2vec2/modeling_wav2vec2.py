@@ -214,37 +214,40 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
                 extract_features.shape[1], attention_mask, add_adapter=False
             )
 
-        if reduce_selector is not None:
-            batch_size, sequence_length, _ = extract_features.shape
-            cropped_length = reduce_selector.shape[1]
-
-            reduce_selector += torch.arange(batch_size).unsqueeze(1) * sequence_length
-            mask_time_indices = mask_reduced
-
-            extract_features = torch.index_select(extract_features.view(batch_size * sequence_length, -1), 0,
-                                                  reduce_selector.view(-1)).unsqueeze(0)
-            extract_features = extract_features.reshape(batch_size, cropped_length, -1)
-
-            extract_features = self.dropout_features(extract_features)
-
-            transformer_features = torch.index_select(transformer_features.view(batch_size * sequence_length, -1),
-                                                      0,
-                                                      reduce_selector.view(-1)).unsqueeze(0)
-            transformer_features = transformer_features.reshape(batch_size, cropped_length, -1)
-        else:
-            extract_features = self.dropout_features(extract_features)
-
         # 1. project all transformed features (including masked) to final vq dim
         transformer_features = self.project_hid(transformer_features)
 
         # 2. quantize all (unmasked) extracted features and project to final vq dim
-        quantizer_inputs = [extract_features]
-        if gumbel_temperature:
-            quantizer_inputs.append(gumbel_temperature)
+        extract_features = self.dropout_features(extract_features)
+
         quantized_features, codevector_perplexity = self.quantizer(
-            *quantizer_inputs, mask_time_indices=mask_time_indices
+            extract_features, gumbel_temperature.mean(), mask_time_indices=mask_time_indices
         )
         quantized_features = self.project_q(quantized_features)
+
+        # GC. remove a static portion of the output tensors at unmasked indices
+        if reduce_selector is not None:
+            batch_size, sequence_length, feature_size = quantized_features.shape
+            batch_size, sequence_length, _ = quantized_features.shape
+            cropped_length = reduce_selector.shape[1]
+
+            if batch_size > 1:
+                reduce_selector += torch.arange(batch_size).unsqueeze(1) * sequence_length
+            mask_time_indices = mask_reduced.to(torch.bool)
+
+            quantized_features = quantized_features.view(-1, feature_size)[reduce_selector.long().view(-1)]
+            # extract_features = torch.index_select(extract_features.view(batch_size * sequence_length, -1), 0,
+            #                                       reduce_selector.long().view(-1)).unsqueeze(0)
+            quantized_features = quantized_features.reshape(batch_size, cropped_length, feature_size)
+
+            _, _, feature_size = transformer_features.shape
+            transformer_features = transformer_features.view(-1, feature_size)[reduce_selector.long().view(-1)]
+            # transformer_features = torch.index_select(transformer_features.view(batch_size * sequence_length, -1),
+            #                                           0,
+            #                                           reduce_selector.long().view(-1)).unsqueeze(0)
+            transformer_features = transformer_features.reshape(batch_size, cropped_length, feature_size)
+
+        # return poptorch.identity_loss(quantized_features.sum() + transformer_features.sum(), "sum")
 
         loss = contrastive_loss = diversity_loss = None
         if sampled_negative_indices is not None:
