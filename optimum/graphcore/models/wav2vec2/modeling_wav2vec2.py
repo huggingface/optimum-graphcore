@@ -228,26 +228,18 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
         # GC. remove a static portion of the output tensors at unmasked indices
         if reduce_selector is not None:
             batch_size, sequence_length, feature_size = quantized_features.shape
-            batch_size, sequence_length, _ = quantized_features.shape
             cropped_length = reduce_selector.shape[1]
 
             if batch_size > 1:
-                reduce_selector += torch.arange(batch_size).unsqueeze(1) * sequence_length
+                reduce_selector += (torch.arange(batch_size).unsqueeze(1) * sequence_length)
             mask_time_indices = mask_reduced.to(torch.bool)
 
             quantized_features = quantized_features.view(-1, feature_size)[reduce_selector.long().view(-1)]
-            # extract_features = torch.index_select(extract_features.view(batch_size * sequence_length, -1), 0,
-            #                                       reduce_selector.long().view(-1)).unsqueeze(0)
             quantized_features = quantized_features.reshape(batch_size, cropped_length, feature_size)
 
             _, _, feature_size = transformer_features.shape
             transformer_features = transformer_features.view(-1, feature_size)[reduce_selector.long().view(-1)]
-            # transformer_features = torch.index_select(transformer_features.view(batch_size * sequence_length, -1),
-            #                                           0,
-            #                                           reduce_selector.long().view(-1)).unsqueeze(0)
             transformer_features = transformer_features.reshape(batch_size, cropped_length, feature_size)
-
-        # return poptorch.identity_loss(quantized_features.sum() + transformer_features.sum(), "sum")
 
         loss = contrastive_loss = diversity_loss = None
         if sampled_negative_indices is not None:
@@ -259,7 +251,7 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
             # sample negative quantized vectors BTC => (BxT)C
             # Moved the negative sampling batch offsetting into the model
             if batch_size > 1:
-                sampled_negative_indices += torch.arange(batch_size)[:, None, None] * sequence_length
+                sampled_negative_indices += (torch.arange(batch_size)[:, None, None] * sequence_length)
             negative_quantized_features = quantized_features.view(-1, hidden_size)[
                 sampled_negative_indices.long().view(-1)
             ]
