@@ -29,16 +29,21 @@ from datasets import DatasetDict, load_dataset
 import transformers
 from optimum.graphcore import IPUConfig, IPUTrainer
 from optimum.graphcore import IPUTrainingArguments as TrainingArguments
+from optimum.graphcore.utils import check_min_version
 from transformers import AutoConfig, AutoFeatureExtractor, AutoModelForAudioClassification, HfArgumentParser, set_seed
 from transformers.trainer_utils import get_last_checkpoint
-from transformers.utils import check_min_version
+from transformers.utils import check_min_version as tf_check_min_version
+from transformers.utils import send_example_telemetry
 from transformers.utils.versions import require_version
 
 
 logger = logging.getLogger(__name__)
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-check_min_version("4.18.0")
+tf_check_min_version("4.19.0")
+
+# Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
+check_min_version("0.2.4.dev")
 
 require_version("datasets>=1.14.0", "To fix: pip install -r examples/pytorch/audio-classification/requirements.txt")
 
@@ -80,8 +85,9 @@ class DataTrainingArguments:
     eval_split_name: str = field(
         default="validation",
         metadata={
-            "help": "The name of the training data set split to use (via the datasets library). Defaults to "
-            "'validation'"
+            "help": (
+                "The name of the training data set split to use (via the datasets library). Defaults to 'validation'"
+            )
         },
     )
     audio_column_name: str = field(
@@ -94,15 +100,19 @@ class DataTrainingArguments:
     max_train_samples: Optional[int] = field(
         default=None,
         metadata={
-            "help": "For debugging purposes or quicker training, truncate the number of training examples to this "
-            "value if set."
+            "help": (
+                "For debugging purposes or quicker training, truncate the number of training examples to this "
+                "value if set."
+            )
         },
     )
     max_eval_samples: Optional[int] = field(
         default=None,
         metadata={
-            "help": "For debugging purposes or quicker training, truncate the number of evaluation examples to this "
-            "value if set."
+            "help": (
+                "For debugging purposes or quicker training, truncate the number of evaluation examples to this "
+                "value if set."
+            )
         },
     )
     max_length_seconds: float = field(
@@ -143,12 +153,18 @@ class ModelArguments:
     use_auth_token: bool = field(
         default=False,
         metadata={
-            "help": "Will use the token generated when running `transformers-cli login` (necessary to use this script "
-            "with private models)."
+            "help": (
+                "Will use the token generated when running `transformers-cli login` (necessary to use this script "
+                "with private models)."
+            )
         },
     )
     freeze_feature_extractor: Optional[bool] = field(
         default=None, metadata={"help": "Whether to freeze the feature extractor layers of the model."}
+    )
+    ignore_mismatched_sizes: bool = field(
+        default=False,
+        metadata={"help": "Will enable to load a pretrained model whose head dimensions are different."},
     )
 
     def __post_init__(self):
@@ -179,6 +195,10 @@ def main():
         model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+
+    # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
+    # information sent is the one passed as arguments along with your Python/PyTorch versions.
+    send_example_telemetry("run_audio_classification", model_args, data_args)
 
     # Setup logging
     logging.basicConfig(
@@ -301,10 +321,13 @@ def main():
     )
     model = AutoModelForAudioClassification.from_pretrained(
         model_args.model_name_or_path,
+        from_tf=bool(".ckpt" in model_args.model_name_or_path),
         config=config,
         cache_dir=model_args.cache_dir,
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
+        # TODO: enable this when requiring transformers == 4.20.0
+        # ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
     )
 
     # freeze the convolutional waveform encoder
@@ -324,6 +347,8 @@ def main():
             padding="max_length",
         )
         examples["input_values"] = inputs["input_values"][0]
+        if not training_args.fp32:
+            examples["input_values"] = examples["input_values"].astype(np.float16)
         examples["labels"] = examples[data_args.label_column_name]
         return examples
 
