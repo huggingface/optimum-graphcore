@@ -283,6 +283,7 @@ class DataCollatorCTCWithPadding:
             return_tensors="pt",
         )
 
+
         with self.processor.as_target_processor():
             labels_batch = self.processor.pad(
                 label_features,
@@ -292,11 +293,9 @@ class DataCollatorCTCWithPadding:
             )
 
         # replace padding with -100 to ignore loss correctly
-        labels = labels_batch["input_ids"].masked_fill(labels_batch.attention_mask.ne(1), -100)
+        batch["labels"] = labels_batch["input_ids"].masked_fill(labels_batch.attention_mask.ne(1), -100)
 
-        batch["labels"] = labels
-
-        return batch
+        return batch.data
 
 
 def create_vocabulary_from_data(
@@ -601,14 +600,9 @@ def main():
 
         return batch
 
-    tokenizer_copy = copy.deepcopy(tokenizer)
-    pd = lambda batch: prepare_dataset(batch, feature_extractor, tokenizer_copy)
-
-    from datasets.fingerprint import Hasher
-    print(f"Map Hash: {Hasher.hash(pd)}")
     with training_args.main_process_first(desc="dataset map preprocessing"):
         vectorized_datasets = raw_datasets.map(
-            pd,
+            lambda batch: prepare_dataset(batch, feature_extractor, tokenizer),
             remove_columns=next(iter(raw_datasets.values())).column_names,
             num_proc=num_workers,
             desc="preprocess datasets",
@@ -659,7 +653,7 @@ def main():
 
     # save feature extractor, tokenizer and config
     feature_extractor.save_pretrained(training_args.output_dir)
-    tokenizer.save_pretrained(training_args.output_dir)
+    # tokenizer.save_pretrained(training_args.output_dir)
     config.save_pretrained(training_args.output_dir)
 
     try:
