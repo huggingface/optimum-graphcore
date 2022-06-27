@@ -27,6 +27,7 @@ from transformers.models.wav2vec2.modeling_wav2vec2 import (
     Wav2Vec2EncoderStableLayerNorm,
     Wav2Vec2ForPreTrainingOutput,
     Wav2Vec2GumbelVectorQuantizer,
+    Wav2Vec2ForCTC,
 )
 
 from ...modeling_utils import PipelineMixin, get_layer_ipu, recomputation_checkpoint, register
@@ -214,6 +215,22 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
                 extract_features.shape[1], attention_mask, add_adapter=False
             )
 
+        # GC. remove a static portion of the output tensors at unmasked indices
+        if reduce_selector is not None:
+            batch_size, sequence_length, feature_size = extract_features.shape
+            cropped_length = reduce_selector.shape[1]
+
+            if batch_size > 1:
+                reduce_selector += (torch.arange(batch_size).unsqueeze(1) * sequence_length)
+            mask_time_indices = mask_reduced.to(torch.bool)
+
+            extract_features = extract_features.view(-1, feature_size)[reduce_selector.long().view(-1)]
+            extract_features = extract_features.reshape(batch_size, cropped_length, feature_size)
+
+            _, _, feature_size = transformer_features.shape
+            transformer_features = transformer_features.view(-1, feature_size)[reduce_selector.long().view(-1)]
+            transformer_features = transformer_features.reshape(batch_size, cropped_length, feature_size)
+
         # 1. project all transformed features (including masked) to final vq dim
         transformer_features = self.project_hid(transformer_features)
 
@@ -224,22 +241,6 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
             extract_features, gumbel_temperature.mean(), mask_time_indices=mask_time_indices
         )
         quantized_features = self.project_q(quantized_features)
-
-        # GC. remove a static portion of the output tensors at unmasked indices
-        if reduce_selector is not None:
-            batch_size, sequence_length, feature_size = quantized_features.shape
-            cropped_length = reduce_selector.shape[1]
-
-            if batch_size > 1:
-                reduce_selector += (torch.arange(batch_size).unsqueeze(1) * sequence_length)
-            mask_time_indices = mask_reduced.to(torch.bool)
-
-            quantized_features = quantized_features.view(-1, feature_size)[reduce_selector.long().view(-1)]
-            quantized_features = quantized_features.reshape(batch_size, cropped_length, feature_size)
-
-            _, _, feature_size = transformer_features.shape
-            transformer_features = transformer_features.view(-1, feature_size)[reduce_selector.long().view(-1)]
-            transformer_features = transformer_features.reshape(batch_size, cropped_length, feature_size)
 
         loss = contrastive_loss = diversity_loss = None
         if sampled_negative_indices is not None:
@@ -318,13 +319,174 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
         """
         target_features = torch.cat([target_features, negative_features], dim=0)
 
-        logits = torch.cosine_similarity(
-            predicted_features.float(), target_features.float(), dim=-1, eps=1e-4
-        ).type_as(target_features)
+        logits = torch.cosine_similarity(predicted_features, target_features, dim=-1, eps=1e-4)
 
         # apply temperature
         logits = logits / temperature
         return logits
+
+
+@register(Wav2Vec2ForCTC)
+class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
+    def change_wav2vec2_encoder_class(self, restore: bool):
+        """Changes the encoder class to update its forward pass so that it uses our custom version.
+
+        Args:
+            restore: whether to restore the encoder to its original version or not.
+        """
+        if self.config.do_stable_layer_norm:
+            new_cls = Wav2Vec2EncoderStableLayerNorm if restore else IPUWav2Vec2EncoderStableLayerNorm
+        else:
+            new_cls = Wav2Vec2Encoder if restore else IPUWav2Vec2Encoder
+        self.wav2vec2.encoder.__class__ = new_cls
+
+    def change_wav2vec2_adapter_class(self, restore: bool):
+        """Changes the adapter class to update its forward pass so that it uses our custom version.
+
+        Args:
+            restore: whether to restore the adapter to its original version or not.
+        """
+        if self.config.add_adapter:
+            self.wav2vec2.adapter.__class__ = Wav2Vec2Adapter if restore else IPUWav2Vec2Adapter
+
+    def change_conv_eps(self, restore: bool):
+        """Changes the epsilons in the layer norms of the conv layers to a value suitable for float16.
+
+        Args:
+            restore: whether to restore the epsilons to their original version or not.
+        """
+        if self.config.feat_extract_norm != "layer":
+            # In this case there is no layer norm in the conv layers
+            return
+        if restore:
+            for i, conv_layer in enumerate(self.wav2vec2.feature_extractor.conv_layers):
+                # Restore the original values
+                conv_layer.layer_norm.eps = self.original_eps[i]
+        else:
+            self.original_eps = []
+            eps = 1e-4
+            for conv_layer in self.wav2vec2.feature_extractor.conv_layers:
+                # Save the original values, to restore later
+                self.original_eps.append(conv_layer.layer_norm.eps)
+                conv_layer.layer_norm.eps = eps
+
+    def _add_begin_block(self, module, name, ipu_id):
+        poptorch.BeginBlock(module, name, ipu_id)
+
+    def parallelize(self):
+        """
+        Transform the model to run in an IPU pipeline.
+        - Adds pipeline stages to the model
+        - Replaces some layers with IPU-specialised ones
+        - Set eps to a stable value in float16
+
+        Recommended usage:
+        ```
+        model = PipelinedWav2Vec2ForPreTraining(config).parallelize().half()
+        ```
+        """
+        super().parallelize()
+
+        self.wav2vec2.__class__ = IPUWav2Vec2Model
+        self.freeze_feature_encoder()
+        self.change_wav2vec2_encoder_class(False)
+        self.change_wav2vec2_adapter_class(False)
+        self.change_conv_eps(False)
+
+        if self.ipu_config.ipus_per_replica != 1:
+            logger.info("---------- Device Allocation -----------")
+            layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+            layers = []
+            # Conv layers
+            for index, layer in enumerate(self.wav2vec2.feature_extractor.conv_layers):
+                layers.append((f"Conv {index:<2}", layer))
+            # Positional Embedding
+            layers.append(("Positional Embedding", self.wav2vec2.encoder.pos_conv_embed))
+            # Encoder layers
+            for index, layer in enumerate(self.wav2vec2.encoder.layers):
+                recomputation_checkpoint(layer)
+                layers.append((f"Encoder {index:<2}", layer))
+            # Project Hidden
+            layers.append(("Project Hidden", self.lm_head))
+
+            if len(layer_ipu) != len(layers):
+                raise ValueError(
+                    f"Layers per IPU total ({len(layer_ipu)}) must be equal to layers ({len(layers)}).")
+
+            for i, (name, layer) in enumerate(layers):
+                logger.info(f"{name} --> IPU {layer_ipu[i]}")
+                self._add_begin_block(layer, name, ipu_id=layer_ipu[i])
+
+            logger.info("---------------------------------------")
+
+    def deparallelize(self):
+        """
+        Undo the changes to the model done by `parallelize`.
+        You should call this before doing `save_pretrained` so that the `model.state_dict` is
+        fully compatible with `transformers.Wav2Vec2ForPreTraining`.
+        """
+        super().deparallelize()
+        self.change_wav2vec2_encoder_class(True)
+        self.change_wav2vec2_adapter_class(True)
+        self.change_conv_eps(True)
+        self.wav2vec2.__class__ = Wav2Vec2Model
+        return self
+
+    def forward(
+            self,
+            input_values,
+            labels=None,
+            attention_mask=None,
+            output_attentions=None,
+            output_hidden_states=None,
+            return_dict=False,
+    ):
+        r"""
+        labels (`torch.LongTensor` of shape `(batch_size, target_length)`, *optional*):
+            Labels for connectionist temporal classification. Note that `target_length` has to be smaller or equal to
+            the sequence length of the output logits. Indices are selected in `[-100, 0, ..., config.vocab_size - 1]`.
+            All labels set to `-100` are ignored (masked), the loss is only computed for labels in `[0, ...,
+            config.vocab_size - 1]`.
+        """
+
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = False
+
+        outputs = self.wav2vec2(
+            input_values,
+            attention_mask=attention_mask,
+            output_attentions=False,
+            output_hidden_states=False,
+            return_dict=False,
+        )
+
+        hidden_states = outputs[0]
+        hidden_states = self.dropout(hidden_states)
+
+        logits = self.lm_head(hidden_states)
+
+        loss = None
+        # labels = None
+        if labels is not None:
+            # assuming that padded tokens are filled with -100
+            # when not being attended to
+            labels_mask = labels >= 0
+            target_lengths = labels_mask.sum(-1)
+
+            input_lengths = torch.ones_like(target_lengths) * logits.shape[1]
+
+            # ctc_loss doesn't support fp16
+            log_probs = torch.nn.functional.log_softmax(logits.float(), dim=-1).transpose(0, 1)
+
+            loss_fn = torch.nn.CTCLoss(blank=self.config.pad_token_id, reduction=self.config.ctc_loss_reduction)
+            loss = loss_fn(log_probs, labels, input_lengths, target_lengths)
+
+        if not return_dict:
+            if loss is not None:
+                return (poptorch.identity_loss(loss, "sum"), outputs[1]) + outputs[2:]
+            return (logits, hidden_states)
+        else:
+            raise NotImplementedError("'return_dict' is not supported.")
 
 
 def _sample_negative_indices(
