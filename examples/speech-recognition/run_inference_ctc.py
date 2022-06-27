@@ -17,8 +17,8 @@ model = AutoModelForCTC.from_pretrained("facebook/wav2vec2-base-960h")
 num_device_iterations = 10
 ipu_config = IPUConfig(inference_device_iterations=num_device_iterations)
 
-# processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-large-lv60")
-# model = AutoModelForCTC.from_pretrained("facebook/wav2vec2-large-lv60")
+# processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-large-960h")
+# model = AutoModelForCTC.from_pretrained("facebook/wav2vec2-large-960h")
 # num_device_iterations = 2 # must be multiple of pipeline stages (2)
 # ipu_config = IPUConfig(matmul_proportion=0.1, inference_device_iterations=num_device_iterations,
 #                        layers_per_ipu=[17, 16],
@@ -33,7 +33,7 @@ inference_model = poptorch.inferenceModel(ipu_model.half().eval(), options=opts)
 
 sample_batch = {'input_values': torch.zeros([num_device_iterations, 320000])}
 
-inference_model.compileAndExport("./exported_model", **sample_batch)
+inference_model.compile(**sample_batch)
 
 # load dummy dataset and read soundfiles
 ds = load_dataset("patrickvonplaten/librispeech_asr_dummy", "clean", split="validation")
