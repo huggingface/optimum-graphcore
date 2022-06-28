@@ -26,24 +26,27 @@ Here we show how to fine-tune a `ViT` on the [cifar10](https://huggingface.co/da
 python examples/image-classification/run_image_classification.py \
     --dataset_name cifar10 \
     --output_dir ./cifar10_outputs/ \
+    --overwrite_output_dir \
     --model_name_or_path google/vit-base-patch16-224-in21k \
     --ipu_config_name Graphcore/vit-base-ipu \
+    --pod_type pod16 \
     --remove_unused_columns False \
     --do_train \
     --do_eval \
-    --learning_rate 2e-3 \
+    --learning_rate 1e-4 \
     --lr_scheduler_type cosine \
     --weight_decay 0.0 \
     --warmup_ratio 0.25 \
-    --num_train_epochs 50 \
-    --per_device_train_batch_size 15 \
-    --per_device_eval_batch_size 15 \
-    --pod_type pod16 \
+    --loss_scaling 1.0 \
+    --num_train_epochs 100 \
+    --per_device_train_batch_size 17 \
+    --per_device_eval_batch_size 17 \
+    --gradient_accumulation_steps 128 \
     --logging_strategy steps \
     --logging_steps 10 \
     --save_total_limit 3 \
-    --dataloader_num_workers 64 \
     --dataloader_mode async_rebatched \
+    --dataloader_num_workers 200 \
     --dataloader_drop_last \
     --seed 1337
 ```
