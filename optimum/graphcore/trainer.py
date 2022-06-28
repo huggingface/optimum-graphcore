@@ -197,8 +197,8 @@ class IPUTrainer:
             logger.info(f"Overriding IPU config: {args.ipu_config_overrides}")
             self.ipu_config.update_from_string(args.ipu_config_overrides)
         self.ipu_config.seed = self.args.seed
-        self.opts = self.ipu_config.to_options()
-        self.eval_opts = self.ipu_config.to_options(for_inference=True)
+        self.opts = self.ipu_config.to_options(compile_only=args.compile_only)
+        self.eval_opts = self.ipu_config.to_options(for_inference=True, compile_only=args.compile_only)
 
         self.model = to_pipelined(model, self.ipu_config, force=force_to_pipelined)
         self.model.parallelize()
@@ -892,6 +892,10 @@ class IPUTrainer:
 
         self._compile_model(model, next(iter(train_dataloader)), log=True)
 
+        if args.compile_only:
+            logger.info("Called with compile_only=True. Exiting without running training loop.")
+            sys.exit(0)
+
         # Train!
         num_examples = (
             self.num_examples(train_dataloader) if train_dataset_is_sized else total_train_batch_size * args.max_steps
@@ -1583,6 +1587,10 @@ class IPUTrainer:
         )
 
         model = self._wrap_and_compile_model_for_evaluation(dataloader, prediction_loss_only)
+
+        if self.args.compile_only:
+            logger.info("Called with compile_only=True. Exiting without running evaluation loop.")
+            sys.exit(0)
 
         batch_size = dataloader.batch_size
 
