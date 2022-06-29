@@ -1,0 +1,35 @@
+{
+  "embedding_serialization_factor": 0,
+  "recompute_checkpoint_every_layer": false,
+  "optimizer_state_offchip": true,
+  "replicated_tensor_sharding": true,
+  "enable_half_first_order_momentum": true,
+  "enable_half_partials": true,
+  "device_iterations": 1,
+  "inference_device_iterations": 8,
+  "replication_factor": 1,
+  "inference_replication_factor": 1,
+  "gradient_accumulation_steps": 16,
+  "executable_cache_dir": "./exe_cache",
+  "ipus_per_replica": 8,
+  "layers_per_ipu": [
+    8,
+    3,
+    4,
+    4,
+    4,
+    4,
+    4,
+    2
+  ],
+  "matmul_proportion": [
+    0.1,
+    0.1,
+    0.1,
+    0.1,
+    0.1,
+    0.1,
+    0.1,
+    0.1
+  ]
+}
