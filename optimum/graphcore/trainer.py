@@ -276,6 +276,20 @@ class IPUTrainer:
         # very last
         self._memory_tracker.stop_and_update_metrics()
 
+        # If compile-only then compile and exit
+        if args.compile_only:
+            logger.info("Called with compile_only=True. Compiling models then exiting.")
+            if args.do_train:
+                train_dl = self.get_train_dataloader()
+                model = self._wrap_model(self.model_wrapped)
+                self._compile_model(model, next(iter(train_dl)), log=True)
+            if args.do_eval:
+                # Same thing with _wrap_and_compile_for_evaluation
+                eval_dl = self.get_eval_dataloader()
+                model = self._wrap_and_compile_model_for_evaluation(eval_dl, False)
+            logger.info("Exiting after compiling models with compile_only=True")
+            sys.exit(0)
+
     def _pytorch_optimizer_to_poptorch(
         self,
         optimizer: optim.Optimizer,
@@ -891,10 +905,6 @@ class IPUTrainer:
         self._load_optimizer_and_scheduler(resume_from_checkpoint)
 
         self._compile_model(model, next(iter(train_dataloader)), log=True)
-
-        if args.compile_only:
-            logger.info("Called with compile_only=True. Exiting without running training loop.")
-            sys.exit(0)
 
         # Train!
         num_examples = (
@@ -1587,10 +1597,6 @@ class IPUTrainer:
         )
 
         model = self._wrap_and_compile_model_for_evaluation(dataloader, prediction_loss_only)
-
-        if self.args.compile_only:
-            logger.info("Called with compile_only=True. Exiting without running evaluation loop.")
-            sys.exit(0)
 
         batch_size = dataloader.batch_size
 
