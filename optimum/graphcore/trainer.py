@@ -197,8 +197,8 @@ class IPUTrainer:
             logger.info(f"Overriding IPU config: {args.ipu_config_overrides}")
             self.ipu_config.update_from_string(args.ipu_config_overrides)
         self.ipu_config.seed = self.args.seed
-        self.opts = self.ipu_config.to_options()
-        self.eval_opts = self.ipu_config.to_options(for_inference=True)
+        self.opts = self.ipu_config.to_options(compile_only=args.compile_only)
+        self.eval_opts = self.ipu_config.to_options(for_inference=True, compile_only=args.compile_only)
 
         self.model = to_pipelined(model, self.ipu_config, force=force_to_pipelined)
         self.model.parallelize()
@@ -275,6 +275,20 @@ class IPUTrainer:
 
         # very last
         self._memory_tracker.stop_and_update_metrics()
+
+        # If compile-only then compile and exit
+        if args.compile_only:
+            logger.info("Called with compile_only=True. Compiling models then exiting.")
+            if args.do_train:
+                train_dl = self.get_train_dataloader()
+                model = self._wrap_model(self.model_wrapped)
+                self._compile_model(model, next(iter(train_dl)), log=True)
+            if args.do_eval:
+                # Same thing with _wrap_and_compile_for_evaluation
+                eval_dl = self.get_eval_dataloader()
+                model = self._wrap_and_compile_model_for_evaluation(eval_dl, False)
+            logger.info("Exiting after compiling models with compile_only=True")
+            sys.exit(0)
 
     def _pytorch_optimizer_to_poptorch(
         self,
