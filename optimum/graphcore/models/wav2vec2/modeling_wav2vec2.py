@@ -215,7 +215,8 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
                 extract_features.shape[1], attention_mask, add_adapter=False
             )
 
-        # GC. remove a static portion of the output tensors at unmasked indices
+        # GC. remove a (static sized) portion of the output tensors at unmasked indices
+        # unmasked indices do not contribute to loss. removing them now alleviates memory requirements
         if reduce_selector is not None:
             batch_size, sequence_length, feature_size = extract_features.shape
             cropped_length = reduce_selector.shape[1]
@@ -319,7 +320,9 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
         """
         target_features = torch.cat([target_features, negative_features], dim=0)
 
-        logits = torch.cosine_similarity(predicted_features, target_features, dim=-1, eps=1e-4)
+        logits = torch.cosine_similarity(
+            predicted_features.float(), target_features.float(), dim=-1, eps=1e-4
+        ).type_as(target_features)
 
         # apply temperature
         logits = logits / temperature

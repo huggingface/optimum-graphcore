@@ -47,7 +47,7 @@ from transformers.utils.versions import require_version
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.15.0.dev0")
 
-# require_version("transformers==4.18.0", "To fix: pip install -r examples/speech-pretraining/requirements.txt")
+require_version("transformers==4.18.0", "To fix: pip install -r examples/speech-pretraining/requirements.txt")
 require_version("datasets>=1.18.0", "To fix: pip install -r examples/speech-pretraining/requirements.txt")
 
 logger = logging.getLogger(__name__)
@@ -276,7 +276,7 @@ class DataCollatorForWav2Vec2Pretraining:
         )
 
         cropped_length = int(mask_indices_seq_length * self.model.config.mask_time_prob) + 1
-        # position true masked indexes first and crop, we mask the false indexes later
+        # move true masked indexes first and crop, later used to gather a reduced size tensor.
         reduce_selector = np.argsort(~mask_time_indices, 1)[:, :cropped_length]
         num_masked = np.sum(mask_time_indices, 1)
         mask_reduced = np.expand_dims(np.arange(cropped_length), 0) < np.expand_dims(num_masked, 1)

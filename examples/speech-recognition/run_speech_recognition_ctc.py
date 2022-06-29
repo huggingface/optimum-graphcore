@@ -670,7 +670,7 @@ def main():
 
     # Instantiate custom data collator
     data_collator = DataCollatorCTCWithPadding(processor=processor, pad_to_multiple_of=int(max_input_length),
-                                               pad_to_multiple_of_labels=500)
+                                               pad_to_multiple_of_labels=1000)
 
     # Initialize Trainer
     trainer = IPUTrainer(

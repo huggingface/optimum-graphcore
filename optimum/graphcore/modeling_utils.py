@@ -195,7 +195,7 @@ def recomputation_checkpoint(module: nn.Module) -> torch.utils.hooks.RemovableHa
     def recompute_outputs(module, inputs, outputs):
         if isinstance(outputs, torch.Tensor):
             return poptorch.recomputationCheckpoint(outputs)
-        else:
+        elif isinstance(outputs, tuple):
             return tuple(poptorch.recomputationCheckpoint(y) for y in outputs)
 
     return module.register_forward_hook(recompute_outputs)
