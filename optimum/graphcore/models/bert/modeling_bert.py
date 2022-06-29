@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import math
 
 from typing import Optional, Tuple, Union
 
@@ -29,20 +30,30 @@ from transformers import (
     BertForSequenceClassification,
     BertForTokenClassification,
 )
-from transformers.modeling_outputs import MaskedLMOutput, QuestionAnsweringModelOutput
-from transformers.models.bert.modeling_bert import BertForPreTrainingOutput, BertSelfAttention
 
+from transformers.utils.fx import _gen_constructor_wrapper
+
+from ....fx.optimization import ChangeTrueDivToMulByInverse, FuseBiasInLinear, MergeLinears, compose
+from ...fx.transformations import (
+    AddPoptorchBlock,
+    AddPoptorchBlocksInSeries,
+    ClipValues,
+    LinearToSerializedLinear,
+    OutlineAttribute,
+    RecomputationCheckpoint,
+    TupleOutput,
+    VocabEmbeddingToSerializedEmbedding,
+)
+from ...fx.utils import symbolic_trace_pipelined_model
 from ...modeling_utils import (
     OnehotGather,
     PipelineMixin,
-    SerializedEmbedding,
     SerializedLinear,
     get_layer_ipu,
     outline_attribute,
     recomputation_checkpoint,
     register,
 )
-from .bert_fused_attention import BertFusedSelfAttention
 
 
 logger = logging.get_logger(__name__)
@@ -63,6 +74,31 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
         super().__init__(config)
         self.gather_indices = OnehotGather()
 
+    def get_ops_to_wrap_for_tracing(self):
+        return [
+            ("torch.topk", *_gen_constructor_wrapper(torch.topk)),
+            ("torch.nn.functional.one_hot", *_gen_constructor_wrapper(torch.nn.functional.one_hot)),
+        ]
+
+    def get_transformations(self):
+        log_insertions = self.ipu_config.log_insertions
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        transformations = [
+            ChangeTrueDivToMulByInverse(),
+            MergeLinears(),
+            # FuseBiasInLinear(),
+            AddPoptorchBlock(
+                "Embedding", layer_ipu=0, module_name_regex="bert.embeddings", log_insertions=log_insertions
+            ),
+            OutlineAttribute("bert.embeddings.LayerNorm", "Embedding"),
+            AddPoptorchBlocksInSeries(
+                "Encoder", layer_ipu, module_name_regex=r"bert.encoder.layer.[0-9]+", log_insertions=log_insertions
+            ),
+            AddPoptorchBlock("Pooler Output", 0, "bert.pooler", log_insertions=log_insertions),
+            AddPoptorchBlock("Classifier Output", 0, "cls", log_insertions=log_insertions),
+        ]
+        return transformations
+
     def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.
@@ -72,48 +108,15 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
         - Adds recomputation checkpoints
         """
         super().parallelize()
-
-        # Use faster fused-qkv self-attention
-        for layer in self.bert.encoder.layer:
-            layer.attention.self.__class__ = BertFusedSelfAttention
-
-        if self.ipu_config.embedding_serialization_factor > 1:
-            serialized_decoder = SerializedLinear(
-                self.config.hidden_size,
-                self.config.vocab_size,
-                self.ipu_config.embedding_serialization_factor,
-                bias=True,
-                mode=poptorch.MatMulSerializationMode.OutputChannels,
-            )
-            serialized_decoder.load_state_dict(self.cls.predictions.decoder.state_dict())
-            self.cls.predictions.decoder = serialized_decoder
-            self.tie_weights()
-
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
-
-        logger.info("-------------------- Device Allocation --------------------")
-        logger.info("Embedding --> IPU 0")
-        self.bert.embeddings = poptorch.BeginBlock(self.bert.embeddings, "Embedding", ipu_id=0)
-        # Preventing the embeddings.LayerNorm from being outlined with the encoder.layer.LayerNorm
-        # improves the tile mapping of the pipeline stashes
-        hs = outline_attribute(self.bert.embeddings.LayerNorm, "embeddings")
-        self._hooks.extend(hs)
-
-        for index, layer in enumerate(self.bert.encoder.layer):
-            ipu = layer_ipu[index]
-            if self.ipu_config.recompute_checkpoint_every_layer:
-                h = recomputation_checkpoint(layer)
-                self._hooks.append(h)
-            self.bert.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
-            logger.info(f"Encoder {index:<2} --> IPU {ipu}")
-
-        logger.info("Pooler --> IPU 0")
-        self.bert.pooler = poptorch.BeginBlock(self.bert.pooler, "Pooler", ipu_id=0)
-
-        logger.info("Classifier --> IPU 0")
-        self.cls = poptorch.BeginBlock(self.cls, "Classifier", ipu_id=0)
-        logger.info("-----------------------------------------------------------")
-        return self
+        traced = symbolic_trace_pipelined_model(self)
+        transformations = self.get_transformations()
+        # if self.ipu_config.embedding_serialization_factor > 1:
+        #     transformations.append(LinearToSerializedLinear("cls.predictions.decoder"))
+        composition = compose(*transformations)
+        non_reversible_composition = compose(ClipValues(1e4), TupleOutput())
+        traced = composition(traced)
+        traced = non_reversible_composition(traced)
+        return traced
 
     def deparallelize(self):
         """
@@ -122,19 +125,11 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
         compatible with the original model.
         """
         super().deparallelize()
-
-        for layer in self.bert.encoder.layer:
-            layer.attention.self.__class__ = BertSelfAttention
-
+        transformations = self.get_transformations()
         if self.ipu_config.embedding_serialization_factor > 1:
-            decoder = nn.Linear(
-                self.config.hidden_size,
-                self.config.vocab_size,
-                bias=True,
-            )
-            decoder.load_state_dict(self.cls.predictions.decoder.state_dict())
-            self.cls.predictions.decoder = decoder
-            self.tie_weights()
+            transformations.append(LinearToSerializedLinear("cls.predictions.decoder"))
+        composition = compose(*transformations)
+        self = composition(self, reverse=True)
         return self
 
     def _init_weights(self, module):
@@ -237,6 +232,32 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
         super().__init__(config)
         self.gather_indices = OnehotGather()
 
+    def get_ops_to_wrap_for_tracing(self):
+        return [
+            ("torch.topk", *_gen_constructor_wrapper(torch.topk)),
+            ("torch.nn.functional.one_hot", *_gen_constructor_wrapper(torch.nn.functional.one_hot)),
+        ]
+
+    def get_transformations(self):
+        log_insertions = self.ipu_config.log_insertions
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        transformations = [
+            AddPoptorchBlock(
+                "Embedding", layer_ipu=0, module_name_regex="bert.embeddings", log_insertions=log_insertions
+            ),
+            OutlineAttribute("bert.embeddings.LayerNorm", "Embedding"),
+            AddPoptorchBlocksInSeries(
+                "Encoder", layer_ipu, module_name_regex=r"bert.encoder.layer.[0-9]+", log_insertions=log_insertions
+            ),
+            AddPoptorchBlock("Classifier Output", 0, "cls", log_insertions=log_insertions),
+        ]
+        if self.ipu_config.recompute_checkpoint_every_layer:
+            transformations.append(RecomputationCheckpoint("bert.encoder.layer.[0-9]+", to_exclude=f"bert.encoder.layer.{self.config.num_hidden_layers - 1}"))
+        if self.ipu_config.embedding_serialization_factor > 1:
+            transformations.append(LinearToSerializedLinear("cls.predictions.decoder"))
+        transformations += [ChangeTrueDivToMulByInverse(), MergeLinears()]
+        return transformations
+
     def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.
@@ -246,45 +267,16 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
         - Adds recomputation checkpoints
         """
         super().parallelize()
+        traced = symbolic_trace_pipelined_model(self)
+        transformations = self.get_transformations()
+        composition = compose(*transformations)
+        non_reversible_composition = compose(ClipValues(1e4), TupleOutput())
 
-        # Use faster fused-qkv self-attention
-        for layer in self.bert.encoder.layer:
-            layer.attention.self.__class__ = BertFusedSelfAttention
+        traced = composition(traced)
+        traced = non_reversible_composition(traced)
+        import pdb; pdb.set_trace()
 
-        if self.ipu_config.embedding_serialization_factor > 1:
-            serialized_decoder = SerializedLinear(
-                self.config.hidden_size,
-                self.config.vocab_size,
-                self.ipu_config.embedding_serialization_factor,
-                bias=True,
-                mode=poptorch.MatMulSerializationMode.OutputChannels,
-            )
-            serialized_decoder.load_state_dict(self.cls.predictions.decoder.state_dict())
-            self.cls.predictions.decoder = serialized_decoder
-            self.tie_weights()
-
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
-
-        logger.info("-------------------- Device Allocation --------------------")
-        logger.info("Embedding  --> IPU 0")
-        self.bert.embeddings = poptorch.BeginBlock(self.bert.embeddings, "Embedding", ipu_id=0)
-        # Preventing the embeddings.LayerNorm from being outlined with the encoder.layer.LayerNorm
-        # improves the tile mapping of the pipeline stashes
-        hs = outline_attribute(self.bert.embeddings.LayerNorm, "embeddings")
-        self._hooks.extend(hs)
-
-        for index, layer in enumerate(self.bert.encoder.layer):
-            ipu = layer_ipu[index]
-            if self.ipu_config.recompute_checkpoint_every_layer:
-                h = recomputation_checkpoint(layer)
-                self._hooks.append(h)
-            self.bert.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
-            logger.info(f"Encoder {index:<2} --> IPU {ipu}")
-
-        logger.info("Classifier --> IPU 0")
-        self.cls = poptorch.BeginBlock(self.cls, "Classifier", ipu_id=0)
-        logger.info("-----------------------------------------------------------")
-        return self
+        return traced
 
     def deparallelize(self):
         """
@@ -294,18 +286,10 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
         """
         super().deparallelize()
 
-        for layer in self.bert.encoder.layer:
-            layer.attention.self.__class__ = BertSelfAttention
+        transformations = self.get_transformations()
+        composition = compose(*transformations)
+        self = composition(self, reverse=True)
 
-        if self.ipu_config.embedding_serialization_factor > 1:
-            decoder = nn.Linear(
-                self.config.hidden_size,
-                self.config.vocab_size,
-                bias=True,
-            )
-            decoder.load_state_dict(self.cls.predictions.decoder.state_dict())
-            self.cls.predictions.decoder = decoder
-            self.tie_weights()
         return self
 
     def forward(
@@ -383,6 +367,30 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
 
 
 class BertPipelineMixin(PipelineMixin):
+    def get_transformations(self):
+        log_insertions = self.ipu_config.log_insertions
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        last_ipu = len(self.ipu_config.layers_per_ipu) - 1
+        transformations = [
+            ChangeTrueDivToMulByInverse(),
+            MergeLinears(),
+            AddPoptorchBlock(
+                "Embedding", layer_ipu=0, module_name_regex="bert.embeddings", log_insertions=log_insertions
+            ),
+            OutlineAttribute("bert.embeddings.LayerNorm", "Embedding"),
+            AddPoptorchBlocksInSeries(
+                "Encoder", layer_ipu, module_name_regex=r"bert.encoder.layer.[0-9]+", log_insertions=log_insertions
+            ),
+            # Only one of the following AddPoptorchBlock, will actually add a block.
+            AddPoptorchBlock("Classifier Output", last_ipu, "classifier", log_insertions=log_insertions),
+            AddPoptorchBlock("QA Outputs", last_ipu, "qa_outputs", log_insertions=log_insertions),
+        ]
+        return transformations
+
+    @property
+    def input_names(self):
+        return ["input_ids", "attention_mask", "token_type_ids", "labels"]
+
     def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.
@@ -393,30 +401,26 @@ class BertPipelineMixin(PipelineMixin):
         """
         super().parallelize()
 
-        # Use faster fused-qkv self-attention
-        for layer in self.bert.encoder.layer:
-            layer.attention.self.__class__ = BertFusedSelfAttention
+        # if self.ipu_config.recompute_checkpoint_every_layer:
+        #     for layer in self.bert.encoder.layer[:-1]:
+        #         h = recomputation_checkpoint(layer)
+        #         self._hooks.append(h)
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        traced = symbolic_trace_pipelined_model(self)
 
-        logger.info("-------------------- Device Allocation --------------------")
-        logger.info("Embedding --> IPU 0")
-        if self.ipu_config.embedding_serialization_factor > 1:
-            self.bert.embeddings.word_embeddings = SerializedEmbedding(
-                self.bert.embeddings.word_embeddings, self.ipu_config.embedding_serialization_factor
-            )
-        self.bert.embeddings = poptorch.BeginBlock(self.bert.embeddings, "Embedding", ipu_id=0)
-        hs = outline_attribute(self.bert.embeddings.LayerNorm, "embedding")
-        self._hooks.extend(hs)
+        transformations = self.get_transformations()
 
-        for index, layer in enumerate(self.bert.encoder.layer):
-            ipu = layer_ipu[index]
-            if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
-                h = recomputation_checkpoint(layer)
-                self._hooks.append(h)
-            self.bert.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
-            logger.info(f"Encoder {index:<2} --> IPU {ipu}")
-        return self
+        if traced.ipu_config.embedding_serialization_factor > 1:
+            transformations.append(VocabEmbeddingToSerializedEmbedding())
+
+        composition = compose(*transformations)
+
+        non_reversible_composition = compose(ClipValues(1e4), TupleOutput())
+
+        traced = composition(traced)
+        traced = non_reversible_composition(traced)
+
+        return traced
 
     def deparallelize(self):
         """
@@ -426,12 +430,16 @@ class BertPipelineMixin(PipelineMixin):
         """
         super().deparallelize()
 
-        for layer in self.bert.encoder.layer:
-            layer.attention.self.__class__ = BertSelfAttention
-
-        # Deserialize the serialized word embedding
+        transformations = self.get_transformations()
         if self.ipu_config.embedding_serialization_factor > 1:
-            self.bert.embeddings.word_embeddings = self.bert.embeddings.word_embeddings.deserialize()
+            transformations.append(VocabEmbeddingToSerializedEmbedding())
+
+        # if self.ipu_config.recompute_checkpoint_every_layer:
+        #     transformations.append(RecomputationCheckpoint())
+
+        composition = compose(*transformations)
+        self = composition(self, reverse=True)
+
         return self
 
 
@@ -445,14 +453,7 @@ class PipelinedBertForSequenceClassification(BertForSequenceClassification, Bert
     model = PipelinedBertForSequenceClassification(config).parallelize().half()
     ```
     """
-
-    def parallelize(self):
-        super().parallelize()
-        last_ipu = self.ipu_config.ipus_per_replica - 1
-        logger.info(f"Classifier Output --> IPU {last_ipu}")
-        self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=last_ipu)
-        logger.info("-----------------------------------------------------------")
-        return self
+    pass
 
 
 @register(BertForMultipleChoice)
@@ -465,14 +466,7 @@ class PipelinedBertForMultipleChoice(BertForMultipleChoice, BertPipelineMixin):
     model = PipelinedBertForMultipleChoice(config).parallelize().half()
     ```
     """
-
-    def parallelize(self):
-        super().parallelize()
-        last_ipu = self.ipu_config.ipus_per_replica - 1
-        logger.info(f"Classifier Output --> IPU {last_ipu}")
-        self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=last_ipu)
-        logger.info("-----------------------------------------------------------")
-        return self
+    pass
 
 
 @register(BertForTokenClassification)
@@ -485,14 +479,7 @@ class PipelinedBertForTokenClassification(BertForTokenClassification, BertPipeli
     model = PipelinedBertForTokenClassification(config).parallelize().half()
     ```
     """
-
-    def parallelize(self):
-        super().parallelize()
-        last_ipu = self.ipu_config.ipus_per_replica - 1
-        logger.info(f"Classifier Output --> IPU {last_ipu}")
-        self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=last_ipu)
-        logger.info("-----------------------------------------------------------")
-        return self
+    pass
 
 
 @register(BertForQuestionAnswering)
@@ -506,13 +493,9 @@ class PipelinedBertForQuestionAnswering(BertForQuestionAnswering, BertPipelineMi
     ```
     """
 
-    def parallelize(self):
-        super().parallelize()
-        last_ipu = self.ipu_config.ipus_per_replica - 1
-        logger.info(f"QA Outputs --> IPU {last_ipu}")
-        self.qa_outputs = poptorch.BeginBlock(self.qa_outputs, "QA Outputs", ipu_id=last_ipu)
-        logger.info("-----------------------------------------------------------")
-        return self
+    @property
+    def input_names(self):
+        return ["input_ids", "attention_mask", "token_type_ids", "start_positions", "end_positions"]
 
     def forward(
         self,
