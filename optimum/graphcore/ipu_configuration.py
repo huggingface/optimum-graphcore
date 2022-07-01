@@ -43,6 +43,7 @@ class IPUConfig(BaseConfig):
         self.ipus_per_replica = kwargs.pop("ipus_per_replica", 1)
         self.layers_per_ipu = kwargs.pop("layers_per_ipu", [1])
 
+        self.explicit_ir = kwargs.pop("explicit_ir", False)
         self.replication_factor = kwargs.pop("replication_factor", 1)
         self.inference_replication_factor = kwargs.pop("inference_replication_factor", 1)
         self.gradient_accumulation_steps = kwargs.pop("gradient_accumulation_steps", 1)
@@ -50,6 +51,7 @@ class IPUConfig(BaseConfig):
         self.inference_device_iterations = kwargs.pop("inference_device_iterations", 1)
         self.optimizer_state_offchip = kwargs.pop("optimizer_state_offchip", True)
         self.replicated_tensor_sharding = kwargs.pop("replicated_tensor_sharding", False)
+        self.decompose_grad_sum = kwargs.pop("decompose_grad_sum", False)
 
         if self.replicated_tensor_sharding and self.replication_factor == 1:
             logger.warning("Setting replicated_tensor_sharding to False when replication_factor=1")
@@ -206,6 +208,10 @@ class IPUConfig(BaseConfig):
             opts.Precision.setPartialsType(torch.float16)
 
         # PopART performance options #
+        # Enable explicit IR
+        opts._Popart.set("enableExplicitIR", self.explicit_ir)
+        # Replaces single sums of partial gradients with a tree of additions
+        opts._Popart.set("decomposeGradSum", self.decompose_grad_sum)
         # Only stream needed tensors back to host
         opts._Popart.set("disableGradAccumulationTensorStreams", True)
         # Parallelize optimizer step update across IPUs
