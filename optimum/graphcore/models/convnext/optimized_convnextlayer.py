@@ -3,6 +3,10 @@ from transformers.models.convnext.modeling_convnext import ConvNextLayer
 
 class OptimizedConvNextLayer(ConvNextLayer):
     def forward(self, hidden_states):
+        """
+        Merge the 2nd and 3rd dimensions of the tensor before pwconv, and restore the shape afterwards.
+        This is because currently, nn.Linear() does not work efficiently on 4-dimensional inputs.
+        """
         input = hidden_states
         x = self.dwconv(hidden_states)
         x = x.permute(0, 2, 3, 1)  # (N, C, H, W) -> (N, H, W, C)
