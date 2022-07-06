@@ -15,7 +15,7 @@
 import poptorch
 import transformers
 from optimum.utils import logging
-from transformers.models.convnext.modeling_convnext import ConvNextLayer
+from transformers.models.convnext.modeling_convnext import ConvNextLayer, ConvNextLayerNorm
 
 from ...modeling_utils import PipelineMixin, get_layer_ipu, recomputation_checkpoint, register
 from .optimized_convnextlayer import OptimizedConvNextLayer
@@ -33,6 +33,11 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
         for stage in self.convnext.encoder.stages:
             for layer in stage.layers:
                 layer.__class__ = OptimizedConvNextLayer
+
+        # Enable autocast for ConvNextLayerNorm because computation cannot happen in fp16
+        for mod in self.modules():
+            if isinstance(mod, ConvNextLayerNorm):
+                mod.forward = poptorch.autocast(enabled=True)(mod.forward)
 
         logger.info("---------- Device Allocation -----------")
         logger.info(f"Embedding  --> IPU 0")
@@ -58,11 +63,14 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
     def deparallelize(self):
         super().deparallelize()
 
+        for mod in self.modules():
+            if isinstance(mod, ConvNextLayerNorm):
+                mod.forward = ConvNextLayerNorm.forward.__get__(mod, ConvNextLayerNorm)
+
         # Switch back to non-optimized ConvNextLayer
         for stage in self.convnext.encoder.stages:
             for layer in stage.layers:
                 layer.__class__ = ConvNextLayer
 
-    @poptorch.autocast()
     def forward(self, pixel_values=None, labels=None):
         return super().forward(pixel_values=pixel_values, labels=labels, return_dict=False)
