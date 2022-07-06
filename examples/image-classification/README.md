@@ -16,7 +16,7 @@ limitations under the License.
 
 # Image classification examples
 
-This directory contains 2 scripts that showcase how to fine-tune any model supported by the [`AutoModelForImageClassification` API](https://huggingface.co/docs/transformers/main/en/model_doc/auto#transformers.AutoModelForImageClassification) using PyTorch. Currently, [ViT](https://huggingface.co/docs/transformers/main/en/model_doc/vit) and [ConvNeXT](https://huggingface.co/docs/transformers/main/en/model_doc/convnext) are supported. They can be used to fine-tune models on both datasets from 🤗 `datasets` as well as on [your own custom data](#using-your-own-data).
+This directory contains a script that showcases how to fine-tune any model supported by the [`AutoModelForImageClassification` API](https://huggingface.co/docs/transformers/main/en/model_doc/auto#transformers.AutoModelForImageClassification) using PyTorch. Currently, ViT and ConvNeXT are supported. They can be used to fine-tune models on both datasets from 🤗 `datasets` as well as on [your own custom data](#using-your-own-data).
 
 ## Using datasets from 🤗 `datasets`
 
