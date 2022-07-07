@@ -42,7 +42,12 @@
 >             raise ValueError(
 >                 "You must specify either a dataset name from the hub or a train and/or validation directory."
 >             )
-154a159,173
+146a151,154
+>     ignore_mismatched_sizes: bool = field(
+>         default=False,
+>         metadata={"help": "Will enable to load a pretrained model whose head dimensions are different."},
+>     )
+154a163,177
 > # Implement transforms as a functor instead of a function because the Async Dataloader
 > # can't handle functions with closures because it uses pickle underneath.
 > class ApplyTransforms:
@@ -58,13 +63,13 @@
 >         return example_batch
 > 
 > 
-181,185d199
+181,185d203
 <     # Log on each process the small summary:
 <     logger.warning(
 <         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
 <         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
 <     )
-204,211c218,237
+204,211c222,241
 <     ds = load_dataset(
 <         data_args.dataset_name,
 <         data_args.dataset_config_name,
@@ -94,11 +99,11 @@
 >             cache_dir=model_args.cache_dir,
 >             task="image-classification",
 >         )
-214c240
+214c244
 <     data_args.train_val_split = None if "validation" in ds.keys() else data_args.train_val_split
 ---
 >     data_args.train_val_split = None if "validation" in dataset.keys() else data_args.train_val_split
-216,218c242,244
+216,218c246,248
 <         split = ds["train"].train_test_split(data_args.train_val_split)
 <         ds["train"] = split["train"]
 <         ds["validation"] = split["test"]
@@ -106,18 +111,20 @@
 >         split = dataset["train"].train_test_split(data_args.train_val_split)
 >         dataset["train"] = split["train"]
 >         dataset["validation"] = split["test"]
-222c248
+222c252
 <     labels = ds["train"].features["labels"].names
 ---
 >     labels = dataset["train"].features["labels"].names
-246a273,278
+246a277,282
 >     ipu_config = IPUConfig.from_pretrained(
 >         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
 >         cache_dir=model_args.cache_dir,
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
-281,292d312
+253a290
+>         ignore_mismatched_sizes=model_args.ignore_mismatched_sizes,
+281,292d317
 <     def train_transforms(example_batch):
 <         """Apply _train_transforms across a batch."""
 <         example_batch["pixel_values"] = [
@@ -130,47 +137,47 @@
 <         example_batch["pixel_values"] = [_val_transforms(pil_img.convert("RGB")) for pil_img in example_batch["image"]]
 <         return example_batch
 < 
-294c314
+294c319
 <         if "train" not in ds:
 ---
 >         if "train" not in dataset:
-297c317,319
+297c322,324
 <             ds["train"] = ds["train"].shuffle(seed=training_args.seed).select(range(data_args.max_train_samples))
 ---
 >             dataset["train"] = (
 >                 dataset["train"].shuffle(seed=training_args.seed).select(range(data_args.max_train_samples))
 >             )
-299c321
+299c326
 <         ds["train"].set_transform(train_transforms)
 ---
 >         dataset["train"].set_transform(ApplyTransforms(_train_transforms))
-302c324
+302c329
 <         if "validation" not in ds:
 ---
 >         if "validation" not in dataset:
-305,306c327,328
+305,306c332,333
 <             ds["validation"] = (
 <                 ds["validation"].shuffle(seed=training_args.seed).select(range(data_args.max_eval_samples))
 ---
 >             dataset["validation"] = (
 >                 dataset["validation"].shuffle(seed=training_args.seed).select(range(data_args.max_eval_samples))
-309c331
+309c336
 <         ds["validation"].set_transform(val_transforms)
 ---
 >         dataset["validation"].set_transform(ApplyTransforms(_val_transforms))
-312c334
+312c339
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-313a336
+313a341
 >         ipu_config=ipu_config,
-315,316c338,339
+315,316c343,344
 <         train_dataset=ds["train"] if training_args.do_train else None,
 <         eval_dataset=ds["validation"] if training_args.do_eval else None,
 ---
 >         train_dataset=dataset["train"] if training_args.do_train else None,
 >         eval_dataset=dataset["validation"] if training_args.do_eval else None,
-346c369
+346c374
 <         "tags": ["image-classification"],
 ---
 >         "tags": ["image-classification", "vision"],
