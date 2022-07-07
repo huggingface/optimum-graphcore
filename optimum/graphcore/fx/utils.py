@@ -13,20 +13,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import math
-from typing import TYPE_CHECKING, Callable, Optional, List
+from typing import Callable, List, Optional
 
 import torch
 
 import transformers
-from transformers.utils.fx import HFTracer, check_if_model_is_supported, get_concrete_args, _gen_constructor_wrapper
+from transformers.utils.fx import HFTracer, get_concrete_args
 
 from ..modeling_utils import PipelineMixin
 
-if TYPE_CHECKING:
-    from transformers import PreTrainedModel
-
 
 class PipelinedTracer(HFTracer):
+    """
+    Tracer that enables tracing and transforming models to run them on IPUs.
+    Compared to the HFTracer, this one adds the following features:
+        - Ops can be wrapped (not only attributes of the torch module) to enable tracing.
+        - Each node contains the "parent_module_qualified_name" attribute, specifying under which module the node was
+        created. This is useful because some transformations need that, for instance RecomputationCheckpoint.
+    """
+
     def __init__(self, autowrap_modules=(math,), autowrap_functions=()):
         super().__init__(autowrap_modules=autowrap_modules, autowrap_functions=autowrap_functions)
         self.ops_to_wrap = []
@@ -129,14 +134,7 @@ def symbolic_trace_pipelined_model(pipelined_model: PipelineMixin) -> PipelineMi
     # Trick to make HFTracer._generate_dummy_input work with the pipelined class.
     # This attribute will be set properly in symbolic_trace_with_pipelined_tracer once tracing is done.
     pipelined_model.class_for_deserialization = transformers_class
-
-    traced = symbolic_trace_with_pipelined_tracer(
-        pipelined_model, input_names=pipelined_model.input_names
-    )
-
+    traced = symbolic_trace_with_pipelined_tracer(pipelined_model, input_names=pipelined_model.input_names)
     type_ = type(f"Traced{pipelined_model.__class__.__name__}", (torch.fx.GraphModule, pipelined_model.__class__), {})
     traced.__class__ = type_
-
-    # traced.ipu_config = pipelined_model.ipu_config
-    # traced._hooks = pipelined_model._hooks
     return traced

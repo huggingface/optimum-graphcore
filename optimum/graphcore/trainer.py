@@ -302,12 +302,15 @@ class IPUTrainer:
                 self.eval_data_collator = data_collator_wrapper(self.eval_data_collator)
 
         self.model = to_pipelined(model, self.ipu_config, force=force_to_pipelined)
-        self.model = self.model.parallelize()
+        parallelized_from_training = self.model.parallelize()
+        self.model_for_eval = self.model.eval().parallelize()
+        self.model = parallelized_from_training
 
         self.original_model = model
 
         if not self.args.fp32:
             self.model = self.model.half()
+            self.model_for_eval = self.model_for_eval.half()
 
         self.training_model = None
         self.inference_model = None
@@ -1323,9 +1326,10 @@ class IPUTrainer:
             )
 
     def _load_state_dict_in_model(self, state_dict):
-        self.model.deparallelize()
+        self.model = self.model.deparallelize()
         load_result = self.model.load_state_dict(state_dict, strict=False)
-        self.model.parallelize()
+        self.model = self.model.parallelize()
+
         if not self.args.fp32:
             self.model.half()
 
@@ -1842,7 +1846,7 @@ class IPUTrainer:
         return PredictionOutput(predictions=output.predictions, label_ids=output.label_ids, metrics=output.metrics)
 
     def _wrap_and_compile_model_for_evaluation(self, dataloader, prediction_loss_only):
-        model = self.wrap_model(self.model, training=False)
+        model = self.wrap_model(self.model_for_eval, training=False)
         self.compile_model(model, next(iter(dataloader)), log=True)
         return model
 

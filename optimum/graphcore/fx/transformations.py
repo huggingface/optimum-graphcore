@@ -14,7 +14,7 @@
 # limitations under the License.
 import collections
 import re
-from typing import TYPE_CHECKING, List, Optional, Union
+from typing import TYPE_CHECKING, Callable, List, Optional, Union
 
 import torch
 
@@ -22,12 +22,7 @@ import poptorch
 from optimum.utils import logging
 
 from ...fx.optimization import ReversibleTransformation, Transformation
-from ..modeling_utils import (
-    SerializedEmbedding,
-    SerializedLinear,
-    get_layer_ipu,
-    outline_attribute,
-)
+from ..modeling_utils import SerializedEmbedding, SerializedLinear
 
 
 if TYPE_CHECKING:
@@ -42,21 +37,28 @@ def node_matches_pattern(pattern, node: "Node"):
     return re.match(pattern, name)
 
 
+def parent_module_qualified_name(node: "Node") -> str:
+    return getattr(node, "parent_module_qualified_name", "")
+
+
 class AddPoptorchBlockBase(ReversibleTransformation):
+    """
+    Base class that provide useful methods for inserting poptorch blocks in the model.
+    """
+
     def __init__(
-        self, block_name: str, layer_ipu: Union[int, List[int]], module_name_regex: str, log_insertions: bool = False
+        self, block_name: str, layer_ipu: Union[int, List[int]], name_regex: str, log_insertions: bool = False
     ):
         self.block_name = block_name
         self.layer_ipu = layer_ipu
-        self.module_name_regex = re.compile(module_name_regex) if module_name_regex is not None else None
+        self.name_regex = re.compile(name_regex)
         self.log_insertions = log_insertions
 
     def find_start_nodes(self, graph_module: "GraphModule") -> List["Node"]:
         nodes = []
         prefixes = set()
         for node in graph_module.graph.nodes:
-            # TODO: how to match the case where node.target is str
-            match = re.match(self.module_name_regex, node.target) if isinstance(node.target, str) else None
+            match = re.match(self.name_regex, parent_module_qualified_name(node))
             if match:
                 prefix = match.group(0)
                 if prefix not in prefixes:
@@ -74,30 +76,6 @@ class AddPoptorchBlockBase(ReversibleTransformation):
             new_node.parent_module_qualified_name = node.parent_module_qualified_name
         new_node.was_transformed = f"{self.__class__.__name__}"
 
-        # def start_block(inputs_to_forward, name, ipu_id):
-        #     poptorch.Block.start(name, ipu_id=ipu_id)
-        #     if len(inputs_to_forward) != 1:
-        #         return inputs_to_forward
-        #     return inputs_to_forward[0]
-
-        # with graph_module.graph.inserting_before(node):
-        #     new_node = graph_module.graph.call_function(start_block, (node.args, block_name, ipu_id))
-        #     if node.op != "get_attr":
-        #         new_args = []
-        #         if len(node.args) > 1:
-        #             for idx, _ in enumerate(node.args):
-        #                 new_args.append(graph_module.graph.call_function(operator.getitem, (new_node, idx)))
-        #         elif node.args:
-        #             new_args.append(new_node)
-        #         else:
-        #             raise NotImplementedError(
-        #                 f"Inserting start block op before a {node.op} that does not take any argument is not supported."
-        #             )
-        #         node.args = tuple(new_args)
-
-        #     new_node.was_transformed = f"{self.__class__.__name__}"
-        #     new_node.orig_node = node
-
     def get_ipu_for_index(self, index: Optional[int] = None) -> int:
         if isinstance(self.layer_ipu, list):
             if index is None:
@@ -113,6 +91,10 @@ class AddPoptorchBlockBase(ReversibleTransformation):
 
 
 class AddPoptorchBlocksInSeries(AddPoptorchBlockBase):
+    """
+    Adds poptorch blocks in series, to all the layers matching name_regex.
+    """
+
     def transform(self, graph_module: "GraphModule") -> "GraphModule":
         nodes = self.find_start_nodes(graph_module)
         for index, node in enumerate(nodes):
@@ -125,6 +107,10 @@ class AddPoptorchBlocksInSeries(AddPoptorchBlockBase):
 
 
 class AddPoptorchBlock(AddPoptorchBlockBase):
+    """
+    Adds a poptorch block before the first node (layer) matching name_regex.
+    """
+
     def transform(self, graph_module: "GraphModule") -> "GraphModule":
         start_nodes = self.find_start_nodes(graph_module)
         if not start_nodes:
@@ -142,6 +128,10 @@ class AutoParallelizeAutoEncoder(ReversibleTransformation):
 
 
 class TupleOutput(Transformation):
+    """
+    Transforms the output of the model to a tuple, if it is a dict, and does not nothing otherwise.
+    """
+
     def transform(self, graph_module: "GraphModule") -> "GraphModule":
         for node in graph_module.graph.nodes:
             if node.op == "output":
@@ -151,8 +141,22 @@ class TupleOutput(Transformation):
 
 
 class ClipValues(Transformation):
-    def __init__(self, clip_value: float):
-        self.clip_value = clip_value
+    """
+    Clips values to make them fall into [min_value, max_value].
+    This is useful for fp16 for instance.
+    """
+
+    def __init__(
+        self,
+        min_value: float,
+        max_value: float,
+        include_targets: Optional[List[Union[str, Callable]]] = None,
+        exclude_targets: Optional[List[Union[str, Callable]]] = None,
+    ):
+        self.min_value = min_value
+        self.max_value = max_value
+        self.include_targets = include_targets if include_targets is not None else []
+        self.exclude_targets = exclude_targets if exclude_targets is not None else []
 
     def _clip_node_args(self, args):
         if isinstance(args, (tuple, list, set)):
@@ -160,19 +164,42 @@ class ClipValues(Transformation):
         elif isinstance(args, dict):
             return {name: self._clip_node_args(arg) for name, arg in args.items()}
         elif isinstance(args, (float, int)):
-            return min(max(args, -self.clip_value), self.clip_value)
+            return min(max(args, self.min_value), self.max_value)
         else:
             return args
 
     def transform(self, graph_module: "GraphModule") -> "GraphModule":
         for node in graph_module.graph.nodes:
-            if node.op == "call_method" and node.target == "view":
+            if self.include_targets and node.target not in self.include_targets:
+                continue
+            if node.target in self.exclude_targets:
                 continue
             node.args = self._clip_node_args(node.args)
         return graph_module
 
 
+class ClipValuesSymmetric(ClipValues):
+    """
+    Clips values to make them fall into [-clip_value, clip_value].
+    This is useful for fp16 for instance.
+    """
+
+    def __init__(
+        self,
+        clip_value: float,
+        include_targets: Optional[List[Union[str, Callable]]] = None,
+        exclude_targets: Optional[List[Union[str, Callable]]] = None,
+    ):
+        if clip_value < 0:
+            raise ValueError(f"The provided clip value must be equal or greater than 0, but here {clip_value}.")
+        return super().__init__(-clip_value, clip_value, exclude_targets=exclude_targets)
+
+
 class OutlineAttribute(ReversibleTransformation):
+    """
+    Adds an attribute to a module. This attribute will be used when comparing operation equivalence in outlining.
+    """
+
     def __init__(self, name_regex: str, value: str):
         self.name_regex = re.compile(name_regex)
         self.value = value
@@ -180,7 +207,6 @@ class OutlineAttribute(ReversibleTransformation):
     def transform(self, graph_module: "GraphModule") -> "GraphModule":
         first_match, last_match = None, None
         for node in graph_module.graph.nodes:
-            # TODO: how to match the case where node.target is str
             match = re.match(self.name_regex, node.target) if isinstance(node.target, str) else False
             if match:
                 if first_match is None:
@@ -190,7 +216,9 @@ class OutlineAttribute(ReversibleTransformation):
             raise RuntimeError(f"Could not find any op matching {self.name_regex} to outline.")
 
         with graph_module.graph.inserting_before(first_match):
-            new_node = graph_module.graph.call_function(torch.ops.poptorch.set_attribute, ("__outline", "layer", self.value))
+            new_node = graph_module.graph.call_function(
+                torch.ops.poptorch.set_attribute, ("__outline", "layer", self.value)
+            )
             new_node.parent_module_qualified_name = first_match.parent_module_qualified_name
         with graph_module.graph.inserting_after(last_match):
             new_node = graph_module.graph.call_function(torch.ops.poptorch.clear_attribute, ("__outline", "layer"))
@@ -211,6 +239,10 @@ class OutlineAttribute(ReversibleTransformation):
 
 
 class RecomputationCheckpoint(ReversibleTransformation):
+    """
+    Annotates the output of a module to be checkpointed instead of recomputed.
+    """
+
     def __init__(self, name_regex: str, to_exclude: Optional[str] = None):
         self.name_regex = re.compile(name_regex)
         self.to_exclude = re.compile(to_exclude) if to_exclude is not None else None
@@ -218,40 +250,46 @@ class RecomputationCheckpoint(ReversibleTransformation):
     def find_output_nodes_for_module_name(self, graph_module: "GraphModule", module_qualified_name: str):
         nodes_in_module = set()
         first_match = False
-        for n in graph_module.graph.nodes:
-            starts_with_module_qualified_name = getattr(n, "parent_module_qualified_name", "").startswith(module_qualified_name)
-            print(getattr(n, "parent_module_qualified_name", ""))
-            print(starts_with_module_qualified_name)
+        # Some nodes are created by calling a module that was created before in the model. This means that these nodes
+        # parent_module_qualified_name attributes will be "from the past", but we still want to consider them inside
+        # the current module, since they are called here.
+        modules_from_the_past = set()
+        for node in graph_module.graph.nodes:
+            name = parent_module_qualified_name(node)
+            starts_with_module_qualified_name = name.startswith(module_qualified_name)
             if not first_match and not starts_with_module_qualified_name:
-                continue
+                pass
             elif not first_match and starts_with_module_qualified_name:
                 first_match = True
-                nodes_in_module.add(n)
+                nodes_in_module.add(node)
             elif first_match and starts_with_module_qualified_name:
-                nodes_in_module.add(n)
+                nodes_in_module.add(node)
+            elif first_match and name in modules_from_the_past:
+                # The module under which this node was created belongs to somewhere before in the hierarchy, but we
+                # consider this node to be part of this module since it's being used here.
+                nodes_in_module.add(node)
             else:
                 break
+            modules_from_the_past.add(name)
         nodes_in_module = {n for n in nodes_in_module if set(n.users.keys()) & nodes_in_module}
         return [n for n in nodes_in_module if set(n.users.keys()) - nodes_in_module]
 
     def transform(self, graph_module: "GraphModule") -> "GraphModule":
         matched_module_names = collections.OrderedDict()
         for node in graph_module.graph.nodes:
-            match = re.match(self.name_regex, getattr(node, "parent_module_qualified_name", ""))
+            match = re.match(self.name_regex, parent_module_qualified_name(node))
             to_exclude = False
             if self.to_exclude is not None:
-                to_exclude = re.match(self.to_exclude, getattr(node, "parent_module_qualified_name", ""))
+                to_exclude = re.match(self.to_exclude, parent_module_qualified_name(node))
             if match and not to_exclude:
                 matched_module_names[match.group(0)] = None
 
         output_nodes = []
         for qualified_name in matched_module_names.keys():
-            print(qualified_name)
             output_nodes += self.find_output_nodes_for_module_name(graph_module, qualified_name)
 
         for output in output_nodes:
             with graph_module.graph.inserting_after(output):
-                print("output", output)
                 recomputation_node = graph_module.graph.call_function(poptorch.recomputationCheckpoint)
             output.replace_all_uses_with(recomputation_node)
             recomputation_node.args = (output,)
@@ -267,6 +305,12 @@ class RecomputationCheckpoint(ReversibleTransformation):
 
 
 class VocabEmbeddingToSerializedEmbedding(ReversibleTransformation):
+    """
+    Transforms the embedding layer matching name_regex to a SerializedEmbedding layer.
+    If no name_regex is provided, all the embeddings will be detected, but in any case, only the embedding with the
+    biggest number of embeddings will be transformed (this is usually the one containing the vocabulary).
+    """
+
     def __init__(self, name_regex: Optional[str] = None):
         self.name_regex = re.compile(name_regex) if name_regex else None
 
@@ -307,6 +351,10 @@ class VocabEmbeddingToSerializedEmbedding(ReversibleTransformation):
 
 
 class LinearToSerializedLinear(ReversibleTransformation):
+    """
+    Transforms the linear layers matching name_regex to SerializedLinear layers.
+    """
+
     def __init__(self, name_regex: str):
         self.name_regex = re.compile(name_regex) if name_regex else None
 
