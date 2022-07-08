@@ -375,11 +375,38 @@ class LinearToSerializedLinear(ReversibleTransformation):
                 serialized_linear.load_state_dict(linear.state_dict())
                 parent_fully_qualified_name, linear_name = node.target.rsplit(".", maxsplit=1)
                 setattr(graph_module.get_submodule(parent_fully_qualified_name), linear_name, serialized_linear)
-        graph_module.tie_weights()
         return graph_module
 
     def reverse(self, graph_module: "GraphModule") -> "GraphModule":
         for node in graph_module.graph.nodes:
             if node.op == "call_module" and isinstance(graph_module.get_submodule(node.target), SerializedLinear):
                 graph_module.get_submodule(node.target).__class__ = torch.nn.Linear
+        return graph_module
+
+
+class TieWeights(Transformation):
+    def __init__(self, layer_a: str, layer_b: str, weight_attribute_name_for_a: Optional[str] = "weight", weight_attribute_name_for_b: Optional[str] = "weight"):
+        self.layer_a = layer_a
+        self.layer_b = layer_b
+        self.layer_b = layer_b
+        self.weight_attribute_name_for_a = weight_attribute_name_for_a
+        self.weight_attribute_name_for_b = weight_attribute_name_for_b
+
+    def transform(self, graph_module: "GraphModule") -> "GraphModule":
+        layer_a, layer_b = None, None
+        for node in graph_module.graph.nodes:
+            if node.op == "call_module":
+                if node.target == self.layer_a:
+                    layer_a = graph_module.get_submodule(node.target)
+                if node.target == self.layer_b:
+                    layer_b = graph_module.get_submodule(node.target)
+
+        if layer_a is None or layer_b is None:
+            raise ValueError(f"Could not find both layers {self.layer_a} and {self.layer_b} to tie their weights together")
+        if not hasattr(layer_a, self.weight_attribute_name_for_a):
+            raise AttributeError(f"{layer_a} does not have an attribute called {self.weight_attribute_name_for_a}")
+        if not hasattr(layer_b, self.weight_attribute_name_for_b):
+            raise AttributeError(f"{layer_b} does not have an attribute called {self.weight_attribute_name_for_b}")
+
+        setattr(layer_b, self.weight_attribute_name_for_b, getattr(layer_a, self.weight_attribute_name_for_a))
         return graph_module

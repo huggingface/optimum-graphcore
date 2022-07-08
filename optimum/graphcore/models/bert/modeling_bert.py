@@ -42,6 +42,7 @@ from ...fx.transformations import (
     LinearToSerializedLinear,
     OutlineAttribute,
     RecomputationCheckpoint,
+    TieWeights,
     TupleOutput,
     VocabEmbeddingToSerializedEmbedding,
 )
@@ -105,7 +106,10 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
                 )
             )
         if self.ipu_config.embedding_serialization_factor > 1:
-            transformations.append(LinearToSerializedLinear("cls.predictions.decoder"))
+            transformations += [
+                LinearToSerializedLinear("cls.predictions.decoder"),
+                TieWeights("bert.embeddings.word_embeddings", "cls.predictions.decoder"),
+            ]
         return transformations
 
     def parallelize(self):
@@ -263,7 +267,10 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
                 )
             )
         if self.ipu_config.embedding_serialization_factor > 1:
-            transformations.append(LinearToSerializedLinear("cls.predictions.decoder"))
+            transformations += [
+                LinearToSerializedLinear("cls.predictions.decoder"),
+                TieWeights("bert.embeddings.word_embeddings", "cls.predictions.decoder"),
+            ]
         return transformations
 
     def parallelize(self):
@@ -411,7 +418,7 @@ class BertPipelineMixin(PipelineMixin):
         super().parallelize()
         traced = symbolic_trace_pipelined_model(self)
         transformations = self.get_transformations()
-        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        # transformations += _OPTIMIZATION_TRANSFORMATIONS
         composition = compose(*transformations)
         non_reversible_composition = compose(*_NON_REVERSIBLE_TRANSFORMATIONS)
         traced = composition(traced)
