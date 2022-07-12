@@ -119,6 +119,10 @@ class ModelArguments:
     gumbel_temperature_decay: Optional[float] = field(
         default=0.9, metadata={"help": "Decay of gumbel temperature during training."}
     )
+    crop_aggression: Optional[float] = field(
+        default=0.1, metadata={"help": "Increase the tensor cropping to beyond the guaranteed max size."
+                                       "The reducer keep factor is ``mask_time_prob * (1 - crop_aggression)``."}
+    )
 
 
 @dataclass
@@ -227,16 +231,22 @@ class DataCollatorForWav2Vec2Pretraining:
             Maximum length of the ``input_values`` of the returned list and optionally padding length (see above).
         pad_to_multiple_of (:obj:`int`, `optional`):
             If set will pad the sequence to a multiple of the provided value.
+        reducer_keep_factor (:obj:`float`, `optional`):
+            The amount, as a factor of length, to keep when reducing the representations before computing the loss.
+            When a crop is applied the masked indices are moved to the start of tensor,
+            this prioritises removing unmasked indices.
     """
 
     model: Wav2Vec2ForPreTraining
     feature_extractor: Wav2Vec2FeatureExtractor
+
     max_gumbel_temperature: float = 2.0
     min_gumbel_temperature: float = 0.5
     gumbel_temperature_decay: float = 0.9
     global_step: int = 0
     padding: Union[bool, str] = "longest"
     pad_to_multiple_of: Optional[int] = None
+    reducer_keep_factor: float = 1.0
 
     def __call__(self, features: List[Dict[str, Union[List[int], torch.Tensor]]]) -> Dict[str, torch.Tensor]:
         # reformat list to dict and set to pytorch format
@@ -275,7 +285,7 @@ class DataCollatorForWav2Vec2Pretraining:
             min_masks=1,
         )
 
-        cropped_length = int(mask_indices_seq_length * self.model.config.mask_time_prob) + 1
+        cropped_length = int(mask_indices_seq_length * self.reducer_keep_factor) + 1
         # move true masked indexes first and crop, later used to gather a reduced size tensor.
         reduce_selector = np.argsort(~mask_time_indices, 1)[:, :cropped_length]
         num_masked = np.sum(mask_time_indices, 1)
@@ -499,6 +509,7 @@ def main():
         max_gumbel_temperature=model_args.max_gumbel_temperature,
         min_gumbel_temperature=model_args.min_gumbel_temperature,
         gumbel_temperature_decay=model_args.gumbel_temperature_decay,
+        reducer_keep_factor=model_args.mask_time_prob * (1.0 - model_args.crop_aggression)
     )
 
     # Initialize Trainer
