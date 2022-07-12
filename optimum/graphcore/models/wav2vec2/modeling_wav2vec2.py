@@ -238,7 +238,7 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
         # 2. quantize all (unmasked) extracted features and project to final vq dim
         extract_features = self.dropout_features(extract_features)
 
-        quantized_features, codevector_perplexity = self.quantizer(
+        quantized_features, prob_perplexity, code_perplexity = self.quantizer(
             extract_features, gumbel_temperature.mean(), mask_time_indices=mask_time_indices
         )
         quantized_features = self.project_q(quantized_features)
@@ -274,7 +274,7 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
             # its cosine similarity will be masked
             neg_is_pos = (quantized_features == negative_quantized_features).all(-1)
 
-            neg_is_pos = F.pad(neg_is_pos.type(torch.long), (0, 0, 0, 0, 1, 0)).type(torch.bool)
+            neg_is_pos = F.pad(neg_is_pos, (0, 0, 0, 0, 1, 0))
             logits = logits.masked_fill(neg_is_pos, -1e3)
 
             # 6. compute contrastive loss \mathbf{L}_m = cross_entropy(logs) =
@@ -286,26 +286,15 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
 
             # 7. compute diversity loss: \mathbf{L}_d
             num_codevectors = self.config.num_codevectors_per_group * self.config.num_codevector_groups
-            diversity_loss = ((num_codevectors - codevector_perplexity) / num_codevectors) * mask_time_indices.sum()
+            diversity_loss = ((num_codevectors - prob_perplexity) / num_codevectors) * mask_time_indices.sum()
 
             # 8. \mathbf{L} = \mathbf{L}_m + \alpha * \mathbf{L}_d
             loss = contrastive_loss + self.config.diversity_loss_weight * diversity_loss
 
         if not return_dict:
             if loss is not None:
-                return (loss, transformer_features, quantized_features, codevector_perplexity) + outputs[2:]
-            return (transformer_features, quantized_features, codevector_perplexity) + outputs[2:]
-
-        return Wav2Vec2ForPreTrainingOutput(
-            loss=loss,
-            projected_states=transformer_features,
-            projected_quantized_states=quantized_features,
-            codevector_perplexity=codevector_perplexity,
-            hidden_states=outputs.hidden_states,
-            attentions=outputs.attentions,
-            contrastive_loss=contrastive_loss,
-            diversity_loss=diversity_loss,
-        )
+                return (loss, transformer_features, quantized_features, prob_perplexity, code_perplexity) + outputs[2:]
+            return (transformer_features, quantized_features, prob_perplexity, code_perplexity) + outputs[2:]
 
     @staticmethod
     def compute_contrastive_logits(
