@@ -265,7 +265,7 @@ class DataCollatorCTCWithPadding:
             7.5 (Volta).
     """
 
-    processor: AutoProcessor
+    processor: Union[AutoProcessor, Wav2Vec2Processor]
     padding: Union[bool, str] = "longest"
     pad_to_multiple_of: Optional[int] = None
     pad_to_multiple_of_labels: Optional[int] = None
@@ -282,7 +282,6 @@ class DataCollatorCTCWithPadding:
             pad_to_multiple_of=self.pad_to_multiple_of,
             return_tensors="pt",
         )
-
 
         with self.processor.as_target_processor():
             labels_batch = self.processor.pad(
@@ -520,6 +519,8 @@ def main():
         model_args.model_name_or_path, cache_dir=model_args.cache_dir, use_auth_token=data_args.use_auth_token
     )
 
+    processor = Wav2Vec2Processor(feature_extractor, tokenizer)
+
     ipu_config = IPUConfig.from_pretrained(
         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
         cache_dir=model_args.cache_dir,
@@ -555,9 +556,8 @@ def main():
     )
 
     # freeze encoder
-    if model_args.freeze_feature_encoder:
-        pass
-        # model.freeze_feature_encoder()
+    if not model_args.freeze_feature_encoder:
+        raise NotImplementedError("IPU version of this model freezes the feature encoder. Must be set to True.")
 
     # 6. Now we preprocess the datasets including loading the audio, resampling and normalization
     # Thankfully, `datasets` takes care of automatically loading and resampling the audio,
@@ -653,20 +653,8 @@ def main():
 
     # save feature extractor, tokenizer and config
     feature_extractor.save_pretrained(training_args.output_dir)
-    # tokenizer.save_pretrained(training_args.output_dir)
+    tokenizer.save_pretrained(training_args.output_dir)
     config.save_pretrained(training_args.output_dir)
-
-    try:
-        processor = AutoProcessor.from_pretrained(training_args.output_dir)
-    except (OSError, KeyError):
-        warnings.warn(
-            "Loading a processor from a feature extractor config that does not"
-            " include a `processor_class` attribute is deprecated and will be removed in v5. Please add the following "
-            " attribute to your `preprocessor_config.json` file to suppress this warning: "
-            " `'processor_class': 'Wav2Vec2Processor'`",
-            FutureWarning,
-        )
-        processor = Wav2Vec2Processor.from_pretrained(training_args.output_dir)
 
     # Instantiate custom data collator
     data_collator = DataCollatorCTCWithPadding(processor=processor, pad_to_multiple_of=int(max_input_length),
