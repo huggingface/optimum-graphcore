@@ -108,9 +108,6 @@ class ModelArguments:
         metadata={"help": "Length of vector span to mask along the feature axis."},
     )
     layerdrop: float = field(default=0.0, metadata={"help": "The LayerDrop probability."})
-    ctc_loss_reduction: Optional[str] = field(
-        default="mean", metadata={"help": "The way the ctc loss should be reduced. Should be one of 'mean' or 'sum'."}
-    )
     max_gumbel_temperature: Optional[float] = field(
         default=2.0, metadata={"help": "Maximum temperature for gumbel softmax."}
     )
@@ -475,7 +472,6 @@ def main():
             "mask_feature_length": model_args.mask_feature_length,
             "gradient_checkpointing": training_args.gradient_checkpointing,
             "layerdrop": model_args.layerdrop,
-            "ctc_loss_reduction": model_args.ctc_loss_reduction,
             "activation_dropout": model_args.activation_dropout,
             "layer_norm_eps": 0.0001,
             "do_stable_layer_norm": True,
