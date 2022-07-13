@@ -37,6 +37,7 @@ from transformers import (
     HfArgumentParser,
     Wav2Vec2FeatureExtractor,
     Wav2Vec2ForPreTraining,
+    TrainerCallback,
     set_seed,
 )
 from transformers.models.wav2vec2.modeling_wav2vec2 import _compute_mask_indices
@@ -239,11 +240,6 @@ class DataCollatorForWav2Vec2Pretraining:
 
     model: Wav2Vec2ForPreTraining
     feature_extractor: Wav2Vec2FeatureExtractor
-
-    max_gumbel_temperature: float = 2.0
-    min_gumbel_temperature: float = 0.5
-    gumbel_temperature_decay: float = 0.9
-    global_step: int = 0
     padding: Union[bool, str] = "longest"
     pad_to_multiple_of: Optional[int] = None
     reducer_keep_factor: float = 1.0
@@ -302,14 +298,7 @@ class DataCollatorForWav2Vec2Pretraining:
         batch["sampled_negative_indices"] = torch.tensor(sampled_negative_indices, dtype=torch.long, device=device)
         batch["reduce_selector"] = torch.tensor(reduce_selector, dtype=torch.int, device=device)
         batch["mask_reduced"] = torch.tensor(mask_reduced, dtype=torch.bool, device=device)
-        # Update the Gumbel temperature
-        gumbel_temperature = max(
-            self.max_gumbel_temperature * self.gumbel_temperature_decay ** self.global_step,
-            self.min_gumbel_temperature,
-        )
-        self.model.set_gumbel_temperature(gumbel_temperature)
-        self.global_step += 1
-        batch["gumbel_temperature"] = torch.full([batch_size], gumbel_temperature, dtype=torch.float32)
+        batch["gumbel_temperature"] = torch.full([batch_size], self.model.quantizer.temperature, dtype=torch.float32)
         # this is passed and not used to allow metrics to be computed
         batch["labels"] = torch.full([batch_size], False, dtype=torch.bool)
         return batch.data
@@ -508,10 +497,32 @@ def main():
     data_collator = DataCollatorForWav2Vec2Pretraining(
         model=model,
         feature_extractor=feature_extractor,
-        max_gumbel_temperature=model_args.max_gumbel_temperature,
-        min_gumbel_temperature=model_args.min_gumbel_temperature,
-        gumbel_temperature_decay=model_args.gumbel_temperature_decay,
         reducer_keep_factor=model_args.mask_time_prob * (1.0 - model_args.crop_aggression)
+    )
+
+    # Create a callback that updates the Gumbel temperature
+    class GumbelTemperatureCallback(TrainerCallback):
+        def __init__(self, max_gumbel_temperature, min_gumbel_temperature, gumbel_temperature_decay):
+            super(GumbelTemperatureCallback, self).__init__()
+            self.max_gumbel_temperature = max_gumbel_temperature
+            self.min_gumbel_temperature = min_gumbel_temperature
+            self.gumbel_temperature_decay = gumbel_temperature_decay
+
+        def on_step_end(self, args, state, control, **kwargs):
+            # update gumbel temperature
+            gumbel_temperature = max(
+                self.max_gumbel_temperature * self.gumbel_temperature_decay ** state.global_step,
+                self.min_gumbel_temperature,
+            )
+            if hasattr(model, "module"):
+                model.module.set_gumbel_temperature(gumbel_temperature)
+            else:
+                model.set_gumbel_temperature(gumbel_temperature)
+
+    gumbel_callback = GumbelTemperatureCallback(
+        model_args.max_gumbel_temperature,
+        model_args.min_gumbel_temperature,
+        model_args.gumbel_temperature_decay,
     )
 
     # Initialize Trainer
@@ -523,6 +534,7 @@ def main():
         train_dataset=vectorized_datasets["train"] if training_args.do_train else None,
         eval_dataset=vectorized_datasets["eval"] if training_args.do_eval else None,
         tokenizer=feature_extractor,
+        callbacks=[gumbel_callback],
     )
 
     # 6. Finally, we can start training
