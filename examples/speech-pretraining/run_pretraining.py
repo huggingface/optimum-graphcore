@@ -310,6 +310,8 @@ class DataCollatorForWav2Vec2Pretraining:
         self.model.set_gumbel_temperature(gumbel_temperature)
         self.global_step += 1
         batch["gumbel_temperature"] = torch.full([batch_size], gumbel_temperature, dtype=torch.float32)
+        # this is passed and not used to allow metrics to be computed
+        batch["labels"] = torch.full([batch_size], False, dtype=torch.bool)
         return batch.data
 
 
