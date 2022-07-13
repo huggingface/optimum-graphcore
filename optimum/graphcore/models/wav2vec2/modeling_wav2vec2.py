@@ -183,6 +183,7 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
             self,
             input_values,
             gumbel_temperature,
+            labels=None,
             attention_mask=None,
             mask_time_indices=None,
             sampled_negative_indices=None,
