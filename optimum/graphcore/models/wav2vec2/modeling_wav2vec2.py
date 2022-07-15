@@ -30,16 +30,28 @@ from transformers.models.wav2vec2.modeling_wav2vec2 import (
     Wav2Vec2ForCTC,
 )
 
-from ...modeling_utils import PipelineMixin, get_layer_ipu, recomputation_checkpoint, register
+from ...modeling_utils import (
+    PipelineMixin,
+    get_layer_ipu,
+    recomputation_checkpoint,
+    register,
+)
 from .ipu_gumbel_vector_quantizer import IPUWav2Vec2GumbelVectorQuantizer
-from .ipu_layer_drop import IPUWav2Vec2Adapter, IPUWav2Vec2Encoder, IPUWav2Vec2EncoderStableLayerNorm
+from .ipu_layer_drop import (
+    IPUWav2Vec2Adapter,
+    IPUWav2Vec2Encoder,
+    IPUWav2Vec2EncoderStableLayerNorm,
+)
 
 logger = logging.get_logger(__name__)
 
 
 class IPUWav2Vec2Model(Wav2Vec2Model):
     def _get_feature_vector_attention_mask(
-            self, feature_vector_length: int, attention_mask: torch.LongTensor, add_adapter=None
+        self,
+        feature_vector_length: int,
+        attention_mask: torch.LongTensor,
+        add_adapter=None,
     ):
         # Effectively attention_mask.sum(-1), but not inplace to be able to run
         # on inference mode.
@@ -47,16 +59,25 @@ class IPUWav2Vec2Model(Wav2Vec2Model):
         # non_padded_lengths = attention_mask.cumsum(dim=-1)[:, 249999]
         non_padded_lengths = attention_mask.sum(dim=-1)
 
-        output_lengths = self._get_feat_extract_output_lengths(non_padded_lengths, add_adapter=add_adapter)
+        output_lengths = self._get_feat_extract_output_lengths(
+            non_padded_lengths, add_adapter=add_adapter
+        )
         output_lengths = output_lengths.to(torch.long)
 
         batch_size = attention_mask.shape[0]
 
         attention_mask = torch.zeros(
-            (batch_size, feature_vector_length), dtype=attention_mask.dtype, device=attention_mask.device
+            (batch_size, feature_vector_length),
+            dtype=attention_mask.dtype,
+            device=attention_mask.device,
         )
         # these two operations makes sure that all values before the output lengths idxs are attended to
-        attention_mask[(torch.arange(attention_mask.shape[0], device=attention_mask.device), output_lengths - 1)] = 1
+        attention_mask[
+            (
+                torch.arange(attention_mask.shape[0], device=attention_mask.device),
+                output_lengths - 1,
+            )
+        ] = 1
         attention_mask = attention_mask.flip([-1]).cumsum(-1).flip([-1]).bool()
         return attention_mask
 
@@ -70,7 +91,11 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
             restore: whether to restore the encoder to its original version or not.
         """
         if self.config.do_stable_layer_norm:
-            new_cls = Wav2Vec2EncoderStableLayerNorm if restore else IPUWav2Vec2EncoderStableLayerNorm
+            new_cls = (
+                Wav2Vec2EncoderStableLayerNorm
+                if restore
+                else IPUWav2Vec2EncoderStableLayerNorm
+            )
         else:
             new_cls = Wav2Vec2Encoder if restore else IPUWav2Vec2Encoder
         self.wav2vec2.encoder.__class__ = new_cls
@@ -82,7 +107,9 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
             restore: whether to restore the adapter to its original version or not.
         """
         if self.config.add_adapter:
-            self.wav2vec2.adapter.__class__ = Wav2Vec2Adapter if restore else IPUWav2Vec2Adapter
+            self.wav2vec2.adapter.__class__ = (
+                Wav2Vec2Adapter if restore else IPUWav2Vec2Adapter
+            )
 
     def change_quantizer_class(self, restore: bool):
         """Changes the quantizer class to update its forward pass so that it uses our custom version.
@@ -90,7 +117,11 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
         Args:
             restore: whether to restore the quantizer to its original version or not.
         """
-        self.quantizer.__class__ = Wav2Vec2GumbelVectorQuantizer if restore else IPUWav2Vec2GumbelVectorQuantizer
+        self.quantizer.__class__ = (
+            Wav2Vec2GumbelVectorQuantizer
+            if restore
+            else IPUWav2Vec2GumbelVectorQuantizer
+        )
 
     def change_conv_eps(self, restore: bool):
         """Changes the epsilons in the layer norms of the conv layers to a value suitable for float16.
@@ -157,7 +188,8 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
 
         if len(layer_ipu) != len(layers):
             raise ValueError(
-                f"Layers per IPU total ({len(layer_ipu)}) must be equal to layers ({len(layers)}).")
+                f"Layers per IPU total ({len(layer_ipu)}) must be equal to layers ({len(layers)})."
+            )
 
         for i, (name, layer) in enumerate(layers):
             logger.info(f"{name} --> IPU {layer_ipu[i]}")
@@ -180,18 +212,18 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
         return self
 
     def forward(
-            self,
-            input_values,
-            gumbel_temperature,
-            labels=None,
-            attention_mask=None,
-            mask_time_indices=None,
-            sampled_negative_indices=None,
-            reduce_selector=None,
-            mask_reduced=None,
-            output_attentions=None,
-            output_hidden_states=None,
-            return_dict=None,
+        self,
+        input_values,
+        gumbel_temperature,
+        labels=None,
+        attention_mask=None,
+        mask_time_indices=None,
+        sampled_negative_indices=None,
+        reduce_selector=None,
+        mask_reduced=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=None,
     ):
         # Override the return_dict argument
         return_dict = False
@@ -223,15 +255,25 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
             cropped_length = reduce_selector.shape[1]
 
             if batch_size > 1:
-                reduce_selector += (torch.arange(batch_size).unsqueeze(1) * sequence_length)
+                reduce_selector += (
+                    torch.arange(batch_size).unsqueeze(1) * sequence_length
+                )
             mask_time_indices = mask_reduced.to(torch.bool)
 
-            extract_features = extract_features.view(-1, feature_size)[reduce_selector.long().view(-1)]
-            extract_features = extract_features.reshape(batch_size, cropped_length, feature_size)
+            extract_features = extract_features.view(-1, feature_size)[
+                reduce_selector.long().view(-1)
+            ]
+            extract_features = extract_features.reshape(
+                batch_size, cropped_length, feature_size
+            )
 
             _, _, feature_size = transformer_features.shape
-            transformer_features = transformer_features.view(-1, feature_size)[reduce_selector.long().view(-1)]
-            transformer_features = transformer_features.reshape(batch_size, cropped_length, feature_size)
+            transformer_features = transformer_features.view(-1, feature_size)[
+                reduce_selector.long().view(-1)
+            ]
+            transformer_features = transformer_features.reshape(
+                batch_size, cropped_length, feature_size
+            )
 
         # 1. project all transformed features (including masked) to final vq dim
         transformer_features = self.project_hid(transformer_features)
@@ -240,7 +282,9 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
         extract_features = self.dropout_features(extract_features)
 
         quantized_features, prob_perplexity, code_perplexity = self.quantizer(
-            extract_features, gumbel_temperature.mean(), mask_time_indices=mask_time_indices
+            extract_features,
+            gumbel_temperature.mean(),
+            mask_time_indices=mask_time_indices,
         )
         quantized_features = self.project_q(quantized_features)
 
@@ -254,7 +298,9 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
             # sample negative quantized vectors BTC => (BxT)C
             # Moved the negative sampling batch offsetting into the model
             if batch_size > 1:
-                sampled_negative_indices += (torch.arange(batch_size)[:, None, None] * sequence_length)
+                sampled_negative_indices += (
+                    torch.arange(batch_size)[:, None, None] * sequence_length
+                )
             negative_quantized_features = quantized_features.view(-1, hidden_size)[
                 sampled_negative_indices.long().view(-1)
             ]
@@ -286,23 +332,39 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
             contrastive_loss = F.cross_entropy(logits.float(), target, reduction="sum")
 
             # 7. compute diversity loss: \mathbf{L}_d
-            num_codevectors = self.config.num_codevectors_per_group * self.config.num_codevector_groups
-            diversity_loss = ((num_codevectors - prob_perplexity) / num_codevectors) * mask_time_indices.sum()
+            num_codevectors = (
+                self.config.num_codevectors_per_group
+                * self.config.num_codevector_groups
+            )
+            diversity_loss = (
+                (num_codevectors - prob_perplexity) / num_codevectors
+            ) * mask_time_indices.sum()
 
             # 8. \mathbf{L} = \mathbf{L}_m + \alpha * \mathbf{L}_d
             loss = contrastive_loss + self.config.diversity_loss_weight * diversity_loss
 
         if not return_dict:
             if loss is not None:
-                return (loss, transformer_features, quantized_features, prob_perplexity, code_perplexity) + outputs[2:]
-            return (transformer_features, quantized_features, prob_perplexity, code_perplexity) + outputs[2:]
+                return (
+                    loss,
+                    transformer_features,
+                    quantized_features,
+                    prob_perplexity,
+                    code_perplexity,
+                ) + outputs[2:]
+            return (
+                transformer_features,
+                quantized_features,
+                prob_perplexity,
+                code_perplexity,
+            ) + outputs[2:]
 
     @staticmethod
     def compute_contrastive_logits(
-            target_features: torch.FloatTensor,
-            negative_features: torch.FloatTensor,
-            predicted_features: torch.FloatTensor,
-            temperature: int = 0.1,
+        target_features: torch.FloatTensor,
+        negative_features: torch.FloatTensor,
+        predicted_features: torch.FloatTensor,
+        temperature: int = 0.1,
     ):
         """
         Compute logits for contrastive loss based using cosine similarity as the distance measure between
@@ -328,7 +390,11 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
             restore: whether to restore the encoder to its original version or not.
         """
         if self.config.do_stable_layer_norm:
-            new_cls = Wav2Vec2EncoderStableLayerNorm if restore else IPUWav2Vec2EncoderStableLayerNorm
+            new_cls = (
+                Wav2Vec2EncoderStableLayerNorm
+                if restore
+                else IPUWav2Vec2EncoderStableLayerNorm
+            )
         else:
             new_cls = Wav2Vec2Encoder if restore else IPUWav2Vec2Encoder
         self.wav2vec2.encoder.__class__ = new_cls
@@ -340,7 +406,9 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
             restore: whether to restore the adapter to its original version or not.
         """
         if self.config.add_adapter:
-            self.wav2vec2.adapter.__class__ = Wav2Vec2Adapter if restore else IPUWav2Vec2Adapter
+            self.wav2vec2.adapter.__class__ = (
+                Wav2Vec2Adapter if restore else IPUWav2Vec2Adapter
+            )
 
     def change_conv_eps(self, restore: bool):
         """Changes the epsilons in the layer norms of the conv layers to a value suitable for float16.
@@ -394,7 +462,9 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
             for index, layer in enumerate(self.wav2vec2.feature_extractor.conv_layers):
                 layers.append((f"Conv {index:<2}", layer))
             # Positional Embedding
-            layers.append(("Positional Embedding", self.wav2vec2.encoder.pos_conv_embed))
+            layers.append(
+                ("Positional Embedding", self.wav2vec2.encoder.pos_conv_embed)
+            )
             # Encoder layers
             for index, layer in enumerate(self.wav2vec2.encoder.layers):
                 recomputation_checkpoint(layer)
@@ -404,7 +474,8 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
 
             if len(layer_ipu) != len(layers):
                 raise ValueError(
-                    f"Layers per IPU total ({len(layer_ipu)}) must be equal to layers ({len(layers)}).")
+                    f"Layers per IPU total ({len(layer_ipu)}) must be equal to layers ({len(layers)})."
+                )
 
             for i, (name, layer) in enumerate(layers):
                 logger.info(f"{name} --> IPU {layer_ipu[i]}")
@@ -426,13 +497,13 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
         return self
 
     def forward(
-            self,
-            input_values,
-            labels=None,
-            attention_mask=None,
-            output_attentions=None,
-            output_hidden_states=None,
-            return_dict=False,
+        self,
+        input_values,
+        labels=None,
+        attention_mask=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=False,
     ):
         r"""
         labels (`torch.LongTensor` of shape `(batch_size, target_length)`, *optional*):
@@ -442,7 +513,9 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
             config.vocab_size - 1]`.
         """
 
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = (
+            return_dict if return_dict is not None else self.config.use_return_dict
+        )
         return_dict = False
 
         outputs = self.wav2vec2(
@@ -469,9 +542,13 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
             input_lengths = torch.ones_like(target_lengths) * logits.shape[1]
 
             # ctc_loss doesn't support fp16
-            log_probs = torch.nn.functional.log_softmax(logits.float(), dim=-1).transpose(0, 1)
+            log_probs = torch.nn.functional.log_softmax(
+                logits.float(), dim=-1
+            ).transpose(0, 1)
 
-            loss_fn = torch.nn.CTCLoss(blank=self.config.pad_token_id, reduction=self.config.ctc_loss_reduction)
+            loss_fn = torch.nn.CTCLoss(
+                blank=self.config.pad_token_id, reduction=self.config.ctc_loss_reduction
+            )
             loss = loss_fn(log_probs, labels, input_lengths, target_lengths)
 
         if not return_dict:
@@ -483,7 +560,9 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
 
 
 def _sample_negative_indices(
-        features_shape: Tuple, num_negatives: int, mask_time_indices: Optional[np.ndarray] = None
+    features_shape: Tuple,
+    num_negatives: int,
+    mask_time_indices: Optional[np.ndarray] = None,
 ):
     """
     Sample `num_negatives` vectors from feature vectors.
@@ -494,23 +573,31 @@ def _sample_negative_indices(
     sequence_length_range = np.arange(sequence_length)
 
     # get `num_negatives` random vector indices from the same utterance
-    sampled_negative_indices = np.zeros(shape=(batch_size, sequence_length, num_negatives), dtype=np.int32)
+    sampled_negative_indices = np.zeros(
+        shape=(batch_size, sequence_length, num_negatives), dtype=np.int32
+    )
 
     mask_time_indices = (
-        mask_time_indices.astype(np.bool) if mask_time_indices is not None else np.ones(features_shape, dtype=np.bool)
+        mask_time_indices.astype(np.bool)
+        if mask_time_indices is not None
+        else np.ones(features_shape, dtype=np.bool)
     )
 
     for batch_idx in range(batch_size):
         high = mask_time_indices[batch_idx].sum() - 1
         mapped_masked_indices = sequence_length_range[mask_time_indices[batch_idx]]
 
-        feature_indices = np.broadcast_to(np.arange(high + 1)[:, None], (high + 1, num_negatives))
+        feature_indices = np.broadcast_to(
+            np.arange(high + 1)[:, None], (high + 1, num_negatives)
+        )
         sampled_indices = np.random.randint(0, high, size=(high + 1, num_negatives))
         # avoid sampling the same positive vector, but keep the distribution uniform
         sampled_indices[sampled_indices >= feature_indices] += 1
 
         # remap to actual indices
-        sampled_negative_indices[batch_idx][mask_time_indices[batch_idx]] = mapped_masked_indices[sampled_indices]
+        sampled_negative_indices[batch_idx][
+            mask_time_indices[batch_idx]
+        ] = mapped_masked_indices[sampled_indices]
 
         # Moved the offsetting into the model to stop issues with gradient accumulation
         # sampled_negative_indices[batch_idx] += batch_idx * sequence_length

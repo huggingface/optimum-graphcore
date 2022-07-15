@@ -36,7 +36,10 @@ from transformers.utils.versions import require_version
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.15.0.dev0")
 
-require_version("datasets>=1.18.0", "To fix: pip install -r examples/pytorch/speech-recognition/requirements.txt")
+require_version(
+    "datasets>=1.18.0",
+    "To fix: pip install -r examples/pytorch/speech-recognition/requirements.txt",
+)
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +52,9 @@ class InferenceArguments:
 
     num_device_iterations: int = field(
         default=32,
-        metadata={"help": "Number of iterations the IPU will run before returning to host."},
+        metadata={
+            "help": "Number of iterations the IPU will run before returning to host."
+        },
     )
 
     max_samples: int = field(
@@ -69,18 +74,22 @@ class InferenceArguments:
 
     do_benchmark: bool = field(
         default=True,
-        metadata={"help": "Run the inference model without data-loading and compute throughput."},
+        metadata={
+            "help": "Run the inference model without data-loading and compute throughput."
+        },
     )
 
     benchmark_iterations: int = field(
         default=100,
-        metadata={"help": "Benchmark the inference model for this many host iterations."},
+        metadata={
+            "help": "Benchmark the inference model for this many host iterations."
+        },
     )
 
 
 def main():
     parser = HfArgumentParser(InferenceArguments)
-    inference_args, = parser.parse_args_into_dataclasses()
+    (inference_args,) = parser.parse_args_into_dataclasses()
 
     logger.info("Inference arguments %s", inference_args)
 
@@ -90,9 +99,12 @@ def main():
     if inference_args.use_large_model:
         processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-large-960h")
         model = AutoModelForCTC.from_pretrained("facebook/wav2vec2-large-960h")
-        ipu_config = IPUConfig(matmul_proportion=0.1, inference_device_iterations=num_device_iterations,
-                               layers_per_ipu=[17, 16],
-                               ipus_per_replica=2)
+        ipu_config = IPUConfig(
+            matmul_proportion=0.1,
+            inference_device_iterations=num_device_iterations,
+            layers_per_ipu=[17, 16],
+            ipus_per_replica=2,
+        )
     else:
         processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-base-960h")
         model = AutoModelForCTC.from_pretrained("facebook/wav2vec2-base-960h")
@@ -105,24 +117,29 @@ def main():
     opts = ipu_config.to_options(for_inference=True)
     inference_model = poptorch.inferenceModel(ipu_model.half().eval(), options=opts)
 
-    sample_batch = {'input_values': torch.zeros([num_device_iterations, inference_args.max_samples])}
+    sample_batch = {
+        "input_values": torch.zeros([num_device_iterations, inference_args.max_samples])
+    }
 
     inference_model.compile(**sample_batch)
 
     if inference_args.do_librispeech:
         logger.info("*** LibriSpeech ***")
         # load dummy dataset and read soundfiles
-        ds = load_dataset("patrickvonplaten/librispeech_asr_dummy", "clean", split="validation")
+        ds = load_dataset(
+            "patrickvonplaten/librispeech_asr_dummy", "clean", split="validation"
+        )
 
         # get batch
         x = torch.zeros([num_device_iterations, inference_args.max_samples])
         for i in range(num_device_iterations):
-            input_values = processor(ds[i]["audio"]["array"], return_tensors="pt",
-                                     padding="longest").input_values  # Batch size 1
+            input_values = processor(
+                ds[i]["audio"]["array"], return_tensors="pt", padding="longest"
+            ).input_values  # Batch size 1
             length = input_values.size(1)
             x[i, :length] = input_values[0]
 
-        batch = {'input_values': x}
+        batch = {"input_values": x}
 
         # take argmax and decode
         output = inference_model(**batch)
