@@ -22,6 +22,12 @@ INSTALL_REQUIRES = [
     "pillow",
 ]
 
+QUALITY_REQUIRES = [
+    "black",
+    "isort",
+    "hf-doc-builder",
+]
+
 EXTRA_REQUIRE = {
     "testing": [
         "GitPython",
@@ -31,7 +37,8 @@ EXTRA_REQUIRE = {
         "pytest-pythonpath",
         "librosa",
         "soundfile",
-    ]
+    ],
+    "quality": QUALITY_REQUIRES,
 }
 
 setup(
