@@ -28,7 +28,7 @@ make doc BUILD_DIR=graphcore-doc-build
 This command will generate the HTML files that will be rendered as the
 documentation on the [Hugging Face
 website](https://huggingface.co/docs/optimum/index). You can inspect them in
-your favorite browser. You can also adapt the `BUILD_DIR` argument to any
+your favorite browser and you can also adapt the `BUILD_DIR` argument to any
 temporary folder that you prefer.
 
 ---
@@ -42,7 +42,7 @@ should not commit the built documentation.
 
 # Writing documentation - specification
 
-The 🤗 Optimum Habana documentation follows the [Google
+The 🤗 Optimum Graphcore documentation follows the [Google
 documentation](https://sphinxcontrib-napoleon.readthedocs.io/en/latest/example_google.html)
 style for docstrings, although we can write them directly in Markdown.
 
@@ -94,7 +94,7 @@ continue to work.
 
 For an example of a rich moved sections set please see the very end of [the
 `Trainer`
-doc](https://github.com/huggingface/transformers/blob/main/docs/source/main_classes/trainer.mdx)
+doc](https://huggingface.co/docs/transformers/main/en/main_classes/trainer)
 in `transformers`.
 
 ## Adding a new tutorial or section
