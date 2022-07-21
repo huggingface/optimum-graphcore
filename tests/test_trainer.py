@@ -35,9 +35,8 @@ from transformers import AutoTokenizer, IntervalStrategy, PretrainedConfig, is_t
 from transformers.file_utils import WEIGHTS_NAME
 from transformers.testing_utils import (
     ENDPOINT_STAGING,
-    PASS,
-    USER,
     TOKEN,
+    USER,
     CaptureLogger,
     TestCasePlus,
     get_gpu_count,
