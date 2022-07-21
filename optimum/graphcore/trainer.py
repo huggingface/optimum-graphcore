@@ -310,7 +310,9 @@ class IPUTrainer:
 
         if not self.args.fp32:
             self.model = self.model.half()
-            self.model_for_eval = self.model_for_eval.half()
+            # inputs = {k: torch.ones(2, 23, dtype=torch.int64) for k in ["input_ids", "attention_mask", "token_type_ids"]}
+            # self.model_for_eval = self.model_for_eval.half()
+            import ipdb; ipdb.set_trace()
 
         self.training_model = None
         self.inference_model = None

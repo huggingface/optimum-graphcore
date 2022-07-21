@@ -418,7 +418,7 @@ class BertPipelineMixin(PipelineMixin):
         super().parallelize()
         traced = symbolic_trace_pipelined_model(self)
         transformations = self.get_transformations()
-        # transformations += _OPTIMIZATION_TRANSFORMATIONS
+        transformations += _OPTIMIZATION_TRANSFORMATIONS
         composition = compose(*transformations)
         non_reversible_composition = compose(*_NON_REVERSIBLE_TRANSFORMATIONS)
         traced = composition(traced)

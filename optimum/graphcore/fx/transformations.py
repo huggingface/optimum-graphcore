@@ -271,7 +271,7 @@ class RecomputationCheckpoint(ReversibleTransformation):
             else:
                 break
             modules_from_the_past.add(name)
-        nodes_in_module = {n for n in nodes_in_module if set(n.users.keys()) & nodes_in_module}
+        # nodes_in_module = {n for n in nodes_in_module if set(n.users.keys()) & nodes_in_module}
         return [n for n in nodes_in_module if set(n.users.keys()) - nodes_in_module]
 
     def transform(self, graph_module: "GraphModule") -> "GraphModule":
