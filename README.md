@@ -15,6 +15,9 @@ Quote from the Hugging Face [blog post](https://huggingface.co/blog/graphcore#wh
 
 > This design delivers high performance and new levels of efficiency, whether running today’s most popular models, such as BERT and EfficientNet, or exploring next-generation AI applications.
 
+## Poplar SDK setup
+A Poplar SDK environment needs to be enabled to use this library. Please refer to Graphcore's [Getting Started](https://docs.graphcore.ai/en/latest/getting-started.html) guide.
+
 ## Install
 To install the latest release of this package:
 
