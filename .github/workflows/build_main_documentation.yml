@@ -1,0 +1,74 @@
+name: Build main documentation
+
+on:
+  push:
+    branches:
+      - main
+      - doc-builder*
+      - v*-release
+
+jobs:
+  build_documentation:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash -l {0}
+
+    steps:
+      - uses: actions/checkout@v2
+        with:
+          repository: 'huggingface/doc-builder'
+          path: doc-builder
+
+      - uses: actions/checkout@v2
+        with:
+          repository: 'huggingface/doc-build'
+          path: doc-build
+          token: ${{ secrets.HUGGINGFACE_PUSH }}
+
+      - uses: actions/checkout@v2
+        with:
+          repository: 'huggingface/optimum-graphcore'
+          path: optimum-graphcore
+
+      - name: Set environment variables
+        run: |
+          cd optimum-graphcore
+          version=`echo "$(grep '^__version__ =' optimum/graphcore/version.py | cut -d '=' -f 2- | xargs)"`
+
+          if [[ $version == *.dev0 ]]
+          then
+            echo "VERSION=main" >> $GITHUB_ENV
+          else
+            echo "VERSION=v$version" >> $GITHUB_ENV
+          fi
+
+          cd ..
+
+      - name: Setup environment
+        run: |
+          pip uninstall -y doc-builder
+          cd doc-builder
+          git pull origin main
+          pip install .
+          pip install black
+          cd ..
+
+      - name: Create build directory
+        run: |
+          mkdir -p build_dir/optimum-graphcore
+          cd build_dir/optimum-graphcore
+          wget https://raw.githubusercontent.com/huggingface/doc-build/main/optimum-graphcore/_versions.yml
+
+      - name: Make documentation
+        run: |
+          cd optimum-graphcore
+          make doc BUILD_DIR=graphcore-doc-build VERSION=${{ env.VERSION }}
+          sudo cp -r graphcore-doc-build/optimum.graphcore/${{ env.VERSION }} ../build_dir/optimum-graphcore
+          cd ..
+
+      - name: Push to repositories
+        run: |
+          cd build_dir
+          doc-builder push optimum-graphcore --doc_build_repo_id "huggingface/doc-build" --token ${{ secrets.HUGGINGFACE_PUSH }} --commit_msg "Updated with commit ${{ github.sha }} See: https://github.com/huggingface/optimum-graphcore/commit/${{ github.sha }}" --n_retries 5
+        shell: bash

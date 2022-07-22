@@ -40,7 +40,7 @@ jobs:
           pip install black
           cd ..
 
-      - name: Make Graphcore documentation
+      - name: Make documentation
         run: |
           cd optimum-graphcore
           make doc BUILD_DIR=graphcore-doc-build VERSION=pr_$PR_NUMBER
