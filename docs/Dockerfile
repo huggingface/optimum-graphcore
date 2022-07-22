@@ -9,6 +9,6 @@ RUN curl -sL https://deb.nodesource.com/setup_14.x  | bash -
 RUN apt-get -y install nodejs
 RUN npm install
 
-RUN git clone -b documentation https://github.com/huggingface/optimum-graphcore.git
+RUN git clone https://github.com/huggingface/optimum-graphcore.git
 RUN python3 -m pip install --no-cache-dir --upgrade pip
 RUN python3 -m pip install --no-cache-dir ./optimum-graphcore[quality]
