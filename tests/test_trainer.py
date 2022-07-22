@@ -27,7 +27,7 @@ from typing import Optional, Union
 
 import numpy as np
 
-from huggingface_hub import Repository, delete_repo, login
+from huggingface_hub import Repository, delete_repo
 from optimum.graphcore import IPUConfig, IPUTrainingArguments
 from optimum.utils import logging
 from requests.exceptions import HTTPError
@@ -35,7 +35,7 @@ from transformers import AutoTokenizer, IntervalStrategy, PretrainedConfig, is_t
 from transformers.file_utils import WEIGHTS_NAME
 from transformers.testing_utils import (
     ENDPOINT_STAGING,
-    PASS,
+    TOKEN,
     USER,
     CaptureLogger,
     TestCasePlus,
@@ -1187,7 +1187,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
 class IPUTrainerIntegrationWithHubTester(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls._token = login(username=USER, password=PASS)
+        cls._token = TOKEN
 
     @classmethod
     def tearDownClass(cls):

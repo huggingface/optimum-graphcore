@@ -1,0 +1,48 @@
+<!---
+Copyright 2022 The HuggingFace Team. All rights reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+
+# Optimum Graphcore
+
+🤗 Optimum Graphcore is the interface between the 🤗 Transformers library and [Graphcore IPUs](https://www.graphcore.ai/products/ipu). It provides a set of tools enabling model parallelization and loading on IPUs, training and fine-tuning on all the tasks already supported by Transformers while being compatible with the Hugging Face Hub and every model available on it out of the box.
+
+## What is an Intelligence Processing Unit (IPU)?
+
+Quote from the Hugging Face [blog post](https://huggingface.co/blog/graphcore#what-is-an-intelligence-processing-unit):
+
+> IPUs are the processors that power Graphcore's IPU-POD datacenter compute systems. This new type of processor is designed to support the very specific computational requirements of AI and machine learning. Characteristics such as fine-grained parallelism, low precision arithmetic, and the ability to handle sparsity have been built into our silicon.
+
+> Instead of adopting a SIMD/SIMT architecture like GPUs, Graphcore's IPU uses a massively parallel, MIMD architecture, with ultra-high bandwidth memory placed adjacent to the processor cores, right on the silicon die.
+
+> This design delivers high performance and new levels of efficiency, whether running today's most popular models, such as BERT and EfficientNet, or exploring next-generation AI applications.
+
+## Supported Models
+
+The following model architectures and tasks are currently supported by 🤗 Optimum Graphcore:
+
+|         | Pre-Training       | Masked LM          | Causal LM          | Seq2Seq LM (Summarization, Translation, etc) | Sequence Classification | Token Classification | Question Answering | Multiple Choice    | Image Classification |
+|---------|--------------------|--------------------|--------------------|----------------------------------------------|-------------------------|----------------------|--------------------|--------------------|----------------------|
+| BART    | ✔ |                    | ✗                  | ✔                           | ✗                       |                      | ✗                  |                    |                      |
+| BERT    | ✔ | ✔ | ✗                  |                                              | ✔      | ✔   | ✔ | ✔ |                      |
+| ConvNeXt| ✔ |                    |                    |                                              |                         |                      |                    |                    | ✔   |
+| DeBERTa | ✗                  | ✗                  |                    |                                              | ✔      | ✔   | ✔ |                    |                      |
+| GPT-2   | ✔ |                    | ✔ |                                              | ✔      | ✔   |                    |                    |                      |
+| HuBERT  | ✗                  |                    |                    |                                              | ✔      |                      |                    |                    |                      |
+| LXMERT  | ✗                  |                    |                    |                                              |                         |                      | ✔ |                    |                      |
+| RoBERTa | ✔ | ✔ | ✗                  |                                              | ✔      | ✔   | ✔ | ✔ |                      |
+| T5      | ✔ |                    |                    | ✔                           |                         |                      |                    |                    |                      |
+| ViT     | ✗                  |                    |                    |                                              |                         |                      |                    |                    | ✔   |
+| Wav2Vec2| ✔ |                    |                    |                                              |                         |                      |                    |                    |                      |
