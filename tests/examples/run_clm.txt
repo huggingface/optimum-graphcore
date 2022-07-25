@@ -11,33 +11,22 @@
 <     TrainingArguments,
 46d46
 <     is_torch_tpu_available,
-51c51
-< from transformers.utils import check_min_version
+51c51,52
+< from transformers.utils import check_min_version, send_example_telemetry
 ---
 > from transformers.utils import check_min_version as tf_check_min_version
-56c56
-< check_min_version("4.18.0")
+> from transformers.utils import send_example_telemetry
+56c57
+< check_min_version("4.20.0")
 ---
-> tf_check_min_version("4.18.0")
-117,121c117,121
-<     def __post_init__(self):
-<         if self.config_overrides is not None and (self.config_name is not None or self.model_name_or_path is not None):
-<             raise ValueError(
-<                 "--config_overrides can't be used in combination with --config_name or --model_name_or_path"
-<             )
----
->     # def __post_init__(self):
->     #     if self.config_overrides is not None and (self.config_name is not None or self.model_name_or_path is not None):
->     #         raise ValueError(
->     #             "--config_overrides can't be used in combination with --config_name or --model_name_or_path"
->     #         )
-220,224d219
+> tf_check_min_version("4.20.0")
+235,239d235
 <     # Log on each process the small summary:
 <     logger.warning(
 <         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
 <         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
 <     )
-339,342c334,347
+354,357c350,363
 <         if model_args.config_overrides is not None:
 <             logger.info(f"Overriding config: {model_args.config_overrides}")
 <             config.update_from_string(model_args.config_overrides)
@@ -57,15 +46,7 @@
 >         raise RuntimeError(
 >             "You must provide an IPUConfig. If the pretrained model does not contain an IPUConfig, you can load an IPUConfig using --ipu_config_name."
 >         )
-461,462c466
-<             max_train_samples = min(len(train_dataset), data_args.max_train_samples)
-<             train_dataset = train_dataset.select(range(max_train_samples))
----
->             train_dataset = train_dataset.select(range(data_args.max_train_samples))
-469,487c473
-<             max_eval_samples = min(len(eval_dataset), data_args.max_eval_samples)
-<             eval_dataset = eval_dataset.select(range(max_eval_samples))
-< 
+488,504d493
 <         def preprocess_logits_for_metrics(logits, labels):
 <             if isinstance(logits, tuple):
 <                 # Depending on the model and config, logits may contain extra tensors,
@@ -82,17 +63,16 @@
 <             labels = labels[:, 1:].reshape(-1)
 <             preds = preds[:, :-1].reshape(-1)
 <             return metric.compute(predictions=preds, references=labels)
----
->             eval_dataset = eval_dataset.select(range(data_args.max_eval_samples))
-490c476
+< 
+506c495
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-491a478
+507a497
 >         ipu_config=ipu_config,
-496d482
+512d501
 <         # Data collator will default to DataCollatorWithPadding, so we change it.
-498,501d483
+514,517d502
 <         compute_metrics=compute_metrics if training_args.do_eval and not is_torch_tpu_available() else None,
 <         preprocess_logits_for_metrics=preprocess_logits_for_metrics
 <         if training_args.do_eval and not is_torch_tpu_available()

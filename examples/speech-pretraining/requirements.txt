@@ -1,4 +1,3 @@
-transformers==4.18.0
 datasets >= 1.18.0
 --find-links https://download.pytorch.org/whl/torch_stable.html
 torchaudio == 0.10.0+cpu

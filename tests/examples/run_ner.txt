@@ -5,57 +5,58 @@
 41,42d43
 <     Trainer,
 <     TrainingArguments,
-46c47
-< from transformers.utils import check_min_version
+46c47,48
+< from transformers.utils import check_min_version, send_example_telemetry
 ---
 > from transformers.utils import check_min_version as tf_check_min_version
-51c52,55
-< check_min_version("4.18.0")
+> from transformers.utils import send_example_telemetry
+51c53,56
+< check_min_version("4.20.0")
 ---
-> tf_check_min_version("4.18.0")
+> tf_check_min_version("4.20.0")
 > 
 > # Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
-> check_min_version("0.2.4.dev")
-135c139
+> check_min_version("0.2.4.dev0")
+143c148
 <         default=False,
 ---
 >         default=True,
-215,219d218
+237,241d241
 <     # Log on each process the small summary:
 <     logger.warning(
 <         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
 <         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
 <     )
-325a325,330
+347a348,353
 >     ipu_config = IPUConfig.from_pretrained(
 >         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
 >         cache_dir=model_args.cache_dir,
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
-328c333
+350c356
 <     if config.model_type in {"gpt2", "roberta"}:
 ---
 >     if config.model_type in {"gpt2", "roberta", "deberta"}:
-354a360,364
+377a384,388
 >     # Customize tokenization for GPT2. We reuse the EOS token as the PAD token.
 >     if config.model_type == "gpt2":
 >         tokenizer.pad_token = tokenizer.eos_token
 >         model.config.pad_token_id = model.config.eos_token_id
 > 
-394a405,409
+417a429,433
 >     if not data_args.pad_to_max_length:
 >         logging.warning(
 >             "Not padding to max length might lead to batches with difference sequence lengths, which might not work as"
 >             "expected on IPUs"
 >         )
-481c496
+504c520
 <     data_collator = DataCollatorForTokenClassification(tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None)
 ---
 >     data_collator = DataCollatorForTokenClassification(tokenizer, pad_to_multiple_of=None)
-520c535
+543c559
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-521a537
+544a561
 >         ipu_config=ipu_config,
