@@ -85,6 +85,7 @@ _SCRIPT_TO_MODEL_MAPPING = {
         MODELS_TO_TEST_MAPPING, MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING
     ),
 }
+print(_SCRIPT_TO_MODEL_MAPPING)
 
 
 class ExampleTestMeta(type):
@@ -181,6 +182,7 @@ class ExampleTesterBase(TestCase):
         EVAL_BATCH_SIZE (`int`): the batch size to give to the example script for evaluation.
         INFERENCE_DEVICE_ITERATIONS (`int`): the number of device iterations to use for evaluation.
         GRADIENT_ACCUMULATION_STEPS (`int`): the number of gradient accumulation to use during training.
+        DATALOADER_DROP_LAST (`bool`): whether to drop the last batch if it is a remainder batch.
     """
 
     EXAMPLE_DIR = Path(os.path.dirname(__file__)).parent / "examples"
@@ -194,6 +196,7 @@ class ExampleTesterBase(TestCase):
     EVAL_BATCH_SIZE = 2
     INFERENCE_DEVICE_ITERATIONS = 4
     GRADIENT_ACCUMULATION_STEPS = 64
+    DATALOADER_DROP_LAST = True
 
     def _create_command_line(
         self,
@@ -240,6 +243,8 @@ class ExampleTesterBase(TestCase):
             f"--ipu_config_overrides {ipu_config_overrides}",
             f" --num_train_epochs {num_epochs}",
             "--dataloader_num_workers 16",
+            f"--dataloader_drop_last {self.DATALOADER_DROP_LAST}",
+            "--report_to none",
         ]
         if extra_command_line_arguments is not None:
             cmd_line += extra_command_line_arguments
@@ -275,6 +280,8 @@ class TextClassificationExampleTester(ExampleTesterBase, metaclass=ExampleTestMe
 
 class TokenClassificationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_ner"):
     TASK_NAME = "conll2003"
+    TRAIN_BATCH_SIZE = 1
+    EVAL_BATCH_SIZE = 1
 
 
 class MultipleChoiceExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_swag"):
@@ -286,10 +293,13 @@ class MultipleChoiceExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, 
 class QuestionAnsweringExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_qa"):
     TASK_NAME = "squad"
     SCORE_NAME = "eval_f1"
+    DATALOADER_DROP_LAST = False
 
 
 class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_summarization"):
     TASK_NAME = "cnn_dailymail"
+    TRAIN_BATCH_SIZE = 1
+    EVAL_BATCH_SIZE = 1
     EVAL_IS_SUPPORTED = False
     EVAL_SCORE_THRESHOLD = 30
     SCORE_NAME = "eval_rougeLsum"
@@ -303,8 +313,8 @@ class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, e
         task: Optional[str] = None,
         do_eval: bool = True,
         lr: float = 1e-5,
-        train_batch_size: int = 2,
-        eval_batch_size: int = 2,
+        train_batch_size: int = TRAIN_BATCH_SIZE,
+        eval_batch_size: int = EVAL_BATCH_SIZE,
         num_epochs: int = 2,
         inference_device_iterations: int = 4,
         gradient_accumulation_steps: int = 64,
@@ -313,7 +323,10 @@ class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, e
         if extra_command_line_arguments is None:
             extra_command_line_arguments = []
         extra_command_line_arguments.append("--dataset_config 3.0.0")
-        extra_command_line_arguments.append("--predict_with_generate")
+        extra_command_line_arguments.append("--prediction_loss_only")
+        extra_command_line_arguments.append("--pad_to_max_length")
+        extra_command_line_arguments.append("--max_target_length 200")
+        extra_command_line_arguments.append("--max_source_length 1024")
         if "t5" in model_name:
             extra_command_line_arguments.append("--source_prefix 'summarize: '")
         return super()._create_command_line(
@@ -335,6 +348,8 @@ class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, e
 
 class TranslationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_translation"):
     TASK_NAME = "wmt16"
+    TRAIN_BATCH_SIZE = 1
+    EVAL_BATCH_SIZE = 1
     EVAL_IS_SUPPORTED = False
     EVAL_SCORE_THRESHOLD = 22
     SCORE_NAME = "eval_bleu"
@@ -348,7 +363,7 @@ class TranslationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, exa
         task: Optional[str] = None,
         do_eval: bool = True,
         lr: float = 1e-5,
-        train_batch_size: int = 2,
+        train_batch_size: int = 1,
         eval_batch_size: int = 2,
         num_epochs: int = 2,
         inference_device_iterations: int = 4,
@@ -360,7 +375,7 @@ class TranslationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, exa
         extra_command_line_arguments.append("--dataset_config ro-en")
         extra_command_line_arguments.append("--source_lang ro")
         extra_command_line_arguments.append("--target_lang en")
-        extra_command_line_arguments.append("--predict_with_generate")
+        extra_command_line_arguments.append("--prediction_loss_only")
         if "t5" in model_name:
             extra_command_line_arguments.append("--source_prefix 'translate English to Romanian: '")
         return super()._create_command_line(
@@ -405,6 +420,7 @@ class ImageClassificationExampleTester(
             extra_command_line_arguments = []
         extra_command_line_arguments.append("--remove_unused_columns false")
         extra_command_line_arguments.append("--dataloader_drop_last true")
+        extra_command_line_arguments.append("--ignore_mismatched_sizes")
         return super()._create_command_line(
             script,
             model_name,
