@@ -89,7 +89,8 @@ _SCRIPT_TO_MODEL_MAPPING = {
         MODELS_TO_TEST_MAPPING, MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING
     ),
 }
-print(_SCRIPT_TO_MODEL_MAPPING)
+# Take LXMERT out of run_qa because it's incompatible
+_SCRIPT_TO_MODEL_MAPPING["run_qa"] = [x for x in _SCRIPT_TO_MODEL_MAPPING["run_qa"] if x[0] != "lxmert"]
 
 
 class ExampleTestMeta(type):
