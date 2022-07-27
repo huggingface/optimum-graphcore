@@ -522,7 +522,7 @@ def main():
         tokenizer,
         model=model,
         # If data_args.pad_to_max_length then already padded during preprocessing.
-        padding = False if data_args.pad_to_max_length else 'max_length',
+        padding=False if data_args.pad_to_max_length else "max_length",
         label_pad_token_id=label_pad_token_id,
         pad_to_multiple_of=None,
     )
