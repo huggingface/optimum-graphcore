@@ -42,37 +42,16 @@ from ...modeling_utils import (
 logger = logging.get_logger(__name__)
 
 
-class FastGatherLastDim(nn.Module):
-    """
-    Custom Op that does a faster specialised version of `gather`
-    on the last dimension of a tensor.
-    """
-
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, data, idx, target=None):
-        if poptorch.isRunningOnIpu():
-            if target is None:
-                target = torch.zeros(idx.shape).half()
-            else:
-                target = target.type_as(data)
-
-            target.requires_grad_()
-            o = poptorch.custom_op(
-                [data, idx],
-                "FastGatherLastDim",
-                "poptorch.custom_ops",
-                1,
-                example_outputs=[target],
-                attributes={"axis": -1},
-            )
-            return o[0]
-        else:
-            return torch.gather(data, -1, idx)
+def gather_p2c(data):
+    bs, num_attn_heads, seq_len, _ = data.size()
+    data_flat = data.reshape(bs, num_attn_heads, -1)
+    return data_flat[:, :, seq_len:].unfold(2, seq_len, 2*seq_len-1)
 
 
-gather_last_dim = FastGatherLastDim()
+def gather_c2p(data):
+    bs, num_attn_heads, seq_len, _ = data.size()
+    data_flat = data.flip(3).reshape(bs, num_attn_heads, -1)
+    return data_flat[:, :, seq_len-1:].unfold(2, seq_len, 2*seq_len-1)
 
 
 class XSoftmax(torch.nn.Module):
@@ -234,7 +213,8 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
             index = c2p_pos.expand(
                 [query_layer.size(0), query_layer.size(1), query_layer.size(2), relative_pos.size(-1)]
             )
-            c2p_att = gather_last_dim(c2p_att, index)
+            # c2p_att = gather_last_dim(c2p_att, index)
+            c2p_att = gather_c2p(c2p_att)
             score += c2p_att
 
         # position->content
@@ -249,12 +229,14 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
             p2c_pos = torch.clamp(-r_pos + att_span, 0, att_span * 2 - 1)
             p2c_att = torch.matmul(key_layer, pos_query_layer.transpose(-1, -2))
             index = p2c_pos.expand([query_layer.size(0), query_layer.size(1), key_layer.size(-2), key_layer.size(-2)])
-            p2c_att = gather_last_dim(p2c_att, index).transpose(-1, -2)
+            # p2c_att = gather_last_dim(p2c_att, index).transpose(-1, -2)
+            p2c_att = gather_p2c(p2c_att).transpose(-1, -2)
 
             if query_layer.size(-2) != key_layer.size(-2):
                 pos_index = relative_pos[:, :, :, 0].unsqueeze(-1)
                 index = pos_index.expand(pos_index, p2c_att, key_layer)
-                p2c_att = gather_last_dim(p2c_att, index)
+                # p2c_att = gather_last_dim(p2c_att, index)
+                p2c_att = gather_p2c(p2c_att)
             score += p2c_att
 
         return score
