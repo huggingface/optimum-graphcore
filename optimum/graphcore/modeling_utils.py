@@ -43,9 +43,7 @@ def register(transformers_cls=None):
                     found = True
                     break
             if not found:
-                raise ValueError(
-                    f"Was not able to find original transformers class for {cls}"
-                )
+                raise ValueError(f"Was not able to find original transformers class for {cls}")
         _PRETRAINED_TO_PIPELINED_REGISTRY[orig_cls] = cls
         return cls
 
@@ -62,15 +60,11 @@ def to_pipelined(model: nn.Module, ipu_config: IPUConfig, force: bool = False):
             logger.warning(
                 f"No pipelined version exists for {model_cls.__name__}, creating it dynamically, it might not work as expected."
             )
-            pipelined_cls = type(
-                f"Pipelined{model_cls.__name__}", (model_cls, PipelineMixin), {}
-            )
+            pipelined_cls = type(f"Pipelined{model_cls.__name__}", (model_cls, PipelineMixin), {})
             return pipelined_cls.from_model(model)
 
         else:
-            raise KeyError(
-                f"{model_cls.__name__} pipelined version not found in registry."
-            )
+            raise KeyError(f"{model_cls.__name__} pipelined version not found in registry.")
 
 
 class PipelineMixin:
@@ -83,13 +77,9 @@ class PipelineMixin:
         return pipelined_model
 
     @classmethod
-    def from_pretrained_transformers(
-        cls, model_name_or_path: str, ipu_config: IPUConfig, *model_args, **kwargs
-    ):
+    def from_pretrained_transformers(cls, model_name_or_path: str, ipu_config: IPUConfig, *model_args, **kwargs):
         # config = AutoConfig.from_pretrained(model_name_or_path)
-        pipelined_model = cls.from_pretrained(
-            model_name_or_path, *model_args, **kwargs
-        )  # config=config)
+        pipelined_model = cls.from_pretrained(model_name_or_path, *model_args, **kwargs)  # config=config)
         pipelined_model.ipu_config = copy.deepcopy(ipu_config)
         return pipelined_model
 
@@ -104,9 +94,7 @@ class PipelineMixin:
     def _has_ipu_config_check(self):
         _ipu_config = getattr(self, "_ipu_config", None)
         if _ipu_config is None:
-            raise AttributeError(
-                "No IPUConfig was found, please set the ipu_config attribute"
-            )
+            raise AttributeError("No IPUConfig was found, please set the ipu_config attribute")
 
     @property
     def ipu_config(self):
@@ -116,9 +104,7 @@ class PipelineMixin:
     @ipu_config.setter
     def ipu_config(self, value: IPUConfig):
         if not isinstance(value, IPUConfig):
-            raise TypeError(
-                f"ipu_config must be an instance of IPUConfig, but {type(value)} was provided"
-            )
+            raise TypeError(f"ipu_config must be an instance of IPUConfig, but {type(value)} was provided")
         self._ipu_config = value
 
     def parallelize(self):
@@ -143,9 +129,7 @@ class PipelineMixin:
                 poptorch.removeBlocks(m)
         return self
 
-    def num_parameters(
-        self, only_trainable: bool = False, exclude_embeddings: bool = False
-    ) -> int:
+    def num_parameters(self, only_trainable: bool = False, exclude_embeddings: bool = False) -> int:
         """
         Get number of (optionally, trainable or non-embeddings) parameters in the module.
 
@@ -163,26 +147,14 @@ class PipelineMixin:
         # TODO: actually overwrite this to handle SerializedEmbedding.
         if exclude_embeddings:
             embedding_param_names = [
-                f"{name}.weight"
-                for name, module_type in self.named_modules()
-                if isinstance(module_type, nn.Embedding)
+                f"{name}.weight" for name, module_type in self.named_modules() if isinstance(module_type, nn.Embedding)
             ]
             non_embedding_parameters = [
-                parameter
-                for name, parameter in self.named_parameters()
-                if name not in embedding_param_names
+                parameter for name, parameter in self.named_parameters() if name not in embedding_param_names
             ]
-            return sum(
-                p.numel()
-                for p in non_embedding_parameters
-                if p.requires_grad or not only_trainable
-            )
+            return sum(p.numel() for p in non_embedding_parameters if p.requires_grad or not only_trainable)
         else:
-            return sum(
-                p.numel()
-                for p in self.parameters()
-                if p.requires_grad or not only_trainable
-            )
+            return sum(p.numel() for p in self.parameters() if p.requires_grad or not only_trainable)
 
 
 class GenerationMethodsMixin:
@@ -203,15 +175,9 @@ class GenerationMethodsMixin:
                 )
         return self._wrapped_encoder
 
-    def prepare_inputs_for_generation(
-        self, input_ids: torch.LongTensor, **kwargs
-    ) -> Dict[str, Any]:
+    def prepare_inputs_for_generation(self, input_ids: torch.LongTensor, **kwargs) -> Dict[str, Any]:
         inputs = super().prepare_inputs_for_generation(input_ids, **kwargs)
-        return {
-            k: v
-            for k, v in inputs.items()
-            if k in signature(self._forward_for_generate).parameters
-        }
+        return {k: v for k, v in inputs.items() if k in signature(self._forward_for_generate).parameters}
 
 
 def get_layer_ipu(layers_per_ipu):
@@ -286,9 +252,7 @@ class SerializedEmbedding(nn.Module):
         self.split_embeddings = nn.ModuleList(
             [
                 nn.Embedding.from_pretrained(
-                    embedding.weight[
-                        i * self.split_size : (i + 1) * self.split_size, :
-                    ].detach(),
+                    embedding.weight[i * self.split_size : (i + 1) * self.split_size, :].detach(),
                     freeze=False,
                     padding_idx=embedding.padding_idx if i == 0 else None,
                 )
@@ -304,9 +268,7 @@ class SerializedEmbedding(nn.Module):
         Returns:
             `nn.Embedding` layer
         """
-        return nn.Embedding.from_pretrained(
-            torch.vstack([l.weight for l in self.split_embeddings]), padding_idx=0
-        )
+        return nn.Embedding.from_pretrained(torch.vstack([l.weight for l in self.split_embeddings]), padding_idx=0)
 
     def forward(self, indices):
         # iterate through the splits
@@ -370,9 +332,7 @@ class SerializedLinear(nn.Linear):
         if not self.training:
             output = super().forward(x)
         else:
-            output = poptorch.serializedMatMul(
-                x, self.weight.t(), self.mode, self.factor
-            )
+            output = poptorch.serializedMatMul(x, self.weight.t(), self.mode, self.factor)
             if self.bias is not None:
                 output += self.bias
         return output
@@ -389,15 +349,11 @@ class SharedEmbedding(nn.Module):
         super().__init__()
         self.shared = shared
 
-    def _combine_inputs(
-        self, input_ids: torch.Tensor, decoder_input_ids: torch.Tensor
-    ) -> Tuple[int, torch.Tensor]:
+    def _combine_inputs(self, input_ids: torch.Tensor, decoder_input_ids: torch.Tensor) -> Tuple[int, torch.Tensor]:
         idx = input_ids.size(1)
         return idx, torch.cat([input_ids, decoder_input_ids], dim=1)
 
-    def _separate_inputs(
-        self, idx: int, embeds: torch.Tensor
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _separate_inputs(self, idx: int, embeds: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         return embeds[:, :idx, :], embeds[:, idx:, :]
 
     def forward(
@@ -416,9 +372,7 @@ class SharedEmbedding(nn.Module):
         # combined, n1, n2 = self._combine_inputs(input_ids, decoder_input_ids)
         # encoder_inputs_embeds, decoder_inputs_embeds = self._separate_inputs(self.shared(combined), n1, n2)
         idx, combined = self._combine_inputs(input_ids, decoder_input_ids)
-        encoder_inputs_embeds, decoder_inputs_embeds = self._separate_inputs(
-            idx, self.shared(combined)
-        )
+        encoder_inputs_embeds, decoder_inputs_embeds = self._separate_inputs(idx, self.shared(combined))
 
         if encoder_embed_scale:
             encoder_inputs_embeds = encoder_inputs_embeds * encoder_embed_scale
