@@ -34,7 +34,7 @@ from transformers.utils import check_min_version
 from transformers.utils.versions import require_version
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-check_min_version("4.15.0.dev0")
+check_min_version("4.18.0")
 
 require_version(
     "datasets>=1.18.0",
@@ -52,9 +52,7 @@ class InferenceArguments:
 
     num_device_iterations: int = field(
         default=32,
-        metadata={
-            "help": "Number of iterations the IPU will run before returning to host."
-        },
+        metadata={"help": "Number of iterations the IPU will run before returning to host."},
     )
 
     max_samples: int = field(
@@ -74,16 +72,12 @@ class InferenceArguments:
 
     do_benchmark: bool = field(
         default=True,
-        metadata={
-            "help": "Run the inference model without data-loading and compute throughput."
-        },
+        metadata={"help": "Run the inference model without data-loading and compute throughput."},
     )
 
     benchmark_iterations: int = field(
         default=100,
-        metadata={
-            "help": "Benchmark the inference model for this many host iterations."
-        },
+        metadata={"help": "Benchmark the inference model for this many host iterations."},
     )
 
 
@@ -117,18 +111,14 @@ def main():
     opts = ipu_config.to_options(for_inference=True)
     inference_model = poptorch.inferenceModel(ipu_model.half().eval(), options=opts)
 
-    sample_batch = {
-        "input_values": torch.zeros([num_device_iterations, inference_args.max_samples])
-    }
+    sample_batch = {"input_values": torch.zeros([num_device_iterations, inference_args.max_samples])}
 
     inference_model.compile(**sample_batch)
 
     if inference_args.do_librispeech:
         logger.info("*** LibriSpeech ***")
         # load dummy dataset and read soundfiles
-        ds = load_dataset(
-            "patrickvonplaten/librispeech_asr_dummy", "clean", split="validation"
-        )
+        ds = load_dataset("patrickvonplaten/librispeech_asr_dummy", "clean", split="validation")
 
         # get batch
         x = torch.zeros([num_device_iterations, inference_args.max_samples])

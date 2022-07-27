@@ -52,36 +52,36 @@ on 100h of training data from the [librispeech_asr](https://huggingface.co/datas
 
 ```bash
 python run_speech_recognition_ctc.py \
-    --dataset_name="librispeech_asr" \
-    --dataset_config_name="clean" \
-    --train_split_name="train.100" \
-    --eval_split_name="validation" \
-    --model_name_or_path="facebook/wav2vec2-base-960h" \
-    --ipu_config_name="Graphcore/wav2vec2-base-ipu" \
-    --mask_time_prob=0.0 \
-    --output_dir="./wav2vec2-base-960h" \
+    --dataset_name "librispeech_asr" \
+    --dataset_config_name "clean" \
+    --train_split_name "train.100" \
+    --eval_split_name "validation" \
+    --model_name_or_path "facebook/wav2vec2-base-960h" \
+    --ipu_config_name "Graphcore/wav2vec2-base-ipu" \
+    --mask_time_prob 0.0 \
+    --output_dir "./wav2vec2-base-960h" \
     --overwrite_output_dir \
-    --length_column_name="input_length" \
-    --num_train_epochs="1" \
-    --learning_rate="3e-4" \
-    --warmup_steps="400" \
-    --evaluation_strategy="steps" \
-    --text_column_name="text" \
-    --save_steps="400" \
-    --eval_steps="400" \
-    --logging_steps="10" \
-    --save_total_limit="1" \
+    --length_column_name "input_length" \
+    --num_train_epochs 5 \
+    --learning_rate "3e-4" \
+    --warmup_steps 400 \
+    --evaluation_strategy "steps" \
+    --text_column_name "text" \
+    --save_steps 400 \
+    --eval_steps 400 \
+    --logging_steps 10 \
+    --save_total_limit 1 \
     --freeze_feature_encoder \
     --do_train \
     --do_eval \
-    --layerdrop=0.0 \
-    --per_device_train_batch_size=1 \
-    --per_device_eval_batch_size=1 \
-    --adam_beta1=0.9 \
-    --adam_beta2=0.98 \
+    --layerdrop 0.0 \
+    --per_device_train_batch_size 1 \
+    --per_device_eval_batch_size 1 \
+    --adam_beta1 0.9 \
+    --adam_beta2 0.98 \
     --adam_epsilon 0.0001 \
     --dataloader_drop_last \
-    --dataloader_mode="async_rebatched" \
-    --dataloader_num_workers=8 
+    --dataloader_mode "async_rebatched" \
+    --dataloader_num_workers 8 
 ```
 

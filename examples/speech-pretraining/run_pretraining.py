@@ -46,12 +46,8 @@ from transformers.utils import check_min_version
 from transformers.utils.versions import require_version
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-check_min_version("4.15.0.dev0")
+check_min_version("4.18.0")
 
-require_version(
-    "transformers==4.18.0",
-    "To fix: pip install -r examples/speech-pretraining/requirements.txt",
-)
 require_version(
     "datasets>=1.18.0",
     "To fix: pip install -r examples/speech-pretraining/requirements.txt",
@@ -67,15 +63,11 @@ class ModelArguments:
     """
 
     model_name_or_path: str = field(
-        metadata={
-            "help": "Path to pretrained model or model identifier from huggingface.co/models"
-        }
+        metadata={"help": "Path to pretrained model or model identifier from huggingface.co/models"}
     )
     cache_dir: Optional[str] = field(
         default=None,
-        metadata={
-            "help": "Where do you want to store the pretrained models downloaded from huggingface.co"
-        },
+        metadata={"help": "Where do you want to store the pretrained models downloaded from huggingface.co"},
     )
     attention_dropout: float = field(
         default=0.0,
@@ -83,13 +75,9 @@ class ModelArguments:
     )
     activation_dropout: float = field(
         default=0.0,
-        metadata={
-            "help": "The dropout ratio for activations inside the fully connected layer."
-        },
+        metadata={"help": "The dropout ratio for activations inside the fully connected layer."},
     )
-    feat_proj_dropout: float = field(
-        default=0.0, metadata={"help": "The dropout ratio for the projected features."}
-    )
+    feat_proj_dropout: float = field(default=0.0, metadata={"help": "The dropout ratio for the projected features."})
     hidden_dropout: float = field(
         default=0.0,
         metadata={
@@ -123,9 +111,7 @@ class ModelArguments:
         default=10,
         metadata={"help": "Length of vector span to mask along the feature axis."},
     )
-    layerdrop: float = field(
-        default=0.0, metadata={"help": "The LayerDrop probability."}
-    )
+    layerdrop: float = field(default=0.0, metadata={"help": "The LayerDrop probability."})
     max_gumbel_temperature: Optional[float] = field(
         default=2.0, metadata={"help": "Maximum temperature for gumbel softmax."}
     )
@@ -136,7 +122,7 @@ class ModelArguments:
         default=0.9, metadata={"help": "Decay of gumbel temperature during training."}
     )
     crop_aggression: Optional[float] = field(
-        default=0.1,
+        default=0.0,
         metadata={
             "help": "Increase the tensor cropping to beyond the guaranteed max size."
             "The reducer keep factor is ``mask_time_prob * (1 - crop_aggression)``."
@@ -155,15 +141,11 @@ class DataTrainingArguments:
     """
 
     dataset_name: str = field(
-        metadata={
-            "help": "The configuration name of the dataset to use (via the datasets library)."
-        }
+        metadata={"help": "The configuration name of the dataset to use (via the datasets library)."}
     )
     dataset_config_name: str = field(
         default=None,
-        metadata={
-            "help": "The configuration name of the dataset to use (via the datasets library)."
-        },
+        metadata={"help": "The configuration name of the dataset to use (via the datasets library)."},
     )
     train_split_name: str = field(
         default="train+validation",
@@ -180,9 +162,7 @@ class DataTrainingArguments:
     )
     audio_column_name: str = field(
         default="audio",
-        metadata={
-            "help": "The name of the dataset column containing the audio data. Defaults to 'audio'"
-        },
+        metadata={"help": "The name of the dataset column containing the audio data. Defaults to 'audio'"},
     )
     overwrite_cache: bool = field(
         default=False,
@@ -214,9 +194,7 @@ class DataTrainingArguments:
     )
     min_duration_in_seconds: float = field(
         default=0.0,
-        metadata={
-            "help": "Filter audio files that are shorter than `min_duration_in_seconds` seconds"
-        },
+        metadata={"help": "Filter audio files that are shorter than `min_duration_in_seconds` seconds"},
     )
     preprocessing_only: bool = field(
         default=False,
@@ -273,9 +251,7 @@ class DataCollatorForWav2Vec2Pretraining:
     pad_to_multiple_of: Optional[int] = None
     reducer_keep_factor: float = 1.0
 
-    def __call__(
-        self, features: List[Dict[str, Union[List[int], torch.Tensor]]]
-    ) -> Dict[str, torch.Tensor]:
+    def __call__(self, features: List[Dict[str, Union[List[int], torch.Tensor]]]) -> Dict[str, torch.Tensor]:
         # reformat list to dict and set to pytorch format
         batch = self.feature_extractor.pad(
             features,
@@ -284,17 +260,13 @@ class DataCollatorForWav2Vec2Pretraining:
             return_tensors="pt",
         )
         lengths = torch.sum(batch["input_values"] != 0.0, 1)
-        attention_mask = torch.arange(batch["input_values"].shape[-1]).unsqueeze(
-            0
-        ) < lengths.unsqueeze(1)
+        attention_mask = torch.arange(batch["input_values"].shape[-1]).unsqueeze(0) < lengths.unsqueeze(1)
         batch["attention_mask"] = attention_mask.type(torch.int32)
 
         device = batch["input_values"].device
         batch_size = batch["input_values"].shape[0]
 
-        mask_indices_seq_length = self.model._get_feat_extract_output_lengths(
-            batch["input_values"].shape[-1]
-        )
+        mask_indices_seq_length = self.model._get_feat_extract_output_lengths(batch["input_values"].shape[-1])
         # make sure masked sequence length is a Python scalar
         mask_indices_seq_length = int(mask_indices_seq_length)
 
@@ -320,9 +292,7 @@ class DataCollatorForWav2Vec2Pretraining:
         # move true masked indexes first and crop, later used to gather a reduced size tensor.
         reduce_selector = np.argsort(~mask_time_indices, 1)[:, :cropped_length]
         num_masked = np.sum(mask_time_indices, 1)
-        mask_reduced = np.expand_dims(np.arange(cropped_length), 0) < np.expand_dims(
-            num_masked, 1
-        )
+        mask_reduced = np.expand_dims(np.arange(cropped_length), 0) < np.expand_dims(num_masked, 1)
 
         # sample negative indices
         sampled_negative_indices = _sample_negative_indices(
@@ -331,21 +301,11 @@ class DataCollatorForWav2Vec2Pretraining:
             mask_time_indices=mask_reduced,
         )
 
-        batch["mask_time_indices"] = torch.tensor(
-            mask_time_indices, dtype=torch.long, device=device
-        )
-        batch["sampled_negative_indices"] = torch.tensor(
-            sampled_negative_indices, dtype=torch.long, device=device
-        )
-        batch["reduce_selector"] = torch.tensor(
-            reduce_selector, dtype=torch.int, device=device
-        )
-        batch["mask_reduced"] = torch.tensor(
-            mask_reduced, dtype=torch.bool, device=device
-        )
-        batch["gumbel_temperature"] = torch.full(
-            [batch_size], self.model.quantizer.temperature, dtype=torch.float32
-        )
+        batch["mask_time_indices"] = torch.tensor(mask_time_indices, dtype=torch.long, device=device)
+        batch["sampled_negative_indices"] = torch.tensor(sampled_negative_indices, dtype=torch.long, device=device)
+        batch["reduce_selector"] = torch.tensor(reduce_selector, dtype=torch.int, device=device)
+        batch["mask_reduced"] = torch.tensor(mask_reduced, dtype=torch.bool, device=device)
+        batch["gumbel_temperature"] = torch.full([batch_size], self.model.quantizer.temperature, dtype=torch.float32)
         # this is passed and not used to allow metrics to be computed
         batch["labels"] = torch.full([batch_size], False, dtype=torch.bool)
         return batch.data
@@ -356,25 +316,17 @@ def main():
     # or by passing the --help flag to this script.
     # We now keep distinct sets of args, for a cleaner separation of concerns.
 
-    parser = HfArgumentParser(
-        (ModelArguments, DataTrainingArguments, TrainingArguments)
-    )
+    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
     if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
         # If we pass only one argument to the script and it's the path to a json file,
         # let's parse it to get our arguments.
-        model_args, data_args, training_args = parser.parse_json_file(
-            json_file=os.path.abspath(sys.argv[1])
-        )
+        model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
     else:
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
     # Detecting last checkpoint.
     last_checkpoint = None
-    if (
-        os.path.isdir(training_args.output_dir)
-        and training_args.do_train
-        and not training_args.overwrite_output_dir
-    ):
+    if os.path.isdir(training_args.output_dir) and training_args.do_train and not training_args.overwrite_output_dir:
         last_checkpoint = get_last_checkpoint(training_args.output_dir)
         if last_checkpoint is None and len(os.listdir(training_args.output_dir)) > 0:
             raise ValueError(
@@ -424,9 +376,7 @@ def main():
             )
 
         if data_args.max_train_samples is not None:
-            raw_datasets["train"] = raw_datasets["train"].select(
-                range(data_args.max_train_samples)
-            )
+            raw_datasets["train"] = raw_datasets["train"].select(range(data_args.max_train_samples))
 
     if training_args.do_eval:
         raw_datasets["eval"] = load_dataset(
@@ -437,9 +387,7 @@ def main():
         )
 
         if data_args.max_eval_samples is not None:
-            raw_datasets["eval"] = raw_datasets["eval"].select(
-                range(data_args.max_eval_samples)
-            )
+            raw_datasets["eval"] = raw_datasets["eval"].select(range(data_args.max_eval_samples))
 
     # 2. Now we preprocess the datasets including loading the audio, resampling and normalization
     # Thankfully, `datasets` takes care of automatically loading and resampling the audio,
@@ -460,17 +408,12 @@ def main():
     # only normalized-inputs-training is supported
     if not feature_extractor.do_normalize:
         raise ValueError(
-            "Training is only supported for normalized inputs. "
-            "Make sure ``feature_extractor.do_normalize == True``"
+            "Training is only supported for normalized inputs. " "Make sure ``feature_extractor.do_normalize == True``"
         )
 
     # set max & min audio length in number of samples
-    max_length = int(
-        data_args.max_duration_in_seconds * feature_extractor.sampling_rate
-    )
-    min_length = int(
-        data_args.min_duration_in_seconds * feature_extractor.sampling_rate
-    )
+    max_length = int(data_args.max_duration_in_seconds * feature_extractor.sampling_rate)
+    min_length = int(data_args.min_duration_in_seconds * feature_extractor.sampling_rate)
 
     def prepare_dataset(batch):
         sample = batch[data_args.audio_column_name]
@@ -510,9 +453,7 @@ def main():
     # In a second step ``args.preprocessing_only`` can then be set to `False` to load the
     # cached dataset
     if data_args.preprocessing_only:
-        logger.info(
-            f"Data preprocessing finished. Files cached at {vectorized_datasets.cache_files}"
-        )
+        logger.info(f"Data preprocessing finished. Files cached at {vectorized_datasets.cache_files}")
         return
 
     # 3. Next, let's load the config
@@ -524,9 +465,7 @@ def main():
     )
 
     ipu_config = IPUConfig.from_pretrained(
-        training_args.ipu_config_name
-        if training_args.ipu_config_name
-        else model_args.model_name_or_path,
+        training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
         cache_dir=model_args.cache_dir,
         use_auth_token=True if data_args.use_auth_token else None,
     )
@@ -569,8 +508,7 @@ def main():
     data_collator = DataCollatorForWav2Vec2Pretraining(
         model=model,
         feature_extractor=feature_extractor,
-        reducer_keep_factor=model_args.mask_time_prob
-        * (1.0 - model_args.crop_aggression),
+        reducer_keep_factor=model_args.mask_time_prob * (1.0 - model_args.crop_aggression),
     )
 
     # Create a callback that updates the Gumbel temperature
@@ -589,8 +527,7 @@ def main():
         def on_step_end(self, args, state, control, **kwargs):
             # update gumbel temperature
             gumbel_temperature = max(
-                self.max_gumbel_temperature
-                * self.gumbel_temperature_decay**state.global_step,
+                self.max_gumbel_temperature * self.gumbel_temperature_decay**state.global_step,
                 self.min_gumbel_temperature,
             )
             if hasattr(model, "module"):
@@ -637,9 +574,7 @@ def main():
             if data_args.max_train_samples is not None
             else len(vectorized_datasets["train"])
         )
-        metrics["train_samples"] = min(
-            max_train_samples, len(vectorized_datasets["train"])
-        )
+        metrics["train_samples"] = min(max_train_samples, len(vectorized_datasets["train"]))
 
         trainer.log_metrics("train", metrics)
         trainer.save_metrics("train", metrics)
@@ -651,23 +586,15 @@ def main():
         logger.info("*** Evaluate ***")
         metrics = trainer.evaluate()
         max_eval_samples = (
-            data_args.max_eval_samples
-            if data_args.max_eval_samples is not None
-            else len(vectorized_datasets["eval"])
+            data_args.max_eval_samples if data_args.max_eval_samples is not None else len(vectorized_datasets["eval"])
         )
-        metrics["eval_samples"] = min(
-            max_eval_samples, len(vectorized_datasets["eval"])
-        )
+        metrics["eval_samples"] = min(max_eval_samples, len(vectorized_datasets["eval"]))
 
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
 
     # Write model card and (optionally) push to hub
-    config_name = (
-        data_args.dataset_config_name
-        if data_args.dataset_config_name is not None
-        else "na"
-    )
+    config_name = data_args.dataset_config_name if data_args.dataset_config_name is not None else "na"
     kwargs = {
         "finetuned_from": model_args.model_name_or_path,
         "tasks": "speech-recognition",

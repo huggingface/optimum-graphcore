@@ -36,10 +36,7 @@ def _ipu_gumbel_softmax(logits, tau=1, hard=False, eps=1e-10, dim=-1):
         warnings.warn("`eps` parameter is deprecated and has no effect.")
 
     gumbels = -(
-        torch.empty_like(
-            logits, memory_format=torch.legacy_contiguous_format
-        ).exponential_()
-        + 1e-4
+        torch.empty_like(logits, memory_format=torch.legacy_contiguous_format).exponential_() + 1e-4
     ).log()  # ~Gumbel(0,1)
 
     gumbels = (logits + gumbels) / tau  # ~Gumbel(logits,tau)
@@ -49,9 +46,9 @@ def _ipu_gumbel_softmax(logits, tau=1, hard=False, eps=1e-10, dim=-1):
         index = y_soft.max(dim, keepdim=True)[1]
 
         update_values = torch.ones_like(index, dtype=logits.dtype)
-        y_hard = torch.zeros_like(
-            logits, memory_format=torch.legacy_contiguous_format
-        ).scatter_(dim, index, update_values)
+        y_hard = torch.zeros_like(logits, memory_format=torch.legacy_contiguous_format).scatter_(
+            dim, index, update_values
+        )
 
         ret = y_hard - y_soft.detach() + y_soft
     else:
@@ -72,9 +69,7 @@ class IPUWav2Vec2GumbelVectorQuantizer(Wav2Vec2GumbelVectorQuantizer):
             marginal_probs = probs.sum(dim=0) / num.float()
 
         log_marginal_probs = torch.log(marginal_probs + 1e-4)
-        perplexity = torch.exp(
-            -torch.sum(marginal_probs * log_marginal_probs, dim=-1)
-        ).sum()
+        perplexity = torch.exp(-torch.sum(marginal_probs * log_marginal_probs, dim=-1)).sum()
         return perplexity
 
     def forward(self, hidden_states, gumbel_temperature=2.0, mask_time_indices=None):
@@ -82,42 +77,32 @@ class IPUWav2Vec2GumbelVectorQuantizer(Wav2Vec2GumbelVectorQuantizer):
 
         # project to codevector dim
         hidden_states = self.weight_proj(hidden_states)
-        hidden_states = hidden_states.view(
-            batch_size * sequence_length * self.num_groups, -1
-        )
+        hidden_states = hidden_states.view(batch_size * sequence_length * self.num_groups, -1)
 
         codevector_idx = hidden_states.argmax(dim=-1)
-        hard_probs = torch.nn.functional.one_hot(
-            codevector_idx.long(), num_classes=self.num_vars
-        ).view(batch_size * sequence_length, self.num_groups, -1)
-        code_perplexity = self._compute_perplexity(
-            hard_probs.float(), mask_time_indices
+        hard_probs = torch.nn.functional.one_hot(codevector_idx.long(), num_classes=self.num_vars).view(
+            batch_size * sequence_length, self.num_groups, -1
         )
+        code_perplexity = self._compute_perplexity(hard_probs.float(), mask_time_indices)
 
         soft_probs = torch.softmax(
-            hidden_states.view(
-                batch_size * sequence_length, self.num_groups, -1
-            ).float(),
+            hidden_states.view(batch_size * sequence_length, self.num_groups, -1).float(),
             dim=-1,
         )
         prob_perplexity = self._compute_perplexity(soft_probs, mask_time_indices)
 
         if self.training:
             # sample code vector probs via gumbel in differentiateable way
-            codevector_probs = _ipu_gumbel_softmax(
-                hidden_states.float(), tau=gumbel_temperature, hard=True
-            ).type_as(hidden_states)
+            codevector_probs = _ipu_gumbel_softmax(hidden_states.float(), tau=gumbel_temperature, hard=True).type_as(
+                hidden_states
+            )
         else:
             codevector_probs = hard_probs.type_as(hidden_states)
 
-        codevector_probs = codevector_probs.view(
-            batch_size * sequence_length, self.num_groups, -1
-        )
+        codevector_probs = codevector_probs.view(batch_size * sequence_length, self.num_groups, -1)
         codebook = self.codevectors[0, :, :]
         codebook = codebook.view(self.num_groups, self.num_vars, -1)
-        codevectors = torch.bmm(codevector_probs.permute(1, 0, 2), codebook).permute(
-            1, 0, 2
-        )
+        codevectors = torch.bmm(codevector_probs.permute(1, 0, 2), codebook).permute(1, 0, 2)
         codevectors = codevectors.reshape(batch_size, sequence_length, -1)
 
         codevectors = codevectors.reshape(batch_size, sequence_length, -1)
