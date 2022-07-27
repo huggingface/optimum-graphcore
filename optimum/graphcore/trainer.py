@@ -193,6 +193,8 @@ class IPUTrainer:
         self.tokenizer = tokenizer
 
         self.ipu_config = copy.deepcopy(ipu_config).for_pod_type(self.args.pod_type)
+        if self.ipu_config.replication_factor > 1 or self.ipu_config.inference_replication_factor > 1:
+            os.environ["TOKENIZERS_PARALLELISM"] = "true"
         if args.ipu_config_overrides:
             logger.info(f"Overriding IPU config: {args.ipu_config_overrides}")
             self.ipu_config.update_from_string(args.ipu_config_overrides)
