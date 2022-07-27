@@ -57,7 +57,7 @@ python run_speech_recognition_ctc.py \
     --train_split_name "train.100" \
     --eval_split_name "validation" \
     --model_name_or_path "facebook/wav2vec2-base-960h" \
-    --ipu_config_name "Graphcore/wav2vec2-base-ipu" \
+    --ipu_config_name "Graphcore/wav2vec2-ctc-base-ipu" \
     --mask_time_prob 0.0 \
     --output_dir "./wav2vec2-base-960h" \
     --overwrite_output_dir \
