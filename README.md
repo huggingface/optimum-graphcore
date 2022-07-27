@@ -15,6 +15,9 @@ Quote from the Hugging Face [blog post](https://huggingface.co/blog/graphcore#wh
 
 > This design delivers high performance and new levels of efficiency, whether running today’s most popular models, such as BERT and EfficientNet, or exploring next-generation AI applications.
 
+## Poplar SDK setup
+A Poplar SDK environment needs to be enabled to use this library. Please refer to Graphcore's [Getting Started](https://docs.graphcore.ai/en/latest/getting-started.html) guide.
+
 ## Install
 To install the latest release of this package:
 
@@ -95,17 +98,16 @@ trainer = IPUTrainer(
 The following model architectures and tasks are currently supported by 🤗 Optimum Graphcore:
 |         | Pre-Training       | Masked LM          | Causal LM          | Seq2Seq LM (Summarization, Translation, etc) | Sequence Classification | Token Classification | Question Answering | Multiple Choice    | Image Classification |
 |---------|--------------------|--------------------|--------------------|----------------------------------------------|-------------------------|----------------------|--------------------|--------------------|----------------------|
+| BART    | :heavy_check_mark: |                    | ✗                  | :heavy_check_mark:                           | ✗                       |                      | ✗                  |                    |                      |
 | BERT    | :heavy_check_mark: | :heavy_check_mark: | ✗                  |                                              | :heavy_check_mark:      | :heavy_check_mark:   | :heavy_check_mark: | :heavy_check_mark: |                      |
-| RoBERTa | :heavy_check_mark: | :heavy_check_mark: | ✗                  |                                              | :heavy_check_mark:      | :heavy_check_mark:   | :heavy_check_mark: | :heavy_check_mark: |                      |
+| ConvNeXt| :heavy_check_mark: |                    |                    |                                              |                         |                      |                    |                    | :heavy_check_mark:   |
 | DeBERTa | ✗                  | ✗                  |                    |                                              | :heavy_check_mark:      | :heavy_check_mark:   | :heavy_check_mark: |                    |                      |
 | GPT-2   | :heavy_check_mark: |                    | :heavy_check_mark: |                                              | :heavy_check_mark:      | :heavy_check_mark:   |                    |                    |                      |
-| BART    | :heavy_check_mark: |                    | ✗                  | :heavy_check_mark:                           | ✗                       |                      | ✗                  |                    |                      |
-| T5      | :heavy_check_mark: |                    |                    | :heavy_check_mark:                           |                         |                      |                    |                    |                      |
 | HuBERT  | ✗                  |                    |                    |                                              | :heavy_check_mark:      |                      |                    |                    |                      |
-| ViT     | ✗                  |                    |                    |                                              |                         |                      |                    |                    | :heavy_check_mark:   |
 | LXMERT  | ✗                  |                    |                    |                                              |                         |                      | :heavy_check_mark: |                    |                      |
+| RoBERTa | :heavy_check_mark: | :heavy_check_mark: | ✗                  |                                              | :heavy_check_mark:      | :heavy_check_mark:   | :heavy_check_mark: | :heavy_check_mark: |                      |
+| T5      | :heavy_check_mark: |                    |                    | :heavy_check_mark:                           |                         |                      |                    |                    |                      |
+| ViT     | ✗                  |                    |                    |                                              |                         |                      |                    |                    | :heavy_check_mark:   |
 | Wav2Vec2| :heavy_check_mark: |                    |                    |                                              |                         |                      |                    |                    |                      |
-
-Coming soon: ConvNeXt
 
 If you find any issue while using those, please open an issue or a pull request.

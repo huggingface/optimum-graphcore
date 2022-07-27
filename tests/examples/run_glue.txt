@@ -5,42 +5,43 @@
 39,40d41
 <     Trainer,
 <     TrainingArguments,
-45c46
-< from transformers.utils import check_min_version
+45c46,47
+< from transformers.utils import check_min_version, send_example_telemetry
 ---
 > from transformers.utils import check_min_version as tf_check_min_version
-50c51,54
-< check_min_version("4.18.0")
+> from transformers.utils import send_example_telemetry
+50c52,55
+< check_min_version("4.20.0")
 ---
-> tf_check_min_version("4.18.0")
+> tf_check_min_version("4.20.0")
 > 
 > # Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
-> check_min_version("0.2.4.dev")
-216,220d219
+> check_min_version("0.2.4.dev0")
+236,240d240
 <     # Log on each process the small summary:
 <     logger.warning(
 <         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
 <         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
 <     )
-340a340,345
+360a361,366
 >     ipu_config = IPUConfig.from_pretrained(
 >         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
 >         cache_dir=model_args.cache_dir,
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
-356a362,366
+377a384,388
 >     # Customize tokenization for GPT2. We reuse the EOS token as the PAD token.
 >     if config.model_type == "gpt2":
 >         tokenizer.pad_token = tokenizer.eos_token
 >         model.config.pad_token_id = model.config.eos_token_id
 > 
-485,486d494
+506,507d516
 <     elif training_args.fp16:
 <         data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8)
-491c499
+512c521
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-492a501
+513a523
 >         ipu_config=ipu_config,

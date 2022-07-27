@@ -10,8 +10,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: [3.6]
-        os: [ubuntu-18.04]
+        python-version: [3.8]
+        os: [ubuntu-20.04]
 
     runs-on: self-hosted
     steps:
@@ -28,16 +28,16 @@ jobs:
       run: |
         source venv/bin/activate
         pip install --upgrade pip
-        export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_18_04-2\.5\.1*
+        export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_20_04-2.6*
         pip install ${SDK_PATH}/poptorch-*.whl
         pip install git+https://github.com/huggingface/transformers.git
         pip install .[testing]
     - name: Test with Pytest
       run: |
         source venv/bin/activate
-        export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_18_04-2\.5\.1*
-        . ${SDK_PATH}/poplar-ubuntu_18_04-2\.5\.0**/enable.sh
-        . ${SDK_PATH}/popart-ubuntu_18_04-*2\.5\.1*/enable.sh
+        export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_20_04-2.6*
+        . ${SDK_PATH}/poplar-ubuntu_20_04*/enable.sh
+        . ${SDK_PATH}/popart-ubuntu_20_04*/enable.sh
         export RUN_SLOW=true
         pytest tests/test_examples_match_transformers.py
         pytest tests/test_examples.py

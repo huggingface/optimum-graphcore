@@ -206,20 +206,6 @@ class PipelinedModelsTester(TestCase):
     def test_parallelize_deparallelize(
         self, test_name, model_name_or_path, ipu_config_name_or_path, pretrained_class, pipelined_class, config_class
     ):
-        def _recursive_check_module_name_match(model_1_iterms, model_2_iterms):
-            # If empty lists then stop recursion
-            if not (len(model_1_iterms) == 0 and len(model_2_iterms) == 0):
-                self.assertEqual(len(model_1_iterms), len(model_2_iterms))
-                for i in range(len(model_1_iterms)):
-                    key_1, module_1 = model_1_iterms[i]
-                    key_2, module_2 = model_2_iterms[i]
-                    self.assertEqual(key_1, key_2)
-                    self.assertEqual(module_1.__class__.__name__, module_2.__class__.__name__)
-                    # Recursion
-                    _recursive_check_module_name_match(
-                        list(module_1._modules.items()), list(module_2._modules.items())
-                    )
-
         ipu_config = IPUConfig.from_pretrained(ipu_config_name_or_path)
         model = pipelined_class.from_pretrained_transformers(model_name_or_path, ipu_config)
 
@@ -230,11 +216,12 @@ class PipelinedModelsTester(TestCase):
                 if isinstance(hook, WeightNorm):
                     delattr(module, hook.name)
 
-        items_before = list(copy.deepcopy(model)._modules.items())
+        modules_before = copy.deepcopy(model).modules()
         model.parallelize()
         model.deparallelize()
-        items_after = list(copy.deepcopy(model)._modules.items())
+        modules_after = copy.deepcopy(model).modules()
         # Confirm that parallelize then deparallelize won't change the model's modules
-        _recursive_check_module_name_match(items_before, items_after)
+        for mod_before, mod_after in zip(modules_before, modules_after):
+            self.assertEqual(type(mod_before), type(mod_after))
 
         model.parallelize()

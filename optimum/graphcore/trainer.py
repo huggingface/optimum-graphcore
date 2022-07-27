@@ -193,12 +193,14 @@ class IPUTrainer:
         self.tokenizer = tokenizer
 
         self.ipu_config = copy.deepcopy(ipu_config).for_pod_type(self.args.pod_type)
+        if self.ipu_config.replication_factor > 1 or self.ipu_config.inference_replication_factor > 1:
+            os.environ["TOKENIZERS_PARALLELISM"] = "true"
         if args.ipu_config_overrides:
             logger.info(f"Overriding IPU config: {args.ipu_config_overrides}")
             self.ipu_config.update_from_string(args.ipu_config_overrides)
         self.ipu_config.seed = self.args.seed
-        self.opts = self.ipu_config.to_options()
-        self.eval_opts = self.ipu_config.to_options(for_inference=True)
+        self.opts = self.ipu_config.to_options(compile_only=args.compile_only)
+        self.eval_opts = self.ipu_config.to_options(for_inference=True, compile_only=args.compile_only)
 
         self.model = to_pipelined(model, self.ipu_config, force=force_to_pipelined)
         self.model.parallelize()
@@ -275,6 +277,20 @@ class IPUTrainer:
 
         # very last
         self._memory_tracker.stop_and_update_metrics()
+
+        # If compile-only then compile and exit
+        if args.compile_only:
+            logger.info("Called with compile_only=True. Compiling models then exiting.")
+            if args.do_train:
+                train_dl = self.get_train_dataloader()
+                model = self._wrap_model(self.model_wrapped)
+                self._compile_model(model, next(iter(train_dl)), log=True)
+            if args.do_eval:
+                # Same thing with _wrap_and_compile_for_evaluation
+                eval_dl = self.get_eval_dataloader()
+                model = self._wrap_and_compile_model_for_evaluation(eval_dl, False)
+            logger.info("Exiting after compiling models with compile_only=True")
+            sys.exit(0)
 
     def _pytorch_optimizer_to_poptorch(
         self,
@@ -838,7 +854,6 @@ class IPUTrainer:
         total_train_batch_size = args.per_device_train_batch_size * self.ipu_config.batch_size_factor()
         if train_dataset_is_sized:
             # No need to divide by the number of gradient accumulation steps as poptorch already accounts for that.
-            # num_update_steps_per_epoch = len(train_dataloader) // args.gradient_accumulation_steps
             num_update_steps_per_epoch = len(train_dataloader)
             num_update_steps_per_epoch = max(num_update_steps_per_epoch, 1)
             if args.max_steps > 0:
@@ -846,14 +861,12 @@ class IPUTrainer:
                 num_train_epochs = args.max_steps // num_update_steps_per_epoch + int(
                     args.max_steps % num_update_steps_per_epoch > 0
                 )
-
-                # May be slightly incorrect if the last batch in the training datalaoder has a smaller size but it's
-                # the best we can do.
-                num_train_samples = args.max_steps * total_train_batch_size
             else:
                 max_steps = math.ceil(args.num_train_epochs * num_update_steps_per_epoch)
                 num_train_epochs = math.ceil(args.num_train_epochs)
-                num_train_samples = len(self.train_dataset) * args.num_train_epochs
+            # May be slightly incorrect if the last batch in the training dataloader has a smaller size but it's
+            # the best we can do.
+            num_train_samples = max_steps * total_train_batch_size
         else:
             # see __init__. max_steps is set when the dataset has no __len__
             max_steps = args.max_steps
@@ -1663,14 +1676,7 @@ class IPUTrainer:
             all_labels = labels if all_labels is None else nested_concat(all_labels, labels, padding_index=-100)
 
         # Number of samples
-        if not isinstance(eval_dataset, IterableDataset):
-            num_samples = len(eval_dataset)
-        # The instance check is weird and does not actually check for the type, but whether the dataset has the right
-        # methods. Therefore we need to make sure it also has the attribute.
-        elif isinstance(eval_dataset, IterableDatasetShard) and hasattr(eval_dataset, "num_examples"):
-            num_samples = eval_dataset.num_examples
-        else:
-            num_samples = observed_num_examples
+        num_samples = observed_num_examples
 
         # Number of losses has been rounded to a multiple of batch_size and in a distributed training, the number of
         # samplers has been rounded to a multiple of batch_size, so we truncate.
