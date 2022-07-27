@@ -42,11 +42,13 @@ python examples/translation/run_translation.py \
     --dataset_name wmt16 \
     --dataset_config_name ro-en \
     --output_dir /tmp/tst-translation \
-    --per_device_train_batch_size=4 \
-    --per_device_eval_batch_size=4 \
+    --per_device_train_batch_size=1 \
+    --per_device_eval_batch_size=1 \
     --pod_type pod16 \
-    --overwrite_output_dir \
-    --predict_with_generate
+    --dataloader_drop_last \
+    --pad_to_max_length \
+    --logging_steps 1 \
+    --overwrite_output_dir
 ```
 
 Some T5 models require special handling.
@@ -65,11 +67,13 @@ python examples/translation/run_translation.py \
     --dataset_name wmt16 \
     --dataset_config_name ro-en \
     --output_dir /tmp/tst-translation \
-    --per_device_train_batch_size=4 \
-    --per_device_eval_batch_size=4 \
+    --per_device_train_batch_size=1 \
+    --per_device_eval_batch_size=1 \
     --pod_type pod16 \
-    --overwrite_output_dir \
-    --predict_with_generate
+    --dataloader_drop_last \
+    --pad_to_max_length \
+    --logging_steps 1 \
+    --overwrite_output_dir
 ```
 
 If you get a terrible BLEU score, make sure that you didn't forget to use the `--source_prefix` argument.
@@ -93,11 +97,13 @@ python examples/translation/run_translation.py \
     --train_file path_to_jsonlines_file \
     --validation_file path_to_jsonlines_file \
     --output_dir /tmp/tst-translation \
-    --per_device_train_batch_size=4 \
-    --per_device_eval_batch_size=4 \
+    --per_device_train_batch_size=1 \
+    --per_device_eval_batch_size=1 \
     --pod_type pod16 \
-    --overwrite_output_dir \
-    --predict_with_generate
+    --dataloader_drop_last \
+    --pad_to_max_length \
+    --logging_steps 1 \
+    --overwrite_output_dir
 ```
 
 The task of translation supports only custom JSONLINES files, with each line being a dictionary with a key `"translation"` and its value another dictionary whose keys is the language pair. For example:
@@ -121,9 +127,11 @@ python examples/translation/run_translation.py \
     --source_prefix "translate English to German: " \
     --dataset_name stas/wmt14-en-de-pre-processed \
     --output_dir /tmp/tst-translation \
-    --per_device_train_batch_size=4 \
-    --per_device_eval_batch_size=4 \
+    --per_device_train_batch_size=1 \
+    --per_device_eval_batch_size=1 \
     --pod_type pod16 \
-    --overwrite_output_dir \
-    --predict_with_generate
+    --dataloader_drop_last \
+    --pad_to_max_length \
+    --logging_steps 1 \
+    --overwrite_output_dir
  ```
