@@ -67,10 +67,12 @@ python examples/translation/run_translation.py \
     --dataset_name wmt16 \
     --dataset_config_name ro-en \
     --output_dir /tmp/tst-translation \
-    --per_device_train_batch_size=1 \
-    --per_device_eval_batch_size=1 \
+    --per_device_train_batch_size=2 \
+    --per_device_eval_batch_size=2 \
     --pod_type pod16 \
     --dataloader_drop_last \
+    --max_source_length 512 \
+    --max_target_length 512 \
     --pad_to_max_length \
     --logging_steps 1 \
     --overwrite_output_dir
@@ -97,10 +99,12 @@ python examples/translation/run_translation.py \
     --train_file path_to_jsonlines_file \
     --validation_file path_to_jsonlines_file \
     --output_dir /tmp/tst-translation \
-    --per_device_train_batch_size=1 \
-    --per_device_eval_batch_size=1 \
+    --per_device_train_batch_size=2 \
+    --per_device_eval_batch_size=2 \
     --pod_type pod16 \
     --dataloader_drop_last \
+    --max_source_length 512 \
+    --max_target_length 512 \
     --pad_to_max_length \
     --logging_steps 1 \
     --overwrite_output_dir
@@ -127,10 +131,12 @@ python examples/translation/run_translation.py \
     --source_prefix "translate English to German: " \
     --dataset_name stas/wmt14-en-de-pre-processed \
     --output_dir /tmp/tst-translation \
-    --per_device_train_batch_size=1 \
-    --per_device_eval_batch_size=1 \
+    --per_device_train_batch_size=2 \
+    --per_device_eval_batch_size=2 \
     --pod_type pod16 \
     --dataloader_drop_last \
+    --max_source_length 512 \
+    --max_target_length 512 \
     --pad_to_max_length \
     --logging_steps 1 \
     --overwrite_output_dir
