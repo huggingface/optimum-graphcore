@@ -17,7 +17,7 @@
 #  limitations under the License.
 
 from .ipu_configuration import IPUConfig
-from .models.bart import PipelinedBartForConditionalGeneration
+from .models.bart import PipelinedBartForConditionalGeneration, PipelinedBartForSequenceClassification
 from .models.bert import (
     PipelinedBertForMaskedLM,
     PipelinedBertForMultipleChoice,
