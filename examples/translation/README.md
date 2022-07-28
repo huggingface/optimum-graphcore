@@ -35,6 +35,7 @@ Here is an example of a translation fine-tuning with a Bart model:
 python examples/translation/run_translation.py \
     --model_name_or_path facebook/bart-base \
     --ipu_config_name Graphcore/bart-base-ipu \
+    --ipu_config_overrides="layers_per_ipu=[0 6 3 3]" \
     --do_train \
     --do_eval \
     --source_lang en \
