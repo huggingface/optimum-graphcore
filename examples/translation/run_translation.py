@@ -147,7 +147,7 @@ class DataTrainingArguments:
         },
     )
     max_target_length: Optional[int] = field(
-        default=128,
+        default=1024,
         metadata={
             "help": (
                 "The maximum total sequence length for target text after tokenization. Sequences longer "
@@ -521,6 +521,8 @@ def main():
     data_collator = DataCollatorForSeq2Seq(
         tokenizer,
         model=model,
+        # If data_args.pad_to_max_length then already padded during preprocessing.
+        padding=False if data_args.pad_to_max_length else "max_length",
         label_pad_token_id=label_pad_token_id,
         pad_to_multiple_of=None,
     )
