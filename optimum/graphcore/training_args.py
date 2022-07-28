@@ -438,10 +438,8 @@ class IPUTrainingArguments:
         else:
             self.gradient_accumulation_steps = 1
 
-        if self.auto_loss_scaling is True:
+        if self.auto_loss_scaling:
             override_str.append(f"auto_loss_scaling={self.auto_loss_scaling}")
-        else:
-            self.auto_loss_scaling = False
 
         if self.gradient_checkpointing:
             override_str.append("recompute_checkpoint_every_layer=True")
