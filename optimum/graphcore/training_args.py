@@ -269,7 +269,9 @@ class IPUTrainingArguments:
     )
     auto_loss_scaling: bool = field(
         default=False,
-        metadata={"help": "Enable automatic loss scaling for half precision training. Note that this is an experimental feature."},
+        metadata={
+            "help": "Enable automatic loss scaling for half precision training. Note that this is an experimental feature."
+        },
     )
     dataloader_mode: str = field(
         default="sync",

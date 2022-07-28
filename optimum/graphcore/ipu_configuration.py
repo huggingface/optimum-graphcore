@@ -149,12 +149,12 @@ class IPUConfig(BaseConfig):
             # Set gradient accumulation factor
             opts.Training.gradientAccumulation(self.gradient_accumulation_steps)
             opts.Training.accumulationAndReplicationReductionType(poptorch.ReductionType.Mean)
-        
+
         # Enable automatic loss scaling
-	    # Note that this is an experimental feature. Note also that it expects
-	    # accumulationAndReplicationReductionType to be set to Mean as above,
-	    # and for accumulation by the optimizer to be done in half precision
-	    # using accum_type=torch.float16 during optimizer instantiation.
+        # Note that this is an experimental feature. Note also that it expects
+        # accumulationAndReplicationReductionType to be set to Mean as above,
+        # and for accumulation by the optimizer to be done in half precision
+        # using accum_type=torch.float16 during optimizer instantiation.
         if self.auto_loss_scaling:
             opts.Training.setAutomaticLossScaling(True)
 
