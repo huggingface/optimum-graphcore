@@ -51,7 +51,7 @@ class IPUConfig(BaseConfig):
         self.optimizer_state_offchip = kwargs.pop("optimizer_state_offchip", True)
         self.replicated_tensor_sharding = kwargs.pop("replicated_tensor_sharding", False)
         self.decompose_grad_sum = kwargs.pop("decompose_grad_sum", False)
-        self.auto_loss_scaling = kwargs.pop("auto_losss_scaling", False)
+        self.auto_loss_scaling = kwargs.pop("auto_loss_scaling", False)
 
         if self.replicated_tensor_sharding and self.replication_factor == 1:
             logger.warning("Setting replicated_tensor_sharding to False when replication_factor=1")
