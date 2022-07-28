@@ -98,7 +98,7 @@ The same tasks can be run with BART models by using arguments `--model_name_or_p
 python examples/summarization/run_summarization.py \
     --model_name_or_path facebook/bart-base \
     --ipu_config_name Graphcore/bart-base-ipu \
-    --ipu_config_overrides "inference_device_iterations=1,inference_replication_factor=2,sharded_execution_for_inference=True,execute_encoder_on_cpu_for_generation=False" \
+    --ipu_config_overrides "inference_device_iterations=1,inference_replication_factor=2,sharded_execution_for_inference=True,execute_encoder_on_cpu_for_generation=False,layers_per_ipu=[0 4 4 4]" \
     --do_train True \
     --do_eval True \
     --dataset_name cnn_dailymail \
