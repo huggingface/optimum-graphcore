@@ -250,6 +250,7 @@ class ExampleTesterBase(TestCase):
             "--dataloader_num_workers 16",
             f"--dataloader_drop_last {self.DATALOADER_DROP_LAST}",
             "--report_to none",
+            "--overwrite_cache",
         ]
         if extra_command_line_arguments is not None:
             cmd_line += extra_command_line_arguments
