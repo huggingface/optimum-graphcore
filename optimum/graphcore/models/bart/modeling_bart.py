@@ -20,7 +20,7 @@ import torch.nn as nn
 
 import poptorch
 from optimum.utils import logging
-from transformers import BartForConditionalGeneration, BartModel
+from transformers import BartForConditionalGeneration, BartForSequenceClassification, BartModel
 from transformers.modeling_outputs import (
     BaseModelOutput,
     BaseModelOutputWithPastAndCrossAttentions,
@@ -745,3 +745,128 @@ class PipelinedBartForConditionalGeneration(
         return outputs[:2]
 
     forward = _forward_for_train
+
+
+@register(BartForSequenceClassification)
+class PipelinedBartForSequenceClassification(BartForSequenceClassification, PipelineMixin):
+    def parallelize(self):
+        """
+        Transform the model to run in an IPU pipeline.
+        - Adds pipeline stages to the model
+        - Adds recomputation checkpoints
+
+        Recommended usage:
+        ```
+        model = PipelinedBartForSequenceClassification(config).parallelize().half()
+        ```
+        """
+        super().parallelize()
+
+        self.model.__class__ = _BartModelWithSharedEmbedding
+        self.model.encoder_and_decoder_embeddings_computation(True)
+        self.model.change_bart_encoder_and_decoder_classes(False)
+        self.model.change_bart_attention_class(False)
+
+        logger.info("-------------------- Device Allocation --------------------")
+        logger.info("Embedding  --> IPU 0")
+        self.model.shared = poptorch.BeginBlock(self.model.shared, "Embedding", ipu_id=0)
+        self.model.encoder.embed_positions = poptorch.BeginBlock(
+            self.model.encoder.embed_positions, "Embedding", ipu_id=0
+        )
+        self.model.encoder.layernorm_embedding = poptorch.BeginBlock(
+            self.model.encoder.layernorm_embedding, "Embedding", ipu_id=0
+        )
+
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        for index, layer in enumerate(self.model.encoder.layers):
+            ipu = layer_ipu[index]
+            if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
+                recomputation_checkpoint(layer)
+            self.model.encoder.layers[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
+            logger.info(f"Encoder {index:<2} --> IPU {ipu}")
+
+        self.model.decoder.embed_positions = poptorch.BeginBlock(
+            self.model.decoder.embed_positions, "Embedding", ipu_id=0
+        )
+        self.model.decoder.layernorm_embedding = poptorch.BeginBlock(
+            self.model.decoder.layernorm_embedding, "Embedding", ipu_id=0
+        )
+        shift = len(self.model.encoder.layers)
+        for index, layer in enumerate(self.model.decoder.layers):
+            ipu = layer_ipu[index + shift]
+            if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
+                recomputation_checkpoint(layer)
+            self.model.decoder.layers[index] = poptorch.BeginBlock(layer, f"Decoder{index}", ipu_id=ipu)
+            logger.info(f"Decoder {index:<2} --> IPU {ipu}")
+
+        last_ipu = len(self.ipu_config.layers_per_ipu) - 1
+        logger.info(f"Classification Head Output --> IPU {last_ipu}")
+        self.classification_head = poptorch.BeginBlock(
+            self.classification_head, "Classification Head Output", ipu_id=last_ipu
+        )
+        logger.info("-----------------------------------------------------------")
+        return self
+
+    def deparallelize(self):
+        """
+        Undo the changes to the model done by `parallelize`.
+        You should call this before doing `save_pretrained` so that the `model.state_dict` is
+        fully compatible with `transformers.BartForSequenceClassification`.
+        """
+        super().deparallelize()
+
+        self.model.encoder_and_decoder_embeddings_computation(False)
+        self.model.change_bart_encoder_and_decoder_classes(True)
+        self.model.change_bart_attention_class(True)
+        self.model.__class__ = BartModel
+
+        return self
+
+    def forward(self, input_ids, attention_mask, labels=None):
+        outputs = self.model(
+            input_ids,
+            attention_mask=attention_mask,
+            use_cache=False,
+            return_dict=False,
+        )
+
+        hidden_states = outputs[0]  # last hidden state
+        B, L, E = hidden_states.shape
+
+        eos_mask = torch.eq(input_ids, self.config.eos_token_id)
+        # Static tensor shape version of hidden_states[eos_mask, :]
+        eos_indices = eos_mask * torch.arange(L).unsqueeze(0)
+        last_eos_index, _ = torch.max(eos_indices, dim=1)
+        # torch.index_select requires a 1D tensor of indices
+        last_eos_index += torch.arange(B) * L
+        hidden_states = hidden_states.view(B * L, E)
+        sentence_representation = torch.index_select(hidden_states, 0, last_eos_index)
+
+        logits = self.classification_head(sentence_representation)
+
+        loss = None
+        if labels is not None:
+            if self.config.problem_type is None:
+                if self.config.num_labels == 1:
+                    self.config.problem_type = "regression"
+                elif self.config.num_labels > 1 and (labels.dtype == torch.long or labels.dtype == torch.int):
+                    self.config.problem_type = "single_label_classification"
+                else:
+                    self.config.problem_type = "multi_label_classification"
+
+            if self.config.problem_type == "regression":
+                loss_fct = nn.MSELoss()
+                if self.config.num_labels == 1:
+                    loss = loss_fct(logits.squeeze(), labels.squeeze())
+                else:
+                    loss = loss_fct(logits, labels)
+            elif self.config.problem_type == "single_label_classification":
+                loss_fct = nn.CrossEntropyLoss()
+                loss = loss_fct(logits.view(-1, self.config.num_labels), labels.view(-1))
+            elif self.config.problem_type == "multi_label_classification":
+                loss_fct = nn.BCEWithLogitsLoss()
+                loss = loss_fct(logits, labels)
+
+        if labels is None:
+            return (logits,)
+        return loss, logits
