@@ -383,6 +383,8 @@ class TranslationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, exa
         extra_command_line_arguments.append("--source_lang ro")
         extra_command_line_arguments.append("--target_lang en")
         extra_command_line_arguments.append("--pad_to_max_length")
+        extra_command_line_arguments.append("--max_source_length 512")
+        extra_command_line_arguments.append("--max_target_length 512")
         extra_command_line_arguments.append("--prediction_loss_only")
         if "t5" in model_name:
             extra_command_line_arguments.append("--source_prefix 'translate English to Romanian: '")
