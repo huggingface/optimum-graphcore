@@ -18,9 +18,9 @@
 
 from .modeling_groupbert import (
     GroupBertForPreTraining,
-    # GroupBertForMaskedLM,
-    # GroupBertForMultipleChoice,
-    # GroupBertForQuestionAnswering,
-    # GroupBertForSequenceClassification,
-    # GroupBertForTokenClassification,
+    GroupBertForMaskedLM,
+    GroupBertForMultipleChoice,
+    GroupBertForQuestionAnswering,
+    GroupBertForSequenceClassification,
+    GroupBertForTokenClassification,
 )
