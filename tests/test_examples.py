@@ -249,6 +249,7 @@ class ExampleTesterBase(TestCase):
             f" --num_train_epochs {num_epochs}",
             "--dataloader_num_workers 16",
             f"--dataloader_drop_last {self.DATALOADER_DROP_LAST}",
+            "--save_steps -1",
             "--report_to none",
             "--overwrite_cache",
         ]
@@ -319,8 +320,8 @@ class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, e
         task: Optional[str] = None,
         do_eval: bool = True,
         lr: float = 1e-5,
-        train_batch_size: int = TRAIN_BATCH_SIZE,
-        eval_batch_size: int = EVAL_BATCH_SIZE,
+        train_batch_size: int = 1,
+        eval_batch_size: int = 1,
         num_epochs: int = 1,
         inference_device_iterations: int = 4,
         gradient_accumulation_steps: int = 64,
@@ -370,7 +371,7 @@ class TranslationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, exa
         do_eval: bool = True,
         lr: float = 1e-5,
         train_batch_size: int = 1,
-        eval_batch_size: int = 2,
+        eval_batch_size: int = 1,
         num_epochs: int = 1,
         inference_device_iterations: int = 4,
         gradient_accumulation_steps: int = 64,
@@ -381,6 +382,7 @@ class TranslationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, exa
         extra_command_line_arguments.append("--dataset_config ro-en")
         extra_command_line_arguments.append("--source_lang ro")
         extra_command_line_arguments.append("--target_lang en")
+        extra_command_line_arguments.append("--pad_to_max_length")
         extra_command_line_arguments.append("--prediction_loss_only")
         if "t5" in model_name:
             extra_command_line_arguments.append("--source_prefix 'translate English to Romanian: '")
