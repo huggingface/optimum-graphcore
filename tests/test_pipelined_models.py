@@ -29,6 +29,7 @@ from transformers import (
     CONFIG_MAPPING,
     MODEL_FOR_AUDIO_CLASSIFICATION_MAPPING,
     MODEL_FOR_CAUSAL_LM_MAPPING,
+    MODEL_FOR_CTC_MAPPING,
     MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING,
     MODEL_FOR_MASKED_LM_MAPPING,
     MODEL_FOR_MULTIPLE_CHOICE_MAPPING,
@@ -54,6 +55,7 @@ def _get_models_to_test(model_to_test_names):
         mappings = [
             MODEL_FOR_AUDIO_CLASSIFICATION_MAPPING,
             MODEL_FOR_CAUSAL_LM_MAPPING,
+            MODEL_FOR_CTC_MAPPING,
             MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING,
             MODEL_FOR_MASKED_LM_MAPPING,
             MODEL_FOR_MULTIPLE_CHOICE_MAPPING,
@@ -141,7 +143,7 @@ class PipelinedModelsTester(TestCase):
         elif model_class in MODEL_FOR_AUDIO_CLASSIFICATION_MAPPING.values():
             input_data = self._load_superb("ic", 1)
             inputs = extractor(input_data["speech"], return_tensors="pt")
-        elif (
+        elif model_class in MODEL_FOR_CTC_MAPPING.values() or (
             model_class in MODEL_FOR_PRETRAINING_MAPPING.values()
             and model_class == transformers.models.wav2vec2.modeling_wav2vec2.Wav2Vec2ForPreTraining
         ):
