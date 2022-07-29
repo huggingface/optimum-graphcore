@@ -27,7 +27,6 @@ from transformers.modeling_outputs import ModelOutput
 
 from .ipu_configuration import IPUConfig
 
-
 logger = logging.get_logger(__name__)
 
 _PRETRAINED_TO_PIPELINED_REGISTRY = {}
@@ -318,7 +317,12 @@ class SerializedLinear(nn.Linear):
     """
 
     def __init__(
-        self, in_features, out_features, factor, bias=False, mode=poptorch.MatMulSerializationMode.OutputChannels
+        self,
+        in_features,
+        out_features,
+        factor,
+        bias=False,
+        mode=poptorch.MatMulSerializationMode.OutputChannels,
     ):
         super().__init__(in_features, out_features, bias)
         self.mode = mode
