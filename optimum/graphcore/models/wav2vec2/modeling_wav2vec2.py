@@ -25,11 +25,12 @@ from transformers.models.wav2vec2.modeling_wav2vec2 import (
     Wav2Vec2Adapter,
     Wav2Vec2Encoder,
     Wav2Vec2EncoderStableLayerNorm,
+    Wav2Vec2ForCTC,
     Wav2Vec2ForPreTrainingOutput,
     Wav2Vec2GumbelVectorQuantizer,
 )
 
-from ...modeling_utils import PipelineMixin, get_layer_ipu, register
+from ...modeling_utils import PipelineMixin, get_layer_ipu, recomputation_checkpoint, register
 from .ipu_gumbel_vector_quantizer import IPUWav2Vec2GumbelVectorQuantizer
 from .ipu_layer_drop import IPUWav2Vec2Adapter, IPUWav2Vec2Encoder, IPUWav2Vec2EncoderStableLayerNorm
 
@@ -39,7 +40,10 @@ logger = logging.get_logger(__name__)
 
 class IPUWav2Vec2Model(Wav2Vec2Model):
     def _get_feature_vector_attention_mask(
-        self, feature_vector_length: int, attention_mask: torch.LongTensor, add_adapter=None
+        self,
+        feature_vector_length: int,
+        attention_mask: torch.LongTensor,
+        add_adapter=None,
     ):
         # Effectively attention_mask.sum(-1), but not inplace to be able to run
         # on inference mode.
@@ -53,10 +57,17 @@ class IPUWav2Vec2Model(Wav2Vec2Model):
         batch_size = attention_mask.shape[0]
 
         attention_mask = torch.zeros(
-            (batch_size, feature_vector_length), dtype=attention_mask.dtype, device=attention_mask.device
+            (batch_size, feature_vector_length),
+            dtype=attention_mask.dtype,
+            device=attention_mask.device,
         )
         # these two operations makes sure that all values before the output lengths idxs are attended to
-        attention_mask[(torch.arange(attention_mask.shape[0], device=attention_mask.device), output_lengths - 1)] = 1
+        attention_mask[
+            (
+                torch.arange(attention_mask.shape[0], device=attention_mask.device),
+                output_lengths - 1,
+            )
+        ] = 1
         attention_mask = attention_mask.flip([-1]).cumsum(-1).flip([-1]).bool()
         return attention_mask
 
@@ -138,21 +149,30 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
 
         logger.info("---------- Device Allocation -----------")
         layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        layers = []
         # Conv layers
         for index, layer in enumerate(self.wav2vec2.feature_extractor.conv_layers):
-            ipu = layer_ipu[index]
-            logger.info(f"Conv {index:<2} --> IPU {ipu}")
-            self._add_begin_block(layer, f"Conv{index}", ipu_id=ipu)
-        offset = index + 1
+            layers.append((f"Conv {index:<2}", layer))
+        # Positional Embedding
+        layers.append(("Positional Embedding", self.wav2vec2.encoder.pos_conv_embed))
         # Encoder layers
         for index, layer in enumerate(self.wav2vec2.encoder.layers):
-            ipu = layer_ipu[offset + index]
-            logger.info(f"Encoder {index:<2} --> IPU {ipu}")
-            self._add_begin_block(layer, f"Encoder{index}", ipu_id=ipu)
+            recomputation_checkpoint(layer)
+            layers.append((f"Encoder {index:<2}", layer))
+        # Project Hidden
+        layers.append(("Project Hidden", self.project_hid))
         # Quantizer
-        last_ipu = self.ipu_config.ipus_per_replica - 1
-        logger.info(f"Quantizer --> IPU {last_ipu}")
-        self._add_begin_block(self.quantizer, "Quantizer", ipu_id=last_ipu)
+        layers.append(("Quantizer", self.quantizer))
+        # Project Quantizer
+        layers.append(("Project Quantizer", self.project_q))
+
+        if len(layer_ipu) != len(layers):
+            raise ValueError(f"Layers per IPU total ({len(layer_ipu)}) must be equal to layers ({len(layers)}).")
+
+        for i, (name, layer) in enumerate(layers):
+            logger.info(f"{name} --> IPU {layer_ipu[i]}")
+            self._add_begin_block(layer, name, ipu_id=layer_ipu[i])
+
         logger.info("---------------------------------------")
 
     def deparallelize(self):
@@ -172,10 +192,13 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
     def forward(
         self,
         input_values,
+        gumbel_temperature,
+        labels=None,
         attention_mask=None,
         mask_time_indices=None,
         sampled_negative_indices=None,
-        gumbel_temperature=None,
+        reduce_selector=None,
+        mask_reduced=None,
         output_attentions=None,
         output_hidden_states=None,
         return_dict=None,
@@ -195,11 +218,7 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
             return_dict=return_dict,
         )
 
-        # 1. project all transformed features (including masked) to final vq dim
-        transformer_features = self.project_hid(outputs[0])
-
-        # 2. quantize all (unmasked) extracted features and project to final vq dim
-        extract_features = self.dropout_features(outputs[1])
+        transformer_features, extract_features = outputs[0], outputs[1]
 
         if attention_mask is not None:
             # compute reduced attention_mask correponding to feature vectors
@@ -207,11 +226,33 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
                 extract_features.shape[1], attention_mask, add_adapter=False
             )
 
-        quantizer_inputs = [extract_features]
-        if gumbel_temperature:
-            quantizer_inputs.append(gumbel_temperature)
-        quantized_features, codevector_perplexity = self.quantizer(
-            *quantizer_inputs, mask_time_indices=mask_time_indices
+        # GC. remove a (static sized) portion of the output tensors at unmasked indices
+        # unmasked indices do not contribute to loss. removing them now alleviates memory requirements
+        if reduce_selector is not None:
+            batch_size, sequence_length, feature_size = extract_features.shape
+            cropped_length = reduce_selector.shape[1]
+
+            if batch_size > 1:
+                reduce_selector += torch.arange(batch_size).unsqueeze(1) * sequence_length
+            mask_time_indices = mask_reduced.to(torch.bool)
+
+            extract_features = extract_features.view(-1, feature_size)[reduce_selector.long().view(-1)]
+            extract_features = extract_features.reshape(batch_size, cropped_length, feature_size)
+
+            _, _, feature_size = transformer_features.shape
+            transformer_features = transformer_features.view(-1, feature_size)[reduce_selector.long().view(-1)]
+            transformer_features = transformer_features.reshape(batch_size, cropped_length, feature_size)
+
+        # 1. project all transformed features (including masked) to final vq dim
+        transformer_features = self.project_hid(transformer_features)
+
+        # 2. quantize all (unmasked) extracted features and project to final vq dim
+        extract_features = self.dropout_features(extract_features)
+
+        quantized_features, prob_perplexity, code_perplexity = self.quantizer(
+            extract_features,
+            gumbel_temperature.mean(),
+            mask_time_indices=mask_time_indices,
         )
         quantized_features = self.project_q(quantized_features)
 
@@ -224,8 +265,8 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
             # if attention_mask is passed, make sure that padded feature vectors cannot be sampled
             # sample negative quantized vectors BTC => (BxT)C
             # Moved the negative sampling batch offsetting into the model
-            # Commenting this out because of Poptorch issue. With batch size 1 it's not needed anyway
-            # sampled_negative_indices += torch.arange(batch_size)[:, None, None] * sequence_length
+            if batch_size > 1:
+                sampled_negative_indices += torch.arange(batch_size)[:, None, None] * sequence_length
             negative_quantized_features = quantized_features.view(-1, hidden_size)[
                 sampled_negative_indices.long().view(-1)
             ]
@@ -246,7 +287,7 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
             # its cosine similarity will be masked
             neg_is_pos = (quantized_features == negative_quantized_features).all(-1)
 
-            neg_is_pos = F.pad(neg_is_pos.type(torch.long), (0, 0, 0, 0, 1, 0)).type(torch.bool)
+            neg_is_pos = F.pad(neg_is_pos, (0, 0, 0, 0, 1, 0))
             logits = logits.masked_fill(neg_is_pos, -1e3)
 
             # 6. compute contrastive loss \mathbf{L}_m = cross_entropy(logs) =
@@ -258,26 +299,26 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
 
             # 7. compute diversity loss: \mathbf{L}_d
             num_codevectors = self.config.num_codevectors_per_group * self.config.num_codevector_groups
-            diversity_loss = ((num_codevectors - codevector_perplexity) / num_codevectors) * mask_time_indices.sum()
+            diversity_loss = ((num_codevectors - prob_perplexity) / num_codevectors) * mask_time_indices.sum()
 
             # 8. \mathbf{L} = \mathbf{L}_m + \alpha * \mathbf{L}_d
             loss = contrastive_loss + self.config.diversity_loss_weight * diversity_loss
 
         if not return_dict:
             if loss is not None:
-                return (loss, transformer_features, quantized_features, codevector_perplexity) + outputs[2:]
-            return (transformer_features, quantized_features, codevector_perplexity) + outputs[2:]
-
-        return Wav2Vec2ForPreTrainingOutput(
-            loss=loss,
-            projected_states=transformer_features,
-            projected_quantized_states=quantized_features,
-            codevector_perplexity=codevector_perplexity,
-            hidden_states=outputs.hidden_states,
-            attentions=outputs.attentions,
-            contrastive_loss=contrastive_loss,
-            diversity_loss=diversity_loss,
-        )
+                return (
+                    loss,
+                    transformer_features,
+                    quantized_features,
+                    prob_perplexity,
+                    code_perplexity,
+                ) + outputs[2:]
+            return (
+                transformer_features,
+                quantized_features,
+                prob_perplexity,
+                code_perplexity,
+            ) + outputs[2:]
 
     @staticmethod
     def compute_contrastive_logits(
@@ -301,8 +342,175 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
         return logits
 
 
+@register(Wav2Vec2ForCTC)
+class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
+    def change_wav2vec2_encoder_class(self, restore: bool):
+        """Changes the encoder class to update its forward pass so that it uses our custom version.
+
+        Args:
+            restore: whether to restore the encoder to its original version or not.
+        """
+        if self.config.do_stable_layer_norm:
+            new_cls = Wav2Vec2EncoderStableLayerNorm if restore else IPUWav2Vec2EncoderStableLayerNorm
+        else:
+            new_cls = Wav2Vec2Encoder if restore else IPUWav2Vec2Encoder
+        self.wav2vec2.encoder.__class__ = new_cls
+
+    def change_wav2vec2_adapter_class(self, restore: bool):
+        """Changes the adapter class to update its forward pass so that it uses our custom version.
+
+        Args:
+            restore: whether to restore the adapter to its original version or not.
+        """
+        if self.config.add_adapter:
+            self.wav2vec2.adapter.__class__ = Wav2Vec2Adapter if restore else IPUWav2Vec2Adapter
+
+    def change_conv_eps(self, restore: bool):
+        """Changes the epsilons in the layer norms of the conv layers to a value suitable for float16.
+
+        Args:
+            restore: whether to restore the epsilons to their original version or not.
+        """
+        if self.config.feat_extract_norm != "layer":
+            # In this case there is no layer norm in the conv layers
+            return
+        if restore:
+            for i, conv_layer in enumerate(self.wav2vec2.feature_extractor.conv_layers):
+                # Restore the original values
+                conv_layer.layer_norm.eps = self.original_eps[i]
+        else:
+            self.original_eps = []
+            eps = 1e-4
+            for conv_layer in self.wav2vec2.feature_extractor.conv_layers:
+                # Save the original values, to restore later
+                self.original_eps.append(conv_layer.layer_norm.eps)
+                conv_layer.layer_norm.eps = eps
+
+    def _add_begin_block(self, module, name, ipu_id):
+        poptorch.BeginBlock(module, name, ipu_id)
+
+    def parallelize(self):
+        """
+        Transform the model to run in an IPU pipeline.
+        - Adds pipeline stages to the model
+        - Replaces some layers with IPU-specialised ones
+        - Set eps to a stable value in float16
+
+        Recommended usage:
+        ```
+        model = PipelinedWav2Vec2ForPreTraining(config).parallelize().half()
+        ```
+        """
+        super().parallelize()
+
+        self.wav2vec2.__class__ = IPUWav2Vec2Model
+        self.freeze_feature_encoder()
+        self.change_wav2vec2_encoder_class(False)
+        self.change_wav2vec2_adapter_class(False)
+        self.change_conv_eps(False)
+
+        if self.ipu_config.ipus_per_replica != 1:
+            logger.info("---------- Device Allocation -----------")
+            layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+            layers = []
+            # Conv layers
+            for index, layer in enumerate(self.wav2vec2.feature_extractor.conv_layers):
+                layers.append((f"Conv {index:<2}", layer))
+            # Positional Embedding
+            layers.append(("Positional Embedding", self.wav2vec2.encoder.pos_conv_embed))
+            # Encoder layers
+            for index, layer in enumerate(self.wav2vec2.encoder.layers):
+                recomputation_checkpoint(layer)
+                layers.append((f"Encoder {index:<2}", layer))
+            # Project Hidden
+            layers.append(("Project Hidden", self.lm_head))
+
+            if len(layer_ipu) != len(layers):
+                raise ValueError(f"Layers per IPU total ({len(layer_ipu)}) must be equal to layers ({len(layers)}).")
+
+            for i, (name, layer) in enumerate(layers):
+                logger.info(f"{name} --> IPU {layer_ipu[i]}")
+                self._add_begin_block(layer, name, ipu_id=layer_ipu[i])
+
+            logger.info("---------------------------------------")
+
+    def deparallelize(self):
+        """
+        Undo the changes to the model done by `parallelize`.
+        You should call this before doing `save_pretrained` so that the `model.state_dict` is
+        fully compatible with `transformers.Wav2Vec2ForPreTraining`.
+        """
+        super().deparallelize()
+        self.change_wav2vec2_encoder_class(True)
+        self.change_wav2vec2_adapter_class(True)
+        self.change_conv_eps(True)
+        self.wav2vec2.__class__ = Wav2Vec2Model
+        return self
+
+    def forward(
+        self,
+        input_values,
+        labels=None,
+        attention_mask=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=False,
+    ):
+        r"""
+        labels (`torch.LongTensor` of shape `(batch_size, target_length)`, *optional*):
+            Labels for connectionist temporal classification. Note that `target_length` has to be smaller or equal to
+            the sequence length of the output logits. Indices are selected in `[-100, 0, ..., config.vocab_size - 1]`.
+            All labels set to `-100` are ignored (masked), the loss is only computed for labels in `[0, ...,
+            config.vocab_size - 1]`.
+        """
+
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        return_dict = False
+
+        outputs = self.wav2vec2(
+            input_values,
+            attention_mask=attention_mask,
+            output_attentions=False,
+            output_hidden_states=False,
+            return_dict=False,
+        )
+
+        hidden_states = outputs[0]
+        hidden_states = self.dropout(hidden_states)
+
+        logits = self.lm_head(hidden_states)
+
+        loss = None
+        if labels is not None:
+            # retrieve loss input_lengths from attention_mask
+            attention_mask = (
+                attention_mask if attention_mask is not None else torch.ones_like(input_values, dtype=torch.long)
+            )
+            input_lengths = self._get_feat_extract_output_lengths(attention_mask.sum(-1)).to(torch.long)
+
+            # assuming that padded tokens are filled with -100
+            # when not being attended to
+            labels_mask = labels >= 0
+            target_lengths = labels_mask.sum(-1)
+
+            # ctc_loss doesn't support fp16
+            log_probs = torch.nn.functional.log_softmax(logits.float(), dim=-1).transpose(0, 1)
+
+            loss_fn = torch.nn.CTCLoss(blank=self.config.pad_token_id, reduction=self.config.ctc_loss_reduction)
+            loss = loss_fn(log_probs.float(), labels, input_lengths, target_lengths)
+
+        if not return_dict:
+            if loss is not None:
+                return (poptorch.identity_loss(loss, "sum"), logits)
+            return (logits, hidden_states)
+        else:
+            raise NotImplementedError("'return_dict' is not supported.")
+
+
 def _sample_negative_indices(
-    features_shape: Tuple, num_negatives: int, mask_time_indices: Optional[np.ndarray] = None
+    features_shape: Tuple,
+    num_negatives: int,
+    mask_time_indices: Optional[np.ndarray] = None,
 ):
     """
     Sample `num_negatives` vectors from feature vectors.
