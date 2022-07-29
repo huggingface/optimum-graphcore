@@ -25,23 +25,15 @@ from transformers.models.wav2vec2.modeling_wav2vec2 import (
     Wav2Vec2Adapter,
     Wav2Vec2Encoder,
     Wav2Vec2EncoderStableLayerNorm,
+    Wav2Vec2ForCTC,
     Wav2Vec2ForPreTrainingOutput,
     Wav2Vec2GumbelVectorQuantizer,
-    Wav2Vec2ForCTC,
 )
 
-from ...modeling_utils import (
-    PipelineMixin,
-    get_layer_ipu,
-    recomputation_checkpoint,
-    register,
-)
+from ...modeling_utils import PipelineMixin, get_layer_ipu, recomputation_checkpoint, register
 from .ipu_gumbel_vector_quantizer import IPUWav2Vec2GumbelVectorQuantizer
-from .ipu_layer_drop import (
-    IPUWav2Vec2Adapter,
-    IPUWav2Vec2Encoder,
-    IPUWav2Vec2EncoderStableLayerNorm,
-)
+from .ipu_layer_drop import IPUWav2Vec2Adapter, IPUWav2Vec2Encoder, IPUWav2Vec2EncoderStableLayerNorm
+
 
 logger = logging.get_logger(__name__)
 

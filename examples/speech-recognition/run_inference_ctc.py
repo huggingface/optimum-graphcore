@@ -16,22 +16,19 @@
 """ Run inference on a 🤗 Wav2Vec2 model """
 
 import logging
-from tqdm import tqdm
 from dataclasses import dataclass, field
 
 import torch
-import poptorch
-
 from datasets import load_dataset
+from tqdm import tqdm
+
+import poptorch
 from optimum.graphcore import IPUConfig
 from optimum.graphcore.modeling_utils import to_pipelined
-from transformers import (
-    AutoModelForCTC,
-    Wav2Vec2Processor,
-    HfArgumentParser,
-)
+from transformers import AutoModelForCTC, HfArgumentParser, Wav2Vec2Processor
 from transformers.utils import check_min_version
 from transformers.utils.versions import require_version
+
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.18.0")

@@ -27,6 +27,7 @@ from transformers.modeling_outputs import ModelOutput
 
 from .ipu_configuration import IPUConfig
 
+
 logger = logging.get_logger(__name__)
 
 _PRETRAINED_TO_PIPELINED_REGISTRY = {}

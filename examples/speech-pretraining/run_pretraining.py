@@ -35,15 +35,16 @@ from transformers import (
     AutoFeatureExtractor,
     AutoModelForPreTraining,
     HfArgumentParser,
+    TrainerCallback,
     Wav2Vec2FeatureExtractor,
     Wav2Vec2ForPreTraining,
-    TrainerCallback,
     set_seed,
 )
 from transformers.models.wav2vec2.modeling_wav2vec2 import _compute_mask_indices
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version
 from transformers.utils.versions import require_version
+
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.18.0")
