@@ -84,7 +84,11 @@ def _get_models_to_test(model_to_test_names):
     for pretrained_class, pipelined_class in _PRETRAINED_TO_PIPELINED_REGISTRY.items():
         test_name = f"{pretrained_class.__name__}"
         config_class = find_config_class_from_pretrained_class(pretrained_class)
-        model_name_or_path, ipu_config_name_or_path = model_to_test_names[REVERSE_CONFIG_MAPPING[config_class]]
+        names = model_to_test_names[REVERSE_CONFIG_MAPPING[config_class]]
+        if isinstance(names, dict):
+            model_name_or_path, ipu_config_name_or_path = names.get("default")
+        else:
+            model_name_or_path, ipu_config_name_or_path = names
         models_to_test.append(
             (test_name, model_name_or_path, ipu_config_name_or_path, pretrained_class, pipelined_class, config_class)
         )
