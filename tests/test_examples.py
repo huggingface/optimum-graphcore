@@ -43,7 +43,7 @@ _ALLOWED_REPLICATION_FACTOR = 2
 
 
 def _get_supported_models_for_script(
-    models_to_test: Dict[str, Tuple[str]], task_mapping: Dict[str, str]
+    models_to_test: Dict[str, Tuple[str]], task_mapping: Dict[str, str], task: str = "default"
 ) -> List[Tuple[str]]:
     """
     Filters models that can perform the task from models_to_test.
@@ -51,6 +51,7 @@ def _get_supported_models_for_script(
     Args:
         models_to_test: mapping between a model type and a tuple (model_name_or_path, ipu_config_name).
         task_mapping: mapping bewteen a model config and a model class.
+        task: the task to get the model names for.
 
     Returns:
         A list of models that are supported for the task.
@@ -63,9 +64,12 @@ def _get_supported_models_for_script(
             return task_mapping[CONFIG_MAPPING[model_type]] in _PRETRAINED_TO_PIPELINED_REGISTRY
         return False
 
-    return [
-        (model_type, names) for (model_type, names) in models_to_test.items() if is_valid_model_type(model_type, names)
-    ]
+    supported_models = []
+    for model_type, model_names in models_to_test.items():
+        names = model_names.get(task, model_names["default"]) if isinstance(model_names, dict) else model_names
+        supported_models.append((model_type, names))
+
+    return supported_models
 
 
 _SCRIPT_TO_MODEL_MAPPING = {

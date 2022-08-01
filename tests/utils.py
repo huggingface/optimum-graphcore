@@ -24,5 +24,8 @@ MODELS_TO_TEST_MAPPING = {
     "roberta": ("roberta-base", "Graphcore/roberta-base-ipu"),
     "t5": ("t5-small", "Graphcore/t5-small-ipu"),
     "vit": ("google/vit-base-patch16-224-in21k", "Graphcore/vit-base-ipu"),
-    "wav2vec2": ("facebook/wav2vec2-base", "Graphcore/wav2vec2-base-ipu"),
+    "wav2vec2": {
+        "default": ("facebook/wav2vec2-base", "Graphcore/wav2vec2-base-ipu"),
+        "ctc": ("facebook/wav2vec2-base", "Graphcore/wav2vec2-ctc-base-ipu"),
+    },
 }
