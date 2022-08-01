@@ -63,12 +63,12 @@ class IPUWav2Vec2GumbelVectorQuantizer(Wav2Vec2GumbelVectorQuantizer):
         if mask is not None:
             probs *= mask.flatten()[:, None, None].float()
             num = mask.sum()
-            marginal_probs = probs.sum(dim=0) / num.float()
+            marginal_probs = probs.sum(dim=0) / num
         else:
             num = probs.shape[0]
-            marginal_probs = probs.sum(dim=0) / num.float()
+            marginal_probs = probs.sum(dim=0) / num
 
-        log_marginal_probs = torch.log(marginal_probs + 1e-4)
+        log_marginal_probs = torch.log(marginal_probs + 1e-7)
         perplexity = torch.exp(-torch.sum(marginal_probs * log_marginal_probs, dim=-1)).sum()
         return perplexity
 
@@ -107,4 +107,4 @@ class IPUWav2Vec2GumbelVectorQuantizer(Wav2Vec2GumbelVectorQuantizer):
 
         codevectors = codevectors.reshape(batch_size, sequence_length, -1)
 
-        return codevectors, prob_perplexity, code_perplexity
+        return codevectors, code_perplexity, prob_perplexity
