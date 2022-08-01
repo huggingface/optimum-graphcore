@@ -95,8 +95,8 @@ class IPUWav2Vec2Encoder(Wav2Vec2Encoder):
             if self.config.layerdrop > 0.0:
                 # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
                 dropout_probability = torch.rand(tuple())
-                skip_the_layer = self.training and (dropout_probability < self.config.layerdrop)
-                hidden_states = torch.where(torch.BoolTensor([skip_the_layer]), hidden_states, layer_outputs[0])
+                skip_the_layer = torch.tensor(self.training) and (dropout_probability < self.config.layerdrop)
+                hidden_states = torch.where(skip_the_layer, hidden_states, layer_outputs[0])
             else:
                 hidden_states = layer_outputs[0]
 
@@ -180,8 +180,8 @@ class IPUWav2Vec2EncoderStableLayerNorm(Wav2Vec2EncoderStableLayerNorm):
             if self.config.layerdrop > 0.0:
                 # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
                 dropout_probability = torch.rand(tuple())
-                skip_the_layer = self.training and (dropout_probability < self.config.layerdrop)
-                hidden_states = torch.where(torch.BoolTensor([skip_the_layer]), hidden_states, layer_outputs[0])
+                skip_the_layer = torch.tensor(self.training) and (dropout_probability < self.config.layerdrop)
+                hidden_states = torch.where(skip_the_layer, hidden_states, layer_outputs[0])
             else:
                 hidden_states = layer_outputs[0]
 
@@ -214,8 +214,8 @@ class IPUWav2Vec2Adapter(Wav2Vec2Adapter):
         for layer in self.layers:
             layerdrop_prob = torch.rand(tuple())
             layer_output = layer(hidden_states)
-            use_the_layer = not self.training or (layerdrop_prob > self.layerdrop)
-            hidden_states = torch.where(torch.BoolTensor([use_the_layer]), layer_output, hidden_states)
+            use_the_layer = not torch.tensor(self.training) or (layerdrop_prob > self.layerdrop)
+            hidden_states = torch.where(use_the_layer, layer_output, hidden_states)
 
         hidden_states = hidden_states.transpose(1, 2)
         return hidden_states
