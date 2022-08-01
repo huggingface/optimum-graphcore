@@ -206,6 +206,8 @@ class IPUConfig(BaseConfig):
         if self.enable_half_partials:
             opts.Precision.setPartialsType(torch.float16)
 
+        opts.Jit.traceModel(False)
+
         # PopART performance options #
         # Replaces single sums of partial gradients with a tree of additions
         opts._Popart.set("decomposeGradSum", self.decompose_grad_sum)
