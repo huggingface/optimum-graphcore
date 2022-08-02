@@ -67,7 +67,8 @@ def _get_supported_models_for_script(
     supported_models = []
     for model_type, model_names in models_to_test.items():
         names = model_names.get(task, model_names["default"]) if isinstance(model_names, dict) else model_names
-        supported_models.append((model_type, names))
+        if is_valid_model_type(model_type, names):
+            supported_models.append((model_type, names))
 
     return supported_models
 
