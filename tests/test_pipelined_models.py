@@ -86,7 +86,8 @@ def _get_models_to_test(model_to_test_names):
         config_class = find_config_class_from_pretrained_class(pretrained_class)
         names = model_to_test_names[REVERSE_CONFIG_MAPPING[config_class]]
         if isinstance(names, dict):
-            model_name_or_path, ipu_config_name_or_path = names.get("default")
+            task = "ctc" if "CTC" in test_name else "default"
+            model_name_or_path, ipu_config_name_or_path = names.get(task, "default")
         else:
             model_name_or_path, ipu_config_name_or_path = names
         models_to_test.append(
