@@ -196,7 +196,7 @@ class IPUConfig(BaseConfig):
         opts.setAvailableMemoryProportion(mem_prop)
 
         # Enable caching the compiled executable to disk
-        if self.executable_cache_dir and self.executable_cache_dir != "disabled":
+        if self.executable_cache_dir != "disabled":
             opts.enableExecutableCaching(self.executable_cache_dir)
 
         # Enable stochastic rounding (recommended for training with FP16)
