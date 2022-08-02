@@ -192,7 +192,7 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
     def forward(
         self,
         input_values,
-        gumbel_temperature,
+        gumbel_temperature=None,
         labels=None,
         attention_mask=None,
         mask_time_indices=None,
@@ -208,6 +208,9 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
 
         if mask_time_indices is not None:
             mask_time_indices = mask_time_indices.to(torch.bool)
+
+        if gumbel_temperature is None:
+            gumbel_temperature = torch.tensor(self.quantizer.temperature, dtype=torch.float32)
 
         outputs = self.wav2vec2(
             input_values,
@@ -249,11 +252,19 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
         # 2. quantize all (unmasked) extracted features and project to final vq dim
         extract_features = self.dropout_features(extract_features)
 
-        quantized_features, prob_perplexity, code_perplexity = self.quantizer(
-            extract_features,
-            gumbel_temperature.mean(),
-            mask_time_indices=mask_time_indices,
-        )
+        if isinstance(self.quantizer, IPUWav2Vec2GumbelVectorQuantizer):
+            quantized_features, code_perplexity, prob_perplexity = self.quantizer(
+                extract_features,
+                gumbel_temperature.mean(),
+                mask_time_indices=mask_time_indices,
+            )
+        else:
+            quantized_features, code_perplexity = self.quantizer(
+                extract_features,
+                mask_time_indices=mask_time_indices,
+            )
+            prob_perplexity = None
+
         quantized_features = self.project_q(quantized_features)
 
         loss = contrastive_loss = diversity_loss = None
@@ -310,14 +321,14 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
                     loss,
                     transformer_features,
                     quantized_features,
-                    prob_perplexity,
                     code_perplexity,
+                    prob_perplexity,
                 ) + outputs[2:]
             return (
                 transformer_features,
                 quantized_features,
-                prob_perplexity,
                 code_perplexity,
+                prob_perplexity,
             ) + outputs[2:]
 
     @staticmethod
