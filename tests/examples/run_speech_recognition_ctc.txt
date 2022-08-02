@@ -1,0 +1,312 @@
+17c17
+< 
+---
+> import copy
+33a34,35
+> from optimum.graphcore import IPUConfig, IPUTrainer
+> from optimum.graphcore import IPUTrainingArguments as TrainingArguments
+41,42d42
+<     Trainer,
+<     TrainingArguments,
+46,47c46,47
+< from transformers.trainer_utils import get_last_checkpoint, is_main_process
+< from transformers.utils import check_min_version, send_example_telemetry
+---
+> from transformers.trainer_utils import get_last_checkpoint
+> from transformers.utils import check_min_version
+52,54c52
+< check_min_version("4.20.0")
+< 
+< require_version("datasets>=1.18.0", "To fix: pip install -r examples/pytorch/speech-recognition/requirements.txt")
+---
+> check_min_version("4.18.0")
+55a54,57
+> require_version(
+>     "datasets>=1.18.0",
+>     "To fix: pip install -r examples/pytorch/speech-recognition/requirements.txt",
+> )
+82c84,85
+<         default=True, metadata={"help": "Whether to freeze the feature encoder layers of the model."}
+---
+>         default=True,
+>         metadata={"help": "Whether to freeze the feature encoder layers of the model."},
+85c88,89
+<         default=0.0, metadata={"help": "The dropout ratio for the attention probabilities."}
+---
+>         default=0.0,
+>         metadata={"help": "The dropout ratio for the attention probabilities."},
+88c92,93
+<         default=0.0, metadata={"help": "The dropout ratio for activations inside the fully connected layer."}
+---
+>         default=0.0,
+>         metadata={"help": "The dropout ratio for activations inside the fully connected layer."},
+102c107
+<         default=0.05,
+---
+>         default=0.0,
+104,108c109,111
+<             "help": (
+<                 "Probability of each feature vector along the time axis to be chosen as the start of the vector"
+<                 "span to be masked. Approximately ``mask_time_prob * sequence_length // mask_time_length`` feature"
+<                 "vectors will be masked along the time axis."
+<             )
+---
+>             "help": "Probability of each feature vector along the time axis to be chosen as the start of the vector"
+>             "span to be masked. Approximately ``mask_time_prob * sequence_length // mask_time_length`` feature"
+>             "vectors will be masked along the time axis."
+118,122c121,122
+<             "help": (
+<                 "Probability of each feature vector along the feature axis to be chosen as the start of the vectorspan"
+<                 " to be masked. Approximately ``mask_feature_prob * sequence_length // mask_feature_length`` feature"
+<                 " bins will be masked along the time axis."
+<             )
+---
+>             "help": "Probability of each feature vector along the feature axis to be chosen as the start of the vector"
+>             "span to be masked. Approximately ``mask_feature_prob * sequence_length // mask_feature_length`` feature bins will be masked along the time axis."
+131c131,132
+<         default="mean", metadata={"help": "The way the ctc loss should be reduced. Should be one of 'mean' or 'sum'."}
+---
+>         default="mean",
+>         metadata={"help": "The way the ctc loss should be reduced. Should be one of 'mean' or 'sum'."},
+149c150,151
+<         default=None, metadata={"help": "The configuration name of the dataset to use (via the datasets library)."}
+---
+>         default=None,
+>         metadata={"help": "The configuration name of the dataset to use (via the datasets library)."},
+154,157c156,157
+<             "help": (
+<                 "The name of the training data set split to use (via the datasets library). Defaults to "
+<                 "'train+validation'"
+<             )
+---
+>             "help": "The name of the training data set split to use (via the datasets library). Defaults to "
+>             "'train+validation'"
+175c175,176
+<         default=False, metadata={"help": "Overwrite the cached preprocessed datasets or not."}
+---
+>         default=False,
+>         metadata={"help": "Overwrite the cached preprocessed datasets or not."},
+184,187c185,186
+<             "help": (
+<                 "For debugging purposes or quicker training, truncate the number of training examples to this "
+<                 "value if set."
+<             )
+---
+>             "help": "For debugging purposes or quicker training, truncate the number of training examples to this "
+>             "value if set."
+193,196c192,193
+<             "help": (
+<                 "For debugging purposes or quicker training, truncate the number of validation examples to this "
+<                 "value if set."
+<             )
+---
+>             "help": "For debugging purposes or quicker training, truncate the number of validation examples to this "
+>             "value if set."
+210,213c207
+<             "help": (
+<                 "Filter audio files that are longer than `max_duration_in_seconds` seconds to"
+<                 " 'max_duration_in_seconds`"
+<             )
+---
+>             "help": "Filter audio files that are longer than `max_duration_in_seconds` seconds to 'max_duration_in_seconds`"
+217c211,212
+<         default=0.0, metadata={"help": "Filter audio files that are shorter than `min_duration_in_seconds` seconds"}
+---
+>         default=0.0,
+>         metadata={"help": "Filter audio files that are shorter than `min_duration_in_seconds` seconds"},
+222,227c217,220
+<             "help": (
+<                 "Whether to only do data preprocessing and skip training. This is especially useful when data"
+<                 " preprocessing errors out in distributed training due to timeout. In this case, one should run the"
+<                 " preprocessing in a non-distributed setup with `preprocessing_only=True` so that the cached datasets"
+<                 " can consequently be loaded in distributed training"
+<             )
+---
+>             "help": "Whether to only do data preprocessing and skip training. "
+>             "This is especially useful when data preprocessing errors out in distributed training due to timeout. "
+>             "In this case, one should run the preprocessing in a non-distributed setup with `preprocessing_only=True` "
+>             "so that the cached datasets can consequently be loaded in distributed training"
+233,236c226,227
+<             "help": (
+<                 "If :obj:`True`, will use the token generated when running"
+<                 ":obj:`transformers-cli login` as HTTP bearer authorization for remote files."
+<             )
+---
+>             "help": "If :obj:`True`, will use the token generated when running"
+>             ":obj:`transformers-cli login` as HTTP bearer authorization for remote files."
+254,259c245,248
+<             "help": (
+<                 "The target language that should be used be"
+<                 " passed to the tokenizer for tokenization. Note that"
+<                 " this is only relevant if the model classifies the"
+<                 " input audio to a sequence of phoneme sequences."
+<             )
+---
+>             "help": "The target language that should be used be"
+>             " passed to the tokenizer for tokenization. Note that"
+>             " this is only relevant if the model classifies the"
+>             " input audio to a sequence of phoneme sequences."
+290c279
+<     processor: AutoProcessor
+---
+>     processor: Union[AutoProcessor, Wav2Vec2Processor]
+307a297,300
+>         # lengths = torch.sum(batch["input_values"] != 0.0, 1)
+>         # attention_mask = torch.arange(batch["input_values"].shape[-1]).unsqueeze(0) < lengths.unsqueeze(1)
+>         # batch["attention_mask"] = attention_mask.type(torch.int32)
+> 
+317c310
+<         labels = labels_batch["input_ids"].masked_fill(labels_batch.attention_mask.ne(1), -100)
+---
+>         batch["labels"] = labels_batch["input_ids"].masked_fill(labels_batch.attention_mask.ne(1), -100)
+319,321c312
+<         batch["labels"] = labels
+< 
+<         return batch
+---
+>         return batch.data
+346c337,338
+<         lambda vocab_1, vocab_2: set(vocab_1["vocab"][0]) | set(vocab_2["vocab"][0]), vocabs.values()
+---
+>         lambda vocab_1, vocab_2: set(vocab_1["vocab"][0]) | set(vocab_2["vocab"][0]),
+>         vocabs.values(),
+379,381c371,372
+<     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
+<     # information sent is the one passed as arguments along with your Python/PyTorch versions.
+<     send_example_telemetry("run_speech_recognition_ctc", model_args, data_args)
+---
+>     if training_args.gradient_checkpointing:
+>         raise ValueError(f"Gradient checkpointing not supported.")
+404d394
+<     logger.setLevel(logging.INFO if is_main_process(training_args.local_rank) else logging.WARN)
+406,413c396,402
+<     # Log on each process the small summary:
+<     logger.warning(
+<         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
+<         f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
+<     )
+<     # Set the verbosity to info of the Transformers logger (on main process only):
+<     if is_main_process(training_args.local_rank):
+<         transformers.utils.logging.set_verbosity_info()
+---
+>     log_level = training_args.get_process_log_level()
+>     logger.setLevel(log_level)
+>     datasets.utils.logging.set_verbosity(log_level)
+>     transformers.utils.logging.set_verbosity(log_level)
+>     transformers.utils.logging.enable_default_handler()
+>     transformers.utils.logging.enable_explicit_format()
+> 
+432,434c421,423
+<                 f"--audio_column_name '{data_args.audio_column_name}' not found in dataset '{data_args.dataset_name}'."
+<                 " Make sure to set `--audio_column_name` to the correct audio column - one of"
+<                 f" {', '.join(raw_datasets['train'].column_names)}."
+---
+>                 f"--audio_column_name '{data_args.audio_column_name}' not found in dataset '{data_args.dataset_name}'. "
+>                 "Make sure to set `--audio_column_name` to the correct audio column - one of "
+>                 f"{', '.join(raw_datasets['train'].column_names)}."
+490c479,481
+<         model_args.model_name_or_path, cache_dir=model_args.cache_dir, use_auth_token=data_args.use_auth_token
+---
+>         model_args.model_name_or_path,
+>         cache_dir=model_args.cache_dir,
+>         use_auth_token=data_args.use_auth_token,
+508,513c499
+<                 try:
+<                     os.remove(vocab_file)
+<                 except OSError:
+<                     # in shared file-systems it might be the case that
+<                     # two processes try to delete the vocab file at the some time
+<                     pass
+---
+>                 os.remove(vocab_file)
+548a535
+> 
+550c537,545
+<         model_args.model_name_or_path, cache_dir=model_args.cache_dir, use_auth_token=data_args.use_auth_token
+---
+>         model_args.model_name_or_path,
+>         cache_dir=model_args.cache_dir,
+>         use_auth_token=data_args.use_auth_token,
+>     )
+> 
+>     ipu_config = IPUConfig.from_pretrained(
+>         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
+>         cache_dir=model_args.cache_dir,
+>         use_auth_token=True if data_args.use_auth_token else None,
+569a565
+>             "layer_norm_eps": 0.0001,
+582,583c578,579
+<     if model_args.freeze_feature_encoder:
+<         model.freeze_feature_encoder()
+---
+>     if not model_args.freeze_feature_encoder:
+>         raise NotImplementedError("IPU version of this model freezes the feature encoder. Must be set to True.")
+594c590,591
+<             data_args.audio_column_name, datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate)
+---
+>             data_args.audio_column_name,
+>             datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate),
+608c605,606
+<     def prepare_dataset(batch):
+---
+> 
+>     def prepare_dataset(batch, feature_extractor, tokenizer):
+621a620
+> 
+626c625
+<             prepare_dataset,
+---
+>             lambda batch: prepare_dataset(batch, feature_extractor, tokenizer),
+672,689c671,676
+<     # Now save everything to be able to create a single processor later
+<     if is_main_process(training_args.local_rank):
+<         # save feature extractor, tokenizer and config
+<         feature_extractor.save_pretrained(training_args.output_dir)
+<         tokenizer.save_pretrained(training_args.output_dir)
+<         config.save_pretrained(training_args.output_dir)
+< 
+<     try:
+<         processor = AutoProcessor.from_pretrained(training_args.output_dir)
+<     except (OSError, KeyError):
+<         warnings.warn(
+<             "Loading a processor from a feature extractor config that does not"
+<             " include a `processor_class` attribute is deprecated and will be removed in v5. Please add the following "
+<             " attribute to your `preprocessor_config.json` file to suppress this warning: "
+<             " `'processor_class': 'Wav2Vec2Processor'`",
+<             FutureWarning,
+<         )
+<         processor = Wav2Vec2Processor.from_pretrained(training_args.output_dir)
+---
+>     # save feature extractor, tokenizer and config
+>     feature_extractor.save_pretrained(training_args.output_dir)
+>     tokenizer.save_pretrained(training_args.output_dir)
+>     config.save_pretrained(training_args.output_dir)
+> 
+>     processor = Wav2Vec2Processor(feature_extractor, tokenizer)
+692c679,683
+<     data_collator = DataCollatorCTCWithPadding(processor=processor)
+---
+>     data_collator = DataCollatorCTCWithPadding(
+>         processor=processor,
+>         pad_to_multiple_of=int(max_input_length),
+>         pad_to_multiple_of_labels=500,
+>     )
+695c686
+<     trainer = Trainer(
+---
+>     trainer = IPUTrainer(
+696a688
+>         ipu_config=ipu_config,
+702d693
+<         tokenizer=feature_extractor,
+709c700
+< 
+---
+>         logger.info("*** Train ***")
+752,755c743
+<         "dataset_args": (
+<             f"Config: {config_name}, Training split: {data_args.train_split_name}, Eval split:"
+<             f" {data_args.eval_split_name}"
+<         ),
+---
+>         "dataset_args": f"Config: {config_name}, Training split: {data_args.train_split_name}, Eval split: {data_args.eval_split_name}",
