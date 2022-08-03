@@ -61,9 +61,7 @@ class IPUWav2Vec2Encoder(Wav2Vec2Encoder):
             if output_hidden_states:
                 all_hidden_states = all_hidden_states + (hidden_states,)
 
-            layer_outputs = layer(
-                hidden_states, attention_mask=attention_mask, output_attentions=output_attentions
-            )
+            layer_outputs = layer(hidden_states, attention_mask=attention_mask, output_attentions=output_attentions)
 
             # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
             dropout_probability = torch.rand(tuple())
@@ -123,9 +121,7 @@ class IPUWav2Vec2EncoderStableLayerNorm(Wav2Vec2EncoderStableLayerNorm):
             if output_hidden_states:
                 all_hidden_states = all_hidden_states + (hidden_states,)
 
-            layer_outputs = layer(
-                hidden_states, attention_mask=attention_mask, output_attentions=output_attentions
-            )
+            layer_outputs = layer(hidden_states, attention_mask=attention_mask, output_attentions=output_attentions)
 
             # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
             dropout_probability = torch.rand(tuple())
