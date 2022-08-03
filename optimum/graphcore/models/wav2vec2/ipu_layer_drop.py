@@ -64,15 +64,14 @@ class IPUWav2Vec2Encoder(Wav2Vec2Encoder):
 
         for layer in self.layers:
             layer_outputs = layer(
-                hidden_states,
-                attention_mask=attention_mask,
-                output_attentions=output_attentions,
+                hidden_states, attention_mask=attention_mask, output_attentions=output_attentions
             )
 
+            # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
+            dropout_probability = torch.rand(tuple())
+
+            skip_the_layer = torch.tensor(self.training) and (dropout_probability < self.config.layerdrop)
             if self.config.layerdrop > 0.0:
-                # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
-                dropout_probability = torch.rand(tuple())
-                skip_the_layer = torch.tensor(self.training) and (dropout_probability < self.config.layerdrop)
                 hidden_states = torch.where(skip_the_layer, hidden_states, layer_outputs[0])
             else:
                 hidden_states = layer_outputs[0]
@@ -119,17 +118,15 @@ class IPUWav2Vec2EncoderStableLayerNorm(Wav2Vec2EncoderStableLayerNorm):
         hidden_states = self.dropout(hidden_states)
 
         for layer in self.layers:
-
             layer_outputs = layer(
-                hidden_states,
-                attention_mask=attention_mask,
-                output_attentions=output_attentions,
+                hidden_states, attention_mask=attention_mask, output_attentions=output_attentions
             )
 
+            # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
+            dropout_probability = torch.rand(tuple())
+
+            skip_the_layer = torch.tensor(self.training) and (dropout_probability < self.config.layerdrop)
             if self.config.layerdrop > 0.0:
-                # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
-                dropout_probability = torch.rand(tuple())
-                skip_the_layer = torch.tensor(self.training) and (dropout_probability < self.config.layerdrop)
                 hidden_states = torch.where(skip_the_layer, hidden_states, layer_outputs[0])
             else:
                 hidden_states = layer_outputs[0]
