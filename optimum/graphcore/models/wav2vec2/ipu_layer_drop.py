@@ -38,13 +38,8 @@ class IPUWav2Vec2Encoder(Wav2Vec2Encoder):
         output_hidden_states=False,
         return_dict=True,
     ):
-        all_self_attentions = None
-        all_hidden_states = None
-
-        if output_attentions:
-            raise ValueError("output_attetntions=True is not supported " "for IPUWav2Vec2Encoder")
-        if output_hidden_states:
-            raise ValueError("output_hidden_states=True is not supported " "for IPUWav2Vec2Encoder")
+        all_hidden_states = () if output_hidden_states else None
+        all_self_attentions = () if output_attentions else None
 
         if attention_mask is not None:
             # make sure padded tokens output 0
@@ -63,6 +58,9 @@ class IPUWav2Vec2Encoder(Wav2Vec2Encoder):
         hidden_states = self.dropout(hidden_states)
 
         for layer in self.layers:
+            if output_hidden_states:
+                all_hidden_states = all_hidden_states + (hidden_states,)
+
             layer_outputs = layer(
                 hidden_states, attention_mask=attention_mask, output_attentions=output_attentions
             )
@@ -75,6 +73,15 @@ class IPUWav2Vec2Encoder(Wav2Vec2Encoder):
                 hidden_states = torch.where(skip_the_layer, hidden_states, layer_outputs[0])
             else:
                 hidden_states = layer_outputs[0]
+
+            if skip_the_layer:
+                layer_outputs = (None, None)
+
+            if output_attentions:
+                all_self_attentions = all_self_attentions + (layer_outputs[1],)
+
+        if output_hidden_states:
+            all_hidden_states = all_hidden_states + (hidden_states,)
 
         if not return_dict:
             return tuple(v for v in [hidden_states, all_hidden_states, all_self_attentions] if v is not None)
@@ -94,13 +101,8 @@ class IPUWav2Vec2EncoderStableLayerNorm(Wav2Vec2EncoderStableLayerNorm):
         output_hidden_states=False,
         return_dict=True,
     ):
-        all_self_attentions = None
-        all_hidden_states = None
-
-        if output_attentions:
-            raise ValueError("output_attetntions=True is not supported " "for IPUWav2Vec2EncoderStableLayerNorm")
-        if output_hidden_states:
-            raise ValueError("output_hidden_states=True is not supported " "for IPUWav2Vec2EncoderStableLayerNorm")
+        all_hidden_states = () if output_hidden_states else None
+        all_self_attentions = () if output_attentions else None
 
         if attention_mask is not None:
             # make sure padded tokens are not attended to
@@ -118,6 +120,9 @@ class IPUWav2Vec2EncoderStableLayerNorm(Wav2Vec2EncoderStableLayerNorm):
         hidden_states = self.dropout(hidden_states)
 
         for layer in self.layers:
+            if output_hidden_states:
+                all_hidden_states = all_hidden_states + (hidden_states,)
+
             layer_outputs = layer(
                 hidden_states, attention_mask=attention_mask, output_attentions=output_attentions
             )
@@ -131,7 +136,16 @@ class IPUWav2Vec2EncoderStableLayerNorm(Wav2Vec2EncoderStableLayerNorm):
             else:
                 hidden_states = layer_outputs[0]
 
+            if skip_the_layer:
+                layer_outputs = (None, None)
+
+            if output_attentions:
+                all_self_attentions = all_self_attentions + (layer_outputs[1],)
+
         hidden_states = self.layer_norm(hidden_states)
+
+        if output_hidden_states:
+            all_hidden_states = all_hidden_states + (hidden_states,)
 
         if not return_dict:
             return tuple(v for v in [hidden_states, all_hidden_states, all_self_attentions] if v is not None)
