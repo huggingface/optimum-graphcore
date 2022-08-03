@@ -46,31 +46,15 @@ class IPUWav2Vec2Encoder(Wav2Vec2Encoder):
         if output_hidden_states:
             raise ValueError("output_hidden_states=True is not supported " "for IPUWav2Vec2Encoder")
 
-        pad_length = 0
         if attention_mask is not None:
             # make sure padded tokens output 0
-            hidden_states[~attention_mask] = 0.0
-
-            sequence_length_padding_divisor = 4
-            # Pad attention mask to more divisible length
-            remainder = attention_mask.size(-1) % sequence_length_padding_divisor
-
-            if remainder != 0:
-                pad_length = sequence_length_padding_divisor - remainder
-                attention_mask = F.pad(
-                    attention_mask,
-                    # Want e.g. (..., 999) -> (..., 1000)
-                    pad=(0, pad_length),
-                    value=0.0,
-                )
+            expand_attention_mask = attention_mask.unsqueeze(-1).repeat(1, 1, hidden_states.shape[2])
+            hidden_states[~expand_attention_mask] = 0
 
             # extend attention_mask
             attention_mask = (1.0 - attention_mask[:, None, None, :].to(dtype=hidden_states.dtype)) * -10000.0
             attention_mask = attention_mask.expand(
-                attention_mask.shape[0],
-                1,
-                attention_mask.shape[-1],
-                attention_mask.shape[-1],
+                attention_mask.shape[0], 1, attention_mask.shape[-1], attention_mask.shape[-1]
             )
 
         position_embeddings = self.pos_conv_embed(hidden_states)
@@ -78,14 +62,7 @@ class IPUWav2Vec2Encoder(Wav2Vec2Encoder):
         hidden_states = self.layer_norm(hidden_states)
         hidden_states = self.dropout(hidden_states)
 
-        hidden_states = F.pad(
-            hidden_states,
-            # Want e.g. (..., 999, 768) -> (..., 1000, 768)
-            pad=(0, 0, 0, pad_length),
-        )
-
         for layer in self.layers:
-
             layer_outputs = layer(
                 hidden_states,
                 attention_mask=attention_mask,
@@ -100,14 +77,8 @@ class IPUWav2Vec2Encoder(Wav2Vec2Encoder):
             else:
                 hidden_states = layer_outputs[0]
 
-        # Remove padded values
-        # Want e.g. (..., 1000, 768) -> (..., 999, 768)
-        if pad_length > 0:
-            hidden_states = hidden_states[..., 0:(-pad_length), :]
-
         if not return_dict:
             return tuple(v for v in [hidden_states, all_hidden_states, all_self_attentions] if v is not None)
-
         return BaseModelOutput(
             last_hidden_state=hidden_states,
             hidden_states=all_hidden_states,
@@ -132,42 +103,20 @@ class IPUWav2Vec2EncoderStableLayerNorm(Wav2Vec2EncoderStableLayerNorm):
         if output_hidden_states:
             raise ValueError("output_hidden_states=True is not supported " "for IPUWav2Vec2EncoderStableLayerNorm")
 
-        pad_length = 0
         if attention_mask is not None:
-            # make sure padded tokens output 0
-            hidden_states[~attention_mask] = 0.0
-
-            sequence_length_padding_divisor = 4
-            # Pad attention mask to more divisible length
-            remainder = attention_mask.size(-1) % sequence_length_padding_divisor
-
-            if remainder != 0:
-                pad_length = sequence_length_padding_divisor - remainder
-                attention_mask = F.pad(
-                    attention_mask,
-                    # Want e.g. (..., 999) -> (..., 1000)
-                    pad=(0, pad_length),
-                    value=0.0,
-                )
+            # make sure padded tokens are not attended to
+            expand_attention_mask = attention_mask.unsqueeze(-1).repeat(1, 1, hidden_states.shape[2])
+            hidden_states[~expand_attention_mask] = 0
 
             # extend attention_mask
             attention_mask = (1.0 - attention_mask[:, None, None, :].to(dtype=hidden_states.dtype)) * -10000.0
             attention_mask = attention_mask.expand(
-                attention_mask.shape[0],
-                1,
-                attention_mask.shape[-1],
-                attention_mask.shape[-1],
+                attention_mask.shape[0], 1, attention_mask.shape[-1], attention_mask.shape[-1]
             )
 
         position_embeddings = self.pos_conv_embed(hidden_states)
         hidden_states = hidden_states + position_embeddings
         hidden_states = self.dropout(hidden_states)
-
-        hidden_states = F.pad(
-            hidden_states,
-            # Want e.g. (..., 999, 768) -> (..., 1000, 768)
-            pad=(0, 0, 0, pad_length),
-        )
 
         for layer in self.layers:
 
@@ -185,16 +134,10 @@ class IPUWav2Vec2EncoderStableLayerNorm(Wav2Vec2EncoderStableLayerNorm):
             else:
                 hidden_states = layer_outputs[0]
 
-        # Remove padded values
-        # Want e.g. (..., 1000, 768) -> (..., 999, 768)
-        if pad_length > 0:
-            hidden_states = hidden_states[..., 0:(-pad_length), :]
-
         hidden_states = self.layer_norm(hidden_states)
 
         if not return_dict:
             return tuple(v for v in [hidden_states, all_hidden_states, all_self_attentions] if v is not None)
-
         return BaseModelOutput(
             last_hidden_state=hidden_states,
             hidden_states=all_hidden_states,
