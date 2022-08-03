@@ -385,7 +385,13 @@ class LinearToSerializedLinear(ReversibleTransformation):
 
 
 class TieWeights(Transformation):
-    def __init__(self, layer_a: str, layer_b: str, weight_attribute_name_for_a: Optional[str] = "weight", weight_attribute_name_for_b: Optional[str] = "weight"):
+    def __init__(
+        self,
+        layer_a: str,
+        layer_b: str,
+        weight_attribute_name_for_a: Optional[str] = "weight",
+        weight_attribute_name_for_b: Optional[str] = "weight",
+    ):
         self.layer_a = layer_a
         self.layer_b = layer_b
         self.layer_b = layer_b
@@ -402,7 +408,9 @@ class TieWeights(Transformation):
                     layer_b = graph_module.get_submodule(node.target)
 
         if layer_a is None or layer_b is None:
-            raise ValueError(f"Could not find both layers {self.layer_a} and {self.layer_b} to tie their weights together")
+            raise ValueError(
+                f"Could not find both layers {self.layer_a} and {self.layer_b} to tie their weights together"
+            )
         if not hasattr(layer_a, self.weight_attribute_name_for_a):
             raise AttributeError(f"{layer_a} does not have an attribute called {self.weight_attribute_name_for_a}")
         if not hasattr(layer_b, self.weight_attribute_name_for_b):

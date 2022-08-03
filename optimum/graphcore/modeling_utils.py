@@ -148,8 +148,18 @@ class PipelineMixin:
         raise NotImplementedError("You need to implement get_transformations.")
 
     @property
-    def input_names(self):
-        return list(inspect.signature(self.forward).parameters.keys())
+    def input_names_for_symbolic_trace(self):
+        # input_names_attribute = "_input_names_for_symbolic_trace" if self.training else "_eval_input_names_for_symbolic_trace"
+        input_names_attribute = "_input_names_for_symbolic_trace"
+        if not hasattr(self, input_names_attribute):
+            setattr(self, input_names_attribute, list(inspect.signature(self.forward).parameters.keys()))
+        return getattr(self, input_names_attribute)
+
+    @input_names_for_symbolic_trace.setter
+    def input_names_for_symbolic_trace(self, input_names: List[str]):
+        # input_names_attribute = "_input_names_for_symbolic_trace" if self.training else "_eval_input_names_for_symbolic_trace"
+        input_names_attribute = "_input_names_for_symbolic_trace"
+        setattr(self, input_names_attribute, input_names)
 
     def parallelize(self):
         """Transforms the model to run in an IPU pipeline."""

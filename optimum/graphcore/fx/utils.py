@@ -126,15 +126,22 @@ def symbolic_trace_pipelined_model(pipelined_model: PipelineMixin) -> PipelineMi
         return pipelined_model
 
     transformers_class = None
-    for base in pipelined_model.__class__.__bases__:
-        if transformers.PreTrainedModel in base.__mro__:
+    bases = list(pipelined_model.__class__.__bases__)
+    import inspect
+
+    while bases:
+        base = bases.pop(0)
+        if inspect.getmodule(base).__name__.startswith("transformers") and transformers.PreTrainedModel in base.mro():
             transformers_class = base
             break
+        bases += list(base.__bases__)
 
     # Trick to make HFTracer._generate_dummy_input work with the pipelined class.
     # This attribute will be set properly in symbolic_trace_with_pipelined_tracer once tracing is done.
     pipelined_model.class_for_deserialization = transformers_class
-    traced = symbolic_trace_with_pipelined_tracer(pipelined_model, input_names=pipelined_model.input_names)
+    traced = symbolic_trace_with_pipelined_tracer(
+        pipelined_model, input_names=pipelined_model.input_names_for_symbolic_trace
+    )
     type_ = type(f"Traced{pipelined_model.__class__.__name__}", (torch.fx.GraphModule, pipelined_model.__class__), {})
     traced.__class__ = type_
     return traced

@@ -302,17 +302,12 @@ class IPUTrainer:
                 self.eval_data_collator = data_collator_wrapper(self.eval_data_collator)
 
         self.model = to_pipelined(model, self.ipu_config, force=force_to_pipelined)
-        parallelized_from_training = self.model.parallelize()
-        self.model_for_eval = self.model.eval().parallelize()
-        self.model = parallelized_from_training
+        self.model_for_eval = self.model.eval()
 
         self.original_model = model
 
         if not self.args.fp32:
             self.model = self.model.half()
-            # inputs = {k: torch.ones(2, 23, dtype=torch.int64) for k in ["input_ids", "attention_mask", "token_type_ids"]}
-            # self.model_for_eval = self.model_for_eval.half()
-            import ipdb; ipdb.set_trace()
 
         self.training_model = None
         self.inference_model = None
@@ -453,35 +448,52 @@ class IPUTrainer:
 
     def compile_model(
         self,
-        model: poptorch.PoplarExecutor,
         sample_batch: Union[Dict[str, torch.Tensor], Tuple[torch.Tensor]],
+        training: bool,
         log: bool = False,
     ):
         """
         Compiles the model with PopTorch.
 
         Args:
-            model (`poptorch.PoplarExecutor`):
-                The model to compile (already wrapped).
             sample_batch (`Dict[str, torch.Tensor]` or `Tuple[torch.Tensor]`):
                 The inputs to use the compilation, this will set the input shapes that the compiled model can accept.
+            training (`bool`):
+                Whether to compile the model for training or not.
             log (`bool`, *optional*, defaults to `False`):
                 Whether to log that compilation is happening or not.
+
+        Returns:
+            `poptorch.PoplarExecutor`: The compiled model.
         """
         # Skipping compilation if the model was already compiled.
-        if model.isCompiled():
-            return
-        if log:
-            logger.info("Compiling Model...")
-        sample_batch = self._prepare_inputs(sample_batch)
-        start_compile = time.perf_counter()
-        if isinstance(sample_batch, tuple):
-            model.compile(*sample_batch)
+        if training and self.training_model is not None:
+            return self.training_model
+        elif not training and self.inference_model is not None:
+            return self.inference_model
         else:
-            model.compile(**sample_batch)
-        duration_compilation = time.perf_counter() - start_compile
-        if log:
-            logger.info(f"Compiled/Loaded model in {duration_compilation} secs")
+            sample_batch = self._prepare_inputs(sample_batch)
+            model = self.model if training else self.model_for_eval
+            model.input_names_for_symbolic_trace = list(sample_batch.keys())
+            model = model.parallelize()
+            if not self.args.fp32:
+                model.half()
+            if training:
+                self.model = model
+            else:
+                self.model_for_eval = model
+            model = self._wrap_model(model, training=training)
+            if log:
+                logger.info("Compiling Model...")
+            start_compile = time.perf_counter()
+            if isinstance(sample_batch, tuple):
+                model.compile(*sample_batch)
+            else:
+                model.compile(**sample_batch)
+            duration_compilation = time.perf_counter() - start_compile
+            if log:
+                logger.info(f"Compiled/Loaded model in {duration_compilation} secs")
+        return model
 
     def add_callback(self, callback):
         """
@@ -791,6 +803,10 @@ class IPUTrainer:
         Trainer's init through `optimizers`, or subclass and override this method in a subclass.
         """
         if self.optimizer is None:
+            if not isinstance(self.model, torch.fx.GraphModule):
+                warnings.warn(
+                    "The model seems to not have been parallelized, this might lead to unsuspected behaviour and/or failure with the optimizer."
+                )
             decay_parameters = get_parameter_names(self.model, [nn.LayerNorm])
             decay_parameters = {name for name in decay_parameters if "bias" not in name}
             if self.args.lamb or self.args.lamb_no_bias_correction:
@@ -884,25 +900,27 @@ class IPUTrainer:
         """
         return len(dataloader.dataset)
 
-    def wrap_model(self, model: Union[PreTrainedModel, PoplarExecutor], training=True) -> PoplarExecutor:
+def wrap_model(self, model: Union[PreTrainedModel, PoplarExecutor], training: bool =True) -> PoplarExecutor:
         """
         Wraps a model for PopTorch, either for training or for inference.
 
         Args:
-            model ([`transformers.PreTrainedModel`] or `poptorch.PoplarExecutor`):
+            model ([`~transformers.modeling_utils.PreTrainedModel`] or `poptorch.PoplarExecutor`):
                 The model to wrap.
             training (`bool`, *optional*, defaults to `True`):
                 Whether to wrap the model for training or not.
 
         Returns:
             `poptorch.PoplarExecutor`: The wrapped model.
-
         """
         wrapped = None
         if isinstance(model, PoplarExecutor):
             wrapped = model
         elif training:
             if self.training_model is None:
+                # Creating the optimizer if it was not already created. This is needed because the optimizer model
+                # parameters must be exactly the same as poptorch.trainingModel parameters.
+                self.create_optimizer()
                 self.training_model = poptorch.trainingModel(
                     model.train(), options=self.opts, optimizer=self.optimizer
                 )
@@ -1064,6 +1082,12 @@ class IPUTrainer:
         if DebugOption.UNDERFLOW_OVERFLOW in self.args.debug:
             debug_overflow = DebugUnderflowOverflow(self.model)  # noqa
 
+        # Activate gradient checkpointing if needed
+        if args.gradient_checkpointing:
+            self.model.gradient_checkpointing_enable()
+
+        model = self._compile_model(next(iter(train_dataloader)), training=True, log=True)
+
         self.create_optimizer_and_scheduler(num_training_steps=max_steps)
 
         self.state = IPUTrainerState()
@@ -1072,6 +1096,7 @@ class IPUTrainer:
             trial = None
         self.state.is_hyper_param_search = trial is not None
 
+        # TODO: brought by sdk3.0 pr
         self.training_model = self.wrap_model(self.model)
 
         # TODO: handle optimizer and scheduler creation
@@ -1081,6 +1106,7 @@ class IPUTrainer:
         # Check if saved optimizer or scheduler states exist
         self._load_optimizer_and_scheduler(resume_from_checkpoint)
 
+        # TODO: brought by sdk3.0 pr
         self.compile_model(self.training_model, next(iter(train_dataloader)), log=True)
 
         # Train!
@@ -1328,7 +1354,8 @@ class IPUTrainer:
             )
 
     def _load_state_dict_in_model(self, state_dict):
-        self.model = self.model.deparallelize()
+        if isinstance(self.model, torch.fx.GraphModule):
+            self.model = self.model.deparallelize()
         load_result = self.model.load_state_dict(state_dict, strict=False)
         self.model = self.model.parallelize()
 
@@ -1743,7 +1770,7 @@ class IPUTrainer:
 
         # Running this here (even though it is being recalled in self.evaluation_loop to make compilation happen here.
         # That way, compilation will not mess inference speed metrics.
-        _ = self._wrap_and_compile_model_for_evaluation(eval_dataloader, prediction_loss_only)
+        _ = self._compile(self.model_for_eval, eval_dataloader, training=False)
 
         start_time = time.time()
 
@@ -1847,11 +1874,6 @@ class IPUTrainer:
 
         return PredictionOutput(predictions=output.predictions, label_ids=output.label_ids, metrics=output.metrics)
 
-    def _wrap_and_compile_model_for_evaluation(self, dataloader, prediction_loss_only):
-        model = self.wrap_model(self.model_for_eval, training=False)
-        self.compile_model(model, next(iter(dataloader)), log=True)
-        return model
-
     def evaluation_loop(
         self,
         dataloader: poptorch.DataLoader,
@@ -1869,7 +1891,7 @@ class IPUTrainer:
             prediction_loss_only if prediction_loss_only is not None else self.args.prediction_loss_only
         )
 
-        self.inference_model = self._wrap_and_compile_model_for_evaluation(dataloader, prediction_loss_only)
+        model = self._compile_model(next(iter(dataloader)), training=False)
 
         batch_size = dataloader.batch_size
 

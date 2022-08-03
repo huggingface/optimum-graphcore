@@ -403,10 +403,6 @@ class BertPipelineMixin(PipelineMixin):
             transformations.append(VocabEmbeddingToSerializedEmbedding())
         return transformations
 
-    @property
-    def input_names(self):
-        return ["input_ids", "attention_mask", "token_type_ids", "labels"]
-
     def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.
