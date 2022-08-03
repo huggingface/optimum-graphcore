@@ -474,7 +474,11 @@ class IPUTrainer:
         else:
             sample_batch = self._prepare_inputs(sample_batch)
             model = self.model if training else self.model_for_eval
-            model.input_names_for_symbolic_trace = list(sample_batch.keys())
+            if isinstance(sample_batch, tuple):
+                signature = inspect.signature(model.forward)
+                model.input_names_for_symbolic_trace = list(signature.parameters.keys())[: len(sample_batch)]
+            else:
+                model.input_names_for_symbolic_trace = list(sample_batch.keys())
             model = model.parallelize()
             if not self.args.fp32:
                 model.half()
@@ -1770,7 +1774,7 @@ def wrap_model(self, model: Union[PreTrainedModel, PoplarExecutor], training: bo
 
         # Running this here (even though it is being recalled in self.evaluation_loop to make compilation happen here.
         # That way, compilation will not mess inference speed metrics.
-        _ = self._compile(self.model_for_eval, eval_dataloader, training=False)
+        _ = self._compile_model(next(iter(eval_dataloader)), training=False)
 
         start_time = time.time()
 
