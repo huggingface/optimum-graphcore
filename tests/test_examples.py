@@ -284,6 +284,7 @@ class ExampleTesterBase(TestCase):
 class TextClassificationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_glue"):
     TASK_NAME = "sst2"
     DATASET_PARAMETER_NAME = "task_name"
+    INFERENCE_DEVICE_ITERATIONS = 5
 
 
 class TokenClassificationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_ner"):
@@ -311,6 +312,7 @@ class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, e
     EVAL_IS_SUPPORTED = False
     EVAL_SCORE_THRESHOLD = 30
     SCORE_NAME = "eval_rougeLsum"
+    INFERENCE_DEVICE_ITERATIONS = 6
 
     def _create_command_line(
         self,
@@ -324,7 +326,7 @@ class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, e
         train_batch_size: int = 1,
         eval_batch_size: int = 1,
         num_epochs: int = 1,
-        inference_device_iterations: int = 4,
+        inference_device_iterations: int = 6,
         gradient_accumulation_steps: int = 64,
         extra_command_line_arguments: Optional[List[str]] = None,
     ) -> List[str]:
@@ -361,6 +363,7 @@ class TranslationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, exa
     EVAL_IS_SUPPORTED = False
     EVAL_SCORE_THRESHOLD = 22
     SCORE_NAME = "eval_bleu"
+    INFERENCE_DEVICE_ITERATIONS = 6
 
     def _create_command_line(
         self,
@@ -374,7 +377,7 @@ class TranslationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, exa
         train_batch_size: int = 1,
         eval_batch_size: int = 1,
         num_epochs: int = 1,
-        inference_device_iterations: int = 4,
+        inference_device_iterations: int = 6,
         gradient_accumulation_steps: int = 64,
         extra_command_line_arguments: Optional[List[str]] = None,
     ) -> List[str]:
