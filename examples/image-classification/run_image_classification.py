@@ -167,6 +167,11 @@ def collate_fn(examples):
     return {"pixel_values": pixel_values, "labels": labels}
 
 
+class ToHalf(torch.nn.Module):
+    def forward(self, tensor):
+        return tensor.half()
+
+
 # Implement transforms as a functor instead of a function because the Async Dataloader
 # can't handle functions with closures because it uses pickle underneath.
 class ApplyTransforms:
@@ -309,22 +314,25 @@ def main():
 
     # Define torchvision transforms to be applied to each image.
     normalize = Normalize(mean=feature_extractor.image_mean, std=feature_extractor.image_std)
-    _train_transforms = Compose(
-        [
-            RandomResizedCrop(feature_extractor.size),
-            RandomHorizontalFlip(),
-            ToTensor(),
-            normalize,
-        ]
-    )
-    _val_transforms = Compose(
-        [
-            Resize(feature_extractor.size),
-            CenterCrop(feature_extractor.size),
-            ToTensor(),
-            normalize,
-        ]
-    )
+    _train_transforms = [
+        RandomResizedCrop(feature_extractor.size),
+        RandomHorizontalFlip(),
+        ToTensor(),
+        normalize,
+    ]
+    _val_transforms = [
+        Resize(feature_extractor.size),
+        CenterCrop(feature_extractor.size),
+        ToTensor(),
+        normalize,
+    ]
+
+    if not training_args.fp32:
+        _train_transforms.append(ToHalf())
+        _val_transforms.append(ToHalf())
+
+    _train_transforms = Compose(_train_transforms)
+    _val_transforms = Compose(_val_transforms)
 
     if training_args.do_train:
         if "train" not in dataset:
