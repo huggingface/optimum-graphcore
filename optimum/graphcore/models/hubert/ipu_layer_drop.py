@@ -22,10 +22,7 @@ import torch
 from torch.nn import functional as F
 
 from transformers.modeling_outputs import BaseModelOutput
-from transformers.models.hubert.modeling_hubert import (
-    HubertEncoder,
-    HubertEncoderStableLayerNorm,
-)
+from transformers.models.hubert.modeling_hubert import HubertEncoder, HubertEncoderStableLayerNorm
 
 
 class IPUHubertEncoder(HubertEncoder):
