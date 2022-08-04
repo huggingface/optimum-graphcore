@@ -303,9 +303,8 @@ def main():
         use_auth_token=True if model_args.use_auth_token else None,
     )
 
-    # Disable these features that can't run on IPU yet
+    # Disable the feature that can't run on IPU yet
     # TODO handle this properly
-    config.layerdrop = 0.0
     config.mask_time_prob = 0.0
 
     ipu_config = IPUConfig.from_pretrained(
