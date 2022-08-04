@@ -173,7 +173,7 @@ ALS is an experimental feature in the Poplar SDK which brings stability to train
 
 NB. This feature expects the `poptorch` training option `accumulationAndReplicationReductionType` to be set to `poptorch.ReductionType.Mean`, and for accumulation by the optimizer to be done in half precision (using `accum_type=torch.float16` when instantiating the optimizer), or else it may lead to unexpected behaviour.
 
-To employ ALS, just add the flag `--auto_loss_scaling` to the command. The loss scaling value specified with `--loss_scaling` will be the initial one before ALS updates it during training.
+To employ ALS, just add the flag `--auto_loss_scaling` to the command. The loss scaling value specified with `--loss_scaling` will be the initial one before ALS updates it during training — you can set it to `1`.
 
 
 ## RoBERTa/BERT and masked language modeling
