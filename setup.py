@@ -25,7 +25,7 @@ INSTALL_REQUIRES = [
 QUALITY_REQUIRES = [
     "black",
     "isort",
-    "hf-doc-builder",
+    "hf-doc-builder @ git+https://github.com/huggingface/doc-builder.git",
 ]
 
 EXTRA_REQUIRE = {
