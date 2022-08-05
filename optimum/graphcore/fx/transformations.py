@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import collections
+import operator
 import re
 from typing import TYPE_CHECKING, Callable, List, Optional, Union
 
@@ -22,7 +23,7 @@ import poptorch
 from optimum.utils import logging
 
 from ...fx.optimization import ReversibleTransformation, Transformation
-from ..modeling_utils import SerializedEmbedding, SerializedLinear
+from ..modeling_utils import SerializedEmbedding, SerializedLinear, SharedEmbedding
 
 
 if TYPE_CHECKING:
@@ -38,7 +39,8 @@ def node_matches_pattern(pattern, node: "Node"):
 
 
 def parent_module_qualified_name(node: "Node") -> str:
-    return getattr(node, "parent_module_qualified_name", "")
+    name = getattr(node, "parent_module_qualified_name", "")
+    return name if name != "root" else ""
 
 
 class AddPoptorchBlockBase(ReversibleTransformation):
@@ -58,7 +60,11 @@ class AddPoptorchBlockBase(ReversibleTransformation):
         nodes = []
         prefixes = set()
         for node in graph_module.graph.nodes:
-            match = re.match(self.name_regex, parent_module_qualified_name(node))
+            # If module under which the node was created is root, we use the node name to match.
+            name = node.name
+            if parent_module_qualified_name(node) != "":
+                name = f"{parent_module_qualified_name(node)}.{name}"
+            match = re.match(self.name_regex, name)
             if match:
                 prefix = match.group(0)
                 if prefix not in prefixes:
@@ -328,11 +334,18 @@ class VocabEmbeddingToSerializedEmbedding(ReversibleTransformation):
             raise RuntimeError("Could not find any embedding node")
 
         embedding_node = max(embedding_nodes, key=lambda node: graph_module.get_submodule(node.target).num_embeddings)
-        parent_fully_qualified_name, embedding_name = embedding_node.target.rsplit(".", maxsplit=1)
+        split = embedding_node.target.rsplit(".", maxsplit=1)
+        if len(split) == 1:
+            split = [None] + split
+        parent_fully_qualified_name, embedding_name = split
+
         new_embedding = SerializedEmbedding(
             graph_module.get_submodule(embedding_node.target), graph_module.ipu_config.embedding_serialization_factor
         )
-        setattr(graph_module.get_submodule(parent_fully_qualified_name), embedding_name, new_embedding)
+        submodule = graph_module
+        if parent_fully_qualified_name is not None:
+            submodule = graph_module.get_submodule(parent_fully_qualified_name)
+        setattr(submodule, embedding_name, new_embedding)
         embedding_node.was_transformed = "VocabEmbeddingToSerializedEmbedding"
 
         return graph_module
@@ -340,9 +353,15 @@ class VocabEmbeddingToSerializedEmbedding(ReversibleTransformation):
     def reverse(self, graph_module: "GraphModule") -> "GraphModule":
         for node in graph_module.graph.nodes:
             if getattr(node, "was_transformed", "") == "VocabEmbeddingToSerializedEmbedding":
-                parent_fully_qualified_name, embedding_name = node.target.rsplit(".", maxsplit=1)
+                split = node.target.rsplit(".", maxsplit=1)
+                if len(split) == 1:
+                    split = [None] + split
+                parent_fully_qualified_name, embedding_name = split
+                submodule = graph_module
+                if parent_fully_qualified_name is not None:
+                    submodule = graph_module.get_submodule(parent_fully_qualified_name)
                 setattr(
-                    graph_module.get_submodule(parent_fully_qualified_name),
+                    submodule,
                     embedding_name,
                     graph_module.get_submodule(node.target).deserialize(),
                 )
@@ -373,8 +392,14 @@ class LinearToSerializedLinear(ReversibleTransformation):
                     mode=poptorch.MatMulSerializationMode.OutputChannels,
                 )
                 serialized_linear.load_state_dict(linear.state_dict())
-                parent_fully_qualified_name, linear_name = node.target.rsplit(".", maxsplit=1)
-                setattr(graph_module.get_submodule(parent_fully_qualified_name), linear_name, serialized_linear)
+                split = node.target.rsplit(".", maxsplit=1)
+                if len(split) == 1:
+                    split = [None] + split
+                parent_fully_qualified_name, linear_name = split
+                submodule = graph_module
+                if parent_fully_qualified_name is not None:
+                    submodule = graph_module.get_submodule(parent_fully_qualified_name)
+                setattr(submodule, linear_name, serialized_linear)
         return graph_module
 
     def reverse(self, graph_module: "GraphModule") -> "GraphModule":
@@ -417,4 +442,66 @@ class TieWeights(Transformation):
             raise AttributeError(f"{layer_b} does not have an attribute called {self.weight_attribute_name_for_b}")
 
         setattr(layer_b, self.weight_attribute_name_for_b, getattr(layer_a, self.weight_attribute_name_for_a))
+        return graph_module
+
+
+class ShareEmbeddingComputation(Transformation):
+    def _find_nodes_to_move(self, graph_module, embedding_input_node):
+        to_visit = [embedding_input_node]
+        to_move = set()
+        while to_visit:
+            node = to_visit.pop(0)
+            if node.op != "placeholder":
+                to_move.add(node)
+                to_visit += node.all_input_nodes
+        ordered_to_move = []
+        for node in graph_module.graph.nodes:
+            if node in to_move:
+                ordered_to_move.append(node)
+        return ordered_to_move
+
+    def _move_nodes_after_node(self, graph_module, nodes_to_move, node):
+        old_to_new_mapping = {}
+        with graph_module.graph.inserting_after(node):
+            for n in reversed(nodes_to_move):
+                old_to_new_mapping[n] = graph_module.graph.create_node(n.op, n.target, n.args, n.kwargs, n.name)
+        return old_to_new_mapping
+
+    def transform(self, graph_module: "GraphModule") -> "GraphModule":
+        candidates = collections.defaultdict(list)
+        embedding_nodes = collections.defaultdict(list)
+        for node in graph_module.graph.nodes:
+            if node.op == "call_module" and isinstance(graph_module.get_submodule(node.target), torch.nn.Embedding):
+                candidates[node.target].append(node.args[0])
+                embedding_nodes[node.target].append(node)
+
+        candidates = {k: v for k, v in candidates.items() if len(v) > 1}
+        embedding_nodes = {k: v for k, v in embedding_nodes.items() if k in candidates}
+
+        for target, embedding_input_nodes in candidates.items():
+            if len(embedding_input_nodes) > 2:
+                raise NotImplementedError("Currently support embedding computation sharing for 2.")
+            new_input_nodes = []
+            for input_node in reversed(embedding_input_nodes[1:]):
+                nodes_to_move = self._find_nodes_to_move(graph_module, input_node)
+                old_to_new_mapping = self._move_nodes_after_node(graph_module, nodes_to_move, embedding_input_nodes[0])
+                for old_node, new_node in old_to_new_mapping.items():
+                    old_node.replace_all_uses_with(new_node)
+                    graph_module.graph.erase_node(old_node)
+                new_input_nodes.append(old_to_new_mapping[nodes_to_move[-1]])
+
+            graph_module.add_submodule(target, SharedEmbedding(graph_module.get_submodule(target)))
+            shared_node = embedding_nodes[target][0]
+            shared_node.args = tuple(embedding_input_nodes[0:1] + new_input_nodes)
+            with graph_module.graph.inserting_after(shared_node):
+                getitem = graph_module.graph.call_function(operator.getitem, ())
+                shared_node.replace_all_uses_with(getitem)
+                getitem.args = (shared_node, 0)
+                with graph_module.graph.inserting_after(getitem):
+                    for idx in reversed(range(len(embedding_nodes[target][1:]))):
+                        embedding_node = embedding_nodes[target][idx + 1]
+                        getitem = graph_module.graph.call_function(operator.getitem, (shared_node, idx + 1))
+                        embedding_node.replace_all_uses_with(getitem)
+                        graph_module.graph.erase_node(embedding_node)
+
         return graph_module

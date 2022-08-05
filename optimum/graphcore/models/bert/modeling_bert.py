@@ -32,7 +32,6 @@ from transformers import (
 )
 from transformers.utils.fx import _gen_constructor_wrapper
 
-# from ....fx.optimization import ChangeTrueDivToMulByInverse, FuseBiasInLinear, MergeLinears, compose
 from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, compose
 from ...fx.transformations import (
     AddPoptorchBlock,
