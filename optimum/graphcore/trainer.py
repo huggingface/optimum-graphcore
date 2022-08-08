@@ -139,6 +139,7 @@ class IPUTrainer:
         ipu_config: IPUConfig = None,
         args: IPUTrainingArguments = None,
         data_collator: Optional[DataCollator] = None,
+        eval_data_collator: Optional[DataCollator] = None,
         train_dataset: Optional[Dataset] = None,
         eval_dataset: Optional[Dataset] = None,
         tokenizer: Optional[PreTrainedTokenizerBase] = None,
@@ -188,6 +189,7 @@ class IPUTrainer:
 
         default_collator = default_data_collator if tokenizer is None else DataCollatorWithPadding(tokenizer)
         self.data_collator = data_collator if data_collator is not None else default_collator
+        self.eval_data_collator = eval_data_collator if eval_data_collator is not None else self.data_collator
         self.train_dataset = train_dataset
         self.eval_dataset = eval_dataset
         self.tokenizer = tokenizer
@@ -245,6 +247,9 @@ class IPUTrainer:
 
         if not callable(self.data_collator) and callable(getattr(self.data_collator, "collate_batch", None)):
             raise ValueError("The `data_collator` should be a simple callable (function, class with `__call__`).")
+
+        if not callable(self.eval_data_collator) and callable(getattr(self.eval_data_collator, "collate_batch", None)):
+            raise ValueError("The `eval_data_collator` should be a simple callable (function, class with `__call__`).")
 
         if args.max_steps > 0:
             logger.info("max_steps is given, it will override any value given in num_train_epochs")
@@ -570,7 +575,7 @@ class IPUTrainer:
 
         # self.data_collator can be a data collator that was wrapped by pad_on_batch_axis, retrieving the original
         # data collator as the wrapped version is only wanted for training.
-        data_collator = getattr(self.data_collator, "__wrapped__", self.data_collator)
+        data_collator = getattr(self.eval_data_collator, "__wrapped__", self.data_collator)
 
         if isinstance(eval_dataset, torch.utils.data.IterableDataset):
             return poptorch.DataLoader(
