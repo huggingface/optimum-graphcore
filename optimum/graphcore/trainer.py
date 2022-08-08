@@ -189,7 +189,9 @@ class IPUTrainer:
 
         default_collator = default_data_collator if tokenizer is None else DataCollatorWithPadding(tokenizer)
         self.data_collator = data_collator if data_collator is not None else default_collator
-        self.eval_data_collator = eval_data_collator if eval_data_collator is not None else self.data_collator
+        # self.data_collator can be a data collator that was wrapped by pad_on_batch_axis.
+        # If no eval_data_collator is specified then use the unwrapped training data collator.
+        self.eval_data_collator = eval_data_collator if eval_data_collator is not None else getattr(self.data_collator, "__wrapped__", self.data_collator)
         self.train_dataset = train_dataset
         self.eval_dataset = eval_dataset
         self.tokenizer = tokenizer
@@ -573,9 +575,7 @@ class IPUTrainer:
         if is_datasets_available() and isinstance(eval_dataset, datasets.Dataset):
             eval_dataset = self._remove_unused_columns(eval_dataset, description="evaluation")
 
-        # self.data_collator can be a data collator that was wrapped by pad_on_batch_axis, retrieving the original
-        # data collator as the wrapped version is only wanted for training.
-        data_collator = getattr(self.eval_data_collator, "__wrapped__", self.data_collator)
+        data_collator = self.eval_data_collator
 
         if isinstance(eval_dataset, torch.utils.data.IterableDataset):
             return poptorch.DataLoader(
@@ -622,9 +622,7 @@ class IPUTrainer:
         if is_datasets_available() and isinstance(test_dataset, datasets.Dataset):
             test_dataset = self._remove_unused_columns(test_dataset, description="test")
 
-        # self.data_collator can be a data collator that was wrapped by pad_on_batch_axis, retrieving the original
-        # data collator as the wrapped version is only wanted for training.
-        data_collator = getattr(self.data_collator, "__wrapped__", self.data_collator)
+        data_collator = self.eval_data_collator
 
         if isinstance(test_dataset, torch.utils.data.IterableDataset):
             return poptorch.DataLoader(
