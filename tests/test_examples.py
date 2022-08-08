@@ -203,6 +203,8 @@ class ExampleTesterBase(TestCase):
     INFERENCE_DEVICE_ITERATIONS = 4
     GRADIENT_ACCUMULATION_STEPS = 64
     DATALOADER_DROP_LAST = True
+    TRAIN_REPLICATION_FACTOR = 2
+    INFERENCE_REPLICATION_FACTOR = 2
 
     def _create_command_line(
         self,
@@ -225,8 +227,8 @@ class ExampleTesterBase(TestCase):
         ipu_config_overrides = ",".join(
             [
                 "executable_cache_dir=disabled",
-                f"replication_factor={_ALLOWED_REPLICATION_FACTOR}",
-                f"inference_replication_factor={_ALLOWED_REPLICATION_FACTOR}",
+                f"replication_factor={self.TRAIN_REPLICATION_FACTOR}",
+                f"inference_replication_factor={self.INFERENCE_REPLICATION_FACTOR}",
                 "device_iterations=1",
                 f"inference_device_iterations={inference_device_iterations}",
                 f"gradient_accumulation_steps={gradient_accumulation_steps}",
@@ -252,7 +254,6 @@ class ExampleTesterBase(TestCase):
             f"--dataloader_drop_last {self.DATALOADER_DROP_LAST}",
             "--save_steps -1",
             "--report_to none",
-            "--overwrite_cache",
         ]
         if extra_command_line_arguments is not None:
             cmd_line += extra_command_line_arguments
@@ -303,6 +304,9 @@ class QuestionAnsweringExampleTester(ExampleTesterBase, metaclass=ExampleTestMet
     TASK_NAME = "squad"
     SCORE_NAME = "eval_f1"
     DATALOADER_DROP_LAST = False
+    EVAL_BATCH_SIZE = 1
+    INFERENCE_DEVICE_ITERATIONS = 4
+    INFERENCE_REPLICATION_FACTOR = 1
 
 
 class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_summarization"):
