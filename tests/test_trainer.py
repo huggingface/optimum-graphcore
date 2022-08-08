@@ -1058,12 +1058,14 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         opt = torch.optim.SGD(params=model.parameters(), lr=1.0)
         lr = torch.optim.lr_scheduler.LambdaLR(optimizer=opt, lr_lambda=lambda x: 0.5 * x + 1.0)
         # Enable auto_loss_scaling and disable fp32 in args
-        args = RegressionIPUTrainingArguments(output_dir="./examples", max_steps=4,
-                                              auto_loss_scaling=True, fp32=False
-        )
+        args = RegressionIPUTrainingArguments(output_dir="./examples", max_steps=4, auto_loss_scaling=True, fp32=False)
         trainer = IPUTrainer(
-            model=model, ipu_config=ipu_config, args=args, train_dataset=train_dataset,
-            force_to_pipelined=True, optimizers=(opt, lr)
+            model=model,
+            ipu_config=ipu_config,
+            args=args,
+            train_dataset=train_dataset,
+            force_to_pipelined=True,
+            optimizers=(opt, lr),
         )
         trainer.train()
         # Check that it has trained fine for 4 steps with auto-loss-scaling
