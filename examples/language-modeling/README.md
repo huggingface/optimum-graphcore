@@ -167,6 +167,15 @@ When training a model from scratch, configuration values may be overridden with 
 python run_pretraining.py --config_overrides="hidden_size=1024,num_attention_heads=16,num_hidden_layers=24" [...]
 ```
 
+### Employing automatic loss scaling (ALS) for half precision training
+	
+ALS is an experimental feature in the Poplar SDK which brings stability to training large models in half precision, specially when gradient accumulation and reduction across replicas also happen in half precision. 
+
+NB. This feature expects the `poptorch` training option `accumulationAndReplicationReductionType` to be set to `poptorch.ReductionType.Mean`, and for accumulation by the optimizer to be done in half precision (using `accum_type=torch.float16` when instantiating the optimizer), or else it may lead to unexpected behaviour.
+
+To employ ALS, just add the flag `--auto_loss_scaling` to the command. The loss scaling value specified with `--loss_scaling` will be the initial one before ALS updates it during training — you can set it to `1`.
+
+
 ## RoBERTa/BERT and masked language modeling
 
 The following example fine-tunes RoBERTa-base on WikiText-2. We're using the raw WikiText-2. Note that some IPU configurations are overridden.

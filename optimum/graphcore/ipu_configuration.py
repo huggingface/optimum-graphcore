@@ -51,6 +51,7 @@ class IPUConfig(BaseConfig):
         self.optimizer_state_offchip = kwargs.pop("optimizer_state_offchip", True)
         self.replicated_tensor_sharding = kwargs.pop("replicated_tensor_sharding", False)
         self.decompose_grad_sum = kwargs.pop("decompose_grad_sum", False)
+        self.auto_loss_scaling = kwargs.pop("auto_loss_scaling", False)
 
         if self.replicated_tensor_sharding and self.replication_factor == 1:
             logger.warning("Setting replicated_tensor_sharding to False when replication_factor=1")
@@ -148,6 +149,14 @@ class IPUConfig(BaseConfig):
             # Set gradient accumulation factor
             opts.Training.gradientAccumulation(self.gradient_accumulation_steps)
             opts.Training.accumulationAndReplicationReductionType(poptorch.ReductionType.Mean)
+
+        # Enable automatic loss scaling
+        # Note that this is an experimental feature. Note also that it expects
+        # accumulationAndReplicationReductionType to be set to Mean as above,
+        # and for accumulation by the optimizer to be done in half precision
+        # using accum_type=torch.float16 during optimizer instantiation.
+        if self.auto_loss_scaling:
+            opts.Training.setAutomaticLossScaling(True)
 
         # Return all results from IPU to host
         output_mode_mapping = {

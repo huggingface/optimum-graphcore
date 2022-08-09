@@ -1049,6 +1049,28 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         x = test_dataset.dataset.x
         self.assertTrue(np.allclose(preds, 1.5 * x + 2.5))
 
+    def test_auto_loss_scaling(self):
+        config = RegressionModelConfig()
+        # Cast regression model to FP16
+        model = RegressionPreTrainedModel(config).half()
+        train_dataset = SampleIterableDataset(length=TRAIN_LEN)
+        ipu_config = get_ipu_config()
+        opt = torch.optim.SGD(params=model.parameters(), lr=1.0)
+        lr = torch.optim.lr_scheduler.LambdaLR(optimizer=opt, lr_lambda=lambda x: 0.5 * x + 1.0)
+        # Enable auto_loss_scaling and disable fp32 in args
+        args = RegressionIPUTrainingArguments(output_dir="./examples", max_steps=4, auto_loss_scaling=True, fp32=False)
+        trainer = IPUTrainer(
+            model=model,
+            ipu_config=ipu_config,
+            args=args,
+            train_dataset=train_dataset,
+            force_to_pipelined=True,
+            optimizers=(opt, lr),
+        )
+        trainer.train()
+        # Check that it has trained fine for 4 steps with auto-loss-scaling
+        self.assertEqual(trainer.state.global_step, 4)
+
     def test_early_stopping_callback(self):
         # early stopping stops training before num_training_epochs
         with tempfile.TemporaryDirectory() as tmp_dir:
