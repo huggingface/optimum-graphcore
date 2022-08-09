@@ -570,36 +570,11 @@ def main():
     # Data collator
     # We have already padded to max length if the corresponding flag is True, otherwise we need to pad in the data
     # collator.
-    _data_collator = (
+    data_collator = (
         default_data_collator
         if data_args.pad_to_max_length
         else DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None)
     )
-
-    data_collator = _data_collator
-    if training_args.do_train and training_args.pad_on_batch_axis:
-        logger.info(
-            "Padding on batch axis enabled, each batch feeded to the compiled model during training will have the proper size"
-        )
-        data_collator_wrapper = pad_on_batch_axis(
-            training_args.per_device_train_batch_size * ipu_config.batch_size_factor(pod_type=training_args.pod_type),
-            {
-                k: data_args.max_seq_length if k in ["start_positions", "end_positions"] else 0
-                for k in train_dataset.column_names
-            },
-        )
-        data_collator = data_collator_wrapper(data_collator)
-
-    eval_data_collator = None
-    if training_args.do_eval and training_args.pad_on_batch_axis:
-        logger.info(
-            "Padding on batch axis enabled, each batch feeded to the compiled model during training will have the proper size"
-        )
-        data_collator_wrapper = pad_on_batch_axis(
-            training_args.per_device_eval_batch_size * ipu_config.batch_size_factor(pod_type=training_args.pod_type, for_inference=True),
-            { k: 0 for k in eval_dataset.column_names },
-        )
-        eval_data_collator = data_collator_wrapper(_data_collator)
 
     # Post-processing:
     def post_processing_function(examples, features, predictions, stage="eval"):
@@ -642,7 +617,6 @@ def main():
         eval_examples=eval_examples if training_args.do_eval else None,
         tokenizer=tokenizer,
         data_collator=data_collator,
-        eval_data_collator=eval_data_collator,
         post_process_function=post_processing_function,
         compute_metrics=compute_metrics,
     )

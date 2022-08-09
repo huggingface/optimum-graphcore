@@ -54,7 +54,7 @@ class QuestionAnsweringTrainer(IPUTrainer):
             self.compute_metrics = compute_metrics
 
         # If we are using padded data collator, dropped the padded part of the output
-        if self.args.pad_on_batch_axis and hasattr(self.eval_data_collator, "__wrapped__"):
+        if self.args.pad_on_batch_axis:
             dataset_len = len(eval_dataset)
             output = output._replace(predictions=tuple([pred[:dataset_len] for pred in output.predictions]))
             output = output._replace(num_samples=dataset_len)

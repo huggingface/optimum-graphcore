@@ -245,6 +245,8 @@ class ExampleTesterBase(TestCase):
             f" --num_train_epochs {num_epochs}",
             "--dataloader_num_workers 16",
             "--pod_type pod8",
+            "--report_to none",
+            "--do_train False",
         ]
         if extra_command_line_arguments is not None:
             cmd_line += extra_command_line_arguments
