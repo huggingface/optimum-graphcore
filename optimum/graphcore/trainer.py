@@ -100,6 +100,7 @@ from transformers.trainer_utils import (
     speed_metrics,
 )
 
+from .data.data_collator import pad_on_batch_axis
 from .ipu_configuration import IPU_CONFIG_NAME, IPUConfig
 from .modelcard import IPUTrainingSummary
 from .modeling_utils import to_pipelined
@@ -187,9 +188,6 @@ class IPUTrainer:
                 )
             self.model_init = model_init
 
-        default_collator = default_data_collator if tokenizer is None else DataCollatorWithPadding(tokenizer)
-        self.data_collator = data_collator if data_collator is not None else default_collator
-        self.eval_data_collator = eval_data_collator if eval_data_collator is not None else self.data_collator
         self.train_dataset = train_dataset
         self.eval_dataset = eval_dataset
         self.tokenizer = tokenizer
@@ -203,6 +201,31 @@ class IPUTrainer:
         self.ipu_config.seed = self.args.seed
         self.opts = self.ipu_config.to_options(compile_only=args.compile_only)
         self.eval_opts = self.ipu_config.to_options(for_inference=True, compile_only=args.compile_only)
+
+        default_collator = default_data_collator if tokenizer is None else DataCollatorWithPadding(tokenizer)
+        self.data_collator = data_collator if data_collator is not None else default_collator
+        # If no eval_data_collator is specified then use the train data_collator
+        self.eval_data_collator = eval_data_collator if eval_data_collator is not None else self.data_collator
+
+        # If batch axis padding enabled, wrap train/eval data collators with `pad_on_batch_axis` wrapper
+        if self.args.pad_on_batch_axis:
+            if self.args.do_train:
+                logger.info(
+                    "Padding on batch axis enabled, each batch feeded to the compiled model during training will have the proper size"
+                )
+                data_collator_wrapper = pad_on_batch_axis(
+                    self.args.per_device_train_batch_size * self.ipu_config.batch_size_factor()
+                )
+                self.data_collator = data_collator_wrapper(data_collator)
+
+            if self.args.do_eval:
+                logger.info(
+                    "Padding on batch axis enabled, each batch feeded to the compiled model during training will have the proper size"
+                )
+                data_collator_wrapper = pad_on_batch_axis(
+                    self.args.per_device_eval_batch_size * self.ipu_config.batch_size_factor(for_inference=True),
+                )
+                self.eval_data_collator = data_collator_wrapper(self.eval_data_collator)
 
         self.model = to_pipelined(model, self.ipu_config, force=force_to_pipelined)
         self.model.parallelize()
@@ -505,11 +528,7 @@ class IPUTrainer:
         if is_datasets_available() and isinstance(train_dataset, datasets.Dataset):
             train_dataset = self._remove_unused_columns(train_dataset, description="training")
 
-        # TODO: make a better check, any decorator would return True while we really want to test if it was decorated
-        # by pad_on_batch_axis.
-        should_drop_last = not hasattr(self.data_collator, "__wrapped__") and not self.args.complete_last_batch
         poptorch_specific_kwargs = {
-            "drop_last": should_drop_last,  # Not dropping last will end up causing NaN during training if the combined batch size does not divide the number of steps
             "auto_distributed_partitioning": not isinstance(train_dataset, torch.utils.data.IterableDataset),
             "mode": self.args.dataloader_mode,
             "worker_init_fn": _WorkerInit(123),
@@ -522,6 +541,7 @@ class IPUTrainer:
                 batch_size=self.args.train_batch_size,
                 collate_fn=self.data_collator,
                 num_workers=self.args.dataloader_num_workers,
+                drop_last=self.args.dataloader_drop_last,
                 pin_memory=self.args.dataloader_pin_memory,
                 **poptorch_specific_kwargs,
             )
@@ -573,9 +593,7 @@ class IPUTrainer:
         if is_datasets_available() and isinstance(eval_dataset, datasets.Dataset):
             eval_dataset = self._remove_unused_columns(eval_dataset, description="evaluation")
 
-        # self.data_collator can be a data collator that was wrapped by pad_on_batch_axis, retrieving the original
-        # data collator as the wrapped version is only wanted for training.
-        data_collator = getattr(self.eval_data_collator, "__wrapped__", self.data_collator)
+        data_collator = self.eval_data_collator
 
         if isinstance(eval_dataset, torch.utils.data.IterableDataset):
             return poptorch.DataLoader(
@@ -622,9 +640,7 @@ class IPUTrainer:
         if is_datasets_available() and isinstance(test_dataset, datasets.Dataset):
             test_dataset = self._remove_unused_columns(test_dataset, description="test")
 
-        # self.data_collator can be a data collator that was wrapped by pad_on_batch_axis, retrieving the original
-        # data collator as the wrapped version is only wanted for training.
-        data_collator = getattr(self.data_collator, "__wrapped__", self.data_collator)
+        data_collator = self.eval_data_collator
 
         if isinstance(test_dataset, torch.utils.data.IterableDataset):
             return poptorch.DataLoader(
@@ -1504,6 +1520,12 @@ class IPUTrainer:
             metric_key_prefix=metric_key_prefix,
         )
 
+        # If we are using padded data collator, dropped the padded part of the output
+        if self.args.pad_on_batch_axis:
+            dataset_len = len(eval_dataset)
+            output = output._replace(predictions=tuple([pred[:dataset_len] for pred in output.predictions]))
+            output = output._replace(num_samples=dataset_len)
+
         total_batch_size = self.args.per_device_eval_batch_size * self.ipu_config.batch_size_factor(for_inference=True)
         output.metrics.update(
             speed_metrics(
@@ -1564,6 +1586,13 @@ class IPUTrainer:
         output = self.evaluation_loop(
             test_dataloader, description="Prediction", ignore_keys=ignore_keys, metric_key_prefix=metric_key_prefix
         )
+
+        # If we are using padded data collator, dropped the padded part of the output
+        if self.args.pad_on_batch_axis:
+            dataset_len = len(test_dataset)
+            output = output._replace(predictions=tuple([pred[:dataset_len] for pred in output.predictions]))
+            output = output._replace(num_samples=dataset_len)
+
         total_batch_size = self.args.eval_batch_size * self.ipu_config.batch_size_factor(for_inference=True)
         output.metrics.update(
             speed_metrics(
