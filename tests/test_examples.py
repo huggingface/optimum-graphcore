@@ -244,9 +244,6 @@ class ExampleTesterBase(TestCase):
             f"--ipu_config_overrides {ipu_config_overrides}",
             f" --num_train_epochs {num_epochs}",
             "--dataloader_num_workers 16",
-            "--pod_type pod8",
-            "--report_to none",
-            "--do_train False",
         ]
         if extra_command_line_arguments is not None:
             cmd_line += extra_command_line_arguments
@@ -293,40 +290,7 @@ class MultipleChoiceExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, 
 class QuestionAnsweringExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_qa"):
     TASK_NAME = "squad"
     SCORE_NAME = "eval_f1"
-    def _create_command_line(
-        self,
-        script: str,
-        model_name: str,
-        ipu_config_name: str,
-        output_dir: str,
-        task: Optional[str] = None,
-        do_eval: bool = True,
-        lr: float = 1e-5,
-        train_batch_size: int = 2,
-        eval_batch_size: int = 2,
-        num_epochs: int = 2,
-        inference_device_iterations: int = 4,
-        gradient_accumulation_steps: int = 64,
-        extra_command_line_arguments: Optional[List[str]] = None,
-    ) -> List[str]:
-        if extra_command_line_arguments is None:
-            extra_command_line_arguments = []
-        extra_command_line_arguments.append("--pad_on_batch_axis")
-        return super()._create_command_line(
-            script,
-            model_name,
-            ipu_config_name,
-            output_dir,
-            task=task,
-            do_eval=do_eval,
-            lr=lr,
-            train_batch_size=train_batch_size,
-            eval_batch_size=eval_batch_size,
-            num_epochs=num_epochs,
-            inference_device_iterations=inference_device_iterations,
-            gradient_accumulation_steps=gradient_accumulation_steps,
-            extra_command_line_arguments=extra_command_line_arguments,
-        )
+
 
 class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_summarization"):
     TASK_NAME = "cnn_dailymail"
