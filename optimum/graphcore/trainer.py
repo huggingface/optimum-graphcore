@@ -216,7 +216,7 @@ class IPUTrainer:
                 data_collator_wrapper = pad_on_batch_axis(
                     self.args.per_device_train_batch_size * self.ipu_config.batch_size_factor()
                 )
-                self.data_collator = data_collator_wrapper(data_collator)
+                self.data_collator = data_collator_wrapper(self.data_collator)
 
             if self.args.do_eval:
                 logger.info(
