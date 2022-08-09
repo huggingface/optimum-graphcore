@@ -214,15 +214,21 @@ class IPUTrainer:
                     "Padding on batch axis enabled, each batch feeded to the compiled model during training will have the proper size"
                 )
                 print("Train bs", self.args.per_device_train_batch_size * self.ipu_config.batch_size_factor())
-                data_collator_wrapper = pad_on_batch_axis(self.args.per_device_train_batch_size * self.ipu_config.batch_size_factor())
+                data_collator_wrapper = pad_on_batch_axis(
+                    self.args.per_device_train_batch_size * self.ipu_config.batch_size_factor()
+                )
                 self.data_collator = data_collator_wrapper(data_collator)
 
             if self.args.do_eval:
                 logger.info(
                     "Padding on batch axis enabled, each batch feeded to the compiled model during training will have the proper size"
                 )
-                print("Eval bs", self.args.per_device_eval_batch_size * self.ipu_config.batch_size_factor(for_inference=True))
-                data_collator_wrapper = pad_on_batch_axis(self.args.per_device_eval_batch_size * self.ipu_config.batch_size_factor(for_inference=True),
+                print(
+                    "Eval bs",
+                    self.args.per_device_eval_batch_size * self.ipu_config.batch_size_factor(for_inference=True),
+                )
+                data_collator_wrapper = pad_on_batch_axis(
+                    self.args.per_device_eval_batch_size * self.ipu_config.batch_size_factor(for_inference=True),
                 )
                 self.eval_data_collator = data_collator_wrapper(self.eval_data_collator)
 
