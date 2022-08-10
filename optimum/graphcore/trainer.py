@@ -1519,6 +1519,7 @@ class IPUTrainer:
 
         # If we are using padded data collator, dropped the padded part of the output
         if self.args.pad_on_batch_axis:
+            eval_dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
             dataset_len = len(eval_dataset)
             output = output._replace(predictions=tuple([pred[:dataset_len] for pred in output.predictions]))
             output = output._replace(num_samples=dataset_len)
