@@ -210,7 +210,7 @@ class IPUTrainer:
         # If batch axis padding enabled, wrap train/eval data collators with `pad_on_batch_axis` wrapper
         if self.args.pad_on_batch_axis:
             logger.info(
-               "Padding on batch axis enabled, each batch feeded to the compiled model during training will have the proper size"
+                "Padding on batch axis enabled, each batch feeded to the compiled model during training will have the proper size"
             )
             if self.args.do_train:
                 data_collator_wrapper = pad_on_batch_axis(
