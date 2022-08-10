@@ -304,9 +304,40 @@ class QuestionAnsweringExampleTester(ExampleTesterBase, metaclass=ExampleTestMet
     TASK_NAME = "squad"
     SCORE_NAME = "eval_f1"
     DATALOADER_DROP_LAST = False
-    EVAL_BATCH_SIZE = 1
-    INFERENCE_DEVICE_ITERATIONS = 4
-    INFERENCE_REPLICATION_FACTOR = 1
+    def _create_command_line(
+        self,
+        script: str,
+        model_name: str,
+        ipu_config_name: str,
+        output_dir: str,
+        task: Optional[str] = None,
+        do_eval: bool = True,
+        lr: float = 1e-5,
+        train_batch_size: int = 1,
+        eval_batch_size: int = 1,
+        num_epochs: int = 1,
+        inference_device_iterations: int = 6,
+        gradient_accumulation_steps: int = 64,
+        extra_command_line_arguments: Optional[List[str]] = None,
+    ) -> List[str]:
+        if extra_command_line_arguments is None:
+            extra_command_line_arguments = []
+        extra_command_line_arguments.append("--pad_on_batch_axis")
+        return super()._create_command_line(
+            script,
+            model_name,
+            ipu_config_name,
+            output_dir,
+            task=task,
+            do_eval=do_eval,
+            lr=lr,
+            train_batch_size=train_batch_size,
+            eval_batch_size=eval_batch_size,
+            num_epochs=num_epochs,
+            inference_device_iterations=inference_device_iterations,
+            gradient_accumulation_steps=gradient_accumulation_steps,
+            extra_command_line_arguments=extra_command_line_arguments,
+        )
 
 
 class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_summarization"):
