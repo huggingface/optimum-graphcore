@@ -304,6 +304,7 @@ class QuestionAnsweringExampleTester(ExampleTesterBase, metaclass=ExampleTestMet
     TASK_NAME = "squad"
     SCORE_NAME = "eval_f1"
     DATALOADER_DROP_LAST = False
+
     def _create_command_line(
         self,
         script: str,
