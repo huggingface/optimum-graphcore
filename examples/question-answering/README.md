@@ -57,6 +57,7 @@ python examples/question-answering/run_qa.py \
   --logging_steps 1 \
   --save_steps -1 \
   --dataloader_num_workers 64 \
+  --pad_on_batch_axis \
   --output_dir ./output/squad_bert_base \
   --overwrite_output_dir
 ```

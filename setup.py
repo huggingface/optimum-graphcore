@@ -13,6 +13,7 @@ except Exception as error:
 
 
 INSTALL_REQUIRES = [
+    "transformers==4.20.0",
     "optimum",
     "datasets",
     "tokenizers",
