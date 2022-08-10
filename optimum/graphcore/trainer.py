@@ -479,7 +479,8 @@ class IPUTrainer:
                 model.input_names_for_symbolic_trace = list(signature.parameters.keys())[: len(sample_batch)]
             else:
                 model.input_names_for_symbolic_trace = list(sample_batch.keys())
-            model = model.parallelize()
+            if not isinstance(model, torch.fx.GraphModule):
+                model = model.parallelize()
             if not self.args.fp32:
                 model.half()
             if training:

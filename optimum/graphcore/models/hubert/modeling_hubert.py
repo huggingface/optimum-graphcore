@@ -11,53 +11,80 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+import torch
 import poptorch
-from optimum.utils import logging
 from transformers import HubertForSequenceClassification
 from transformers.models.hubert.modeling_hubert import HubertEncoder, HubertEncoderStableLayerNorm
 
-from ...modeling_utils import PipelineMixin, get_layer_ipu, recomputation_checkpoint, register
-from .ipu_layer_drop import IPUHubertEncoder, IPUHubertEncoderStableLayerNorm
+from ....utils import logging
+from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, compose
+from ...modeling_utils import PipelineMixin, get_layer_ipu, register
+from ...fx.utils import symbolic_trace_pipelined_model
+from ...fx.transformations import (
+    AddPoptorchBlock,
+    AddPoptorchBlocksInSeries,
+    ClipValues,
+    ClipValuesSymmetric,
+    RecomputationCheckpoint,
+    TupleOutput,
+)
 
 
 logger = logging.get_logger(__name__)
 
+_OPTIMIZATION_TRANSFORMATIONS = [
+    ChangeTrueDivToMulByInverse(),
+    MergeLinears(),
+    #    FuseBiasInLinear(),
+]
+
+_NON_REVERSIBLE_TRANSFORMATIONS = [
+    ClipValuesSymmetric(1e4, exclude_targets=["view"]),
+    ClipValues(1e-4, float("inf"), include_targets=[torch.nn.LayerNorm]),
+    TupleOutput(),
+]
+
 
 @register(HubertForSequenceClassification)
 class PipelinedHubertForSequenceClassification(HubertForSequenceClassification, PipelineMixin):
-    def change_hubert_encoder_class(self, restore: bool):
-        """Changes the encoder class to update its forward pass so that it uses our custom version.
-
-        Args:
-            restore: whether to restore the encoder to its original version or not.
-        """
-        if self.config.do_stable_layer_norm:
-            new_cls = HubertEncoderStableLayerNorm if restore else IPUHubertEncoderStableLayerNorm
-        else:
-            new_cls = HubertEncoder if restore else IPUHubertEncoder
-        self.hubert.encoder.__class__ = new_cls
+    def get_transformations(self):
+        log_insertions = self.ipu_config.log_insertions
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        transformations = [
+            AddPoptorchBlock("Feature Extractor", 0, "hubert.feature_extractor", log_insertions=log_insertions),
+            AddPoptorchBlock("Feature Projection", 0, "hubert.feature_projection", log_insertions=log_insertions),
+            AddPoptorchBlock("Encoder", 0, "hubert.encoder", log_insertions=log_insertions),
+            AddPoptorchBlocksInSeries(
+                "Encoder", layer_ipu, r"hubert.encoder.layers.[0-9]+", log_insertions=log_insertions
+            ),
+            AddPoptorchBlock("Projector", layer_ipu[-1], "projector", log_insertions=log_insertions),
+            AddPoptorchBlock("Classifier", layer_ipu[-1], "classifier", log_insertions=log_insertions),
+        ]
+        if self.ipu_config.recompute_checkpoint_every_layer:
+            transformations += [
+                RecomputationCheckpoint(
+                    "hubert.encoder.layers.[0-9]+", to_exclude=f"hubert.encoder.layers.{self.config.num_layers - 1}"
+                ),
+            ]
+        return transformations
 
     def parallelize(self):
         super().parallelize()
+        traced = symbolic_trace_pipelined_model(self)
+        transformations = self.get_transformations()
+        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        composition = compose(*transformations)
+        non_reversible_composition = compose(*_NON_REVERSIBLE_TRANSFORMATIONS)
+        traced = composition(traced)
+        traced = non_reversible_composition(traced)
+        return traced
 
-        self.change_hubert_encoder_class(False)
-
-        self.hubert.feature_extractor = poptorch.BeginBlock(self.hubert.feature_extractor, ipu_id=0)
-        self.hubert.feature_projection = poptorch.BeginBlock(self.hubert.feature_projection, ipu_id=0)
-        self.hubert.encoder = poptorch.BeginBlock(self.hubert.encoder, ipu_id=0)
-
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
-        for index, layer in enumerate(self.hubert.encoder.layers):
-            # Put checkpoints on every encoder layer
-            h = recomputation_checkpoint(layer)
-            self._hooks.append(h)
-            ipu = layer_ipu[index]
-            self.hubert.encoder.layers[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
-
-        last_ipu = self.ipu_config.ipus_per_replica - 1
-        self.projector = poptorch.BeginBlock(self.projector, ipu_id=last_ipu)
-        self.classifier = poptorch.BeginBlock(self.classifier, ipu_id=last_ipu)
+    def deparallelize(self):
+        super().deparallelize()
+        transformations = self.get_transformations()
+        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        composition = compose(*transformations)
+        self = composition(self, reverse=True)
         return self
 
     def deparallelize(self):

@@ -136,7 +136,7 @@ class PipelinedT5ForConditionalGeneration(
         log_insertions = self.ipu_config.log_insertions
         layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
         transformations = [
-            AddPoptorchBlock("Embedding", 0, "encoder.shared", log_insertions=log_insertions),
+            AddPoptorchBlock("Embedding", 0, "shared", log_insertions=log_insertions),
             AddPoptorchBlocksInSeries(
                 "Encoder", layer_ipu[: self.config.num_layers], r"encoder.block.[0-9]+", log_insertions=log_insertions
             ),
@@ -189,9 +189,7 @@ class PipelinedT5ForConditionalGeneration(
         non_reversible_composition = compose(*_NON_REVERSIBLE_TRANSFORMATIONS)
         traced = composition(traced)
         traced = non_reversible_composition(traced)
-        import ipdb
-
-        ipdb.set_trace()
+        import ipdb; ipdb.set_trace()
         return traced
         # layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
 
@@ -220,11 +218,6 @@ class PipelinedT5ForConditionalGeneration(
         # self.encoder.__class__ = CustomT5Stack
         # self.decoder.__class__ = CustomT5Stack
 
-        # Use a custom T5Block implementation that removes a dynamic if blocks that can't be statically traced
-        for block in self.encoder.block:
-            block.__class__ = CustomT5Block
-        for block in self.decoder.block:
-            block.__class__ = CustomT5Block
 
         # for index, layer in enumerate(self.encoder.block):
         #     ipu = layer_ipu[index]
