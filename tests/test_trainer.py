@@ -35,7 +35,7 @@ from transformers import AutoTokenizer, IntervalStrategy, PretrainedConfig, is_t
 from transformers.file_utils import WEIGHTS_NAME
 from transformers.testing_utils import (
     ENDPOINT_STAGING,
-    TOKEN,
+    PASS,
     USER,
     CaptureLogger,
     TestCasePlus,
@@ -1209,7 +1209,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
 class IPUTrainerIntegrationWithHubTester(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls._token = TOKEN
+        cls._token = login(username=USER, password=PASS)
 
     @classmethod
     def tearDownClass(cls):
