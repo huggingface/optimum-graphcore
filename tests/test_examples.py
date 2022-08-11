@@ -67,7 +67,8 @@ def _get_supported_models_for_script(
     supported_models = []
     for model_type, model_names in models_to_test.items():
         names = model_names.get(task, model_names["default"]) if isinstance(model_names, dict) else model_names
-        supported_models.append((model_type, names))
+        if is_valid_model_type(model_type, names):
+            supported_models.append((model_type, names))
 
     return supported_models
 
@@ -89,6 +90,8 @@ _SCRIPT_TO_MODEL_MAPPING = {
         MODELS_TO_TEST_MAPPING, MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING
     ),
 }
+# Take LXMERT out of run_qa because it's incompatible
+_SCRIPT_TO_MODEL_MAPPING["run_qa"] = [x for x in _SCRIPT_TO_MODEL_MAPPING["run_qa"] if x[0] != "lxmert"]
 
 
 class ExampleTestMeta(type):
@@ -185,6 +188,7 @@ class ExampleTesterBase(TestCase):
         EVAL_BATCH_SIZE (`int`): the batch size to give to the example script for evaluation.
         INFERENCE_DEVICE_ITERATIONS (`int`): the number of device iterations to use for evaluation.
         GRADIENT_ACCUMULATION_STEPS (`int`): the number of gradient accumulation to use during training.
+        DATALOADER_DROP_LAST (`bool`): whether to drop the last batch if it is a remainder batch.
     """
 
     EXAMPLE_DIR = Path(os.path.dirname(__file__)).parent / "examples"
@@ -198,6 +202,9 @@ class ExampleTesterBase(TestCase):
     EVAL_BATCH_SIZE = 2
     INFERENCE_DEVICE_ITERATIONS = 4
     GRADIENT_ACCUMULATION_STEPS = 64
+    DATALOADER_DROP_LAST = True
+    TRAIN_REPLICATION_FACTOR = 2
+    INFERENCE_REPLICATION_FACTOR = 2
 
     def _create_command_line(
         self,
@@ -220,8 +227,8 @@ class ExampleTesterBase(TestCase):
         ipu_config_overrides = ",".join(
             [
                 "executable_cache_dir=disabled",
-                f"replication_factor={_ALLOWED_REPLICATION_FACTOR}",
-                f"inference_replication_factor={_ALLOWED_REPLICATION_FACTOR}",
+                f"replication_factor={self.TRAIN_REPLICATION_FACTOR}",
+                f"inference_replication_factor={self.INFERENCE_REPLICATION_FACTOR}",
                 "device_iterations=1",
                 f"inference_device_iterations={inference_device_iterations}",
                 f"gradient_accumulation_steps={gradient_accumulation_steps}",
@@ -244,6 +251,9 @@ class ExampleTesterBase(TestCase):
             f"--ipu_config_overrides {ipu_config_overrides}",
             f" --num_train_epochs {num_epochs}",
             "--dataloader_num_workers 16",
+            f"--dataloader_drop_last {self.DATALOADER_DROP_LAST}",
+            "--save_steps -1",
+            "--report_to none",
         ]
         if extra_command_line_arguments is not None:
             cmd_line += extra_command_line_arguments
@@ -275,10 +285,13 @@ class ExampleTesterBase(TestCase):
 class TextClassificationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_glue"):
     TASK_NAME = "sst2"
     DATASET_PARAMETER_NAME = "task_name"
+    INFERENCE_DEVICE_ITERATIONS = 5
 
 
 class TokenClassificationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_ner"):
     TASK_NAME = "conll2003"
+    TRAIN_BATCH_SIZE = 1
+    EVAL_BATCH_SIZE = 1
 
 
 class MultipleChoiceExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_swag"):
@@ -290,13 +303,7 @@ class MultipleChoiceExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, 
 class QuestionAnsweringExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_qa"):
     TASK_NAME = "squad"
     SCORE_NAME = "eval_f1"
-
-
-class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_summarization"):
-    TASK_NAME = "cnn_dailymail"
-    EVAL_IS_SUPPORTED = False
-    EVAL_SCORE_THRESHOLD = 30
-    SCORE_NAME = "eval_rougeLsum"
+    DATALOADER_DROP_LAST = False
 
     def _create_command_line(
         self,
@@ -307,17 +314,65 @@ class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, e
         task: Optional[str] = None,
         do_eval: bool = True,
         lr: float = 1e-5,
-        train_batch_size: int = 2,
-        eval_batch_size: int = 2,
-        num_epochs: int = 2,
-        inference_device_iterations: int = 4,
+        train_batch_size: int = 1,
+        eval_batch_size: int = 1,
+        num_epochs: int = 1,
+        inference_device_iterations: int = 6,
+        gradient_accumulation_steps: int = 64,
+        extra_command_line_arguments: Optional[List[str]] = None,
+    ) -> List[str]:
+        if extra_command_line_arguments is None:
+            extra_command_line_arguments = []
+        extra_command_line_arguments.append("--pad_on_batch_axis")
+        return super()._create_command_line(
+            script,
+            model_name,
+            ipu_config_name,
+            output_dir,
+            task=task,
+            do_eval=do_eval,
+            lr=lr,
+            train_batch_size=train_batch_size,
+            eval_batch_size=eval_batch_size,
+            num_epochs=num_epochs,
+            inference_device_iterations=inference_device_iterations,
+            gradient_accumulation_steps=gradient_accumulation_steps,
+            extra_command_line_arguments=extra_command_line_arguments,
+        )
+
+
+class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_summarization"):
+    TASK_NAME = "cnn_dailymail"
+    TRAIN_BATCH_SIZE = 1
+    EVAL_BATCH_SIZE = 1
+    EVAL_IS_SUPPORTED = False
+    EVAL_SCORE_THRESHOLD = 30
+    SCORE_NAME = "eval_rougeLsum"
+    INFERENCE_DEVICE_ITERATIONS = 6
+
+    def _create_command_line(
+        self,
+        script: str,
+        model_name: str,
+        ipu_config_name: str,
+        output_dir: str,
+        task: Optional[str] = None,
+        do_eval: bool = True,
+        lr: float = 1e-5,
+        train_batch_size: int = 1,
+        eval_batch_size: int = 1,
+        num_epochs: int = 1,
+        inference_device_iterations: int = 6,
         gradient_accumulation_steps: int = 64,
         extra_command_line_arguments: Optional[List[str]] = None,
     ) -> List[str]:
         if extra_command_line_arguments is None:
             extra_command_line_arguments = []
         extra_command_line_arguments.append("--dataset_config 3.0.0")
-        extra_command_line_arguments.append("--predict_with_generate")
+        extra_command_line_arguments.append("--prediction_loss_only")
+        extra_command_line_arguments.append("--pad_to_max_length")
+        extra_command_line_arguments.append("--max_target_length 200")
+        extra_command_line_arguments.append("--max_source_length 1024")
         if "t5" in model_name:
             extra_command_line_arguments.append("--source_prefix 'summarize: '")
         return super()._create_command_line(
@@ -339,9 +394,12 @@ class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, e
 
 class TranslationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_translation"):
     TASK_NAME = "wmt16"
+    TRAIN_BATCH_SIZE = 1
+    EVAL_BATCH_SIZE = 1
     EVAL_IS_SUPPORTED = False
     EVAL_SCORE_THRESHOLD = 22
     SCORE_NAME = "eval_bleu"
+    INFERENCE_DEVICE_ITERATIONS = 6
 
     def _create_command_line(
         self,
@@ -352,10 +410,10 @@ class TranslationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, exa
         task: Optional[str] = None,
         do_eval: bool = True,
         lr: float = 1e-5,
-        train_batch_size: int = 2,
-        eval_batch_size: int = 2,
-        num_epochs: int = 2,
-        inference_device_iterations: int = 4,
+        train_batch_size: int = 1,
+        eval_batch_size: int = 1,
+        num_epochs: int = 1,
+        inference_device_iterations: int = 6,
         gradient_accumulation_steps: int = 64,
         extra_command_line_arguments: Optional[List[str]] = None,
     ) -> List[str]:
@@ -364,7 +422,10 @@ class TranslationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, exa
         extra_command_line_arguments.append("--dataset_config ro-en")
         extra_command_line_arguments.append("--source_lang ro")
         extra_command_line_arguments.append("--target_lang en")
-        extra_command_line_arguments.append("--predict_with_generate")
+        extra_command_line_arguments.append("--pad_to_max_length")
+        extra_command_line_arguments.append("--max_source_length 512")
+        extra_command_line_arguments.append("--max_target_length 512")
+        extra_command_line_arguments.append("--prediction_loss_only")
         if "t5" in model_name:
             extra_command_line_arguments.append("--source_prefix 'translate English to Romanian: '")
         return super()._create_command_line(
@@ -409,6 +470,7 @@ class ImageClassificationExampleTester(
             extra_command_line_arguments = []
         extra_command_line_arguments.append("--remove_unused_columns false")
         extra_command_line_arguments.append("--dataloader_drop_last true")
+        extra_command_line_arguments.append("--ignore_mismatched_sizes")
         return super()._create_command_line(
             script,
             model_name,
