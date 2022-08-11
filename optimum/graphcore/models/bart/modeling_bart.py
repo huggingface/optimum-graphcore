@@ -14,22 +14,13 @@
 from typing import Optional, Tuple
 
 import torch
-import torch.nn as nn
 
 import transformers
+from optimum.utils import logging
 from transformers import BartForConditionalGeneration
 from transformers.models.bart.modeling_bart import BartAttention
 
-from optimum.utils import logging
 from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, ReversibleTransformation, compose
-from ...generation_utils import IPUGenerationMixin
-from ...modeling_utils import (
-    GenerationMethodsMixin,
-    PipelineMixin,
-    get_layer_ipu,
-    register,
-)
-from ...fx.utils import symbolic_trace_pipelined_model
 from ...fx.transformations import (
     AddPoptorchBlock,
     AddPoptorchBlocksInSeries,
@@ -41,6 +32,9 @@ from ...fx.transformations import (
     TieWeights,
     TupleOutput,
 )
+from ...fx.utils import symbolic_trace_pipelined_model
+from ...generation_utils import IPUGenerationMixin
+from ...modeling_utils import GenerationMethodsMixin, PipelineMixin, get_layer_ipu, register
 
 
 logger = logging.get_logger(__name__)
@@ -163,7 +157,7 @@ class _BartAttentionWithoutException(BartAttention):
             attn_weights = attn_weights.view(bsz, self.num_heads, tgt_len, src_len) + attention_mask
             attn_weights = attn_weights.view(bsz * self.num_heads, tgt_len, src_len)
 
-        attn_weights = nn.functional.softmax(attn_weights, dim=-1)
+        attn_weights = torch.nn.functional.softmax(attn_weights, dim=-1)
 
         if layer_head_mask is not None:
             if layer_head_mask.size() != (self.num_heads,):
@@ -183,7 +177,7 @@ class _BartAttentionWithoutException(BartAttention):
         else:
             attn_weights_reshaped = None
 
-        attn_probs = nn.functional.dropout(attn_weights, p=self.dropout, training=self.training)
+        attn_probs = torch.nn.functional.dropout(attn_weights, p=self.dropout, training=self.training)
 
         attn_output = torch.bmm(attn_probs, value_states)
 
@@ -218,11 +212,14 @@ class PipelinedBartForConditionalGeneration(
             # AddPoptorchBlock("Embedding", 0, "model.decoder.embed_positions"),
             # AddPoptorchBlock("Embedding", 0, "model.decoder.layernorm_embedding"),
             AddPoptorchBlocksInSeries(
-                "Encoder", layer_ipu[: self.config.encoder_layers], r"model.encoder.layers.[0-9]+", log_insertions=log_insertions
+                "Encoder",
+                layer_ipu[: self.config.encoder_layers],
+                r"model.encoder.layers.[0-9]+",
+                log_insertions=log_insertions,
             ),
             AddPoptorchBlocksInSeries(
                 "Decoder",
-                layer_ipu[self.config.encoder_layers:],
+                layer_ipu[self.config.encoder_layers :],
                 r"model.decoder.layers.[0-9]+",
                 log_insertions=log_insertions,
             ),
@@ -260,19 +257,16 @@ class PipelinedBartForConditionalGeneration(
         ```
         """
         super().parallelize()
-        if not isinstance(self, torch.fx.GraphModule):
-            orig_make_causal_mask = transformers.models.bart.modeling_bart._make_causal_mask
-            orig_expand_mask = transformers.models.bart.modeling_bart._expand_mask
-            transformers.models.bart.modeling_bart._make_causal_mask = _make_causal_mask
-            transformers.models.bart.modeling_bart._expand_mask = _expand_mask
-            for mod in self.modules():
-                if isinstance(mod, BartAttention):
-                    mod.__class__ = _BartAttentionWithoutException
-            traced = symbolic_trace_pipelined_model(self)
-            transformers.models.bart.modeling_bart._make_causal_mask = orig_make_causal_mask
-            transformers.models.bart.modeling_bart._expand_mask = orig_expand_mask
-        else:
-            traced = self
+        orig_make_causal_mask = transformers.models.bart.modeling_bart._make_causal_mask
+        orig_expand_mask = transformers.models.bart.modeling_bart._expand_mask
+        transformers.models.bart.modeling_bart._make_causal_mask = _make_causal_mask
+        transformers.models.bart.modeling_bart._expand_mask = _expand_mask
+        for mod in self.modules():
+            if isinstance(mod, BartAttention):
+                mod.__class__ = _BartAttentionWithoutException
+        traced = symbolic_trace_pipelined_model(self)
+        transformers.models.bart.modeling_bart._make_causal_mask = orig_make_causal_mask
+        transformers.models.bart.modeling_bart._expand_mask = orig_expand_mask
         transformations = self.get_transformations()
         transformations += _OPTIMIZATION_TRANSFORMATIONS
         composition = compose(*transformations)

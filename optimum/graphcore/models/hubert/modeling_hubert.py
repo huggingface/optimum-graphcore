@@ -12,14 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import torch
+
 import poptorch
 from transformers import HubertForSequenceClassification
 from transformers.models.hubert.modeling_hubert import HubertEncoder, HubertEncoderStableLayerNorm
 
-from ....utils import logging
 from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, compose
-from ...modeling_utils import PipelineMixin, get_layer_ipu, register
-from ...fx.utils import symbolic_trace_pipelined_model
+from ....utils import logging
 from ...fx.transformations import (
     AddPoptorchBlock,
     AddPoptorchBlocksInSeries,
@@ -28,6 +27,8 @@ from ...fx.transformations import (
     RecomputationCheckpoint,
     TupleOutput,
 )
+from ...fx.utils import symbolic_trace_pipelined_model
+from ...modeling_utils import PipelineMixin, get_layer_ipu, register
 
 
 logger = logging.get_logger(__name__)
@@ -63,7 +64,8 @@ class PipelinedHubertForSequenceClassification(HubertForSequenceClassification, 
         if self.ipu_config.recompute_checkpoint_every_layer:
             transformations += [
                 RecomputationCheckpoint(
-                    "hubert.encoder.layers.[0-9]+", to_exclude=f"hubert.encoder.layers.{self.config.num_layers - 1}"
+                    "hubert.encoder.layers.[0-9]+",
+                    to_exclude=f"hubert.encoder.layers.{self.config.num_hidden_layers - 1}",
                 ),
             ]
         return transformations

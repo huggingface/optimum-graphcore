@@ -29,6 +29,20 @@ from transformers import (
 )
 from transformers.modeling_outputs import MaskedLMOutput, QuestionAnsweringModelOutput
 
+from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, compose
+from ...fx.transformations import (
+    AddPoptorchBlock,
+    AddPoptorchBlocksInSeries,
+    ClipValues,
+    ClipValuesSymmetric,
+    LinearToSerializedLinear,
+    OutlineAttribute,
+    RecomputationCheckpoint,
+    TieWeights,
+    TupleOutput,
+    VocabEmbeddingToSerializedEmbedding,
+)
+from ...fx.utils import symbolic_trace_pipelined_model
 from ...modeling_utils import (
     OnehotGather,
     PipelineMixin,
@@ -43,8 +57,45 @@ from ...modeling_utils import (
 
 logger = logging.get_logger(__name__)
 
+_OPTIMIZATION_TRANSFORMATIONS = [
+    ChangeTrueDivToMulByInverse(),
+    MergeLinears(),
+    #    FuseBiasInLinear(),
+]
+
+_NON_REVERSIBLE_TRANSFORMATIONS = [
+    ClipValuesSymmetric(1e4, exclude_targets=["view"]),
+    ClipValues(1e-4, float("inf"), include_targets=[torch.nn.LayerNorm]),
+    TupleOutput(),
+]
+
 
 class RobertaPipelineMixin(PipelineMixin):
+    def get_transformations(self):
+        log_insertions = self.ipu_config.log_insertions
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        last_ipu = len(self.ipu_config.layers_per_ipu) - 1
+        transformations = [
+            AddPoptorchBlock("Embedding", 0, "roberta.embeddings", log_insertions=log_insertions),
+            OutlineAttribute("roberta.embeddings.LayerNorm", "Embedding"),
+            AddPoptorchBlocksInSeries(
+                "Encoder", layer_ipu, r"roberta.encoder.layer.[0-9]+", log_insertions=log_insertions
+            ),
+            # Only one of the following AddPoptorchBlock, will actually add a block.
+            AddPoptorchBlock("Classifier Output", last_ipu, "classifier", log_insertions=log_insertions),
+            AddPoptorchBlock("QA Outputs", last_ipu, "qa_outputs", log_insertions=log_insertions),
+        ]
+        if self.ipu_config.recompute_checkpoint_every_layer:
+            transformations.append(
+                RecomputationCheckpoint(
+                    "roberta.encoder.layer.[0-9]+",
+                    to_exclude=f"roberta.encoder.layer.{self.config.num_hidden_layers - 1}",
+                )
+            )
+        if self.ipu_config.embedding_serialization_factor > 1:
+            transformations.append(VocabEmbeddingToSerializedEmbedding())
+        return transformations
+
     def parallelize(self):
         """
         Transform the Roberta model body to run in an IPU pipeline.
@@ -53,37 +104,26 @@ class RobertaPipelineMixin(PipelineMixin):
         - Adds recomputation checkpoints
         """
         super().parallelize()
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
-
-        logger.info("-------------------- Device Allocation --------------------")
-        logger.info("Embedding  --> IPU 0")
-        if self.ipu_config.embedding_serialization_factor > 1:
-            self.roberta.embeddings.word_embeddings = SerializedEmbedding(
-                self.roberta.embeddings.word_embeddings, self.ipu_config.embedding_serialization_factor
-            )
-        self.roberta.embeddings = poptorch.BeginBlock(self.roberta.embeddings, "Embedding", ipu_id=0)
-        hs = outline_attribute(self.roberta.embeddings.LayerNorm, "embedding")
-        self._hooks.extend(hs)
-
-        for index, layer in enumerate(self.roberta.encoder.layer):
-            ipu = layer_ipu[index]
-            if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
-                h = recomputation_checkpoint(layer)
-                self._hooks.append(h)
-            self.roberta.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
-            logger.info(f"Encoder {index:<2} --> IPU {ipu}")
-        return self
+        traced = symbolic_trace_pipelined_model(self)
+        transformations = self.get_transformations()
+        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        composition = compose(*transformations)
+        non_reversible_composition = compose(*_NON_REVERSIBLE_TRANSFORMATIONS)
+        traced = composition(traced)
+        traced = non_reversible_composition(traced)
+        return traced
 
     def deparallelize(self):
         """
         Undo the changes to the model done by `parallelize`.
         You should call this before doing `save_pretrained` so that the `model.state_dict` is
-        fully compatible with `transformers.RobertaForSequenceClassification`.
+        fully compatible with the original model.
         """
         super().deparallelize()
-        # Deserialize the serialized word embedding
-        if self.ipu_config.embedding_serialization_factor > 1:
-            self.roberta.embeddings.word_embeddings = self.roberta.embeddings.word_embeddings.deserialize()
+        transformations = self.get_transformations()
+        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        composition = compose(*transformations)
+        self = composition(self, reverse=True)
         return self
 
 
@@ -102,6 +142,37 @@ class PipelinedRobertaForMaskedLM(RobertaForMaskedLM, PipelineMixin):
         super().__init__(config)
         self.gather_indices = OnehotGather()
 
+    # def get_ops_to_wrap_for_tracing(self):
+    #     return [
+    #         ("torch.topk", *_gen_constructor_wrapper(torch.topk)),
+    #         ("torch.nn.functional.one_hot", *_gen_constructor_wrapper(torch.nn.functional.one_hot)),
+    #     ]
+
+    def get_transformations(self):
+        log_insertions = self.ipu_config.log_insertions
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        transformations = [
+            AddPoptorchBlock("Embedding", 0, "roberta.embeddings", log_insertions=log_insertions),
+            OutlineAttribute("roberta.embeddings.LayerNorm", "Embedding"),
+            AddPoptorchBlocksInSeries(
+                "Encoder", layer_ipu, r"roberta.encoder.layer.[0-9]+", log_insertions=log_insertions
+            ),
+            AddPoptorchBlock("LM Head", 0, "lm_head", log_insertions=log_insertions),
+        ]
+        if self.ipu_config.recompute_checkpoint_every_layer:
+            transformations.append(
+                RecomputationCheckpoint(
+                    "roberta.encoder.layer.[0-9]+",
+                    to_exclude=f"roberta.encoder.layer.{self.config.num_hidden_layers - 1}",
+                )
+            )
+        if self.ipu_config.embedding_serialization_factor > 1:
+            transformations += [
+                LinearToSerializedLinear("lm_head.decoder"),
+                TieWeights("roberta.embeddings.word_embeddings", "lm_head.decoder"),
+            ]
+        return transformations
+
     def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.
@@ -110,39 +181,14 @@ class PipelinedRobertaForMaskedLM(RobertaForMaskedLM, PipelineMixin):
         - Adds recomputation checkpoints
         """
         super().parallelize()
-
-        if self.ipu_config.embedding_serialization_factor > 1:
-            serialized_decoder = SerializedLinear(
-                self.config.hidden_size,
-                self.config.vocab_size,
-                self.ipu_config.embedding_serialization_factor,
-                bias=True,
-                mode=poptorch.MatMulSerializationMode.OutputChannels,
-            )
-            serialized_decoder.load_state_dict(self.lm_head.decoder.state_dict())
-            self.lm_head.decoder = serialized_decoder
-            self.tie_weights()
-
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
-
-        logger.info("-------------------- Device Allocation --------------------")
-        logger.info("Embedding  --> IPU 0")
-        self.roberta.embeddings = poptorch.BeginBlock(self.roberta.embeddings, "Embedding", ipu_id=0)
-        hs = outline_attribute(self.roberta.embeddings.LayerNorm, "embedding")
-        self._hooks.extend(hs)
-
-        for index, layer in enumerate(self.roberta.encoder.layer):
-            ipu = layer_ipu[index]
-            if self.ipu_config.recompute_checkpoint_every_layer:
-                h = recomputation_checkpoint(layer)
-                self._hooks.append(h)
-            self.roberta.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
-            logger.info(f"Encoder {index:<2} --> IPU {ipu}")
-
-        logger.info("LM Head    --> IPU 0")
-        self.lm_head = poptorch.BeginBlock(self.lm_head, "LM Head", ipu_id=0)
-        logger.info("-----------------------------------------------------------")
-        return self
+        traced = symbolic_trace_pipelined_model(self)
+        transformations = self.get_transformations()
+        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        composition = compose(*transformations)
+        non_reversible_composition = compose(*_NON_REVERSIBLE_TRANSFORMATIONS)
+        traced = composition(traced)
+        traced = non_reversible_composition(traced)
+        return traced
 
     def deparallelize(self):
         """
@@ -151,16 +197,10 @@ class PipelinedRobertaForMaskedLM(RobertaForMaskedLM, PipelineMixin):
         compatible with the original model.
         """
         super().deparallelize()
-
-        if self.ipu_config.embedding_serialization_factor > 1:
-            decoder = nn.Linear(
-                self.config.hidden_size,
-                self.config.vocab_size,
-                bias=True,
-            )
-            decoder.load_state_dict(self.lm_head.decoder.state_dict())
-            self.lm_head.decoder = decoder
-            self.tie_weights()
+        transformations = self.get_transformations()
+        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        composition = compose(*transformations)
+        self = composition(self, reverse=True)
         return self
 
     def forward(
@@ -247,14 +287,6 @@ class PipelinedRobertaForSequenceClassification(RobertaForSequenceClassification
     ```
     """
 
-    def parallelize(self):
-        super().parallelize()
-        last_ipu = self.ipu_config.ipus_per_replica - 1
-        logger.info(f"Classifier Output --> IPU {last_ipu}")
-        self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=last_ipu)
-        logger.info("-----------------------------------------------------------")
-        return self
-
 
 @register(RobertaForMultipleChoice)
 class PipelinedRobertaForMultipleChoice(RobertaForMultipleChoice, RobertaPipelineMixin):
@@ -266,14 +298,6 @@ class PipelinedRobertaForMultipleChoice(RobertaForMultipleChoice, RobertaPipelin
     model = PipelinedRobertaForMultipleChoice(config).parallelize().half()
     ```
     """
-
-    def parallelize(self):
-        super().parallelize()
-        last_ipu = self.ipu_config.ipus_per_replica - 1
-        logger.info(f"Classifier Output --> IPU {last_ipu}")
-        self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=last_ipu)
-        logger.info("-----------------------------------------------------------")
-        return self
 
 
 @register(RobertaForTokenClassification)
@@ -287,14 +311,6 @@ class PipelinedRobertaForTokenClassification(RobertaForTokenClassification, Robe
     ```
     """
 
-    def parallelize(self):
-        super().parallelize()
-        last_ipu = self.ipu_config.ipus_per_replica - 1
-        logger.info(f"Classifier Output --> IPU {last_ipu}")
-        self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=last_ipu)
-        logger.info("-----------------------------------------------------------")
-        return self
-
 
 @register(RobertaForQuestionAnswering)
 class PipelinedRobertaForQuestionAnswering(RobertaForQuestionAnswering, RobertaPipelineMixin):
@@ -306,14 +322,6 @@ class PipelinedRobertaForQuestionAnswering(RobertaForQuestionAnswering, RobertaP
     model = PipelinedRobertaForQuestionAnswering(config).parallelize().half()
     ```
     """
-
-    def parallelize(self):
-        super().parallelize()
-        last_ipu = self.ipu_config.ipus_per_replica - 1
-        logger.info(f"QA Outputs --> IPU {last_ipu}")
-        self.qa_outputs = poptorch.BeginBlock(self.qa_outputs, "QA Outputs", ipu_id=last_ipu)
-        logger.info("-----------------------------------------------------------")
-        return self
 
     def forward(
         self,

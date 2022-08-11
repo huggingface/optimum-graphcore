@@ -445,8 +445,6 @@ class PipelinedBertForSequenceClassification(BertForSequenceClassification, Bert
     ```
     """
 
-    pass
-
 
 @register(BertForMultipleChoice)
 class PipelinedBertForMultipleChoice(BertForMultipleChoice, BertPipelineMixin):
@@ -459,8 +457,6 @@ class PipelinedBertForMultipleChoice(BertForMultipleChoice, BertPipelineMixin):
     ```
     """
 
-    pass
-
 
 @register(BertForTokenClassification)
 class PipelinedBertForTokenClassification(BertForTokenClassification, BertPipelineMixin):
@@ -472,8 +468,6 @@ class PipelinedBertForTokenClassification(BertForTokenClassification, BertPipeli
     model = PipelinedBertForTokenClassification(config).parallelize().half()
     ```
     """
-
-    pass
 
 
 @register(BertForQuestionAnswering)

@@ -22,34 +22,23 @@ import poptorch
 from optimum.utils import logging
 from transformers import T5ForConditionalGeneration
 from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
-from transformers.models.t5.modeling_t5 import __HEAD_MASK_WARNING_MSG, T5Block, T5Stack
+from transformers.models.t5.modeling_t5 import __HEAD_MASK_WARNING_MSG, T5LayerNorm
 
-from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, compose
+from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, ReversibleTransformation, compose
 from ...fx.transformations import (
     AddPoptorchBlock,
     AddPoptorchBlocksInSeries,
     ClipValues,
     ClipValuesSymmetric,
     LinearToSerializedLinear,
-    OutlineAttribute,
     RecomputationCheckpoint,
     ShareEmbeddingComputation,
     TieWeights,
     TupleOutput,
-    VocabEmbeddingToSerializedEmbedding,
 )
 from ...fx.utils import symbolic_trace_pipelined_model
 from ...generation_utils import IPUGenerationMixin
-from ...modeling_utils import (
-    GenerationMethodsMixin,
-    OnehotGather,
-    PipelineMixin,
-    SerializedLinear,
-    SharedEmbedding,
-    get_layer_ipu,
-    recomputation_checkpoint,
-    register,
-)
+from ...modeling_utils import GenerationMethodsMixin, PipelineMixin, SharedEmbedding, get_layer_ipu, register
 
 
 logger = logging.get_logger(__name__)
@@ -158,12 +147,13 @@ class PipelinedT5ForConditionalGeneration(
                 ),
             ]
 
-        if self.ipu_config.embedding_serialization_factor > 1:
-            transformations += [
-                LinearToSerializedLinear("lm_head"),
-                TieWeights("shared", "lm_head"),
-            ]
-        transformations += [ShareEmbeddingComputation()]
+        if not isinstance(self, torch.fx.GraphModule):
+            if self.ipu_config.embedding_serialization_factor > 1:
+                transformations += [
+                    LinearToSerializedLinear("lm_head"),
+                    TieWeights("shared", "lm_head"),
+                ]
+            transformations += [ShareEmbeddingComputation()]
         return transformations
 
     def parallelize(self):
@@ -184,68 +174,12 @@ class PipelinedT5ForConditionalGeneration(
                 mod.forward = poptorch.autocast(enabled=True)(mod.forward)
         traced = symbolic_trace_pipelined_model(self)
         transformations = self.get_transformations()
-        # transformations += _OPTIMIZATION_TRANSFORMATIONS
+        transformations += _OPTIMIZATION_TRANSFORMATIONS
         composition = compose(*transformations)
         non_reversible_composition = compose(*_NON_REVERSIBLE_TRANSFORMATIONS)
         traced = composition(traced)
         traced = non_reversible_composition(traced)
-        import ipdb; ipdb.set_trace()
         return traced
-        # layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
-
-        # logger.info("-------------------- Device Allocation --------------------")
-        # logger.info("Embedding  --> IPU 0")
-
-        # if self.ipu_config.embedding_serialization_factor > 1:
-        #     serialized_lm_head = SerializedLinear(
-        #         self.config.d_model,
-        #         self.shared.num_embeddings,
-        #         self.ipu_config.embedding_serialization_factor,
-        #         bias=False,
-        #         mode=poptorch.MatMulSerializationMode.OutputChannels,
-        #     )
-        #     serialized_lm_head.load_state_dict(self.lm_head.state_dict())
-        #     self.lm_head = serialized_lm_head
-        #     # TODO: is it needed to check?
-        #     if self.config.tie_word_embeddings:
-        #         self.tie_weights()
-
-        # self.scale_down_weights(factor=1)
-        # self.encoder_and_decoder_embeddings_computation(True)
-        # self.shared = poptorch.BeginBlock(self.shared, "Embedding", ipu_id=0)
-
-        # Use a custom T5Stack implementation because sharing the position bias causes OOM error
-        # self.encoder.__class__ = CustomT5Stack
-        # self.decoder.__class__ = CustomT5Stack
-
-
-        # for index, layer in enumerate(self.encoder.block):
-        #     ipu = layer_ipu[index]
-        #     if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_layers - 1:
-        #         recomputation_checkpoint(layer)
-        #     self.encoder.block[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
-        #     logger.info(f"Encoder {index:<2} --> IPU {ipu}")
-
-        # self.encoder.final_layer_norm = poptorch.BeginBlock(
-        #     self.encoder.final_layer_norm, "Encoder Stack Final LayerNorm", ipu_id=ipu
-        # )
-
-        # shift = len(self.encoder.block)
-        # for index, layer in enumerate(self.decoder.block):
-        #     ipu = layer_ipu[index + shift]
-        #     if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_layers - 1:
-        #         recomputation_checkpoint(layer)
-        #     self.decoder.block[index] = poptorch.BeginBlock(layer, f"Decoder{index}", ipu_id=ipu)
-        #     logger.info(f"Decoder {index:<2} --> IPU {ipu}")
-
-        # self.decoder.final_layer_norm = poptorch.BeginBlock(
-        #     self.decoder.final_layer_norm, "Decoder Stack Final LayerNorm", ipu_id=ipu
-        # )
-
-        # logger.info("LM Head Output --> IPU 0")
-        # self.lm_head = poptorch.BeginBlock(self.lm_head, "LM Head Output", ipu_id=0)
-        # logger.info("-----------------------------------------------------------")
-        return self
 
     def deparallelize(self):
         """
@@ -255,30 +189,11 @@ class PipelinedT5ForConditionalGeneration(
         """
         # T5ForConditionalGeneration has a deparallelize method, so make sure that the PipelineMixin one is used here.
         PipelineMixin.deparallelize(self)
-
-        self.encoder_and_decoder_embeddings_computation(False)
-        # self.scale_down_weights(factor=1, restore=True)
-
-        self.encoder.__class__ = T5Stack
-        self.decoder.__class__ = T5Stack
-
-        for block in self.encoder.block:
-            block.__class__ = T5Block
-        for block in self.decoder.block:
-            block.__class__ = T5Block
-
-        if self.ipu_config.embedding_serialization_factor > 1:
-            old_lm_head = nn.Linear(
-                self.config.d_model,
-                self.shared.num_embeddings,
-                bias=False,
-            )
-            old_lm_head.load_state_dict(self.lm_head.state_dict())
-            self.lm_head = old_lm_head
-            # TODO: is it needed to check?
-            if self.config.tie_word_embeddings:
-                self.tie_weights()
-
+        transformations = self.get_transformations()
+        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        transformations = [t for t in transformations if isinstance(t, ReversibleTransformation)]
+        composition = compose(*transformations)
+        self = composition(self, reverse=True)
         return self
 
     def forward(

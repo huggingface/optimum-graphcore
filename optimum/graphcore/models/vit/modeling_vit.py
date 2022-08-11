@@ -15,10 +15,8 @@ import torch
 
 import transformers
 
-from ....utils import logging
 from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, compose
-from ...modeling_utils import PipelineMixin, get_layer_ipu, register
-from ...fx.utils import symbolic_trace_pipelined_model
+from ....utils import logging
 from ...fx.transformations import (
     AddPoptorchBlock,
     AddPoptorchBlocksInSeries,
@@ -27,6 +25,8 @@ from ...fx.transformations import (
     RecomputationCheckpoint,
     TupleOutput,
 )
+from ...fx.utils import symbolic_trace_pipelined_model
+from ...modeling_utils import PipelineMixin, get_layer_ipu, register
 
 
 logger = logging.get_logger(__name__)
@@ -59,7 +59,7 @@ class PipelinedViTForImageClassification(transformers.ViTForImageClassification,
         if self.ipu_config.recompute_checkpoint_every_layer:
             transformations += [
                 RecomputationCheckpoint(
-                    "vit.encoder.layer.[0-9]+", to_exclude=f"vit.encoder.layer.{self.config.num_layers - 1}"
+                    "vit.encoder.layer.[0-9]+", to_exclude=f"vit.encoder.layer.{self.config.num_hidden_layers - 1}"
                 ),
             ]
         return transformations
