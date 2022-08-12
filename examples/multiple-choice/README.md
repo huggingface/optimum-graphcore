@@ -20,7 +20,7 @@ limitations under the License.
 
 `run_swag` allows you to fine-tune any model from our [hub](https://huggingface.co/models) (as long as its architecture as a `ForMultipleChoice` version in the library) on the SWAG dataset or your own csv/jsonlines files as long as they are structured the same way. To make it works on another dataset, you will need to tweak the `preprocess_function` inside the script.
 
-```bash
+```
 python examples/multiple-choice/run_swag.py \
 --model_name_or_path roberta-base \
 --ipu_config_name Graphcore/roberta-base-ipu \
@@ -29,17 +29,18 @@ python examples/multiple-choice/run_swag.py \
 --learning_rate 5e-5 \
 --num_train_epochs 3 \
 --output_dir ./output/swag_base \
---per_device_eval_batch_size=16 \
---per_device_train_batch_size=16 \
+--per_device_eval_batch_size=2 \
+--per_device_train_batch_size=2 \
+--gradient_accumulation_steps 16 \
 --pod_type pod16 \
+--report_to none \
+--pad_on_batch_axis \
 --overwrite_output
 ```
 
-<!-- TODO: compute metrics
 Training with the defined hyper-parameters yields the following results:
 ```
 ***** Eval results *****
-eval_acc = 0.8338998300509847
-eval_loss = 0.44457291918821606
+eval_acc = 0.8396
+eval_loss = 0.439
 ```
--->
