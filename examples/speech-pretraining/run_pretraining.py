@@ -505,9 +505,12 @@ def main():
     feature_extractor.save_pretrained(training_args.output_dir)
     config.save_pretrained(training_args.output_dir)
 
+    # Create a new model under no_grad() just for the collator to avoid causing multiprocessing error.
+    with torch.no_grad():
+        model_collator = AutoModelForPreTraining.from_config(config)
     # Instantiate custom data collator
     data_collator = DataCollatorForWav2Vec2Pretraining(
-        model=model,
+        model=model_collator,
         feature_extractor=feature_extractor,
         reducer_keep_factor=model_args.mask_time_prob * (1.0 - model_args.crop_aggression),
     )
