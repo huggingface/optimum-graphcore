@@ -14,10 +14,11 @@
 from typing import Optional, Tuple
 
 import torch
+from torch import nn
 
 import transformers
 from optimum.utils import logging
-from transformers import BartForConditionalGeneration
+from transformers import BartForConditionalGeneration, BartForSequenceClassification
 from transformers.models.bart.modeling_bart import BartAttention
 
 from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, ReversibleTransformation, compose
@@ -346,77 +347,93 @@ class PipelinedBartForConditionalGeneration(
 
 @register(BartForSequenceClassification)
 class PipelinedBartForSequenceClassification(BartForSequenceClassification, PipelineMixin):
+    def get_transformations(self):
+        log_insertions = self.ipu_config.log_insertions
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        transformations = [
+            AddPoptorchBlock("Embedding", 0, "model.shared", log_insertions=log_insertions),
+            # AddPoptorchBlock("Embedding", 0, "model.encoder.embed_positions"),
+            # AddPoptorchBlock("Embedding", 0, "model.encoder.layernorm_embedding"),
+            # AddPoptorchBlock("Embedding", 0, "model.decoder.embed_positions"),
+            # AddPoptorchBlock("Embedding", 0, "model.decoder.layernorm_embedding"),
+            AddPoptorchBlocksInSeries(
+                "Encoder",
+                layer_ipu[: self.config.encoder_layers],
+                r"model.encoder.layers.[0-9]+",
+                log_insertions=log_insertions,
+            ),
+            AddPoptorchBlocksInSeries(
+                "Decoder",
+                layer_ipu[self.config.encoder_layers :],
+                r"model.decoder.layers.[0-9]+",
+                log_insertions=log_insertions,
+            ),
+            AddPoptorchBlock(
+                "Classification Head Output", layer_ipu[-1], "classification_head", log_insertions=log_insertions
+            ),
+        ]
+        if self.ipu_config.recompute_checkpoint_every_layer:
+            transformations += [
+                RecomputationCheckpoint(
+                    "model.encoder.layers.[0-9]+", to_exclude=f"model.encoder.layers.{self.config.encoder_layers - 1}"
+                ),
+                RecomputationCheckpoint(
+                    "model.decoder.layers.[0-9]+", to_exclude=f"model.decoder.layers.{self.config.decoder_layers - 1}"
+                ),
+            ]
+
+        if not isinstance(self, torch.fx.GraphModule):
+            if self.ipu_config.embedding_serialization_factor > 1:
+                transformations += [
+                    LinearToSerializedLinear("lm_head"),
+                    TieWeights("model.shared", "lm_head"),
+                ]
+            transformations += [ShareEmbeddingComputation()]
+        return transformations
+
     def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model
+        - (If enabled) Replaces the shared embedding with a SerializedEmbedding
         - Adds recomputation checkpoints
 
         Recommended usage:
         ```
-        model = PipelinedBartForSequenceClassification(config).parallelize().half()
+        model = PipelinedBartForConditionalGeneration(config).parallelize().half()
         ```
         """
         super().parallelize()
-
-        self.model.__class__ = _BartModelWithSharedEmbedding
-        self.model.encoder_and_decoder_embeddings_computation(True)
-        self.model.change_bart_encoder_and_decoder_classes(False)
-        self.model.change_bart_attention_class(False)
-
-        logger.info("-------------------- Device Allocation --------------------")
-        logger.info("Embedding --> IPU 0")
-        self.model.shared = poptorch.BeginBlock(self.model.shared, "Embedding", ipu_id=0)
-        self.model.encoder.embed_positions = poptorch.BeginBlock(
-            self.model.encoder.embed_positions, "Embedding", ipu_id=0
-        )
-        self.model.encoder.layernorm_embedding = poptorch.BeginBlock(
-            self.model.encoder.layernorm_embedding, "Embedding", ipu_id=0
-        )
-
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
-        for index, layer in enumerate(self.model.encoder.layers):
-            ipu = layer_ipu[index]
-            if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
-                recomputation_checkpoint(layer)
-            self.model.encoder.layers[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
-            logger.info(f"Encoder {index:<2} --> IPU {ipu}")
-
-        self.model.decoder.embed_positions = poptorch.BeginBlock(
-            self.model.decoder.embed_positions, "Embedding", ipu_id=0
-        )
-        self.model.decoder.layernorm_embedding = poptorch.BeginBlock(
-            self.model.decoder.layernorm_embedding, "Embedding", ipu_id=0
-        )
-        shift = len(self.model.encoder.layers)
-        for index, layer in enumerate(self.model.decoder.layers):
-            ipu = layer_ipu[index + shift]
-            if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
-                recomputation_checkpoint(layer)
-            self.model.decoder.layers[index] = poptorch.BeginBlock(layer, f"Decoder{index}", ipu_id=ipu)
-            logger.info(f"Decoder {index:<2} --> IPU {ipu}")
-
-        last_ipu = len(self.ipu_config.layers_per_ipu) - 1
-        logger.info(f"Classification Head Output --> IPU {last_ipu}")
-        self.classification_head = poptorch.BeginBlock(
-            self.classification_head, "Classification Head Output", ipu_id=last_ipu
-        )
-        logger.info("-----------------------------------------------------------")
-        return self
+        orig_make_causal_mask = transformers.models.bart.modeling_bart._make_causal_mask
+        orig_expand_mask = transformers.models.bart.modeling_bart._expand_mask
+        transformers.models.bart.modeling_bart._make_causal_mask = _make_causal_mask
+        transformers.models.bart.modeling_bart._expand_mask = _expand_mask
+        for mod in self.modules():
+            if isinstance(mod, BartAttention):
+                mod.__class__ = _BartAttentionWithoutException
+        traced = symbolic_trace_pipelined_model(self)
+        transformers.models.bart.modeling_bart._make_causal_mask = orig_make_causal_mask
+        transformers.models.bart.modeling_bart._expand_mask = orig_expand_mask
+        transformations = self.get_transformations()
+        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        composition = compose(*transformations)
+        non_reversible_composition = compose(*_NON_REVERSIBLE_TRANSFORMATIONS)
+        traced = composition(traced)
+        traced = non_reversible_composition(traced)
+        return traced
 
     def deparallelize(self):
         """
         Undo the changes to the model done by `parallelize`.
         You should call this before doing `save_pretrained` so that the `model.state_dict` is
-        fully compatible with `transformers.BartForSequenceClassification`.
+        fully compatible with `transformers.BartForConditionalGeneration`.
         """
         super().deparallelize()
-
-        self.model.encoder_and_decoder_embeddings_computation(False)
-        self.model.change_bart_encoder_and_decoder_classes(True)
-        self.model.change_bart_attention_class(True)
-        self.model.__class__ = BartModel
-
+        transformations = self.get_transformations()
+        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        transformations = [t for t in transformations if isinstance(t, ReversibleTransformation)]
+        composition = compose(*transformations)
+        self = composition(self, reverse=True)
         return self
 
     def forward(
