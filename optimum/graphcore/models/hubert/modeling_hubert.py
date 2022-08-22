@@ -15,7 +15,6 @@ import torch
 
 import poptorch
 from transformers import HubertForSequenceClassification
-from transformers.models.hubert.modeling_hubert import HubertEncoder, HubertEncoderStableLayerNorm
 
 from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, compose
 from ....utils import logging
@@ -87,12 +86,4 @@ class PipelinedHubertForSequenceClassification(HubertForSequenceClassification, 
         transformations += _OPTIMIZATION_TRANSFORMATIONS
         composition = compose(*transformations)
         self = composition(self, reverse=True)
-        return self
-
-    def deparallelize(self):
-        """
-        Undo the changes to the model done by `parallelize`.
-        """
-        super().deparallelize()
-        self.change_hubert_encoder_class(True)
         return self

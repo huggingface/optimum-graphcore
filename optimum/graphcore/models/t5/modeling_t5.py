@@ -64,24 +64,6 @@ class PipelinedT5ForConditionalGeneration(
     def is_encoder_and_decoder_embeddings_computation_shared(self):
         return isinstance(self.shared, SharedEmbedding)
 
-    def encoder_and_decoder_embeddings_computation(self, use_shared_embedding: bool):
-        """Sets the T5ForConditionalGeneration shared embedding layer to SharedEmbedding that combines the computation under one layer.
-
-        Args:
-            use_shared_embedding: whether to use SharedEmbedding or not.
-        """
-
-        if use_shared_embedding:
-            if isinstance(self.shared, SharedEmbedding):
-                logger.warning("encoder and decoder embeddings computation is already shared")
-            else:
-                self.shared = SharedEmbedding(self.shared)
-        else:
-            if isinstance(self.shared, nn.Embedding):
-                logger.warning("encoder and decoder embeddings computation is not shared")
-            else:
-                self.shared = self.shared.shared
-
     def scale_down_weights(self, factor: float = 1, restore: bool = False):
         self.lm_scale_modifier = 1 if not restore else None
         # self.lm_scale_modifier = nn.Parameter(torch.ones(self.config.d_model, dtype=torch.float16)) if not restore else None

@@ -46,11 +46,7 @@ from ...fx.utils import symbolic_trace_pipelined_model
 from ...modeling_utils import (
     OnehotGather,
     PipelineMixin,
-    SerializedEmbedding,
-    SerializedLinear,
     get_layer_ipu,
-    outline_attribute,
-    recomputation_checkpoint,
     register,
 )
 
@@ -141,12 +137,6 @@ class PipelinedRobertaForMaskedLM(RobertaForMaskedLM, PipelineMixin):
     def __init__(self, config):
         super().__init__(config)
         self.gather_indices = OnehotGather()
-
-    # def get_ops_to_wrap_for_tracing(self):
-    #     return [
-    #         ("torch.topk", *_gen_constructor_wrapper(torch.topk)),
-    #         ("torch.nn.functional.one_hot", *_gen_constructor_wrapper(torch.nn.functional.one_hot)),
-    #     ]
 
     def get_transformations(self):
         log_insertions = self.ipu_config.log_insertions
