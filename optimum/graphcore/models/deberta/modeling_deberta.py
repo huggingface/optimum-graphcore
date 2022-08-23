@@ -42,8 +42,6 @@ from ...modeling_utils import (
 logger = logging.get_logger(__name__)
 
 
-
-
 class XSoftmax(torch.nn.Module):
     def __init__(self, dim):
         super().__init__()
@@ -89,8 +87,7 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
         """
         bs, num_attn_heads, seq_len, _ = p2c_att.size()
         p2c_att_flat = p2c_att.reshape(bs, num_attn_heads, -1)
-        return p2c_att_flat[:, :, seq_len:].unfold(2, seq_len, 2*seq_len-1)
-
+        return p2c_att_flat[:, :, seq_len:].unfold(2, seq_len, 2 * seq_len - 1)
 
     def gather_c2p(self, c2p_att):
         """
@@ -98,7 +95,7 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
         """
         bs, num_attn_heads, seq_len, _ = c2p_att.size()
         c2p_att_flat = c2p_att.flip(3).reshape(bs, num_attn_heads, -1)
-        return c2p_att_flat[:, :, seq_len-1:].unfold(2, seq_len, 2*seq_len-1)
+        return c2p_att_flat[:, :, seq_len - 1 :].unfold(2, seq_len, 2 * seq_len - 1)
 
     def forward(
         self,
@@ -209,7 +206,14 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
             self.max_relative_positions - att_span : self.max_relative_positions + att_span, :
         ].unsqueeze(0)
 
-        score = torch.zeros(query_layer.size(0), query_layer.size(1), query_layer.size(2), query_layer.size(2), device=query_layer.device, dtype=query_layer.dtype)
+        score = torch.zeros(
+            query_layer.size(0),
+            query_layer.size(1),
+            query_layer.size(2),
+            query_layer.size(2),
+            device=query_layer.device,
+            dtype=query_layer.dtype,
+        )
 
         # content->position
         if "c2p" in self.pos_att_type:
@@ -254,12 +258,6 @@ class DebertaPipelineMixin(PipelineMixin):
                     mod.__class__ = nn.Dropout
                     mod.p = mod.drop_prob
                     mod.inplace = False
-            # if isinstance(mod, DebertaLayerNorm):
-            #     mod.forward = (
-            #         DebertaLayerNorm.forward.__get__(mod, DebertaLayerNorm)
-            #         if restore
-            #         else poptorch.autocast(enabled=True)(mod.forward)
-            #     )
             if isinstance(mod, DebertaEncoder):
                 func = DebertaEncoder.get_rel_embedding if restore else _get_rel_embedding
                 mod.get_rel_embedding = func.__get__(mod, DebertaEncoder)
