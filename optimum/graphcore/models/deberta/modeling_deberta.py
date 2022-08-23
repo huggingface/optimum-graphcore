@@ -16,22 +16,24 @@ import math
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
 
 import poptorch
 from optimum.utils import logging
-from transformers import DebertaForQuestionAnswering, DebertaForSequenceClassification, DebertaForTokenClassification
+from transformers import DebertaForMaskedLM, DebertaForQuestionAnswering, DebertaForSequenceClassification, DebertaForTokenClassification
 from transformers.models.deberta.modeling_deberta import (
     DebertaEncoder,
-    DebertaLayerNorm,
     DisentangledSelfAttention,
     StableDropout,
     build_relative_position,
 )
 
 from ...modeling_utils import (
+    OnehotGather,
     PipelineMixin,
     SerializedEmbedding,
+    SerializedLinear,
     get_layer_ipu,
     outline_attribute,
     recomputation_checkpoint,
@@ -276,9 +278,21 @@ class DebertaPipelineMixin(PipelineMixin):
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding  --> IPU 0")
         if self.ipu_config.embedding_serialization_factor > 1:
-            self.deberta.embeddings.word_embeddings = SerializedEmbedding(
-                self.deberta.embeddings.word_embeddings, self.config.embedding_serialization_factor
-            )
+            if isinstance(self, PipelinedDebertaForMaskedLM):
+                serialized_decoder = SerializedLinear(
+                    self.config.hidden_size,
+                    self.config.vocab_size,
+                    self.ipu_config.embedding_serialization_factor,
+                    bias=True,
+                    mode=poptorch.MatMulSerializationMode.OutputChannels,
+                )
+                serialized_decoder.load_state_dict(self.cls.predictions.decoder.state_dict())
+                self.cls.predictions.decoder = serialized_decoder
+                self.tie_weights()
+            else:
+                self.deberta.embeddings.word_embeddings = SerializedEmbedding(
+                    self.deberta.embeddings.word_embeddings, self.ipu_config.embedding_serialization_factor
+                )
 
         self.change_modules_for_ipu(False)
 
@@ -297,6 +311,10 @@ class DebertaPipelineMixin(PipelineMixin):
                 self._hooks.append(h)
             self.deberta.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
             logger.info(f"Encoder {index:<2} --> IPU {ipu}")
+
+        if isinstance(self, PipelinedDebertaForMaskedLM):
+            logger.info(f"Projection {index:<2} --> IPU {0}")
+            self.cls.predictions.decoder = poptorch.BeginBlock(self.cls.predictions.decoder, "Projection", ipu_id=0)
         return self
 
     def deparallelize(self):
@@ -307,10 +325,57 @@ class DebertaPipelineMixin(PipelineMixin):
         """
         super().deparallelize()
         self.change_modules_for_ipu(True)
-        # Deserialize the serialized word embedding
         if self.ipu_config.embedding_serialization_factor > 1:
-            self.deberta.embeddings.word_embeddings = self.deberta.embeddings.word_embeddings.deserialize()
+            if isinstance(self, PipelinedDebertaForMaskedLM):
+                decoder = nn.Linear(
+                    self.config.hidden_size,
+                    self.config.vocab_size,
+                    bias=True,
+                )
+                decoder.load_state_dict(self.cls.predictions.decoder.state_dict())
+                self.cls.predictions.decoder = decoder
+                self.tie_weights()
+            else:
+                # Deserialize the serialized word embedding
+                self.deberta.embeddings.word_embeddings = self.deberta.embeddings.word_embeddings.deserialize()
         return self
+
+
+@register(DebertaForMaskedLM)
+class PipelinedDebertaForMaskedLM(DebertaForMaskedLM, DebertaPipelineMixin):
+    """
+    DebertaForMaskedLM transformed to run in an IPU pipeline.
+
+    Recommended usage:
+    ```
+    model = PipelinedDebertaForMaskedLM(config).parallelize().half()
+    ```
+    """
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.gather_indices = OnehotGather()
+
+    def forward(self, input_ids, attention_mask, labels=None):
+        if self.training:
+            outputs = self.deberta(input_ids, attention_mask=attention_mask)
+            sequence_output = outputs[0]
+
+            # Select only the masked tokens for the classifier
+            max_number_of_masked_tokens = int(labels.size(1) * 0.25)
+            masked_lm_labels, masked_lm_positions = torch.topk(labels, k=max_number_of_masked_tokens, dim=1)
+            masked_output = self.gather_indices(sequence_output, masked_lm_positions)
+
+            prediction_scores = self.cls(masked_output)
+
+            masked_lm_loss = F.cross_entropy(
+                prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1)
+            ).float()
+            return (masked_lm_loss,)
+        else:
+            return super().forward(
+                input_ids=input_ids, attention_mask=attention_mask, labels=labels, return_dict=False
+            )
 
 
 @register(DebertaForSequenceClassification)
