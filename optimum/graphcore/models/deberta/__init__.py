@@ -20,4 +20,5 @@ from .modeling_deberta import (
     PipelinedDebertaForQuestionAnswering,
     PipelinedDebertaForSequenceClassification,
     PipelinedDebertaForTokenClassification,
+    PipelinedDebertaForMaskedLM,
 )
