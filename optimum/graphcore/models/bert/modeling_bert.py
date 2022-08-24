@@ -28,6 +28,7 @@ from transformers import (
     BertForTokenClassification,
 )
 from transformers.models.bert.modeling_bert import BertSelfAttention
+from transformers.modeling_outputs import QuestionAnsweringModelOutput
 
 from ...modeling_utils import (
     OnehotGather,
@@ -40,6 +41,8 @@ from ...modeling_utils import (
     register,
 )
 from .bert_fused_attention import BertFusedSelfAttention
+
+from typing import Optional, Tuple, Union
 
 
 logger = logging.get_logger(__name__)
@@ -372,15 +375,6 @@ class PipelinedBertForSequenceClassification(BertForSequenceClassification, Bert
         logger.info("-----------------------------------------------------------")
         return self
 
-    def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
-        return super().forward(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
-            labels=labels,
-            return_dict=False,
-        )
-
 
 @register(BertForMultipleChoice)
 class PipelinedBertForMultipleChoice(BertForMultipleChoice, BertPipelineMixin):
@@ -400,15 +394,6 @@ class PipelinedBertForMultipleChoice(BertForMultipleChoice, BertPipelineMixin):
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
         return self
-
-    def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
-        return super().forward(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
-            labels=labels,
-            return_dict=False,
-        )
 
 
 @register(BertForTokenClassification)
@@ -430,15 +415,6 @@ class PipelinedBertForTokenClassification(BertForTokenClassification, BertPipeli
         logger.info("-----------------------------------------------------------")
         return self
 
-    def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
-        return super().forward(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
-            labels=labels,
-            return_dict=False,
-        )
-
 
 @register(BertForQuestionAnswering)
 class PipelinedBertForQuestionAnswering(BertForQuestionAnswering, BertPipelineMixin):
@@ -459,15 +435,46 @@ class PipelinedBertForQuestionAnswering(BertForQuestionAnswering, BertPipelineMi
         logger.info("-----------------------------------------------------------")
         return self
 
-    def forward(self, input_ids, attention_mask, token_type_ids, start_positions=None, end_positions=None):
+    def forward(
+        self,
+        input_ids: Optional[torch.Tensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        token_type_ids: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.Tensor] = None,
+        head_mask: Optional[torch.Tensor] = None,
+        inputs_embeds: Optional[torch.Tensor] = None,
+        start_positions: Optional[torch.Tensor] = None,
+        end_positions: Optional[torch.Tensor] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[Tuple[torch.Tensor], QuestionAnsweringModelOutput]:
+        r"""
+        start_positions (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
+            Labels for position (index) of the start of the labelled span for computing the token classification loss.
+            Positions are clamped to the length of the sequence (`sequence_length`). Position outside of the sequence
+            are not taken into account for computing the loss.
+        end_positions (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
+            Labels for position (index) of the end of the labelled span for computing the token classification loss.
+            Positions are clamped to the length of the sequence (`sequence_length`). Position outside of the sequence
+            are not taken into account for computing the loss.
+        """
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
         output = super().forward(
-            input_ids=input_ids,
+            input_ids,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
             start_positions=start_positions,
             end_positions=end_positions,
-            return_dict=False,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
         )
+
         if start_positions is not None and end_positions is not None:
             output = (poptorch.identity_loss(output[0], reduction="none"),) + output[1:]
         return output
