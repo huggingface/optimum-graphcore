@@ -306,8 +306,6 @@ class DataCollatorForWav2Vec2Pretraining:
         batch["sampled_negative_indices"] = torch.tensor(sampled_negative_indices, dtype=torch.long, device=device)
         batch["reduce_selector"] = torch.tensor(reduce_selector, dtype=torch.int, device=device)
         batch["mask_reduced"] = torch.tensor(mask_reduced, dtype=torch.bool, device=device)
-        print ("================================================")
-        print (self.model.quantizer.temperature)
         batch["gumbel_temperature"] = torch.full([batch_size], self.model.quantizer.temperature, dtype=torch.float32)
         # this is passed and not used to allow metrics to be computed
         batch["labels"] = torch.full([batch_size], False, dtype=torch.bool)
@@ -536,12 +534,10 @@ def main():
                 self.max_gumbel_temperature * self.gumbel_temperature_decay**state.global_step,
                 self.min_gumbel_temperature,
             )
-            if hasattr(model_collator, "module"):
-                model_collator.module.set_gumbel_temperature(gumbel_temperature)
+            if hasattr(model, "module"):
+                model.module.set_gumbel_temperature(gumbel_temperature)
             else:
-                model_collator.set_gumbel_temperature(gumbel_temperature)
-            print ("++++++++++++++++++++++++++")
-            print (model_collator.quantizer.temperature)
+                model.set_gumbel_temperature(gumbel_temperature)
 
     gumbel_callback = GumbelTemperatureCallback(
         model_args.max_gumbel_temperature,

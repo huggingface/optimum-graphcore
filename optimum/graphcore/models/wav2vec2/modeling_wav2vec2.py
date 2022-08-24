@@ -203,8 +203,6 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
         output_hidden_states=None,
         return_dict=None,
     ):
-        # import poptorch
-        # gumbel_temperature = poptorch.ipu_print_tensor(gumbel_temperature)
         # Override the return_dict argument
         return_dict = False
 
