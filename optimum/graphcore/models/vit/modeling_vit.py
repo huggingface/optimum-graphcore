@@ -46,6 +46,3 @@ class PipelinedViTForImageClassification(transformers.ViTForImageClassification,
         self.vit.layernorm = poptorch.BeginBlock(self.vit.layernorm, "LayerNorm", ipu_id=last_ipu)
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier", ipu_id=last_ipu)
         return self
-
-    def forward(self, pixel_values, labels=None):
-        return super().forward(pixel_values=pixel_values, labels=labels, return_dict=False)
