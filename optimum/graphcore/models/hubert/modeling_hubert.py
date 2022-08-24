@@ -67,21 +67,3 @@ class PipelinedHubertForSequenceClassification(HubertForSequenceClassification, 
         super().deparallelize()
         self.change_hubert_encoder_class(True)
         return self
-
-    @poptorch.autocast(enabled=True)
-    def forward(
-        self,
-        input_values,
-        labels=None,
-        attention_mask=None,
-        output_attentions=None,
-        output_hidden_states=None,
-    ):
-        return super().forward(
-            input_values,
-            attention_mask=attention_mask,
-            output_attentions=False,
-            output_hidden_states=False,
-            return_dict=False,
-            labels=labels,
-        )
