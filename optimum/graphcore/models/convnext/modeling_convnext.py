@@ -103,6 +103,3 @@ class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClass
         for stage in self.convnext.encoder.stages:
             for layer in stage.layers:
                 layer.__class__ = ConvNextLayer
-
-    def forward(self, pixel_values=None, labels=None):
-        return super().forward(pixel_values=pixel_values, labels=labels, return_dict=False)
