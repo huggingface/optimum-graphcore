@@ -261,11 +261,3 @@ class PipelinedGPT2ForTokenClassification(GPT2ForTokenClassification, GPT2Pipeli
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
         return self
-
-    def forward(self, input_ids, attention_mask, labels=None):
-        return super().forward(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            labels=labels,
-            return_dict=False,
-        )
