@@ -53,7 +53,7 @@ In this demo run we pre-train a `"base-sized"` Wav2Vec2 model simply only on the
 data of [librispeech_asr](https://huggingface.co/datasets/librispeech_asr).
 
 ```bash
-python run_pretraining.py \
+python examples/speech-pretraining/run_pretraining.py \
 	--model_name_or_path "facebook/wav2vec2-base" \
 	--dataset_name "librispeech_asr" \
 	--dataset_config_name "clean" \
@@ -66,9 +66,20 @@ python run_pretraining.py \
 	--overwrite_output_dir \
 	--layerdrop 0.05 \
 	--per_device_train_batch_size 1 \
-	--dataloader_num_workers 8 \
+	--dataloader_mode "async_rebatched" \
+	--dataloader_num_workers 64 \
 	--num_train_epochs 1 \
-	--weight_decay 0.01
+	--warmup_steps 1000 \
+	--weight_decay 0.01 \
+	--learning_rate 0.001 \
+	--adam_beta1 0.9 \
+	--adam_beta2 0.98 \
+	--adam_epsilon 1e-04 \
+	--max_gumbel_temperature 2.0 \
+	--min_gumbel_temperature 0.5 \
+	--gumbel_temperature_decay 0.999995 \
+	--logging_steps 10 \
+	--pod_type pod16
 ```
 
 ### Base
@@ -77,7 +88,7 @@ To pre-train `"base-sized"` Wav2Vec2 model, *e.g.* [facebook/wav2vec2-base](http
 on 100h of training data from the [librispeech_asr](https://huggingface.co/datasets/librispeech_asr), the following command can be run:
 
 ```bash
-python run_pretraining.py \
+python examples/speech-pretraining/run_pretraining.py \
 	--model_name_or_path "facebook/wav2vec2-base" \
 	--dataset_name "librispeech_asr" \
 	--dataset_config_name "clean" \
@@ -90,14 +101,20 @@ python run_pretraining.py \
 	--overwrite_output_dir \
 	--layerdrop 0.05 \
 	--per_device_train_batch_size 1 \
-	--dataloader_num_workers 8 \
+	--dataloader_mode "async_rebatched" \
+	--dataloader_num_workers 64 \
 	--num_train_epochs 10 \
 	--warmup_steps 1000 \
 	--weight_decay 0.01 \
 	--learning_rate 0.001 \
 	--adam_beta1 0.9 \
 	--adam_beta2 0.98 \
-	--adam_epsilon 1e-04
+	--adam_epsilon 1e-04 \
+	--max_gumbel_temperature 2.0 \
+	--min_gumbel_temperature 0.5 \
+	--gumbel_temperature_decay 0.999995 \
+	--logging_steps 10 \
+	--pod_type pod16
 ```
 
 If you increase the effective `batch_size`, for example by increasing the `gradient_accumulation_steps`,
