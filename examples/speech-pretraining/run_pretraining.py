@@ -270,8 +270,6 @@ class DataCollatorForWav2Vec2Pretraining:
 
         device = batch["input_values"].device
         batch_size = batch["input_values"].shape[0]
-        print ("=================")
-        print (batch_size)
 
         mask_indices_seq_length = self.model._get_feat_extract_output_lengths(batch["input_values"].shape[-1])
         # make sure masked sequence length is a Python scalar

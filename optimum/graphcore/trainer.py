@@ -1021,8 +1021,6 @@ class IPUTrainer:
             self.control = self.callback_handler.on_epoch_begin(args, self.state, self.control)
 
             for step, inputs in enumerate(epoch_iterator):
-                print ("=================")
-                print (inputs["input_values"].shape)
 
                 # Skip past any already trained steps if resuming training
                 if steps_trained_in_current_epoch > 0:
