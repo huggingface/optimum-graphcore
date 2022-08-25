@@ -27,6 +27,7 @@ import datasets
 import numpy as np
 from datasets import load_dataset, load_metric
 
+import torch
 import transformers
 from optimum.graphcore import IPUConfig, IPUTrainer
 from optimum.graphcore import IPUTrainingArguments as TrainingArguments
@@ -467,6 +468,15 @@ def main():
         if data_args.max_train_samples is not None:
             max_train_samples = min(len(train_dataset), data_args.max_train_samples)
             train_dataset = train_dataset.select(range(max_train_samples))
+
+        labels = torch.tensor(train_dataset[0]["label"])
+        if model.config.problem_type is None:
+            if model.config.num_labels == 1:
+                model.config.problem_type = "regression"
+            elif model.config.num_labels > 1 and (labels.dtype == torch.long or labels.dtype == torch.int):
+                model.config.problem_type = "single_label_classification"
+            else:
+                model.config.problem_type = "multi_label_classification"
 
     if training_args.do_eval:
         if "validation" not in raw_datasets and "validation_matched" not in raw_datasets:
