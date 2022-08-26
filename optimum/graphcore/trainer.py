@@ -474,11 +474,15 @@ class IPUTrainer:
         else:
             sample_batch = self._prepare_inputs(sample_batch)
             model = self.model if training else self.model_for_eval
+            if training:
+                model.train()
+            else:
+                model.eval()
+            signature = inspect.signature(model.forward)
             if isinstance(sample_batch, tuple):
-                signature = inspect.signature(model.forward)
                 model.input_names_for_symbolic_trace = list(signature.parameters.keys())[: len(sample_batch)]
             else:
-                model.input_names_for_symbolic_trace = list(sample_batch.keys())
+                model.input_names_for_symbolic_trace = [p for p in signature.parameters if p in sample_batch]
             if not isinstance(model, torch.fx.GraphModule):
                 model = model.parallelize()
             if not self.args.fp32:
@@ -932,7 +936,7 @@ def wrap_model(self, model: Union[PreTrainedModel, PoplarExecutor], training: bo
             wrapped = self.training_model
         else:
             if self.inference_model is None:
-                self.inference_model = poptorch.inferenceModel(model.eval(), options=self.eval_opts)
+                self.inference_model = poptorch.inferenceModel(model, options=self.eval_opts)
             wrapped = self.inference_model
 
         # Attaching to device when the model that is being access was already compiled but detached from previous loop.

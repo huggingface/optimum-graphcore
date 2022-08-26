@@ -19,7 +19,6 @@ import torch
 import torch.nn.functional as F
 
 import poptorch
-from optimum.utils import logging
 from transformers import Wav2Vec2ForPreTraining, Wav2Vec2Model
 from transformers.modeling_outputs import CausalLMOutput
 from transformers.models.wav2vec2.modeling_wav2vec2 import (
@@ -27,16 +26,39 @@ from transformers.models.wav2vec2.modeling_wav2vec2 import (
     Wav2Vec2Encoder,
     Wav2Vec2EncoderStableLayerNorm,
     Wav2Vec2ForCTC,
-    Wav2Vec2ForPreTrainingOutput,
     Wav2Vec2GumbelVectorQuantizer,
 )
 
-from ...modeling_utils import PipelineMixin, get_layer_ipu, recomputation_checkpoint, register
+from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, compose
+from ....utils import logging
+from ...fx.transformations import (
+    AddPoptorchBlock,
+    AddPoptorchBlocksInSeries,
+    ClipValues,
+    ClipValuesSymmetric,
+    RecomputationCheckpoint,
+    TupleOutput,
+)
+from ...fx.utils import symbolic_trace_pipelined_model
+from ...modeling_utils import PipelineMixin, get_layer_ipu, register
+
 from .ipu_gumbel_vector_quantizer import IPUWav2Vec2GumbelVectorQuantizer
 from .ipu_layer_drop import IPUWav2Vec2Adapter, IPUWav2Vec2Encoder, IPUWav2Vec2EncoderStableLayerNorm
 
 
 logger = logging.get_logger(__name__)
+
+_OPTIMIZATION_TRANSFORMATIONS = [
+    ChangeTrueDivToMulByInverse(),
+    MergeLinears(),
+    #    FuseBiasInLinear(),
+]
+
+_NON_REVERSIBLE_TRANSFORMATIONS = [
+    ClipValuesSymmetric(1e4, exclude_targets=["view"]),
+    ClipValues(1e-4, float("inf"), include_targets=[torch.nn.LayerNorm]),
+    TupleOutput(),
+]
 
 
 class IPUWav2Vec2Model(Wav2Vec2Model):
@@ -73,8 +95,51 @@ class IPUWav2Vec2Model(Wav2Vec2Model):
         return attention_mask
 
 
+class Wav2Vec2PipelineMixin(PipelineMixin):
+    def get_transformations(self):
+        log_insertions = self.ipu_config.log_insertions
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        feature_extractor_conv_layers_ipu = layer_ipu[:self.config.num_feat_extract_layers]
+        transformations = [
+            AddPoptorchBlocksInSeries(
+                "Conv", feature_extractor_conv_layers_ipu, r"wav2vec2.feature_extractor.conv_layers.[0-9]+", log_insertions=log_insertions
+            ),
+            AddPoptorchBlock("Positional Embedding", layer_ipu[self.config.num_feat_extract_layers], "wav2vec2.encoder.pos_conv_embed", log_insertions=log_insertions),
+            AddPoptorchBlocksInSeries(
+                "Encoder", layer_ipu[self.config.num_feat_extract_layers + 1:], r"wav2vec2.encoder.layers.[0-9]+", log_insertions=log_insertions
+            ),
+        ]
+        if self.ipu_config.recompute_checkpoint_every_layer:
+            transformations += [
+                RecomputationCheckpoint(
+                    "wav2vec2.encoder.layers.[0-9]+",
+                    to_exclude=f"wav2vec2.encoder.layers.{self.config.num_hidden_layers - 1}",
+                ),
+            ]
+        return transformations
+
+    def parallelize(self):
+        super().parallelize()
+        traced = symbolic_trace_pipelined_model(self)
+        transformations = self.get_transformations()
+        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        composition = compose(*transformations)
+        non_reversible_composition = compose(*_NON_REVERSIBLE_TRANSFORMATIONS)
+        traced = composition(traced)
+        traced = non_reversible_composition(traced)
+        return traced
+
+    def deparallelize(self):
+        super().deparallelize()
+        transformations = self.get_transformations()
+        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        composition = compose(*transformations)
+        self = composition(self, reverse=True)
+        return self
+
+
 @register(Wav2Vec2ForPreTraining)
-class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
+class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, Wav2Vec2PipelineMixin):
     def change_wav2vec2_encoder_class(self, restore: bool):
         """Changes the encoder class to update its forward pass so that it uses our custom version.
 
@@ -125,8 +190,17 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
                 self.original_eps.append(conv_layer.layer_norm.eps)
                 conv_layer.layer_norm.eps = eps
 
-    def _add_begin_block(self, module, name, ipu_id):
-        poptorch.BeginBlock(module, name, ipu_id)
+    def get_transformations(self):
+        log_insertions = self.ipu_config.log_insertions
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        transformations = super().get_transformations()
+        start_idx = self.config.num_feat_extract_layers + 2
+        transformations += [
+            AddPoptorchBlock("Project Hidden", layer_ipu[start_idx], "project_hid", log_insertions=log_insertions),
+            AddPoptorchBlock("Quantizer", layer_ipu[start_idx + 1], "quantizer", log_insertions=log_insertions),
+            AddPoptorchBlock("Project Quantizer", layer_ipu[start_idx + 2], "project_q", log_insertions=log_insertions),
+        ]
+        return transformations
 
     def parallelize(self):
         """
@@ -140,41 +214,12 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
         model = PipelinedWav2Vec2ForPreTraining(config).parallelize().half()
         ```
         """
-        super().parallelize()
-
         self.wav2vec2.__class__ = IPUWav2Vec2Model
         self.change_wav2vec2_encoder_class(False)
         self.change_wav2vec2_adapter_class(False)
         self.change_quantizer_class(False)
         self.change_conv_eps(False)
-
-        logger.info("---------- Device Allocation -----------")
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
-        layers = []
-        # Conv layers
-        for index, layer in enumerate(self.wav2vec2.feature_extractor.conv_layers):
-            layers.append((f"Conv {index:<2}", layer))
-        # Positional Embedding
-        layers.append(("Positional Embedding", self.wav2vec2.encoder.pos_conv_embed))
-        # Encoder layers
-        for index, layer in enumerate(self.wav2vec2.encoder.layers):
-            recomputation_checkpoint(layer)
-            layers.append((f"Encoder {index:<2}", layer))
-        # Project Hidden
-        layers.append(("Project Hidden", self.project_hid))
-        # Quantizer
-        layers.append(("Quantizer", self.quantizer))
-        # Project Quantizer
-        layers.append(("Project Quantizer", self.project_q))
-
-        if len(layer_ipu) != len(layers):
-            raise ValueError(f"Layers per IPU total ({len(layer_ipu)}) must be equal to layers ({len(layers)}).")
-
-        for i, (name, layer) in enumerate(layers):
-            logger.info(f"{name} --> IPU {layer_ipu[i]}")
-            self._add_begin_block(layer, name, ipu_id=layer_ipu[i])
-
-        logger.info("---------------------------------------")
+        return super().parallelize()
 
     def deparallelize(self):
         """
@@ -182,13 +227,12 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
         You should call this before doing `save_pretrained` so that the `model.state_dict` is
         fully compatible with `transformers.Wav2Vec2ForPreTraining`.
         """
-        super().deparallelize()
         self.change_wav2vec2_encoder_class(True)
         self.change_wav2vec2_adapter_class(True)
         self.change_quantizer_class(True)
         self.change_conv_eps(True)
-        self.wav2vec2.__class__ = Wav2Vec2Model
-        return self
+        self.wav2vec2.__class__ = IPUWav2Vec2Model
+        return super().deparallelize()
 
     def forward(
         self,
@@ -368,7 +412,7 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
 
 
 @register(Wav2Vec2ForCTC)
-class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
+class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, Wav2Vec2PipelineMixin):
     def change_wav2vec2_encoder_class(self, restore: bool):
         """Changes the encoder class to update its forward pass so that it uses our custom version.
 
@@ -414,6 +458,17 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
     def _add_begin_block(self, module, name, ipu_id):
         poptorch.BeginBlock(module, name, ipu_id)
 
+    def get_transformations(self):
+        log_insertions = self.ipu_config.log_insertions
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        print(layer_ipu)
+        transformations = super().get_transformations()
+        start_idx = self.config.num_feat_extract_layers + 2
+        transformations.append(
+            AddPoptorchBlock("Project Hidden", layer_ipu[start_idx], "lm_head", log_insertions=log_insertions)
+        )
+        return transformations
+
     def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.
@@ -426,38 +481,13 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
         model = PipelinedWav2Vec2ForPreTraining(config).parallelize().half()
         ```
         """
-        super().parallelize()
-
         self.wav2vec2.__class__ = IPUWav2Vec2Model
-        self.freeze_feature_encoder()
-        self.change_wav2vec2_encoder_class(False)
-        self.change_wav2vec2_adapter_class(False)
-        self.change_conv_eps(False)
-
-        if self.ipu_config.ipus_per_replica != 1:
-            logger.info("---------- Device Allocation -----------")
-            layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
-            layers = []
-            # Conv layers
-            for index, layer in enumerate(self.wav2vec2.feature_extractor.conv_layers):
-                layers.append((f"Conv {index:<2}", layer))
-            # Positional Embedding
-            layers.append(("Positional Embedding", self.wav2vec2.encoder.pos_conv_embed))
-            # Encoder layers
-            for index, layer in enumerate(self.wav2vec2.encoder.layers):
-                recomputation_checkpoint(layer)
-                layers.append((f"Encoder {index:<2}", layer))
-            # Project Hidden
-            layers.append(("Project Hidden", self.lm_head))
-
-            if len(layer_ipu) != len(layers):
-                raise ValueError(f"Layers per IPU total ({len(layer_ipu)}) must be equal to layers ({len(layers)}).")
-
-            for i, (name, layer) in enumerate(layers):
-                logger.info(f"{name} --> IPU {layer_ipu[i]}")
-                self._add_begin_block(layer, name, ipu_id=layer_ipu[i])
-
-            logger.info("---------------------------------------")
+        if not isinstance(self, torch.fx.GraphModule):
+            self.freeze_feature_encoder()
+            self.change_wav2vec2_encoder_class(False)
+            self.change_wav2vec2_adapter_class(False)
+            self.change_conv_eps(False)
+        return super().parallelize()
 
     def deparallelize(self):
         """
@@ -465,12 +495,11 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
         You should call this before doing `save_pretrained` so that the `model.state_dict` is
         fully compatible with `transformers.Wav2Vec2ForPreTraining`.
         """
-        super().deparallelize()
         self.change_wav2vec2_encoder_class(True)
         self.change_wav2vec2_adapter_class(True)
         self.change_conv_eps(True)
         self.wav2vec2.__class__ = Wav2Vec2Model
-        return self
+        return super().deparallelize()
 
     def forward(
         self,

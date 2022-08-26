@@ -11,73 +11,99 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-from typing import Optional, Tuple, Union
-
 import torch
 import torch.nn.functional as F
 
 import poptorch
-from optimum.utils import logging
-from transformers import LxmertForQuestionAnswering
-from transformers.models.lxmert.modeling_lxmert import LxmertForQuestionAnsweringOutput
+import transformers
 
-from ...modeling_utils import PipelineMixin, recomputation_checkpoint, register
+from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, compose
+from ....utils import logging
+from ...fx.transformations import (
+    AddPoptorchBlock,
+    AddPoptorchBlocksInSeries,
+    ClipValues,
+    ClipValuesSymmetric,
+    RecomputationCheckpoint,
+    TupleOutput,
+)
+from ...fx.utils import symbolic_trace_pipelined_model
+from ...modeling_utils import PipelineMixin, get_layer_ipu, register
 
 
 logger = logging.get_logger(__name__)
 
+_OPTIMIZATION_TRANSFORMATIONS = [
+    ChangeTrueDivToMulByInverse(),
+    MergeLinears(),
+    #    FuseBiasInLinear(),
+]
+
+_NON_REVERSIBLE_TRANSFORMATIONS = [
+    ClipValuesSymmetric(1e4, exclude_targets=["view"]),
+    ClipValues(1e-4, float("inf"), include_targets=[torch.nn.LayerNorm]),
+    TupleOutput(),
+]
+
 
 @register(LxmertForQuestionAnswering)
 class PipelinedLxmertForQuestionAnswering(LxmertForQuestionAnswering, PipelineMixin):
+    def get_transformations(self):
+        log_insertions = self.ipu_config.log_insertions
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        language_layers_ipus = layer_ipu[: self.config.l_layers]
+        visual_layers_ipus = layer_ipu[self.config.l_layers : self.config.l_layers + self.r_layers]
+        cross_modality_layers_ipus = layer_ipu[self.config.l_layers + self.r_layers :]
+
+        transformations = [
+            AddPoptorchBlock("Embedding", 0, "lxmert.embeddings", log_insertions=log_insertions),
+            AddPoptorchBlock("Image Embedding", 0, "lxmert.encoder.visn_fc", log_insertions=log_insertions),
+            AddPoptorchBlocksInSeries(
+                "Language Layer", language_layers_ipus, r"lxmert.encoder.layer.[0-9]+", log_insertions=log_insertions
+            ),
+            AddPoptorchBlocksInSeries(
+                "Visual Layer", visual_layers_ipus, r"lxmert.encoder.r_layers.[0-9]+", log_insertions=log_insertions
+            ),
+            AddPoptorchBlocksInSeries(
+                "Cross Modality Layer",
+                cross_modality_layers_ipus,
+                r"lxmert.encoder.x_layers.[0-9]+",
+                log_insertions=log_insertions,
+            ),
+            AddPoptorchBlock("Pooler Output", layer_ipu[-1], "lxmert.pooler", log_insertions=log_insertions),
+            AddPoptorchBlock("Head Output", layer_ipu[-1], "lxmert.answer_head", log_insertions=log_insertions),
+        ]
+        if self.ipu_config.recompute_checkpoint_every_layer:
+            transformations += [
+                RecomputationCheckpoint(
+                    "lxmert.encoder.layer.[0-9]+", to_exclude=f"lxmert.encoder.layer.{self.config.l_layers - 1}"
+                ),
+                RecomputationCheckpoint(
+                    "lxmert.encoder.r_layers.[0-9]+", to_exclude=f"lxmert.encoder.r_layers.{self.config.r_layers - 1}"
+                ),
+                RecomputationCheckpoint(
+                    "lxmert.encoder.x_layers.[0-9]+", to_exclude=f"lxmert.encoder.x_layers.{self.config.x_layers - 1}"
+                ),
+            ]
+        return transformations
+
     def parallelize(self):
-        """
-        Transform the model to run in an IPU pipeline.
-        - Adds pipeline stages to the model
-        - Adds recomputation checkpoints
-        Recommended usage:
-        ```
-        model = PipelinedLxmertForQuestionAnswering(config).parallelize().half()
-        ```
-        """
-        self._hooks = []
+        super().parallelize()
+        traced = symbolic_trace_pipelined_model(self)
+        transformations = self.get_transformations()
+        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        composition = compose(*transformations)
+        non_reversible_composition = compose(*_NON_REVERSIBLE_TRANSFORMATIONS)
+        traced = composition(traced)
+        traced = non_reversible_composition(traced)
+        return traced
 
-        logger.info("-------------------- Device Allocation --------------------")
-        logger.info("Embedding               --> IPU 0")
-        self.lxmert.embeddings = poptorch.BeginBlock(self.lxmert.embeddings, "Embedding", ipu_id=0)
-        logger.info("Image embedding         --> IPU 0")
-        self.lxmert.encoder.visn_fc = poptorch.BeginBlock(self.lxmert.encoder.visn_fc, "Image embedding", ipu_id=0)
-
-        # Language layers
-        for index, layer in enumerate(self.lxmert.encoder.layer):
-            if self.ipu_config.recompute_checkpoint_every_layer:
-                h = recomputation_checkpoint(layer)
-                self._hooks.append(h)
-            self.lxmert.encoder.layer[index] = poptorch.BeginBlock(layer, f"Language layer{index}", ipu_id=1)
-            logger.info(f"Language layer {index:<2}       --> IPU 1")
-
-        # Visual layers
-        for index, layer in enumerate(self.lxmert.encoder.r_layers):
-            if self.ipu_config.recompute_checkpoint_every_layer:
-                h = recomputation_checkpoint(layer)
-                self._hooks.append(h)
-            self.lxmert.encoder.r_layers[index] = poptorch.BeginBlock(layer, f"Visual layer{index}", ipu_id=2)
-            logger.info(f"Visual layer {index:<2}         --> IPU 2")
-
-        # Cross modality layers
-        for index, layer in enumerate(self.lxmert.encoder.x_layers):
-            if self.ipu_config.recompute_checkpoint_every_layer:
-                h = recomputation_checkpoint(layer)
-                self._hooks.append(h)
-            self.lxmert.encoder.x_layers[index] = poptorch.BeginBlock(layer, f"Cross modality layer{index}", ipu_id=3)
-            logger.info(f"Cross modality layer {index:<2} --> IPU 3")
-
-        logger.info(f"Pooler                  --> IPU 3")
-        self.lxmert.pooler = poptorch.BeginBlock(self.lxmert.pooler, "Pooler", ipu_id=3)
-
-        logger.info(f"Head                    --> IPU 3")
-        self.answer_head = poptorch.BeginBlock(self.answer_head, "Head", ipu_id=3)
-        logger.info("-----------------------------------------------------------")
+    def deparallelize(self):
+        super().deparallelize()
+        transformations = self.get_transformations()
+        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        composition = compose(*transformations)
+        self = composition(self, reverse=True)
         return self
 
     def forward(

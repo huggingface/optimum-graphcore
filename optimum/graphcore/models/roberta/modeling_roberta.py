@@ -19,7 +19,6 @@ import torch.nn as nn
 from torch.nn import CrossEntropyLoss
 
 import poptorch
-from optimum.utils import logging
 from transformers import (
     RobertaForMaskedLM,
     RobertaForMultipleChoice,
@@ -30,6 +29,7 @@ from transformers import (
 from transformers.modeling_outputs import MaskedLMOutput, QuestionAnsweringModelOutput
 
 from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, compose
+from ....utils import logging
 from ...fx.transformations import (
     AddPoptorchBlock,
     AddPoptorchBlocksInSeries,
@@ -43,12 +43,7 @@ from ...fx.transformations import (
     VocabEmbeddingToSerializedEmbedding,
 )
 from ...fx.utils import symbolic_trace_pipelined_model
-from ...modeling_utils import (
-    OnehotGather,
-    PipelineMixin,
-    get_layer_ipu,
-    register,
-)
+from ...modeling_utils import OnehotGather, PipelineMixin, get_layer_ipu, register
 
 
 logger = logging.get_logger(__name__)

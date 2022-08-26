@@ -11,17 +11,22 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 import torch
-import torch.nn as nn
-
 import poptorch
-from optimum.utils import logging
-from transformers.models.convnext.modeling_convnext import (
-    ConvNextForImageClassification,
-    ConvNextLayer,
-    ConvNextLayerNorm,
+import transformers
+from transformers.models.convnext.modeling_convnext import ConvNextLayer, ConvNextLayerNorm, ConvNextForImageClassification
+
+from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, compose
+from ....utils import logging
+from ...fx.transformations import (
+    AddPoptorchBlock,
+    AddPoptorchBlocksInSeries,
+    ClipValues,
+    ClipValuesSymmetric,
+    RecomputationCheckpoint,
+    TupleOutput,
 )
+from ...fx.utils import symbolic_trace_pipelined_model
 
 from ...modeling_utils import PipelineMixin, get_layer_ipu, register
 from .optimized_convnextlayer import OptimizedConvNextLayer
@@ -29,7 +34,20 @@ from .optimized_convnextlayer import OptimizedConvNextLayer
 
 logger = logging.get_logger(__name__)
 
+_OPTIMIZATION_TRANSFORMATIONS = [
+    ChangeTrueDivToMulByInverse(),
+    MergeLinears(),
+    #    FuseBiasInLinear(),
+]
 
+_NON_REVERSIBLE_TRANSFORMATIONS = [
+    ClipValuesSymmetric(1e4, exclude_targets=["view"]),
+    ClipValues(1e-4, float("inf"), include_targets=[torch.nn.LayerNorm]),
+    TupleOutput(),
+]
+
+
+<<<<<<< HEAD
 class IPUConvNextLayerNorm(nn.Module):
     r"""LayerNorm that supports two data formats: channels_last (default) or channels_first.
     The ordering of the dimensions in the inputs. channels_last corresponds to inputs with shape (batch_size, height,
@@ -62,43 +80,60 @@ class IPUConvNextLayerNorm(nn.Module):
 
 @register(ConvNextForImageClassification)
 class PipelinedConvNextForImageClassification(ConvNextForImageClassification, PipelineMixin):
+    def get_transformations(self):
+        log_insertions = self.ipu_config.log_insertions
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        transformations = [
+            AddPoptorchBlock(
+                "Embedding", 0, r"convnext.embeddings", log_insertions=log_insertions
+            ),
+            AddPoptorchBlocksInSeries(
+                "Encoder", layer_ipu, r"convnext.encoder.stages.[0-9]+.layers.[0-9]+", log_insertions=log_insertions
+            ),
+            AddPoptorchBlock(
+                "LayerNorm", layer_ipu[-1], r"convnext.layernorm", log_insertions=log_insertions
+            ),
+            AddPoptorchBlock(
+                "Classifier", layer_ipu[-1], r"classifier", log_insertions=log_insertions
+            ),
+        ]
+        if self.ipu_config.recompute_checkpoint_every_layer:
+            transformations += [
+                RecomputationCheckpoint(
+                    "convnext.encoder.stages.[0-9]+.layers.[0-9]+",
+                    to_exclude=f"convnext.encoder.stages.{self.config.num_stages - 1}.layers.{self.config.depths[-1] - 1}",
+                ),
+            ]
+        return transformations
+
     def parallelize(self):
         super().parallelize()
 
-        # Use optimized ConvNextLayer
-        for stage in self.convnext.encoder.stages:
-            for layer in stage.layers:
-                layer.__class__ = OptimizedConvNextLayer
+        if not isinstance(self, torch.fx.GraphModule):
+            # Use optimized ConvNextLayer
+            for stage in self.convnext.encoder.stages:
+                for layer in stage.layers:
+                    layer.__class__ = OptimizedConvNextLayer
 
+<<<<<<< HEAD
         # Enable autocast for ConvNextLayerNorm because computation cannot happen in fp16
         for mod in self.modules():
             if isinstance(mod, ConvNextLayerNorm):
                 mod.__class__ = IPUConvNextLayerNorm
 
-        logger.info("---------- Device Allocation -----------")
-        logger.info(f"Embedding  --> IPU 0")
-        self.convnext.embeddings = poptorch.BeginBlock(self.convnext.embeddings, "Embedding", ipu_id=0)
-
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
-        global_layer_idx = 0
-        for stage_idx, stage in enumerate(self.convnext.encoder.stages):
-            for layer_idx, layer in enumerate(stage.layers):
-                ipu = layer_ipu[global_layer_idx]
-                logger.info(f"Encoder stage {stage_idx}, convnext layer {layer_idx} --> IPU {ipu}")
-                layer = poptorch.BeginBlock(layer, f"Encoder_stage_{stage_idx}_layer_{layer_idx}", ipu_id=ipu)
-                global_layer_idx += 1
-
-        last_ipu = self.ipu_config.ipus_per_replica - 1
-        logger.info(f"Head --> IPU {last_ipu}")
-        logger.info("---------------------------------------")
-        self.convnext.layernorm = poptorch.BeginBlock(self.convnext.layernorm, "LayerNorm", ipu_id=last_ipu)
-        self.classifier = poptorch.BeginBlock(self.classifier, "Classifier", ipu_id=last_ipu)
-
-        return self
+        traced = symbolic_trace_pipelined_model(self)
+        transformations = self.get_transformations()
+        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        composition = compose(*transformations)
+        non_reversible_composition = compose(*_NON_REVERSIBLE_TRANSFORMATIONS)
+        traced = composition(traced)
+        traced = non_reversible_composition(traced)
+        return traced
 
     def deparallelize(self):
         super().deparallelize()
 
+        # TODO: is that needed?
         for mod in self.modules():
             if isinstance(mod, IPUConvNextLayerNorm):
                 mod.__class__ = ConvNextLayerNorm
@@ -107,3 +142,42 @@ class PipelinedConvNextForImageClassification(ConvNextForImageClassification, Pi
         for stage in self.convnext.encoder.stages:
             for layer in stage.layers:
                 layer.__class__ = ConvNextLayer
+
+        transformations = self.get_transformations()
+        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        composition = compose(*transformations)
+        self = composition(self, reverse=True)
+        return self
+    # def parallelize(self):
+    #     super().parallelize()
+
+    #     # Use optimized ConvNextLayer
+    #     for stage in self.convnext.encoder.stages:
+    #         for layer in stage.layers:
+    #             layer.__class__ = OptimizedConvNextLayer
+
+    #     # Enable autocast for ConvNextLayerNorm because computation cannot happen in fp16
+    #     for mod in self.modules():
+    #         if isinstance(mod, ConvNextLayerNorm):
+    #             mod.forward = poptorch.autocast(enabled=True)(mod.forward)
+
+    #     logger.info("---------- Device Allocation -----------")
+    #     logger.info(f"Embedding  --> IPU 0")
+    #     self.convnext.embeddings = poptorch.BeginBlock(self.convnext.embeddings, "Embedding", ipu_id=0)
+
+    #     layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+    #     global_layer_idx = 0
+    #     for stage_idx, stage in enumerate(self.convnext.encoder.stages):
+    #         for layer_idx, layer in enumerate(stage.layers):
+    #             ipu = layer_ipu[global_layer_idx]
+    #             logger.info(f"Encoder stage {stage_idx}, convnext layer {layer_idx} --> IPU {ipu}")
+    #             layer = poptorch.BeginBlock(layer, f"Encoder_stage_{stage_idx}_layer_{layer_idx}", ipu_id=ipu)
+    #             global_layer_idx += 1
+
+    #     last_ipu = self.ipu_config.ipus_per_replica - 1
+    #     logger.info(f"Head --> IPU {last_ipu}")
+    #     logger.info("---------------------------------------")
+    #     self.convnext.layernorm = poptorch.BeginBlock(self.convnext.layernorm, "LayerNorm", ipu_id=last_ipu)
+    #     self.classifier = poptorch.BeginBlock(self.classifier, "Classifier", ipu_id=last_ipu)
+
+    #     return self
