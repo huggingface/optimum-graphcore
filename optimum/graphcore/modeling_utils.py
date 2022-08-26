@@ -56,9 +56,11 @@ def to_pipelined(model: nn.Module, ipu_config: IPUConfig, force: bool = False):
     pipelined_cls = _PRETRAINED_TO_PIPELINED_REGISTRY.get(model_cls, None)
     if pipelined_cls is not None:
         return pipelined_cls.from_transformers(model, ipu_config)
+    # If the user defined his/her own model and already subclassed from PipelineMixin.
     elif isinstance(model, PipelineMixin):
-        model.ipu_config = copy.deepcopy(ipu_config)
-        return model
+        clone = copy.deepcopy(model)
+        clone.ipu_config = copy.deepcopy(ipu_config)
+        return clone
     else:
         if force:
             logger.warning(
