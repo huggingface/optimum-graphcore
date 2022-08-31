@@ -22,7 +22,7 @@ import poptorch
 from optimum.utils import logging
 from transformers import T5ForConditionalGeneration
 from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
-from transformers.models.t5.modeling_t5 import __HEAD_MASK_WARNING_MSG, T5LayerNorm, T5Stack
+from transformers.models.t5.modeling_t5 import __HEAD_MASK_WARNING_MSG, T5Stack, T5Block
 
 from ...generation_utils import IPUGenerationMixin
 from ...modeling_utils import (
@@ -37,6 +37,112 @@ from ...modeling_utils import (
 
 
 logger = logging.get_logger(__name__)
+
+
+class CustomT5Block(T5Block):
+    def forward(
+        self,
+        hidden_states,
+        attention_mask=None,
+        position_bias=None,
+        encoder_hidden_states=None,
+        encoder_attention_mask=None,
+        encoder_decoder_position_bias=None,
+        layer_head_mask=None,
+        cross_attn_layer_head_mask=None,
+        past_key_value=None,
+        use_cache=False,
+        output_attentions=False,
+        return_dict=True,
+    ):
+
+        if past_key_value is not None:
+            if not self.is_decoder:
+                logger.warning("`past_key_values` is passed to the encoder. Please make sure this is intended.")
+            expected_num_past_key_values = 2 if encoder_hidden_states is None else 4
+
+            if len(past_key_value) != expected_num_past_key_values:
+                raise ValueError(
+                    f"There should be {expected_num_past_key_values} past states. "
+                    f"{'2 (past / key) for cross attention. ' if expected_num_past_key_values == 4 else ''}"
+                    f"Got {len(past_key_value)} past key / value states"
+                )
+
+            self_attn_past_key_value = past_key_value[:2]
+            cross_attn_past_key_value = past_key_value[2:]
+        else:
+            self_attn_past_key_value, cross_attn_past_key_value = None, None
+
+        self_attention_outputs = self.layer[0](
+            hidden_states,
+            attention_mask=attention_mask,
+            position_bias=position_bias,
+            layer_head_mask=layer_head_mask,
+            past_key_value=self_attn_past_key_value,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+        )
+        hidden_states, present_key_value_state = self_attention_outputs[:2]
+        attention_outputs = self_attention_outputs[2:]  # Keep self-attention outputs and relative position weights
+
+        # clamp inf values to enable fp16 training
+        # Custom: Remove check for inf
+        if hidden_states.dtype == torch.float16:
+            clamp_value = torch.finfo(hidden_states.dtype).max - 1000
+            hidden_states = torch.clamp(hidden_states, min=-clamp_value, max=clamp_value)
+
+        do_cross_attention = self.is_decoder and encoder_hidden_states is not None
+        if do_cross_attention:
+            # the actual query length is unknown for cross attention
+            # if using past key value states. Need to inject it here
+            if present_key_value_state is not None:
+                query_length = present_key_value_state[0].shape[2]
+            else:
+                query_length = None
+
+            cross_attention_outputs = self.layer[1](
+                hidden_states,
+                key_value_states=encoder_hidden_states,
+                attention_mask=encoder_attention_mask,
+                position_bias=encoder_decoder_position_bias,
+                layer_head_mask=cross_attn_layer_head_mask,
+                past_key_value=cross_attn_past_key_value,
+                query_length=query_length,
+                use_cache=use_cache,
+                output_attentions=output_attentions,
+            )
+            hidden_states = cross_attention_outputs[0]
+
+            # clamp inf values to enable fp16 training
+            # Custom: Remove check for inf
+            if hidden_states.dtype == torch.float16:
+                clamp_value = torch.finfo(hidden_states.dtype).max - 1000
+                hidden_states = torch.clamp(hidden_states, min=-clamp_value, max=clamp_value)
+
+            # Combine self attn and cross attn key value states
+            if present_key_value_state is not None:
+                present_key_value_state = present_key_value_state + cross_attention_outputs[1]
+
+            # Keep cross-attention outputs and relative position weights
+            attention_outputs = attention_outputs + cross_attention_outputs[2:]
+
+        # Apply Feed Forward layer
+        hidden_states = self.layer[-1](hidden_states)
+
+        # clamp inf values to enable fp16 training
+        # Custom: Remove check for inf
+        if hidden_states.dtype == torch.float16:
+            clamp_value = torch.finfo(hidden_states.dtype).max - 1000
+            hidden_states = torch.clamp(hidden_states, min=-clamp_value, max=clamp_value)
+
+        outputs = (hidden_states,)
+
+        if use_cache:
+            outputs = outputs + (present_key_value_state,) + attention_outputs
+        else:
+            outputs = outputs + attention_outputs
+
+        return outputs  # hidden-states, present_key_value_states, (self-attention position bias), (self-attention weights), (cross-attention position bias), (cross-attention weights)
 
 
 class CustomT5Stack(T5Stack):
@@ -161,10 +267,11 @@ class PipelinedT5ForConditionalGeneration(
         self.encoder.__class__ = CustomT5Stack
         self.decoder.__class__ = CustomT5Stack
 
-        # Enable autocast for T5LayerNorm because computation cannot happen in fp16
-        for mod in self.modules():
-            if isinstance(mod, T5LayerNorm):
-                mod.forward = poptorch.autocast(enabled=True)(mod.forward)
+        # Use a custom T5Block implementation that removes a dynamic if blocks that can't be statically traced 
+        for block in self.encoder.block:
+            block.__class__ = CustomT5Block
+        for block in self.decoder.block:
+            block.__class__ = CustomT5Block
 
         for index, layer in enumerate(self.encoder.block):
             ipu = layer_ipu[index]
@@ -209,9 +316,10 @@ class PipelinedT5ForConditionalGeneration(
         self.encoder.__class__ = T5Stack
         self.decoder.__class__ = T5Stack
 
-        for mod in self.modules():
-            if isinstance(mod, T5LayerNorm):
-                mod.forward = T5LayerNorm.forward.__get__(mod, T5LayerNorm)
+        for block in self.encoder.block:
+            block.__class__ = T5Block
+        for block in self.decoder.block:
+            block.__class__ = T5Block
 
         if self.ipu_config.embedding_serialization_factor > 1:
             old_lm_head = nn.Linear(
@@ -324,7 +432,6 @@ class PipelinedT5ForConditionalGeneration(
 
         # Set device for model parallelism
         if self.model_parallel:
-            torch.cuda.set_device(self.encoder.first_device)
             self.lm_head = self.lm_head.to(self.encoder.first_device)
             sequence_output = sequence_output.to(self.lm_head.weight.device)
 
