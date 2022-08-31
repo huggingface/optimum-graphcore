@@ -26,7 +26,7 @@ from transformers.modeling_outputs import (
     BaseModelOutputWithPastAndCrossAttentions,
     Seq2SeqModelOutput,
 )
-from transformers.models.bart.modeling_bart import BartAttention, BartDecoder, BartEncoder, shift_tokens_right
+from transformers.models.bart.modeling_bart import BartAttention, BartDecoder, BartEncoder, BartEncoderLayer, shift_tokens_right
 
 from ...generation_utils import IPUGenerationMixin
 from ...modeling_utils import (
@@ -53,8 +53,8 @@ def _make_causal_mask(input_ids_shape: torch.Size, dtype: torch.dtype, past_key_
         - Not expanding the final mask to [bsz, 1, tgt_len, src_len]
     """
     bsz, tgt_len = input_ids_shape
-    mask = torch.full((tgt_len, tgt_len), -FLOAT16_LIMIT)
-    mask = torch.triu(mask, diagonal=1)
+    mask = torch.full((tgt_len, tgt_len), -FLOAT16_LIMIT, dtype=dtype)
+    mask = torch.triu(mask, diagonal=1).to(dtype=dtype)
     return mask[None, None, :, :]
 
 
@@ -72,7 +72,7 @@ def _expand_mask(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] 
 
     # Using FLOAT16_LIMIT instead of -float("inf") to avoid NaNs on the IPUs.
     inverted_mask = -FLOAT16_LIMIT * inverted_mask
-    return inverted_mask
+    return inverted_mask.to(dtype)
 
 
 class _BartAttentionWithoutException(BartAttention):
@@ -188,6 +188,64 @@ class _BartAttentionWithoutException(BartAttention):
         attn_output = self.out_proj(attn_output)
 
         return attn_output, attn_weights_reshaped, past_key_value
+
+
+class _BartEncoderLayerNoClamp(BartEncoderLayer):
+    """
+    Same as BartEncoderLayer except it removed the dynamic if statement
+    for clamping fp16 tensor values.
+    """
+
+    def forward(
+        self,
+        hidden_states: torch.FloatTensor,
+        attention_mask: torch.FloatTensor,
+        layer_head_mask: torch.FloatTensor,
+        output_attentions: Optional[bool] = False,
+    ) -> Tuple[torch.FloatTensor, Optional[torch.FloatTensor]]:
+        """
+        Args:
+            hidden_states (`torch.FloatTensor`): input to the layer of shape `(seq_len, batch, embed_dim)`
+            attention_mask (`torch.FloatTensor`): attention mask of size
+                `(batch, 1, tgt_len, src_len)` where padding elements are indicated by very large negative values.
+            layer_head_mask (`torch.FloatTensor`): mask for attention heads in a given layer of size
+                `(encoder_attention_heads,)`.
+            output_attentions (`bool`, *optional*):
+                Whether or not to return the attentions tensors of all attention layers. See `attentions` under
+                returned tensors for more detail.
+        """
+        residual = hidden_states
+        hidden_states, attn_weights, _ = self.self_attn(
+            hidden_states=hidden_states,
+            attention_mask=attention_mask,
+            layer_head_mask=layer_head_mask,
+            output_attentions=output_attentions,
+        )
+        hidden_states = nn.functional.dropout(hidden_states, p=self.dropout, training=self.training)
+        hidden_states = residual + hidden_states
+        hidden_states = self.self_attn_layer_norm(hidden_states)
+
+        residual = hidden_states
+        hidden_states = self.activation_fn(self.fc1(hidden_states))
+        hidden_states = nn.functional.dropout(hidden_states, p=self.activation_dropout, training=self.training)
+        hidden_states = self.fc2(hidden_states)
+        hidden_states = nn.functional.dropout(hidden_states, p=self.dropout, training=self.training)
+        hidden_states = residual + hidden_states
+        hidden_states = self.final_layer_norm(hidden_states)
+
+        # Change: removing this `if` because it can't be statically compiled.
+        # if hidden_states.dtype == torch.float16 and (
+        #     torch.isinf(hidden_states).any() or torch.isnan(hidden_states).any()
+        # ):
+        #     clamp_value = torch.finfo(hidden_states.dtype).max - 1000
+        #     hidden_states = torch.clamp(hidden_states, min=-clamp_value, max=clamp_value)
+
+        outputs = (hidden_states,)
+
+        if output_attentions:
+            outputs += (attn_weights,)
+
+        return outputs
 
 
 class _BartEncoderWithCustomExpandMask(BartEncoder):
@@ -500,6 +558,8 @@ class _BartModelWithSharedEmbedding(BartModel):
         """
         self.encoder.__class__ = BartEncoder if restore else _BartEncoderWithCustomExpandMask
         self.decoder.__class__ = BartDecoder if restore else _BartDecoderWithCustomMakeCausalAndExpandMask
+        for layer in self.encoder.layers:
+            layer.__class__ = BartEncoderLayer if restore else _BartEncoderLayerNoClamp
 
     def change_bart_attention_class(self, restore: bool):
         """Changes the attention layers to either use the original BartAttention forward or
@@ -725,7 +785,7 @@ class PipelinedBartForConditionalGeneration(
             decoder_input_ids=decoder_input_ids,
             labels=labels,
             use_cache=False,
-            return_dict=False,
+            return_dict=True,
         )
         # Only returning the loss to make the communication between the host and the device faster.
         return outputs[0:1]
@@ -735,7 +795,7 @@ class PipelinedBartForConditionalGeneration(
             encoder_outputs=encoder_outputs,
             attention_mask=attention_mask,
             decoder_input_ids=decoder_input_ids,
-            return_dict=False,
+            return_dict=True,
             use_cache=False,
             labels=labels,
         )
