@@ -39,9 +39,6 @@ from transformers.testing_utils import slow
 from .utils import MODELS_TO_TEST_MAPPING
 
 
-_ALLOWED_REPLICATION_FACTOR = 2
-
-
 def _get_supported_models_for_script(
     models_to_test: Dict[str, Tuple[str]], task_mapping: Dict[str, str], task: str = "default"
 ) -> List[Tuple[str]]:
@@ -142,7 +139,8 @@ class ExampleTestMeta(type):
 
             self._install_requirements(example_script.parent / "requirements.txt")
 
-            with TemporaryDirectory() as tmp_dir:
+            with TemporaryDirectory(dir=Path(self.EXAMPLE_DIR)) as tmp_dir:
+                os.environ["HF_HOME"] = os.path.join(tmp_dir, "hf_home")
                 cmd_line = self._create_command_line(
                     example_script,
                     model_name,
@@ -155,6 +153,10 @@ class ExampleTestMeta(type):
                     inference_device_iterations=self.INFERENCE_DEVICE_ITERATIONS,
                     gradient_accumulation_steps=self.GRADIENT_ACCUMULATION_STEPS,
                 )
+                print()
+                print("#### Running command line... ####")
+                print(" ".join(cmd_line))
+                print()
                 p = subprocess.Popen(cmd_line)
                 return_code = p.wait()
                 self.assertEqual(return_code, 0)
@@ -163,9 +165,6 @@ class ExampleTestMeta(type):
                     with open(Path(tmp_dir) / "all_results.json") as fp:
                         results = json.load(fp)
                     self.assertGreaterEqual(float(results[self.SCORE_NAME]), self.EVAL_SCORE_THRESHOLD)
-
-            # TODO: do we need to enable this?
-            # self._cleanup_dataset_cache()
 
         return test
 
