@@ -30,9 +30,10 @@ logger = logging.get_logger(__name__)
 
 class GroupBertIntermediate(nn.Module):
     """
-    GroupBERT FFN intermediate layer is similar to original BERT, but includes 
+    GroupBERT FFN intermediate layer is similar to original BERT, but includes
     prenorm.
     """
+
     def __init__(self, config):
         super().__init__()
         self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
@@ -51,24 +52,25 @@ class GroupBertIntermediate(nn.Module):
 
 class GroupBertOutput(nn.Module):
     """
-    GroupBERT FFN output layer is uses grouped matmul to reduce the parameter cound and compensates 
+    GroupBERT FFN output layer is uses grouped matmul to reduce the parameter cound and compensates
     input locality with an output projection layer, similar to attention module.
     """
+
     def __init__(self, config):
         super().__init__()
         self.ffn_groups = config.ffn_groups
 
-        self.grouped_matmul = nn.Conv1d(config.intermediate_size, config.hidden_size, 1, padding=0, groups=self.ffn_groups)
+        self.grouped_matmul = nn.Conv1d(
+            config.intermediate_size, config.hidden_size, 1, padding=0, groups=self.ffn_groups
+        )
         self.dense_output_projection = nn.Linear(config.hidden_size, config.hidden_size)
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
-
 
     def forward(self, hidden_states: torch.Tensor, input_tensor: torch.Tensor) -> torch.Tensor:
         # Grouped matmul using conv1d
         hidden_states = torch.transpose(hidden_states, -1, -2)
         hidden_states = self.grouped_matmul(hidden_states)
-        hidden_states = torch.transpose(hidden_states, -1, -2)\
-
+        hidden_states = torch.transpose(hidden_states, -1, -2)
         # Output projection
         hidden_states = self.dense_output_projection(hidden_states)
         hidden_states = self.dropout(hidden_states)

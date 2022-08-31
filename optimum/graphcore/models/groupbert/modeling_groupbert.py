@@ -1,4 +1,4 @@
-#/usr/bin/python3
+# /usr/bin/python3
 # Copyright (c) 2021 Graphcore Ltd. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -61,15 +61,16 @@ def count_parameters(model):
     total_params = 0
     layers = len(model.bert.encoder.layer)
     for name, parameter in model.named_parameters():
-        if not parameter.requires_grad: continue
+        if not parameter.requires_grad:
+            continue
         params = parameter.numel()
-        
-        if 'layer' not in name:
+
+        if "layer" not in name:
             table.add_row([name, params])
-        elif ('layer.0.' in name):
-            name = name.replace('layer.0.', f'layer.[0-{layers}].')
+        elif "layer.0." in name:
+            name = name.replace("layer.0.", f"layer.[0-{layers}].")
             table.add_row([name, params])
-        total_params+=params
+        total_params += params
     logger.info(table)
     logger.info(f"Total Trainable Params: {total_params}")
     return total_params
@@ -104,10 +105,7 @@ class GroupBertLayer(nn.Module):
         output_attentions: Optional[bool] = False,
     ) -> Tuple[torch.Tensor]:
 
-        convolution_output = self.convolution(
-             hidden_states,
-             attention_mask
-        )
+        convolution_output = self.convolution(hidden_states, attention_mask)
 
         layer_output = apply_chunking_to_forward(
             self.feed_forward_chunk_first, self.chunk_size_feed_forward, self.seq_len_dim, convolution_output
@@ -129,7 +127,7 @@ class GroupBertLayer(nn.Module):
             outputs = self_attention_outputs[1:-1]
             present_key_value = self_attention_outputs[-1]
         else:
-            outputs = self_attention_outputs[1:]  # add self attentions if we output attention weights  
+            outputs = self_attention_outputs[1:]  # add self attentions if we output attention weights
 
         cross_attn_present_key_value = None
         if self.is_decoder and encoder_hidden_states is not None:
@@ -179,7 +177,6 @@ class GroupBertLayer(nn.Module):
 
 
 class GroupBertEncoder(nn.Module):
-
     def __init__(self, config):
         super().__init__()
         self.config = config
@@ -280,8 +277,7 @@ class GroupBertEncoder(nn.Module):
 
 
 class GroupBertModel(BertModel):
-
-     def __init__(self, config, add_pooling_layer=True):
+    def __init__(self, config, add_pooling_layer=True):
         super().__init__(config)
 
         self.encoder = GroupBertEncoder(config)
@@ -289,7 +285,7 @@ class GroupBertModel(BertModel):
         # Initialize weights and apply final processing
         self.post_init()
 
-     def _init_weights(self, module):
+    def _init_weights(self, module):
         """Initialize the weights"""
 
         def truncated_normal_(tensor, mean=0, std=1):
@@ -313,7 +309,6 @@ class GroupBertModel(BertModel):
 
 
 class GroupBertForPreTraining(BertForPreTraining):
-
     def __init__(self, config):
         super().__init__(config)
 
@@ -322,8 +317,8 @@ class GroupBertForPreTraining(BertForPreTraining):
         # Initialize weights and apply final processing
         self.post_init()
 
+
 class GroupBertForMaskedLM(BertForMaskedLM):
-    
     def __init__(self, config):
         super().__init__(config)
 
@@ -334,7 +329,6 @@ class GroupBertForMaskedLM(BertForMaskedLM):
 
 
 class GroupBertForSequenceClassification(BertForSequenceClassification):
-    
     def __init__(self, config):
         super().__init__(config)
 
@@ -345,7 +339,6 @@ class GroupBertForSequenceClassification(BertForSequenceClassification):
 
 
 class GroupBertForMultipleChoice(BertForMultipleChoice):
-    
     def __init__(self, config):
         super().__init__(config)
 
@@ -356,7 +349,6 @@ class GroupBertForMultipleChoice(BertForMultipleChoice):
 
 
 class GroupBertForTokenClassification(BertForTokenClassification):
-    
     def __init__(self, config):
         super().__init__(config)
 
@@ -367,7 +359,6 @@ class GroupBertForTokenClassification(BertForTokenClassification):
 
 
 class GroupBertForQuestionAnswering(BertForQuestionAnswering):
-    
     def __init__(self, config):
         super().__init__(config)
 
@@ -375,7 +366,6 @@ class GroupBertForQuestionAnswering(BertForQuestionAnswering):
 
         # Initialize weights and apply final processing
         self.post_init()
-    
 
 
 @register(GroupBertForPreTraining)
@@ -414,8 +404,8 @@ class PipelinedGroupBertForPreTraining(GroupBertForPreTraining, PipelineMixin):
             self.cls.predictions.decoder = serialized_decoder
             self.tie_weights()
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)           
-        
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+
         count_parameters(self)
 
         logger.info("-------------------- Device Allocation --------------------")

@@ -148,6 +148,7 @@ class GroupBertSelfOutput(nn.Module):
     GroupBERT self-attention output layer. Similar to BERT, but doesn't have layer norm
     since its moved to the begining of the module.
     """
+
     def __init__(self, config):
         super().__init__()
         self.dense = nn.Linear(config.hidden_size, config.hidden_size)
@@ -164,6 +165,7 @@ class GroupBertAttention(nn.Module):
     GroupBERT attention module. It is similar in construction to the originalTransformer encoder layer
     used in BERT, with the only difference being the pre-norm LayerNorm configuration.
     """
+
     def __init__(self, config, position_embedding_type=None):
         super().__init__()
         self.LayerNorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)

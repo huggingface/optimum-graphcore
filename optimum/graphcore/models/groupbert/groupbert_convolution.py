@@ -27,9 +27,10 @@ logger = logging.get_logger(__name__)
 
 class GroupBertConvolution(nn.Module):
     """
-    GroupBERT convolution module. Includes a GLU, group convolution, Swish, LayerNorm and 
-    output projection. 
+    GroupBERT convolution module. Includes a GLU, group convolution, Swish, LayerNorm and
+    output projection.
     """
+
     def __init__(self, config):
         super().__init__()
 
@@ -38,15 +39,15 @@ class GroupBertConvolution(nn.Module):
         self.conv_kernel_size = config.conv_kernel_size
 
         self.prenorm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
-        self.glu = nn.Linear(self.hidden_size, 2*self.hidden_size)
+        self.glu = nn.Linear(self.hidden_size, 2 * self.hidden_size)
         self.sigmoid = nn.Sigmoid()
-        
+
         self.groupconv = nn.Conv1d(
             self.hidden_size,
-            self.hidden_size, 
-            self.conv_kernel_size, 
-            padding='same', 
-            groups=int(self.hidden_size/self.conv_group_size)
+            self.hidden_size,
+            self.conv_kernel_size,
+            padding="same",
+            groups=int(self.hidden_size / self.conv_group_size),
         )
         self.conv_norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
         self.swish = nn.SiLU()
@@ -58,16 +59,18 @@ class GroupBertConvolution(nn.Module):
         input_mask = attention_mask[:, 0, :]
         return input_mask
 
-    def forward(self,input_tensor: torch.Tensor, attention_mask: torch.Tensor, training: bool = False) -> torch.Tensor:
+    def forward(
+        self, input_tensor: torch.Tensor, attention_mask: torch.Tensor, training: bool = False
+    ) -> torch.Tensor:
         # Prenorm
         hidden_states = self.prenorm(input_tensor)
 
         # Gated Linear Unit
         hidden_states = self.glu(hidden_states)
-        gates = hidden_states[..., :self.hidden_size]
-        values = hidden_states[..., self.hidden_size:]
+        gates = hidden_states[..., : self.hidden_size]
+        values = hidden_states[..., self.hidden_size :]
         gates = self.sigmoid(gates)
-        hidden_states = torch.mul(values,gates)
+        hidden_states = torch.mul(values, gates)
 
         # Grouped convolution
         input_mask = self.get_input_mask_from_attention_mask(attention_mask)

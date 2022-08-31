@@ -454,8 +454,10 @@ def prepare_tokenizer(model_args):
         "use_auth_token": True if model_args.use_auth_token else None,
     }
     if model_args.tokenizer_name:
+        logger.info("*** 7.1 ***")
         tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name, **tokenizer_kwargs)
     elif model_args.model_name_or_path:
+        logger.info("*** 7.2 ***")
         tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path, **tokenizer_kwargs)
     else:
         raise ValueError(
@@ -644,35 +646,35 @@ def main():
     set_logger(training_args)
 
     log_args(training_args, model_args, data_args)
-
+    logger.info("*** 1 ***")
     # Detecting last checkpoint.
     last_checkpoint = find_last_checkpoint(training_args)
-
+    logger.info("*** 2 ***")
     # Set seed before initializing model.
     set_seed(training_args.seed)
-
+    logger.info("*** 3 ***")
     # specifies to set poplar flags that would generate a memory-only or execution profiles 
     set_profile_flags(model_args.make_memory_profile, model_args.make_execution_profile)
-
+    logger.info("*** 4 ***")
     # fetch and prepare dataset
     raw_datasets = prepare_datasets(data_args, model_args.cache_dir)
-
+    logger.info("*** 5 ***")
     # prepare configs for running the model
     config, ipu_config = prepare_configs(model_args, training_args)
-
+    logger.info("*** 6 ***")
     # prepare callbacks for the model
     callbacks = prepare_callbacks(model_args, config)
-
+    logger.info("*** 7 ***")
     # Load tokenizer
     tokenizer = prepare_tokenizer(model_args)
-
+    logger.info("*** 8 ***")
     # Load pretrained model
     model = get_groupbert_model(model_args, config)
     model.resize_token_embeddings(len(tokenizer))
-
+    logger.info("*** 9 ***")
     # process the raw datasets for the model
     tokenized_datasets = process_the_dataset(raw_datasets, data_args, training_args, tokenizer)
-
+    logger.info("*** 10 ***")
     if training_args.do_train:
         if "train" not in tokenized_datasets:
             raise ValueError("--do_train requires a train dataset")
@@ -686,10 +688,10 @@ def main():
         eval_dataset = tokenized_datasets["validation"]
         if data_args.max_eval_samples is not None:
             eval_dataset = eval_dataset.select(range(data_args.max_eval_samples))
-
+    logger.info("*** 11 ***")
     # get data collator
     data_collator = get_data_collater(tokenizer, train_dataset, training_args, data_args, ipu_config)
-
+    logger.info("*** 12 ***")
     trainer = IPUTrainer(
         model=model,
         ipu_config=ipu_config,
@@ -700,7 +702,8 @@ def main():
         data_collator=data_collator,
         callbacks=callbacks,
     )
-    
+    logger.info("*** 13 ***")
+    # exit()
     # Training
     if training_args.do_train:
         checkpoint = None
