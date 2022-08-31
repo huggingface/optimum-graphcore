@@ -13,11 +13,10 @@
 # limitations under the License.
 
 import math
-from typing import Optional, Tuple, Union
+import operator
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 import poptorch
 from transformers import DebertaForQuestionAnswering, DebertaForSequenceClassification, DebertaForTokenClassification
@@ -33,6 +32,7 @@ from ....utils import logging
 from ...fx.transformations import (
     AddPoptorchBlock,
     AddPoptorchBlocksInSeries,
+    AutoCast,
     ClipValues,
     ClipValuesSymmetric,
     OutlineAttribute,
@@ -47,7 +47,7 @@ from ...modeling_utils import PipelineMixin, get_layer_ipu, register
 logger = logging.get_logger(__name__)
 
 _OPTIMIZATION_TRANSFORMATIONS = [
-    # ChangeTrueDivToMulByInverse(),
+    ChangeTrueDivToMulByInverse(),
     MergeLinears(),
     #    FuseBiasInLinear(),
 ]
@@ -64,9 +64,6 @@ class FastGatherLastDim(nn.Module):
     Custom Op that does a faster specialised version of `gather`
     on the last dimension of a tensor.
     """
-
-    def __init__(self):
-        super().__init__()
 
     def forward(self, data, idx, target=None):
         if poptorch.isRunningOnIpu():
@@ -87,9 +84,6 @@ class FastGatherLastDim(nn.Module):
             return o[0]
         else:
             return torch.gather(data, -1, idx)
-
-
-gather_last_dim = FastGatherLastDim()
 
 
 class XSoftmax(torch.nn.Module):
@@ -130,6 +124,7 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
     def __init__(self, config):
         super().__init__(config)
         self.xsoftmax = XSoftmax(-1)
+        self.gather_last_dim = FastGatherLastDim()
 
     def forward(
         self,
@@ -252,7 +247,7 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
             index = c2p_pos.expand(
                 [query_layer.size(0), query_layer.size(1), query_layer.size(2), relative_pos.size(-1)]
             )
-            c2p_att = gather_last_dim(c2p_att, index)
+            c2p_att = self.gather_last_dim(c2p_att, index)
             score += c2p_att
 
         # position->content
@@ -272,7 +267,7 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
             if query_layer.size(-2) != key_layer.size(-2):
                 pos_index = relative_pos[:, :, :, 0].unsqueeze(-1)
                 index = pos_index.expand(pos_index, p2c_att, key_layer)
-                p2c_att = gather_last_dim(p2c_att, index)
+                p2c_att = self.gather_last_dim(p2c_att, index)
             score += p2c_att
 
         return score
@@ -286,7 +281,8 @@ class DebertaPipelineMixin(PipelineMixin):
                 if restore:
                     del mod.xsoftmax
                 else:
-                    mod.xsoftmax = XSoftmax(-1)
+                    mod.add_module("xsoftmax", XSoftmax(-1))
+                    mod.add_module("gather_last_dim", FastGatherLastDim())
             if restore:
                 if isinstance(mod, nn.Dropout):
                     mod.__class__ = StableDropout
@@ -316,13 +312,14 @@ class DebertaPipelineMixin(PipelineMixin):
             AddPoptorchBlock("Classifier Output", layer_ipu[-1], "classifier", log_insertions=log_insertions),
             AddPoptorchBlock("QA Outputs", layer_ipu[-1], "qa_outputs", log_insertions=log_insertions),
         ]
-        # if self.ipu_config.recompute_checkpoint_every_layer:
-        #     transformations.append(
-        #         RecomputationCheckpoint(
-        #             "deberta.encoder.layer.[0-9]+",
-        #             to_exclude=f"deberta.encoder.layer.{self.config.num_hidden_layers - 1}",
-        #         )
-        #     )
+        if self.ipu_config.recompute_checkpoint_every_layer:
+            transformations.append(
+                RecomputationCheckpoint(
+                    "deberta.encoder.layer.[0-9]+",
+                    to_exclude=f"deberta.encoder.layer.{self.config.num_hidden_layers - 1}",
+                    output_nodes_specs={"call_function": [operator.add]},
+                )
+            )
         if self.ipu_config.embedding_serialization_factor > 1:
             transformations.append(VocabEmbeddingToSerializedEmbedding())
         return transformations

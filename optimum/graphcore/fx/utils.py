@@ -36,6 +36,7 @@ class PipelinedTracer(HFTracer):
         super().__init__(autowrap_modules=autowrap_modules, autowrap_functions=autowrap_functions)
         self.ops_to_wrap = []
         self.current_module_qualified_name = ["root"]
+        self.current_module_type = ["root"]
 
     def register_op_to_wrap(self, name, wrapper, orig_op):
         self.ops_to_wrap.append((name, wrapper, orig_op))
@@ -61,6 +62,7 @@ class PipelinedTracer(HFTracer):
         # Would be better to update the created node in TracerBase.create_node, but this method has less arguments, so
         # it is easier to use this one, and equivalent.
         node.parent_module_qualified_name = self.current_module_qualified_name[-1]
+        node.parent_module_type = self.current_module_type[-1]
         proxy = super().proxy(node)
         return proxy
 
@@ -71,10 +73,12 @@ class PipelinedTracer(HFTracer):
         is_leaf_module = self.is_leaf_module(m, module_qualified_name)
         if not is_leaf_module:
             self.current_module_qualified_name.append(module_qualified_name)
+            self.current_module_type.append(type(m))
         self.orig_forward = forward
         proxy = super().call_module(m, forward, args, kwargs)
         if not is_leaf_module:
             self.current_module_qualified_name.pop(-1)
+            self.current_module_type.pop(-1)
         return proxy
 
 

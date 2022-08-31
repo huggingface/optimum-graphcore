@@ -15,7 +15,7 @@
 import collections
 import operator
 import re
-from typing import TYPE_CHECKING, Callable, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Set, Tuple, Type, Union
 
 import torch
 
@@ -41,6 +41,11 @@ def node_matches_pattern(pattern, node: "Node"):
 def parent_module_qualified_name(node: "Node") -> str:
     name = getattr(node, "parent_module_qualified_name", "")
     return name if name != "root" else ""
+
+
+def parent_module_type(node: "Node") -> Union[str, Type]:
+    return getattr(node, "parent_module_type", None)
+
 
 
 class AddPoptorchBlockBase(ReversibleTransformation):
@@ -249,9 +254,14 @@ class RecomputationCheckpoint(ReversibleTransformation):
     Annotates the output of a module to be checkpointed instead of recomputed.
     """
 
-    def __init__(self, name_regex: str, to_exclude: Optional[str] = None):
+    def __init__(self, name_regex: str, to_exclude: Optional[str] = None, output_nodes_specs: Dict[str, List[Any]] = None):
         self.name_regex = re.compile(name_regex)
         self.to_exclude = re.compile(to_exclude) if to_exclude is not None else None
+        self.output_nodes_specs = None
+        if output_nodes_specs is not None:
+            self.output_nodes_specs = collections.defaultdict(set)
+            for k, v in output_nodes_specs.items():
+                self.output_nodes_specs[k] = v
 
     def find_output_nodes_for_module_name(self, graph_module: "GraphModule", module_qualified_name: str):
         nodes_in_module = set()
@@ -277,8 +287,11 @@ class RecomputationCheckpoint(ReversibleTransformation):
             else:
                 break
             modules_from_the_past.add(name)
-        # nodes_in_module = {n for n in nodes_in_module if set(n.users.keys()) & nodes_in_module}
-        return [n for n in nodes_in_module if set(n.users.keys()) - nodes_in_module]
+        output_nodes = [n for n in nodes_in_module if set(n.users.keys()) - nodes_in_module]
+        if self.output_nodes_specs:
+            output_nodes = [n for n in output_nodes if n.target in self.output_nodes_specs[n.op]]
+        return output_nodes
+
 
     def transform(self, graph_module: "GraphModule") -> "GraphModule":
         matched_module_names = collections.OrderedDict()
@@ -306,6 +319,49 @@ class RecomputationCheckpoint(ReversibleTransformation):
         for node in graph_module.graph.nodes:
             if node.target == poptorch.recomputationCheckpoint:
                 node.replace_all_uses_with(node.args[0])
+                graph_module.graph.erase_node(node)
+        return graph_module
+
+
+class AutoCast(ReversibleTransformation):
+    def __init__(self, module_types: Union[Type, Set[Type]], name_regex: Optional[str] = None):
+        self.module_types = module_types
+        if not isinstance(self.module_types, (list, tuple, set)):
+            self.module_types = {self.module_types}
+        if not isinstance(self.module_types, set):
+            self.module_types = set(self.module_types)
+        self.name_regex = re.compile(name_regex) if name_regex is not None else None
+
+    def find_start_and_end_nodes(self, graph_module: "GraphModule") -> List[Tuple["Node", "Node"]]:
+        start_and_end_nodes = []
+        start_node = None
+        end_node = None
+        for node in graph_module.graph.nodes:
+            name = parent_module_qualified_name(node)
+            if self.name_regex is not None and not re.match(self.name_regex, name):
+                continue
+            type_ = parent_module_type(node)
+            if type_ in self.module_types and start_node is None:
+                start_node = node
+            elif type_ in self.module_types:
+                end_node = node
+            elif start_node is not None:
+                start_and_end_nodes.append((start_node, end_node))
+                start_node = None
+        return start_and_end_nodes
+
+    def transform(self, graph_module: "GraphModule") -> "GraphModule":
+        start_and_end_nodes = self.find_start_and_end_nodes(graph_module)
+        for start_node, end_node in start_and_end_nodes:
+            with graph_module.graph.inserting_before(start_node):
+                graph_module.graph.call_function(torch.ops.poptorch.begin_autocast)
+            with graph_module.graph.inserting_after(end_node):
+                graph_module.graph.call_function(torch.ops.poptorch.restore_autocast)
+        return graph_module
+
+    def reverse(self, graph_module: "GraphModule") -> "GraphModule":
+        for node in graph_module.graph.nodes:
+            if node.target in [torch.ops.poptorch.begin_autocast, torch.ops.poptorch.restore_autocast]:
                 graph_module.graph.erase_node(node)
         return graph_module
 
