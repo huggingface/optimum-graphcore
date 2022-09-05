@@ -241,6 +241,7 @@ class ExampleTesterBase(TestCase):
         )
 
         cmd_line = [
+            "venv_tmp/bin/python" if self.venv_was_created else "python",
             f"{script}",
             f"--model_name_or_path {model_name}",
             f"--ipu_config_name {ipu_config_name}",
@@ -270,7 +271,7 @@ class ExampleTesterBase(TestCase):
         """
         Creates the virtual environment for the example.
         """
-        cmd_line = "python -m venv venv".split()
+        cmd_line = "python -m venv venv_tmp".split()
         p = subprocess.Popen(cmd_line)
         return_code = p.wait()
         self.assertEqual(return_code, 0)
@@ -281,7 +282,7 @@ class ExampleTesterBase(TestCase):
         Creates the virtual environment for the example.
         """
         if self.venv_was_created:
-            cmd_line = "rm -rf venv".split()
+            cmd_line = "rm -rf venv_tmp".split()
             p = subprocess.Popen(cmd_line)
             return_code = p.wait()
             self.assertEqual(return_code, 0)
@@ -291,7 +292,7 @@ class ExampleTesterBase(TestCase):
         """
         Installs the necessary requirements to run the example if the provided file exists, otherwise does nothing.
         """
-        pip_name = "venv/bin/pip" if self.venv_was_created else "pip"
+        pip_name = "venv_tmp/bin/pip" if self.venv_was_created else "pip"
 
         # Update pip
         cmd_line = f"{pip_name} install --upgrade pip".split()
@@ -310,15 +311,6 @@ class ExampleTesterBase(TestCase):
         if not Path(requirements_filename).exists():
             return
         cmd_line = f"{pip_name} install -r {requirements_filename}".split()
-        p = subprocess.Popen(cmd_line)
-        return_code = p.wait()
-        self.assertEqual(return_code, 0)
-
-    def _cleanup_dataset_cache(self):
-        """
-        Cleans up the dataset cache to free up space for other tests.
-        """
-        cmd_line = ["rm" "-r", "/nethome/michaelb/.cache/huggingface/datasets"]
         p = subprocess.Popen(cmd_line)
         return_code = p.wait()
         self.assertEqual(return_code, 0)
