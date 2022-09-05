@@ -300,7 +300,7 @@ class ExampleTesterBase(TestCase):
         self.assertEqual(return_code, 0)
 
         # Install SDK
-        sdk_path = os.environ["SDK_PATH"]
+        sdk_path = os.environ.get("SDK_PATH", Path(os.environ.get("POPLAR_SDK_ENABLED")).parent)
         cmd_line = f"{pip_name} install .[testing] {sdk_path}/poptorch-*.whl"
         p = subprocess.Popen(cmd_line, shell=True)
         return_code = p.wait()
