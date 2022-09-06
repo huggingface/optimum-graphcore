@@ -64,11 +64,13 @@ class DataCollatorForLanguageModelingWithMaxTokensMasked(DataCollatorForLanguage
         deviations above the mean.
         """
         import math
-
         mean = max_seq_length * self.mlm_probability
         var = max_seq_length * self.mlm_probability * (1 - self.mlm_probability)
         std = math.sqrt(var)
-        max_num_of_masked_tokens = math.ceil(mean + 2 * std)
+        max_num_of_masked_tokens = mean + 2 * std
+        # Round up to a multiple of 16
+        max_num_of_masked_tokens = math.ceil(max_num_of_masked_tokens / 16) * 16
+        # Cap to max_seq_length
         max_num_of_masked_tokens = min(max_num_of_masked_tokens, max_seq_length)
         return max_num_of_masked_tokens
 
