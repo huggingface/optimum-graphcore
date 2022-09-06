@@ -52,7 +52,6 @@ def pad_on_batch_axis(batch_size: int) -> Callable[[DataCollator], DataCollator]
 
 
 class DataCollatorForLanguageModelingWithMaxTokensMasked(DataCollatorForLanguageModeling):
-
     def __init__(self, max_seq_length, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.max_seq_length = max_seq_length
@@ -60,11 +59,12 @@ class DataCollatorForLanguageModelingWithMaxTokensMasked(DataCollatorForLanguage
 
     def _calculate_max_num_of_masked_tokens(self, max_seq_length):
         """
-        Get the max number of masked tokens. The number of masked tokens follows a binomial distribution. We approximate 
+        Get the max number of masked tokens. The number of masked tokens follows a binomial distribution. We approximate
         the binomial distribution with an Gaussian distribution and cap the maximum number of masked tokens to 2 standard
         deviations above the mean.
         """
         import math
+
         mean = max_seq_length * self.mlm_probability
         var = max_seq_length * self.mlm_probability * (1 - self.mlm_probability)
         std = math.sqrt(var)
@@ -103,7 +103,9 @@ class DataCollatorForLanguageModelingWithMaxTokensMasked(DataCollatorForLanguage
         # torch_mask_tokens is called after padding so labels should be of fixed shape.
         # Adding a small noise to -masked_indices to make the torch.topk selection of the ones to delete stochastic.
         small_noise = torch.rand(masked_indices.size())
-        _, indices = torch.topk(-masked_indices + small_noise, k=self.max_seq_length - self.max_num_of_masked_tokens, dim=1)
+        _, indices = torch.topk(
+            -masked_indices + small_noise, k=self.max_seq_length - self.max_num_of_masked_tokens, dim=1
+        )
         masked_indices.scatter_(1, indices, 0)
 
         masked_indices = masked_indices.bool()
