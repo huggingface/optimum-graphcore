@@ -536,7 +536,6 @@ def main():
 
     # Data collator
     # This one will take care of randomly masking the tokens.
-    # DataCollatorForLanguageModelingWithMaxTokensMasked assumes that all examples are padded to max_seq_length by this stage.
     data_collator = DataCollatorForLanguageModelingWithMaxTokensMasked(
         max_seq_length,
         tokenizer=tokenizer,
