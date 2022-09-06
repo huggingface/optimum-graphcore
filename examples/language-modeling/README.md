@@ -178,10 +178,10 @@ To employ ALS, just add the flag `--auto_loss_scaling` to the command. The loss 
 
 ## RoBERTa/BERT and masked language modeling
 
-The following example fine-tunes RoBERTa-base on WikiText-2. We're using the raw WikiText-2. Note that some IPU configurations are overridden.
+The following example fine-tunes RoBERTa-base on WikiText-2. We're using the raw WikiText-2. Note that `inference_device_iterations` is overridden.
 
 ```bash
-python run_mlm.py \
+python examples/language-modeling/run_mlm.py \
     --model_name_or_path roberta-base  \
     --ipu_config_name Graphcore/roberta-base-ipu \
     --dataset_name wikitext \
@@ -194,26 +194,8 @@ python run_mlm.py \
     --num_train_epochs 5 \
     --pod_type pod16 \
     --output_dir /tmp/mlm_output \
-    --ipu_config_overrides="inference_device_iterations=5"
-```
-
-To fine-tune RoBERTa-large on WikiText-2, we need to override a different set of IPU configurations.
-
-```bash
-python run_mlm.py \
-    --model_name_or_path roberta-large  \
-    --ipu_config_name Graphcore/roberta-large-ipu \
-    --dataset_name wikitext \
-    --dataset_config_name wikitext-2-raw-v1 \
-    --per_device_train_batch_size 1 \
-    --per_device_eval_batch_size 1 \
-    --gradient_accumulation_steps 16 \
-    --do_train \
-    --do_eval \
-    --num_train_epochs 5 \
-    --pod_type pod16 \
-    --output_dir /tmp/mlm_output \
-    --ipu_config_overrides="inference_device_iterations=5"
+    --ipu_config_overrides="inference_device_iterations=5" \
+    --dataloader_drop_last
 ```
 
 The same can be done with the BERT model by changing the flags: `--model_name_or_path bert-base-uncased --ipu_config_name Graphcore/bert-base-ipu`. 
