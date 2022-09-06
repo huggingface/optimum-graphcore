@@ -205,12 +205,6 @@ class ExampleTesterBase(TestCase):
     TRAIN_REPLICATION_FACTOR = 2
     INFERENCE_REPLICATION_FACTOR = 2
 
-    def setUp(self):
-        self._create_venv()
-
-    def tearDown(self):
-        return self._remove_venv()
-
     def _create_command_line(
         self,
         script: str,
@@ -241,7 +235,6 @@ class ExampleTesterBase(TestCase):
         )
 
         cmd_line = [
-            "venv_tmp/bin/python" if self.venv_was_created else "python",
             f"{script}",
             f"--model_name_or_path {model_name}",
             f"--ipu_config_name {ipu_config_name}",
@@ -267,50 +260,22 @@ class ExampleTesterBase(TestCase):
         pattern = re.compile(r"([\"\'].+?[\"\'])|\s")
         return [x for y in cmd_line for x in re.split(pattern, y) if x]
 
-    def _create_venv(self):
-        """
-        Creates the virtual environment for the example.
-        """
-        cmd_line = "python -m venv venv_tmp".split()
-        p = subprocess.Popen(cmd_line)
-        return_code = p.wait()
-        self.assertEqual(return_code, 0)
-        self.venv_was_created = True
-
-    def _remove_venv(self):
-        """
-        Creates the virtual environment for the example.
-        """
-        if self.venv_was_created:
-            cmd_line = "rm -rf venv_tmp".split()
-            p = subprocess.Popen(cmd_line)
-            return_code = p.wait()
-            self.assertEqual(return_code, 0)
-            self.venv_was_created = False
-
     def _install_requirements(self, requirements_filename: Union[str, os.PathLike]):
         """
         Installs the necessary requirements to run the example if the provided file exists, otherwise does nothing.
         """
-        pip_name = "venv_tmp/bin/pip" if self.venv_was_created else "pip"
-
-        # Update pip
-        cmd_line = f"{pip_name} install --upgrade pip".split()
+        if not Path(requirements_filename).exists():
+            return
+        cmd_line = f"pip install -r {requirements_filename}".split()
         p = subprocess.Popen(cmd_line)
         return_code = p.wait()
         self.assertEqual(return_code, 0)
 
-        # Install SDK
-        sdk_path = os.environ.get("SDK_PATH", Path(os.environ.get("POPLAR_SDK_ENABLED")).parent)
-        cmd_line = f"{pip_name} install .[testing] {sdk_path}/poptorch-*.whl"
-        p = subprocess.Popen(cmd_line, shell=True)
-        return_code = p.wait()
-        self.assertEqual(return_code, 0)
-
-        # Install requirements
-        if not Path(requirements_filename).exists():
-            return
-        cmd_line = f"{pip_name} install -r {requirements_filename}".split()
+    def _cleanup_dataset_cache(self):
+        """
+        Cleans up the dataset cache to free up space for other tests.
+        """
+        cmd_line = ["rm" "-r", "/nethome/michaelb/.cache/huggingface/datasets"]
         p = subprocess.Popen(cmd_line)
         return_code = p.wait()
         self.assertEqual(return_code, 0)
