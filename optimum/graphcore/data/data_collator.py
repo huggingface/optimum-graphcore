@@ -64,6 +64,7 @@ class DataCollatorForLanguageModelingWithMaxTokensMasked(DataCollatorForLanguage
         deviations above the mean.
         """
         import math
+
         mean = max_seq_length * self.mlm_probability
         var = max_seq_length * self.mlm_probability * (1 - self.mlm_probability)
         std = math.sqrt(var)
