@@ -543,6 +543,7 @@ def main():
         mlm_probability=data_args.mlm_probability,
         pad_to_multiple_of=None,
     )
+    model.config.max_num_of_masked_tokens = data_collator.max_num_of_masked_tokens
 
     if training_args.do_eval and not training_args.prediction_loss_only:
         logging.warning(
