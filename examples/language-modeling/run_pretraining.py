@@ -548,7 +548,7 @@ def main():
             # pad_to_multiple_of=8 if pad_to_multiple_of_8 else None,
             pad_to_multiple_of=None,
         )
-        model.config.max_num_of_masked_tokens = data_collator.max_num_of_masked_tokens
+        model.config.max_num_masked_tokens = data_collator.max_num_masked_tokens
     else:
         data_collator = default_data_collator
 

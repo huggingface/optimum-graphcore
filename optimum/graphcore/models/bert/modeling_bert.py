@@ -168,9 +168,9 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
         sequence_output, pooled_output = outputs[:2]
 
         if labels is not None:
-            if hasattr(self.config, "max_num_of_masked_tokens"):
+            if hasattr(self.config, "max_num_masked_tokens"):
                 # Select only the masked tokens for the classifier
-                labels, positions = torch.topk(labels, k=self.config.max_num_of_masked_tokens, dim=1)
+                labels, positions = torch.topk(labels, k=self.config.max_num_masked_tokens, dim=1)
                 sequence_output = self.gather_indices(sequence_output, positions)
 
         prediction_scores, seq_relationship_score = self.cls(sequence_output, pooled_output)
@@ -281,9 +281,9 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
             outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
             sequence_output = outputs[0]
 
-            if hasattr(self.config, "max_num_of_masked_tokens"):
+            if hasattr(self.config, "max_num_masked_tokens"):
                 # Select only the masked tokens for the classifier
-                labels, positions = torch.topk(labels, k=self.config.max_num_of_masked_tokens, dim=1)
+                labels, positions = torch.topk(labels, k=self.config.max_num_masked_tokens, dim=1)
                 sequence_output = self.gather_indices(sequence_output, positions)
 
             prediction_scores = self.cls(sequence_output)

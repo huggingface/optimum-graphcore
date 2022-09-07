@@ -165,9 +165,9 @@ class PipelinedRobertaForMaskedLM(RobertaForMaskedLM, PipelineMixin):
             outputs = self.roberta(input_ids, attention_mask=attention_mask)
             sequence_output = outputs[0]
 
-            if hasattr(self.config, "max_num_of_masked_tokens"):
+            if hasattr(self.config, "max_num_masked_tokens"):
                 # Select only the masked tokens for the classifier
-                labels, positions = torch.topk(labels, k=self.config.max_num_of_masked_tokens, dim=1)
+                labels, positions = torch.topk(labels, k=self.config.max_num_masked_tokens, dim=1)
                 sequence_output = self.gather_indices(sequence_output, positions)
 
             prediction_scores = self.lm_head(sequence_output)
