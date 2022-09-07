@@ -27,12 +27,13 @@ import os
 import sys
 import json 
 import datetime
+import functools
 from dataclasses import dataclass, field
 from typing import Optional
 
 
 import datasets
-import torch
+from torch.optim.lr_scheduler import LambdaLR
 from datasets import load_dataset, load_from_disk
 
 from optimum.graphcore import IPUConfig, IPUTrainer
@@ -72,6 +73,51 @@ logger = logging.getLogger(__name__)
 MODEL_CONFIG_CLASSES = list(MODEL_FOR_MASKED_LM_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
 
+
+def get_polynomial_decay_schedule_with_polynomial_warmup(
+    optimizer, warmup_ratio, num_training_steps, lr_end=1e-7, power=1.0, warmup_power=1.0, last_epoch=-1
+):
+    """
+    Create a schedule with a learning rate that decreases as a polynomial decay from the initial lr set in the
+    optimizer to end lr defined by *lr_end*, after a warmup period during which it increases linearly from 0 to the
+    initial lr set in the optimizer. Here, warmup is also behaving as a polynomial function.
+    Args:
+        optimizer ([`~torch.optim.Optimizer`]):
+            The optimizer for which to schedule the learning rate.
+        warmup_ratio (`float`):
+            Percentage of steps to be dedicated to warmup phase.
+        num_training_steps (`int`):
+            The total number of training steps.
+        lr_end (`float`, *optional*, defaults to 1e-7):
+            The end LR.
+        power (`float`, *optional*, defaults to 1.0):
+            Power factor.
+        last_epoch (`int`, *optional*, defaults to -1):
+            The index of the last epoch when resuming training.
+    Note: *power* defaults to 1.0 as in the fairseq implementation, which in turn is based on the original BERT
+    implementation at
+    https://github.com/google-research/bert/blob/f39e881b169b9d53bea03d2d341b31707a6c052b/optimization.py#L37
+    Return:
+        `torch.optim.lr_scheduler.LambdaLR` with the appropriate schedule.
+    """
+    num_warmup_steps = math.ceil(num_training_steps * warmup_ratio)
+    lr_init = optimizer.defaults["lr"]
+    if not (lr_init > lr_end):
+        raise ValueError(f"lr_end ({lr_end}) must be be smaller than initial lr ({lr_init})")
+
+    def lr_lambda(current_step: int):
+        if current_step < num_warmup_steps:
+            return (current_step ** warmup_power) / (num_warmup_steps ** warmup_power)
+        elif current_step > num_training_steps:
+            return lr_end / lr_init  # as LambdaLR multiplies by lr_init
+        else:
+            lr_range = lr_init - lr_end
+            decay_steps = num_training_steps - num_warmup_steps
+            pct_remaining = 1 - (current_step - num_warmup_steps) / decay_steps
+            decay = lr_range * pct_remaining**power + lr_end
+            return decay / lr_init  # as LambdaLR multiplies by lr_init
+
+    return LambdaLR(optimizer, lr_lambda, last_epoch)
 
 @dataclass
 class ModelArguments:
@@ -143,12 +189,12 @@ class ModelArguments:
             "help": "Flags to create a memory and execution profiles.)."
         },
     )
-
-    # def __post_init__(self):
-    #     if self.config_overrides is not None and (self.config_name is not None or self.model_name_or_path is not None):
-    #         raise ValueError(
-    #             "--config_overrides can't be used in combination with --config_name or --model_name_or_path"
-    #         )
+    default_schedule: bool = field(
+        default=False,
+        metadata={
+            "help": "Use to prevent using a prebuilt lr schedule that uses a polynomial warmup and pass it to the Trainer.)."
+        },
+    )
 
 
 @dataclass
@@ -156,7 +202,6 @@ class DataTrainingArguments:
     """
     Arguments pertaining to what data we are going to input our model for training and eval.
     """
-
     dataset_name: Optional[str] = field(
         default=None, metadata={"help": "The name of the dataset to use (via the datasets library)."}
     )
@@ -441,7 +486,7 @@ def prepare_callbacks(model_args, config, entity="research"):
     callbacks = []
     if model_args.wandb:
         import wandb
-        logger.info(f"Enabling WandB for this run.")
+        logger.info("Enabling WandB for this run.")
         wandb.init(entity=entity, project="POPTORCH-GROUPBERT", config=config, name=model_args.wandb_name)
         callbacks += [WandbCallback]
     return 
@@ -646,35 +691,25 @@ def main():
     set_logger(training_args)
 
     log_args(training_args, model_args, data_args)
-    logger.info("*** 1 ***")
     # Detecting last checkpoint.
     last_checkpoint = find_last_checkpoint(training_args)
-    logger.info("*** 2 ***")
     # Set seed before initializing model.
     set_seed(training_args.seed)
-    logger.info("*** 3 ***")
     # specifies to set poplar flags that would generate a memory-only or execution profiles 
     set_profile_flags(model_args.make_memory_profile, model_args.make_execution_profile)
-    logger.info("*** 4 ***")
     # fetch and prepare dataset
     raw_datasets = prepare_datasets(data_args, model_args.cache_dir)
-    logger.info("*** 5 ***")
     # prepare configs for running the model
     config, ipu_config = prepare_configs(model_args, training_args)
-    logger.info("*** 6 ***")
     # prepare callbacks for the model
     callbacks = prepare_callbacks(model_args, config)
-    logger.info("*** 7 ***")
     # Load tokenizer
     tokenizer = prepare_tokenizer(model_args)
-    logger.info("*** 8 ***")
     # Load pretrained model
     model = get_groupbert_model(model_args, config)
     model.resize_token_embeddings(len(tokenizer))
-    logger.info("*** 9 ***")
     # process the raw datasets for the model
     tokenized_datasets = process_the_dataset(raw_datasets, data_args, training_args, tokenizer)
-    logger.info("*** 10 ***")
     if training_args.do_train:
         if "train" not in tokenized_datasets:
             raise ValueError("--do_train requires a train dataset")
@@ -692,6 +727,11 @@ def main():
     # get data collator
     data_collator = get_data_collater(tokenizer, train_dataset, training_args, data_args, ipu_config)
     logger.info("*** 12 ***")
+
+    optimizer, lr_schedule = None, None
+    if not model_args.default_schedule:  #and not model_args.default_optimizer:
+        lr_schedule = functools.partial(get_polynomial_decay_schedule_with_polynomial_warmup, warmup_ratio = training_args.warmup_ratio, num_training_steps=training_args.max_steps, warmup_power=0.5)
+
     trainer = IPUTrainer(
         model=model,
         ipu_config=ipu_config,
@@ -701,9 +741,8 @@ def main():
         tokenizer=tokenizer,
         data_collator=data_collator,
         callbacks=callbacks,
+        optimizers=(optimizer, lr_schedule),
     )
-    logger.info("*** 13 ***")
-    # exit()
     # Training
     if training_args.do_train:
         checkpoint = None

@@ -23,6 +23,7 @@ import shutil
 import sys
 import time
 import warnings
+import functools
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
@@ -869,7 +870,8 @@ class IPUTrainer:
                 num_training_steps=num_training_steps,
             )
             optimizer._step_count = 1
-
+        elif isinstance(self.lr_scheduler, functools.partial):
+            self.lr_scheduler = self.lr_scheduler(optimizer)
         return self.lr_scheduler
 
     def num_examples(self, dataloader: poptorch.DataLoader) -> int:
