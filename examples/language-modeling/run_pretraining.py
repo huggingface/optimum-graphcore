@@ -540,11 +540,13 @@ def main():
         # This one will take care of randomly masking the tokens.
         # pad_to_multiple_of_8 = data_args.line_by_line and training_args.fp16 and not data_args.pad_to_max_length
         data_collator = DataCollatorForLanguageModelingWithMaxTokensMasked(
+            max_seq_length=len(next(iter(train_dataset))['labels']) if data_args.is_already_preprocessed else max_seq_length,
             tokenizer=tokenizer,
             mlm_probability=data_args.mlm_probability,
             # pad_to_multiple_of=8 if pad_to_multiple_of_8 else None,
             pad_to_multiple_of=None,
         )
+        model.config.max_num_of_masked_tokens = data_collator.max_num_of_masked_tokens
     else:
         data_collator = default_data_collator
 
