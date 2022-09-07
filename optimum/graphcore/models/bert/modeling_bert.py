@@ -283,29 +283,24 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
             self.tie_weights()
         return self
 
-    def forward(self, input_ids, attention_mask, token_type_ids=None, labels=None):
+    def forward(self, input_ids, attention_mask, labels=None):
         if self.training:
-            output = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
-            sequence_output = output[0]
+            outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask)
+            sequence_output = outputs[0]
 
-            # Select only the masked tokens for the classifier
-            max_number_of_masked_tokens = int(labels.size(1) * 0.25)
-            masked_lm_labels, masked_lm_positions = torch.topk(labels, k=max_number_of_masked_tokens, dim=1)
-            masked_output = self.gather_indices(sequence_output, masked_lm_positions)
+            if hasattr(self.config, "max_num_of_masked_tokens"):
+                # Select only the masked tokens for the classifier
+                labels, positions = torch.topk(labels, k=self.config.max_num_of_masked_tokens, dim=1)
+                sequence_output = self.gather_indices(sequence_output, positions)
 
-            prediction_scores = self.cls(masked_output)
-            output = (prediction_scores,) + output[2:]
+            prediction_scores = self.cls(sequence_output)
 
-            masked_lm_loss = F.cross_entropy(
-                prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1)
-            ).float()
+            masked_lm_loss = F.cross_entropy(prediction_scores.view(-1, self.config.vocab_size), labels.view(-1))
             return (masked_lm_loss,)
-
         else:
             return super().forward(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
-                token_type_ids=token_type_ids,
                 labels=labels,
                 return_dict=False,
             )
