@@ -278,7 +278,7 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
 
     def forward(self, input_ids, attention_mask, token_type_ids=None, labels=None):
         if self.training:
-            outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=None)
+            outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
             sequence_output = outputs[0]
 
             if hasattr(self.config, "max_num_masked_tokens"):
