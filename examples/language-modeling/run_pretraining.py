@@ -163,13 +163,6 @@ class DataTrainingArguments:
             "skipped."
         },
     )
-    is_already_preprocessed: Optional[bool] = field(
-        default=False,
-        metadata={
-            "help": "Whether the dataset is already pre-processed or not. If True, all the pre-processing steps will be"
-            "skipped."
-        },
-    )
     is_already_masked: Optional[bool] = field(
         default=False,
         metadata={"help": "Whether the input ids are already (statically) masked in the dataset."},
