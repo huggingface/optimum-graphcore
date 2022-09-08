@@ -340,7 +340,7 @@ class SerializedLinear(nn.Linear):
         else:
             output = poptorch.serializedMatMul(x, self.weight.t(), self.mode, self.factor)
             if self.bias is not None:
-                output = output + self.bias
+                output += self.bias
         return output
 
 
