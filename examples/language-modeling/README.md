@@ -74,7 +74,7 @@ python examples/language-modeling/run_pretraining.py \
   --tokenizer_name bert-base-uncased \
   --model_name_or_path ./output-pretrain-bert-base-phase1 \
   --ipu_config_name Graphcore/bert-base-ipu \
-  --dataset_path_name Graphcore/wikipedia-bert-512 \
+  --dataset_name Graphcore/wikipedia-bert-512 \
   --do_train \
   --logging_steps 5 \
   --max_seq_length 512 \
