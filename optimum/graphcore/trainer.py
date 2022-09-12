@@ -684,6 +684,7 @@ class IPUTrainer:
         """
         if self.optimizer is None:
             decay_parameters = get_parameter_names(self.model, [nn.LayerNorm])
+            bias_parameters = [name for name in decay_parameters if "bias" in name]
             decay_parameters = [name for name in decay_parameters if "bias" not in name]
             optimizer_grouped_parameters = [
                 {
@@ -691,8 +692,14 @@ class IPUTrainer:
                     "weight_decay": self.args.weight_decay,
                 },
                 {
-                    "params": [p for n, p in self.model.named_parameters() if n not in decay_parameters],
+                    "params": [p for n, p in self.model.named_parameters() if n not in decay_parameters and n not in bias_parameters],
                     "weight_decay": 0.0,
+                },
+                {
+                    # Disable LAMB updates for bias parameters
+                    "params": [p for n, p in self.model.named_parameters() if n in bias_parameters],
+                    "weight_decay": 0.0,
+                    "max_weight_norm": 0.0,
                 },
             ]
             if self.args.lamb or self.args.lamb_no_bias_correction:
