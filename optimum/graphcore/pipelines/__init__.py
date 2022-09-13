@@ -20,6 +20,7 @@ import os
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import torch
 import warnings
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
@@ -27,15 +28,20 @@ from numpy import isin
 
 from huggingface_hub.file_download import http_get
 
-from ..configuration_utils import PretrainedConfig
-from ..dynamic_module_utils import get_class_from_dynamic_module
-from ..feature_extraction_utils import PreTrainedFeatureExtractor
-from ..models.auto.configuration_auto import AutoConfig
-from ..models.auto.feature_extraction_auto import FEATURE_EXTRACTOR_MAPPING, AutoFeatureExtractor
-from ..models.auto.tokenization_auto import TOKENIZER_MAPPING, AutoTokenizer
-from ..tokenization_utils import PreTrainedTokenizer
-from ..tokenization_utils_fast import PreTrainedTokenizerFast
-from ..utils import HUGGINGFACE_CO_RESOLVE_ENDPOINT, logging
+from transformers import (
+    PretrainedConfig,
+    AutoConfig,
+    FEATURE_EXTRACTOR_MAPPING,
+    AutoFeatureExtractor,
+    TOKENIZER_MAPPING,
+    AutoTokenizer,
+    PreTrainedTokenizer,
+    PreTrainedTokenizerFast,
+    AutoModelForSequenceClassification,
+)
+from transformers.dynamic_module_utils import get_class_from_dynamic_module
+from transformers.feature_extraction_utils import PreTrainedFeatureExtractor
+from transformers.utils import HUGGINGFACE_CO_RESOLVE_ENDPOINT, logging
 from .base import (
     ArgumentHandler,
     CsvPipelineDataFormat,
@@ -51,11 +57,6 @@ from .base import (
 from .text_classification import TextClassificationPipeline
 
 
-import torch
-
-from ..models.auto.modeling_auto import (
-    AutoModelForSequenceClassification,
-)
 if TYPE_CHECKING:
     from ..modeling_utils import PreTrainedModel
 
