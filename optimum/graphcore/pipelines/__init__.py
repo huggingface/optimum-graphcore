@@ -36,8 +36,6 @@ from ..models.auto.tokenization_auto import TOKENIZER_MAPPING, AutoTokenizer
 from ..tokenization_utils import PreTrainedTokenizer
 from ..tokenization_utils_fast import PreTrainedTokenizerFast
 from ..utils import HUGGINGFACE_CO_RESOLVE_ENDPOINT, is_tf_available, is_torch_available, logging
-from .audio_classification import AudioClassificationPipeline
-from .automatic_speech_recognition import AutomaticSpeechRecognitionPipeline
 from .base import (
     ArgumentHandler,
     CsvPipelineDataFormat,
@@ -50,28 +48,7 @@ from .base import (
     get_default_model_and_revision,
     infer_framework_load_model,
 )
-from .conversational import Conversation, ConversationalPipeline
-from .document_question_answering import DocumentQuestionAnsweringPipeline
-from .feature_extraction import FeatureExtractionPipeline
-from .fill_mask import FillMaskPipeline
-from .image_classification import ImageClassificationPipeline
-from .image_segmentation import ImageSegmentationPipeline
-from .image_to_text import ImageToTextPipeline
-from .object_detection import ObjectDetectionPipeline
-from .question_answering import QuestionAnsweringArgumentHandler, QuestionAnsweringPipeline
-from .table_question_answering import TableQuestionAnsweringArgumentHandler, TableQuestionAnsweringPipeline
-from .text2text_generation import SummarizationPipeline, Text2TextGenerationPipeline, TranslationPipeline
 from .text_classification import TextClassificationPipeline
-from .text_generation import TextGenerationPipeline
-from .token_classification import (
-    AggregationStrategy,
-    NerPipeline,
-    TokenClassificationArgumentHandler,
-    TokenClassificationPipeline,
-)
-from .visual_question_answering import VisualQuestionAnsweringPipeline
-from .zero_shot_classification import ZeroShotClassificationArgumentHandler, ZeroShotClassificationPipeline
-from .zero_shot_image_classification import ZeroShotImageClassificationPipeline
 
 
 if is_tf_available():
@@ -139,27 +116,6 @@ TASK_ALIASES = {
     "vqa": "visual-question-answering",
 }
 SUPPORTED_TASKS = {
-    "audio-classification": {
-        "impl": AudioClassificationPipeline,
-        "tf": (),
-        "pt": (AutoModelForAudioClassification,) if is_torch_available() else (),
-        "default": {"model": {"pt": ("superb/wav2vec2-base-superb-ks", "372e048")}},
-        "type": "audio",
-    },
-    "automatic-speech-recognition": {
-        "impl": AutomaticSpeechRecognitionPipeline,
-        "tf": (),
-        "pt": (AutoModelForCTC, AutoModelForSpeechSeq2Seq) if is_torch_available() else (),
-        "default": {"model": {"pt": ("facebook/wav2vec2-base-960h", "55bb623")}},
-        "type": "multimodal",
-    },
-    "feature-extraction": {
-        "impl": FeatureExtractionPipeline,
-        "tf": (TFAutoModel,) if is_tf_available() else (),
-        "pt": (AutoModel,) if is_torch_available() else (),
-        "default": {"model": {"pt": ("distilbert-base-cased", "935ac13"), "tf": ("distilbert-base-cased", "935ac13")}},
-        "type": "multimodal",
-    },
     "text-classification": {
         "impl": TextClassificationPipeline,
         "tf": (TFAutoModelForSequenceClassification,) if is_tf_available() else (),
@@ -171,169 +127,6 @@ SUPPORTED_TASKS = {
             },
         },
         "type": "text",
-    },
-    "token-classification": {
-        "impl": TokenClassificationPipeline,
-        "tf": (TFAutoModelForTokenClassification,) if is_tf_available() else (),
-        "pt": (AutoModelForTokenClassification,) if is_torch_available() else (),
-        "default": {
-            "model": {
-                "pt": ("dbmdz/bert-large-cased-finetuned-conll03-english", "f2482bf"),
-                "tf": ("dbmdz/bert-large-cased-finetuned-conll03-english", "f2482bf"),
-            },
-        },
-        "type": "text",
-    },
-    "question-answering": {
-        "impl": QuestionAnsweringPipeline,
-        "tf": (TFAutoModelForQuestionAnswering,) if is_tf_available() else (),
-        "pt": (AutoModelForQuestionAnswering,) if is_torch_available() else (),
-        "default": {
-            "model": {
-                "pt": ("distilbert-base-cased-distilled-squad", "626af31"),
-                "tf": ("distilbert-base-cased-distilled-squad", "626af31"),
-            },
-        },
-        "type": "text",
-    },
-    "table-question-answering": {
-        "impl": TableQuestionAnsweringPipeline,
-        "pt": (AutoModelForTableQuestionAnswering,) if is_torch_available() else (),
-        "tf": (TFAutoModelForTableQuestionAnswering,) if is_tf_available() else (),
-        "default": {
-            "model": {
-                "pt": ("google/tapas-base-finetuned-wtq", "69ceee2"),
-                "tf": ("google/tapas-base-finetuned-wtq", "69ceee2"),
-            },
-        },
-        "type": "text",
-    },
-    "visual-question-answering": {
-        "impl": VisualQuestionAnsweringPipeline,
-        "pt": (AutoModelForVisualQuestionAnswering,) if is_torch_available() else (),
-        "tf": (),
-        "default": {
-            "model": {"pt": ("dandelin/vilt-b32-finetuned-vqa", "4355f59")},
-        },
-        "type": "multimodal",
-    },
-    "document-question-answering": {
-        "impl": DocumentQuestionAnsweringPipeline,
-        "pt": (AutoModelForDocumentQuestionAnswering,) if is_torch_available() else (),
-        "tf": (),
-        "default": {
-            "model": {"pt": ("impira/layoutlm-document-qa", "3a93017")},
-        },
-        "type": "multimodal",
-    },
-    "fill-mask": {
-        "impl": FillMaskPipeline,
-        "tf": (TFAutoModelForMaskedLM,) if is_tf_available() else (),
-        "pt": (AutoModelForMaskedLM,) if is_torch_available() else (),
-        "default": {"model": {"pt": ("distilroberta-base", "ec58a5b"), "tf": ("distilroberta-base", "ec58a5b")}},
-        "type": "text",
-    },
-    "summarization": {
-        "impl": SummarizationPipeline,
-        "tf": (TFAutoModelForSeq2SeqLM,) if is_tf_available() else (),
-        "pt": (AutoModelForSeq2SeqLM,) if is_torch_available() else (),
-        "default": {"model": {"pt": ("sshleifer/distilbart-cnn-12-6", "a4f8f3e"), "tf": ("t5-small", "d769bba")}},
-        "type": "text",
-    },
-    # This task is a special case as it's parametrized by SRC, TGT languages.
-    "translation": {
-        "impl": TranslationPipeline,
-        "tf": (TFAutoModelForSeq2SeqLM,) if is_tf_available() else (),
-        "pt": (AutoModelForSeq2SeqLM,) if is_torch_available() else (),
-        "default": {
-            ("en", "fr"): {"model": {"pt": ("t5-base", "686f1db"), "tf": ("t5-base", "686f1db")}},
-            ("en", "de"): {"model": {"pt": ("t5-base", "686f1db"), "tf": ("t5-base", "686f1db")}},
-            ("en", "ro"): {"model": {"pt": ("t5-base", "686f1db"), "tf": ("t5-base", "686f1db")}},
-        },
-        "type": "text",
-    },
-    "text2text-generation": {
-        "impl": Text2TextGenerationPipeline,
-        "tf": (TFAutoModelForSeq2SeqLM,) if is_tf_available() else (),
-        "pt": (AutoModelForSeq2SeqLM,) if is_torch_available() else (),
-        "default": {"model": {"pt": ("t5-base", "686f1db"), "tf": ("t5-base", "686f1db")}},
-        "type": "text",
-    },
-    "text-generation": {
-        "impl": TextGenerationPipeline,
-        "tf": (TFAutoModelForCausalLM,) if is_tf_available() else (),
-        "pt": (AutoModelForCausalLM,) if is_torch_available() else (),
-        "default": {"model": {"pt": ("gpt2", "6c0e608"), "tf": ("gpt2", "6c0e608")}},
-        "type": "text",
-    },
-    "zero-shot-classification": {
-        "impl": ZeroShotClassificationPipeline,
-        "tf": (TFAutoModelForSequenceClassification,) if is_tf_available() else (),
-        "pt": (AutoModelForSequenceClassification,) if is_torch_available() else (),
-        "default": {
-            "model": {"pt": ("facebook/bart-large-mnli", "c626438"), "tf": ("roberta-large-mnli", "130fb28")},
-            "config": {"pt": ("facebook/bart-large-mnli", "c626438"), "tf": ("roberta-large-mnli", "130fb28")},
-        },
-        "type": "text",
-    },
-    "zero-shot-image-classification": {
-        "impl": ZeroShotImageClassificationPipeline,
-        "tf": (TFAutoModel,) if is_tf_available() else (),
-        "pt": (AutoModel,) if is_torch_available() else (),
-        "default": {
-            "model": {
-                "pt": ("openai/clip-vit-base-patch32", "f4881ba"),
-                "tf": ("openai/clip-vit-base-patch32", "f4881ba"),
-            }
-        },
-        "type": "multimodal",
-    },
-    "conversational": {
-        "impl": ConversationalPipeline,
-        "tf": (TFAutoModelForSeq2SeqLM, TFAutoModelForCausalLM) if is_tf_available() else (),
-        "pt": (AutoModelForSeq2SeqLM, AutoModelForCausalLM) if is_torch_available() else (),
-        "default": {
-            "model": {"pt": ("microsoft/DialoGPT-medium", "8bada3b"), "tf": ("microsoft/DialoGPT-medium", "8bada3b")}
-        },
-        "type": "text",
-    },
-    "image-classification": {
-        "impl": ImageClassificationPipeline,
-        "tf": (TFAutoModelForImageClassification,) if is_tf_available() else (),
-        "pt": (AutoModelForImageClassification,) if is_torch_available() else (),
-        "default": {
-            "model": {
-                "pt": ("google/vit-base-patch16-224", "5dca96d"),
-                "tf": ("google/vit-base-patch16-224", "5dca96d"),
-            }
-        },
-        "type": "image",
-    },
-    "image-segmentation": {
-        "impl": ImageSegmentationPipeline,
-        "tf": (),
-        "pt": (AutoModelForImageSegmentation, AutoModelForSemanticSegmentation) if is_torch_available() else (),
-        "default": {"model": {"pt": ("facebook/detr-resnet-50-panoptic", "fc15262")}},
-        "type": "image",
-    },
-    "image-to-text": {
-        "impl": ImageToTextPipeline,
-        "tf": (TFAutoModelForVision2Seq,) if is_tf_available() else (),
-        "pt": (AutoModelForVision2Seq,) if is_torch_available() else (),
-        "default": {
-            "model": {
-                "pt": ("ydshieh/vit-gpt2-coco-en", "65636df"),
-                "tf": ("ydshieh/vit-gpt2-coco-en", "65636df"),
-            }
-        },
-        "type": "multimodal",
-    },
-    "object-detection": {
-        "impl": ObjectDetectionPipeline,
-        "tf": (),
-        "pt": (AutoModelForObjectDetection,) if is_torch_available() else (),
-        "default": {"model": {"pt": ("facebook/detr-resnet-50", "2729413")}},
-        "type": "image",
     },
 }
 
@@ -394,23 +187,7 @@ def check_task(task: str) -> Tuple[Dict, Any]:
         task (`str`):
             The task defining which pipeline will be returned. Currently accepted tasks are:
 
-            - `"audio-classification"`
-            - `"automatic-speech-recognition"`
-            - `"conversational"`
-            - `"feature-extraction"`
-            - `"fill-mask"`
-            - `"image-classification"`
-            - `"question-answering"`
-            - `"table-question-answering"`
-            - `"text2text-generation"`
             - `"text-classification"` (alias `"sentiment-analysis"` available)
-            - `"text-generation"`
-            - `"token-classification"` (alias `"ner"` available)
-            - `"translation"`
-            - `"translation_xx_to_yy"`
-            - `"summarization"`
-            - `"zero-shot-classification"`
-            - `"zero-shot-image-classification"`
 
     Returns:
         (normalized_task: `str`, task_defaults: `dict`, task_options: (`tuple`, None)) The normalized task name
@@ -469,23 +246,8 @@ def pipeline(
         task (`str`):
             The task defining which pipeline will be returned. Currently accepted tasks are:
 
-            - `"audio-classification"`: will return a [`AudioClassificationPipeline`].
-            - `"automatic-speech-recognition"`: will return a [`AutomaticSpeechRecognitionPipeline`].
-            - `"conversational"`: will return a [`ConversationalPipeline`].
-            - `"feature-extraction"`: will return a [`FeatureExtractionPipeline`].
-            - `"fill-mask"`: will return a [`FillMaskPipeline`]:.
-            - `"image-classification"`: will return a [`ImageClassificationPipeline`].
-            - `"question-answering"`: will return a [`QuestionAnsweringPipeline`].
-            - `"table-question-answering"`: will return a [`TableQuestionAnsweringPipeline`].
-            - `"text2text-generation"`: will return a [`Text2TextGenerationPipeline`].
             - `"text-classification"` (alias `"sentiment-analysis"` available): will return a
               [`TextClassificationPipeline`].
-            - `"text-generation"`: will return a [`TextGenerationPipeline`]:.
-            - `"token-classification"` (alias `"ner"` available): will return a [`TokenClassificationPipeline`].
-            - `"translation"`: will return a [`TranslationPipeline`].
-            - `"translation_xx_to_yy"`: will return a [`TranslationPipeline`].
-            - `"summarization"`: will return a [`SummarizationPipeline`].
-            - `"zero-shot-classification"`: will return a [`ZeroShotClassificationPipeline`].
 
         model (`str` or [`PreTrainedModel`] or [`TFPreTrainedModel`], *optional*):
             The model that will be used by the pipeline to make predictions. This can be a model identifier or an
