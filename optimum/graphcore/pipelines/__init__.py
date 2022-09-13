@@ -54,31 +54,7 @@ from .text_classification import TextClassificationPipeline
 import torch
 
 from ..models.auto.modeling_auto import (
-    MODEL_FOR_MASKED_LM_MAPPING,
-    MODEL_FOR_QUESTION_ANSWERING_MAPPING,
-    MODEL_FOR_SEQ_TO_SEQ_CAUSAL_LM_MAPPING,
-    MODEL_FOR_SEQUENCE_CLASSIFICATION_MAPPING,
-    MODEL_FOR_TABLE_QUESTION_ANSWERING_MAPPING,
-    MODEL_FOR_TOKEN_CLASSIFICATION_MAPPING,
-    MODEL_FOR_VISUAL_QUESTION_ANSWERING_MAPPING,
-    AutoModel,
-    AutoModelForAudioClassification,
-    AutoModelForCausalLM,
-    AutoModelForCTC,
-    AutoModelForDocumentQuestionAnswering,
-    AutoModelForImageClassification,
-    AutoModelForImageSegmentation,
-    AutoModelForMaskedLM,
-    AutoModelForObjectDetection,
-    AutoModelForQuestionAnswering,
-    AutoModelForSemanticSegmentation,
-    AutoModelForSeq2SeqLM,
     AutoModelForSequenceClassification,
-    AutoModelForSpeechSeq2Seq,
-    AutoModelForTableQuestionAnswering,
-    AutoModelForTokenClassification,
-    AutoModelForVision2Seq,
-    AutoModelForVisualQuestionAnswering,
 )
 if TYPE_CHECKING:
     from ..modeling_utils import PreTrainedModel
