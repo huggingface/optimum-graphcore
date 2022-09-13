@@ -164,32 +164,25 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
         labels=None,
         next_sentence_label=None,
     ):
-        output = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
-        sequence_output, pooled_output = output[:2]
+        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+        sequence_output, pooled_output = outputs[:2]
 
         if labels is not None:
-            # Select only the masked tokens for the classifier
-            max_number_of_masked_tokens = int(labels.size(1) * 0.25)
-            masked_lm_labels, masked_lm_positions = torch.topk(labels, k=max_number_of_masked_tokens, dim=1)
-            masked_output = self.gather_indices(sequence_output, masked_lm_positions)
-        else:
-            # This case should never happen during training
-            masked_output = sequence_output
+            if hasattr(self.config, "max_num_masked_tokens"):
+                # Select only the masked tokens for the classifier
+                labels, positions = torch.topk(labels, k=self.config.max_num_masked_tokens, dim=1)
+                sequence_output = self.gather_indices(sequence_output, positions)
 
-        prediction_scores, sequential_relationship_score = self.cls(masked_output, pooled_output)
-        output = (
-            prediction_scores,
-            sequential_relationship_score,
-        ) + output[2:]
+        prediction_scores, seq_relationship_score = self.cls(sequence_output, pooled_output)
+        output = (prediction_scores, seq_relationship_score) + outputs[2:]
 
         if labels is not None and next_sentence_label is not None:
             masked_lm_loss = F.cross_entropy(
                 prediction_scores.view(-1, self.config.vocab_size),
-                masked_lm_labels.view(-1),
-                ignore_index=-100,
+                labels.view(-1),
             ).float()
             next_sentence_loss = F.cross_entropy(
-                sequential_relationship_score.view(-1, 2), next_sentence_label.view(-1)
+                seq_relationship_score.view(-1, 2), next_sentence_label.view(-1)
             ).float()
             total_loss = poptorch.identity_loss(masked_lm_loss + next_sentence_loss, reduction="none")
             return (total_loss, masked_lm_loss, next_sentence_loss)
@@ -285,22 +278,18 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
 
     def forward(self, input_ids, attention_mask, token_type_ids=None, labels=None):
         if self.training:
-            output = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
-            sequence_output = output[0]
+            outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+            sequence_output = outputs[0]
 
-            # Select only the masked tokens for the classifier
-            max_number_of_masked_tokens = int(labels.size(1) * 0.25)
-            masked_lm_labels, masked_lm_positions = torch.topk(labels, k=max_number_of_masked_tokens, dim=1)
-            masked_output = self.gather_indices(sequence_output, masked_lm_positions)
+            if hasattr(self.config, "max_num_masked_tokens"):
+                # Select only the masked tokens for the classifier
+                labels, positions = torch.topk(labels, k=self.config.max_num_masked_tokens, dim=1)
+                sequence_output = self.gather_indices(sequence_output, positions)
 
-            prediction_scores = self.cls(masked_output)
-            output = (prediction_scores,) + output[2:]
+            prediction_scores = self.cls(sequence_output)
 
-            masked_lm_loss = F.cross_entropy(
-                prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1)
-            ).float()
+            masked_lm_loss = F.cross_entropy(prediction_scores.view(-1, self.config.vocab_size), labels.view(-1))
             return (masked_lm_loss,)
-
         else:
             return super().forward(
                 input_ids=input_ids,
