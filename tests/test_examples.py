@@ -166,7 +166,11 @@ class ExampleTestMeta(type):
                 if self.EVAL_IS_SUPPORTED:
                     with open(Path(tmp_dir) / "all_results.json") as fp:
                         results = json.load(fp)
-                    self.assertGreaterEqual(float(results[self.SCORE_NAME]), self.EVAL_SCORE_THRESHOLD)
+                    threshold_overrides = {}
+                    if isinstance(self.EVAL_SCORE_THRESHOLD_OVERRIDES, dict):
+                        threshold_overrides = self.EVAL_SCORE_THRESHOLD_OVERRIDES
+                    threshold = threshold_overrides.get(model_name, self.EVAL_SCORE_THRESHOLD)
+                    self.assertGreaterEqual(float(results[self.SCORE_NAME]), threshold)
 
         return test
 
@@ -182,6 +186,7 @@ class ExampleTesterBase(TestCase):
         EVAL_IS_SUPPORTED (`bool`): whether evaluation is currently supported on IPUs.
             If True, the example will run evaluation, otherwise it will be skipped.
         EVAL_SCORE_THRESHOLD (`float`): the score threshold from which training is assumed to have worked.
+        EVAL_SCORE_THRESHOLD_OVERRIDES (`dict`): per-model score threshold overrides
         SCORE_NAME (`str`): the name of the metric to use for checking that the example ran successfully.
         DATASET_PARAMETER_NAME (`str`): the argument name to use for the dataset parameter.
             Most of the time it will be "dataset_name", but for some tasks on a benchmark it might be something else.
@@ -197,6 +202,7 @@ class ExampleTesterBase(TestCase):
     TASK_NAME = None
     EVAL_IS_SUPPORTED = True
     EVAL_SCORE_THRESHOLD = 0.75
+    EVAL_SCORE_THRESHOLD_OVERRIDES = None
     SCORE_NAME = "eval_accuracy"
     DATASET_PARAMETER_NAME = "dataset_name"
     TRAIN_BATCH_SIZE = 2
@@ -383,6 +389,7 @@ class MultipleChoiceExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, 
     # Using a small gradient accumulation steps value because input data is repated for the multiple choice task.
     TRAIN_BATCH_SIZE = 1
     EVAL_BATCH_SIZE = 1
+    EVAL_SCORE_THRESHOLD_OVERRIDES = {"distilbert-base-uncased": 0.65}
 
 
 class QuestionAnsweringExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_qa"):

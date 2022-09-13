@@ -18,6 +18,7 @@ MODELS_TO_TEST_MAPPING = {
     "bert": ("bert-base-uncased", "Graphcore/bert-base-ipu"),
     "convnext": ("facebook/convnext-base-224", "Graphcore/convnext-base-ipu"),
     "deberta": ("microsoft/deberta-base", "Graphcore/deberta-base-ipu"),
+    "distilbert": ("distilbert-base-uncased", "Graphcore/distilbert-base-ipu"),
     "gpt2": ("gpt2", "Graphcore/gpt2-small-ipu"),
     "hubert": ("facebook/hubert-base-ls960", "Graphcore/hubert-base-ipu"),
     "lxmert": ("unc-nlp/lxmert-base-uncased", "Graphcore/lxmert-base-ipu"),
