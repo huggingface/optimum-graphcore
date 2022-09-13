@@ -1203,6 +1203,30 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         self.assertTrue(all((x == y).all() for x, y in zip(trainer.optimizer.param_groups[0]["params"], wd_params)))
         self.assertTrue(all((x == y).all() for x, y in zip(trainer.optimizer.param_groups[1]["params"], no_wd_params)))
 
+    def test_no_lamb_bias_param_group(self):
+        model = nn.Sequential(TstLayer(128), nn.ModuleList([TstLayer(128), TstLayer(128)]))
+        ipu_config = get_ipu_config()
+        args = IPUTrainingArguments(".", fp32=True, lamb=True)
+        trainer = IPUTrainer(model=model, ipu_config=ipu_config, args=args, force_to_pipelined=True)
+        # from transformers import Trainer
+        # trainer = Trainer(model=model)
+        trainer.create_optimizer_and_scheduler(10)
+        # fmt: off
+        wd_names = ['0.linear1.weight', '0.linear2.weight', '1.0.linear1.weight', '1.0.linear2.weight', '1.1.linear1.weight', '1.1.linear2.weight']
+        # fmt: on
+        wd_params = [p for n, p in model.named_parameters() if n in wd_names]
+        no_lamb_update_params = [p for n, p in model.named_parameters() if "bias" in n]
+
+        # Original test is checking that:
+        # self.assertListEqual(trainer.optimizer.param_groups[0]["params"], wd_params)
+        # self.assertListEqual(trainer.optimizer.param_groups[1]["params"], no_wd_params)
+        # This is not possible with the IPUTrainer because a deepcopy of the model is made when converting to the
+        # pipelined version. These asserts check that the parameters ids match, which is not the case here...
+        # Instead of comparing the ids, we compare that the values match.
+
+        self.assertTrue(all((x == y).all() for x, y in zip(trainer.optimizer.param_groups[0]["params"], wd_params)))
+        self.assertTrue(all((x == y).all() for x, y in zip(trainer.optimizer.param_groups[2]["params"], no_lamb_update_params)))
+
 
 @require_torch
 @is_staging_test
