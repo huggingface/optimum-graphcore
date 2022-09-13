@@ -35,7 +35,7 @@ from ..models.auto.feature_extraction_auto import FEATURE_EXTRACTOR_MAPPING, Aut
 from ..models.auto.tokenization_auto import TOKENIZER_MAPPING, AutoTokenizer
 from ..tokenization_utils import PreTrainedTokenizer
 from ..tokenization_utils_fast import PreTrainedTokenizerFast
-from ..utils import HUGGINGFACE_CO_RESOLVE_ENDPOINT, is_tf_available, is_torch_available, logging
+from ..utils import HUGGINGFACE_CO_RESOLVE_ENDPOINT, logging
 from .base import (
     ArgumentHandler,
     CsvPipelineDataFormat,
@@ -51,59 +51,36 @@ from .base import (
 from .text_classification import TextClassificationPipeline
 
 
-if is_tf_available():
-    import tensorflow as tf
+import torch
 
-    from ..models.auto.modeling_tf_auto import (
-        TF_MODEL_FOR_QUESTION_ANSWERING_MAPPING,
-        TF_MODEL_FOR_SEQ_TO_SEQ_CAUSAL_LM_MAPPING,
-        TF_MODEL_FOR_SEQUENCE_CLASSIFICATION_MAPPING,
-        TF_MODEL_FOR_TOKEN_CLASSIFICATION_MAPPING,
-        TF_MODEL_WITH_LM_HEAD_MAPPING,
-        TFAutoModel,
-        TFAutoModelForCausalLM,
-        TFAutoModelForImageClassification,
-        TFAutoModelForMaskedLM,
-        TFAutoModelForQuestionAnswering,
-        TFAutoModelForSeq2SeqLM,
-        TFAutoModelForSequenceClassification,
-        TFAutoModelForTableQuestionAnswering,
-        TFAutoModelForTokenClassification,
-        TFAutoModelForVision2Seq,
-    )
-
-if is_torch_available():
-    import torch
-
-    from ..models.auto.modeling_auto import (
-        MODEL_FOR_MASKED_LM_MAPPING,
-        MODEL_FOR_QUESTION_ANSWERING_MAPPING,
-        MODEL_FOR_SEQ_TO_SEQ_CAUSAL_LM_MAPPING,
-        MODEL_FOR_SEQUENCE_CLASSIFICATION_MAPPING,
-        MODEL_FOR_TABLE_QUESTION_ANSWERING_MAPPING,
-        MODEL_FOR_TOKEN_CLASSIFICATION_MAPPING,
-        MODEL_FOR_VISUAL_QUESTION_ANSWERING_MAPPING,
-        AutoModel,
-        AutoModelForAudioClassification,
-        AutoModelForCausalLM,
-        AutoModelForCTC,
-        AutoModelForDocumentQuestionAnswering,
-        AutoModelForImageClassification,
-        AutoModelForImageSegmentation,
-        AutoModelForMaskedLM,
-        AutoModelForObjectDetection,
-        AutoModelForQuestionAnswering,
-        AutoModelForSemanticSegmentation,
-        AutoModelForSeq2SeqLM,
-        AutoModelForSequenceClassification,
-        AutoModelForSpeechSeq2Seq,
-        AutoModelForTableQuestionAnswering,
-        AutoModelForTokenClassification,
-        AutoModelForVision2Seq,
-        AutoModelForVisualQuestionAnswering,
-    )
+from ..models.auto.modeling_auto import (
+    MODEL_FOR_MASKED_LM_MAPPING,
+    MODEL_FOR_QUESTION_ANSWERING_MAPPING,
+    MODEL_FOR_SEQ_TO_SEQ_CAUSAL_LM_MAPPING,
+    MODEL_FOR_SEQUENCE_CLASSIFICATION_MAPPING,
+    MODEL_FOR_TABLE_QUESTION_ANSWERING_MAPPING,
+    MODEL_FOR_TOKEN_CLASSIFICATION_MAPPING,
+    MODEL_FOR_VISUAL_QUESTION_ANSWERING_MAPPING,
+    AutoModel,
+    AutoModelForAudioClassification,
+    AutoModelForCausalLM,
+    AutoModelForCTC,
+    AutoModelForDocumentQuestionAnswering,
+    AutoModelForImageClassification,
+    AutoModelForImageSegmentation,
+    AutoModelForMaskedLM,
+    AutoModelForObjectDetection,
+    AutoModelForQuestionAnswering,
+    AutoModelForSemanticSegmentation,
+    AutoModelForSeq2SeqLM,
+    AutoModelForSequenceClassification,
+    AutoModelForSpeechSeq2Seq,
+    AutoModelForTableQuestionAnswering,
+    AutoModelForTokenClassification,
+    AutoModelForVision2Seq,
+    AutoModelForVisualQuestionAnswering,
+)
 if TYPE_CHECKING:
-    from ..modeling_tf_utils import TFPreTrainedModel
     from ..modeling_utils import PreTrainedModel
 
 logger = logging.get_logger(__name__)
@@ -118,13 +95,9 @@ TASK_ALIASES = {
 SUPPORTED_TASKS = {
     "text-classification": {
         "impl": TextClassificationPipeline,
-        "tf": (TFAutoModelForSequenceClassification,) if is_tf_available() else (),
-        "pt": (AutoModelForSequenceClassification,) if is_torch_available() else (),
+        "pt": (AutoModelForSequenceClassification,),
         "default": {
-            "model": {
-                "pt": ("distilbert-base-uncased-finetuned-sst-2-english", "af0f99b"),
-                "tf": ("distilbert-base-uncased-finetuned-sst-2-english", "af0f99b"),
-            },
+            "model": ("distilbert-base-uncased-finetuned-sst-2-english", "af0f99b")
         },
         "type": "text",
     },
@@ -208,10 +181,6 @@ def clean_custom_task(task_info):
     if isinstance(pt_class_names, str):
         pt_class_names = [pt_class_names]
     task_info["pt"] = tuple(getattr(transformers, c) for c in pt_class_names)
-    tf_class_names = task_info.get("tf", ())
-    if isinstance(tf_class_names, str):
-        tf_class_names = [tf_class_names]
-    task_info["tf"] = tuple(getattr(transformers, c) for c in tf_class_names)
     return task_info, None
 
 
@@ -221,7 +190,6 @@ def pipeline(
     config: Optional[Union[str, PretrainedConfig]] = None,
     tokenizer: Optional[Union[str, PreTrainedTokenizer, PreTrainedTokenizerFast]] = None,
     feature_extractor: Optional[Union[str, PreTrainedFeatureExtractor]] = None,
-    framework: Optional[str] = None,
     revision: Optional[str] = None,
     use_fast: bool = True,
     use_auth_token: Optional[Union[str, bool]] = None,
@@ -249,10 +217,9 @@ def pipeline(
             - `"text-classification"` (alias `"sentiment-analysis"` available): will return a
               [`TextClassificationPipeline`].
 
-        model (`str` or [`PreTrainedModel`] or [`TFPreTrainedModel`], *optional*):
+        model (`str` or [`PreTrainedModel`], *optional*):
             The model that will be used by the pipeline to make predictions. This can be a model identifier or an
-            actual instance of a pretrained model inheriting from [`PreTrainedModel`] (for PyTorch) or
-            [`TFPreTrainedModel`] (for TensorFlow).
+            actual instance of a pretrained model inheriting from [`PreTrainedModel`].
 
             If not provided, the default for the `task` will be loaded.
         config (`str` or [`PretrainedConfig`], *optional*):
@@ -281,13 +248,6 @@ def pipeline(
             `model` is not specified or not a string, then the default feature extractor for `config` is loaded (if it
             is a string). However, if `config` is also not given or not a string, then the default feature extractor
             for the given `task` will be loaded.
-        framework (`str`, *optional*):
-            The framework to use, either `"pt"` for PyTorch or `"tf"` for TensorFlow. The specified framework must be
-            installed.
-
-            If no framework is specified, will default to the one currently installed. If no framework is specified and
-            both frameworks are installed, will default to the framework of the `model`, or to PyTorch if no model is
-            provided.
         revision (`str`, *optional*, defaults to `"main"`):
             When passing a task name or a string model identifier: The specific model version to use. It can be a
             branch name, a tag name, or a commit id, since we use a git-based system for storing models and other
@@ -429,7 +389,7 @@ def pipeline(
     # Use default model/config/tokenizer for the task if no model is provided
     if model is None:
         # At that point framework might still be undetermined
-        model, default_revision = get_default_model_and_revision(targeted_task, framework, task_options)
+        model, default_revision = get_default_model_and_revision(targeted_task, task_options)
         revision = revision if revision is not None else default_revision
         logger.warning(
             f"No model was supplied, defaulted to {model} and revision"
@@ -460,12 +420,11 @@ def pipeline(
     # Infer the framework from the model
     # Forced if framework already defined, inferred if it's None
     # Will load the correct model if possible
-    model_classes = {"tf": targeted_task["tf"], "pt": targeted_task["pt"]}
-    framework, model = infer_framework_load_model(
+    model_classes = targeted_task["pt"]
+    model = infer_framework_load_model(
         model,
         model_classes=model_classes,
         config=config,
-        framework=framework,
         task=task,
         **hub_kwargs,
         **model_kwargs,
@@ -606,4 +565,4 @@ def pipeline(
     if device is not None:
         kwargs["device"] = device
 
-    return pipeline_class(model=model, framework=framework, task=task, **kwargs)
+    return pipeline_class(model=model, task=task, **kwargs)
