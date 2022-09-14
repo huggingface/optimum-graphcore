@@ -15,7 +15,7 @@ SUPPORTED_TASKS = {
     "text-classification": {
         "impl": TextClassificationPipeline,
         "class": (AutoModelForSequenceClassification,),
-        "default": "distilbert-base-uncased-finetuned-sst-2-english",
+        "default": "cardiffnlp/twitter-roberta-base-sentiment",
         "type": "text",
     },
 }
