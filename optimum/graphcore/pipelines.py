@@ -1,26 +1,19 @@
 from typing import Any, Optional, Union
 
 from transformers import (
+    AutoModelForSequenceClassification,
+    Pipeline,
+    PreTrainedTokenizer,
     TextClassificationPipeline,
 )
 from transformers import pipeline as transformers_pipeline
 from transformers.feature_extraction_utils import PreTrainedFeatureExtractor
-from transformers.onnx.utils import get_preprocessor
 
-from .utils import is_onnxruntime_available
-
-
-SUPPORTED_TASKS = {}
-
-from .models import (
-    ORTModelForSequenceClassification,
-)
-from .onnxruntime.modeling_ort import ORTModel
 
 SUPPORTED_TASKS = {
     "text-classification": {
         "impl": TextClassificationPipeline,
-        "class": (ORTModelForSequenceClassification,) if is_onnxruntime_available() else (),
+        "class": (AutoModelForSequenceClassification,),
         "default": "distilbert-base-uncased-finetuned-sst-2-english",
         "type": "text",
     },
