@@ -62,10 +62,10 @@ def pipeline(
 
     if model is None:
         model_id = SUPPORTED_TASKS[targeted_task]["default"]
-        model = SUPPORTED_TASKS[targeted_task]["class"][0].from_pretrained(model_id, from_transformers=True)
+        model = SUPPORTED_TASKS[targeted_task]["class"][0].from_pretrained(model_id)
     elif isinstance(model, str):
         model_id = model
-        model = SUPPORTED_TASKS[targeted_task]["class"][0].from_pretrained(model, from_transformers=True)
+        model = SUPPORTED_TASKS[targeted_task]["class"][0].from_pretrained(model)
     elif isinstance(model, ORTModel):
         if tokenizer is None and load_tokenizer:
             raise ValueError("If you pass a model as a ORTModel, you must pass a tokenizer as well")
