@@ -8,6 +8,7 @@ from transformers import (
 )
 from transformers import pipeline as transformers_pipeline
 from transformers.feature_extraction_utils import PreTrainedFeatureExtractor
+from transformers.onnx.utils import get_preprocessor
 
 
 SUPPORTED_TASKS = {
