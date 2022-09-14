@@ -55,6 +55,9 @@ def get_poplar_executor(model: PreTrainedModel, ipu_config: Union[str, dict] = N
     model = poptorch.inferenceModel(model.eval(), opts)
     return model
 
+def get_inference_context(self):
+        return torch.no_grad
+
 def pipeline(
     task: str = None,
     model: Optional[Any] = None,
@@ -111,8 +114,6 @@ def pipeline(
 
     # Modify transformers.pipelines
     # Override get_inference_context()
-    def get_inference_context(self):
-        return torch.no_grad
     Pipeline.get_inference_context = get_inference_context
 
     return transformers_pipeline(
