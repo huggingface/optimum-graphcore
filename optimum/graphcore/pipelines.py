@@ -38,7 +38,6 @@ def pipeline(
     feature_extractor: Optional[Union[str, PreTrainedFeatureExtractor]] = None,
     use_fast: bool = True,
     use_auth_token: Optional[Union[str, bool]] = None,
-    accelerator: Optional[str] = "ort",
     **kwargs,
 ) -> Pipeline:
 
@@ -46,9 +45,6 @@ def pipeline(
 
     if targeted_task not in list(SUPPORTED_TASKS.keys()):
         raise ValueError(f"Task {targeted_task} is not supported. Supported tasks are { list(SUPPORTED_TASKS.keys())}")
-
-    if accelerator != "ort":
-        raise ValueError(f"Accelerator {accelerator} is not supported. Supported accelerators are ort")
 
     # copied from transformers.pipelines.__init__.py l.609
     if targeted_task in NO_TOKENIZER_TASKS:
