@@ -1,5 +1,8 @@
 import poptorch
 
+from optimum.graphcore import IPUConfig
+from optimum.graphcore.modeling_utils import to_pipelined
+
 from typing import Any, Optional, Union
 
 from transformers import (
@@ -10,6 +13,7 @@ from transformers import (
 )
 from transformers import pipeline as transformers_pipeline
 from transformers.feature_extraction_utils import PreTrainedFeatureExtractor
+from transformers.modeling_utils import PreTrainedModel
 from transformers.onnx.utils import get_preprocessor
 
 
@@ -18,6 +22,7 @@ SUPPORTED_TASKS = {
         "impl": TextClassificationPipeline,
         "class": (AutoModelForSequenceClassification,),
         "default": "cardiffnlp/twitter-roberta-base-sentiment",
+        "default_ipu_config": "Graphcore/roberta-base-ipu",
         "type": "text",
     },
 }
@@ -32,10 +37,30 @@ for task, values in SUPPORTED_TASKS.items():
     else:
         raise ValueError(f"Supported types are 'text' and 'image', got {values['type']}")
 
+def get_poplar_executor(model: PreTrainedModel, ipu_config: Union[str, dict] = None):
+    if isinstance(ipu_config, str):
+        ipu_config = IPUConfig.from_pretrained(ipu_config)
+    elif isinstance(ipu_config, str):
+        ipu_config = IPUConfig.from_dict(ipu_config)
+    else:
+        raise ValueError("ipu_config must be a string or a dictionary.")
+    ipu_config.inference_device_iterations = 1
+    model = to_pipelined(model, ipu_config, force=False)
+    model.parallelize()
+    model.half()
+    opts = ipu_config.to_options(for_inference=True)
+    opts.setExecutionStrategy(poptorch.ShardedExecution())
+    model = poptorch.inferenceModel(model.eval(), opts)
+
+    import torch
+    inputs = {'input_ids': torch.tensor([[   0,  713, 2391,   16, 6344,    2]]), 'attention_mask': torch.tensor([[1, 1, 1, 1, 1, 1]])}
+    model.compile(**inputs)
+    return model
 
 def pipeline(
     task: str = None,
     model: Optional[Any] = None,
+    ipu_config: Union[str, dict] = None,
     tokenizer: Optional[Union[str, PreTrainedTokenizer]] = None,
     feature_extractor: Optional[Union[str, PreTrainedFeatureExtractor]] = None,
     use_fast: bool = True,
@@ -65,9 +90,11 @@ def pipeline(
     if model is None:
         model_id = SUPPORTED_TASKS[targeted_task]["default"]
         model = SUPPORTED_TASKS[targeted_task]["class"][0].from_pretrained(model_id)
+        model = get_poplar_executor(model, ipu_config if ipu_config else SUPPORTED_TASKS[targeted_task]["default_ipu_config"])
     elif isinstance(model, str):
         model_id = model
         model = SUPPORTED_TASKS[targeted_task]["class"][0].from_pretrained(model)
+        model = get_poplar_executor(model, ipu_config if ipu_config else SUPPORTED_TASKS[targeted_task]["default_ipu_config"])
     elif isinstance(model, poptorch._poplar_executor.PoplarExecutor):
         if tokenizer is None and load_tokenizer:
             raise ValueError("If you pass a model as a poptorch._poplar_executor.PoplarExecutor, you must pass a tokenizer as well")
