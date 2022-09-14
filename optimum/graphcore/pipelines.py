@@ -1,7 +1,5 @@
 import poptorch
 
-import torch
-
 from optimum.graphcore import IPUConfig
 from optimum.graphcore.modeling_utils import to_pipelined
 
@@ -55,8 +53,35 @@ def get_poplar_executor(model: PreTrainedModel, ipu_config: Union[str, dict] = N
     model = poptorch.inferenceModel(model.eval(), opts)
     return model
 
+import torch
 def get_inference_context(self):
-        return torch.no_grad
+    return torch.no_grad
+
+from typing import List
+from transformers.utils import logging
+logger = logging.get_logger(__name__)
+def check_model_type(self, supported_models: Union[List[str], dict]):
+    """
+    Check if the model class is in supported by the pipeline.
+
+    Args:
+        supported_models (`List[str]` or `dict`):
+            The list of models supported by the pipeline, or a dictionary with model class values.
+    """
+    if not isinstance(supported_models, list):  # Create from a model mapping
+        supported_models_names = []
+        for config, model in supported_models.items():
+            # Mapping can now contain tuples of models for the same configuration.
+            if isinstance(model, tuple):
+                supported_models_names.extend([_model.__name__ for _model in model])
+            else:
+                supported_models_names.append(model.__name__)
+        supported_models = supported_models_names
+    if self.model._user_model.__class__.__bases__[0].__name__ not in supported_models:
+        logger.error(
+            f"The model '{self.model._user_model.__class__.__bases__[0].__name__}' is not supported for {self.task}. Supported models are"
+            f" {supported_models}."
+        )
 
 def pipeline(
     task: str = None,
@@ -113,8 +138,9 @@ def pipeline(
         feature_extractor = get_preprocessor(model_id)
 
     # Modify transformers.pipelines
-    # Override get_inference_context()
+    # Override Pipeline methods
     Pipeline.get_inference_context = get_inference_context
+    Pipeline.check_model_type = check_model_type
 
     return transformers_pipeline(
         task,
