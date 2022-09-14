@@ -1,5 +1,7 @@
 import poptorch
 
+import torch
+
 from optimum.graphcore import IPUConfig
 from optimum.graphcore.modeling_utils import to_pipelined
 
@@ -51,10 +53,6 @@ def get_poplar_executor(model: PreTrainedModel, ipu_config: Union[str, dict] = N
     opts = ipu_config.to_options(for_inference=True)
     opts.setExecutionStrategy(poptorch.ShardedExecution())
     model = poptorch.inferenceModel(model.eval(), opts)
-
-    import torch
-    inputs = {'input_ids': torch.tensor([[   0,  713, 2391,   16, 6344,    2]]), 'attention_mask': torch.tensor([[1, 1, 1, 1, 1, 1]])}
-    model.compile(**inputs)
     return model
 
 def pipeline(
@@ -110,6 +108,12 @@ def pipeline(
         tokenizer = get_preprocessor(model_id)
     if feature_extractor is None and load_feature_extractor:
         feature_extractor = get_preprocessor(model_id)
+
+    # Modify transformers.pipelines
+    # Override get_inference_context()
+    def get_inference_context(self):
+        return torch.no_grad
+    Pipeline.get_inference_context = get_inference_context
 
     return transformers_pipeline(
         task,
