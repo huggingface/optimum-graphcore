@@ -1,3 +1,5 @@
+import poptorch
+
 from typing import Any, Optional, Union
 
 from transformers import (
@@ -66,14 +68,14 @@ def pipeline(
     elif isinstance(model, str):
         model_id = model
         model = SUPPORTED_TASKS[targeted_task]["class"][0].from_pretrained(model)
-    elif isinstance(model, ORTModel):
+    elif isinstance(model, poptorch._poplar_executor.PoplarExecutor):
         if tokenizer is None and load_tokenizer:
-            raise ValueError("If you pass a model as a ORTModel, you must pass a tokenizer as well")
+            raise ValueError("If you pass a model as a poptorch._poplar_executor.PoplarExecutor, you must pass a tokenizer as well")
         if feature_extractor is None and load_feature_extractor:
-            raise ValueError("If you pass a model as a ORTModel, you must pass a feature extractor as well")
+            raise ValueError("If you pass a model as a poptorch._poplar_executor.PoplarExecutor, you must pass a feature extractor as well")
     else:
         raise ValueError(
-            f"""Model {model} is not supported. Please provide a valid model either as string or ORTModel.
+            f"""Model {model} is not supported. Please provide a valid model either as string or poptorch._poplar_executor.PoplarExecutor.
             You can also provide non model then a default one will be used"""
         )
 
