@@ -1,18 +1,7 @@
 from typing import Any, Optional, Union
 
 from transformers import (
-    FeatureExtractionPipeline,
-    ImageClassificationPipeline,
-    Pipeline,
-    PreTrainedTokenizer,
-    QuestionAnsweringPipeline,
-    SummarizationPipeline,
-    Text2TextGenerationPipeline,
     TextClassificationPipeline,
-    TextGenerationPipeline,
-    TokenClassificationPipeline,
-    TranslationPipeline,
-    ZeroShotClassificationPipeline,
 )
 from transformers import pipeline as transformers_pipeline
 from transformers.feature_extraction_utils import PreTrainedFeatureExtractor
@@ -23,80 +12,19 @@ from .utils import is_onnxruntime_available
 
 SUPPORTED_TASKS = {}
 
-if is_onnxruntime_available():
-    from .onnxruntime import (
-        ORTModelForCausalLM,
-        ORTModelForFeatureExtraction,
-        ORTModelForImageClassification,
-        ORTModelForQuestionAnswering,
-        ORTModelForSeq2SeqLM,
-        ORTModelForSequenceClassification,
-        ORTModelForTokenClassification,
-    )
-    from .onnxruntime.modeling_ort import ORTModel
+from .models import (
+    ORTModelForSequenceClassification,
+)
+from .onnxruntime.modeling_ort import ORTModel
 
-    SUPPORTED_TASKS = {
-        "feature-extraction": {
-            "impl": FeatureExtractionPipeline,
-            "class": (ORTModelForFeatureExtraction,) if is_onnxruntime_available() else (),
-            "default": "distilbert-base-cased",
-            "type": "text",  # feature extraction is only supported for text at the moment
-        },
-        "image-classification": {
-            "impl": ImageClassificationPipeline,
-            "class": (ORTModelForImageClassification,) if is_onnxruntime_available() else (),
-            "default": "google/vit-base-patch16-224",
-            "type": "image",
-        },
-        "question-answering": {
-            "impl": QuestionAnsweringPipeline,
-            "class": (ORTModelForQuestionAnswering,) if is_onnxruntime_available() else (),
-            "default": "distilbert-base-cased-distilled-squad",
-            "type": "text",
-        },
-        "text-classification": {
-            "impl": TextClassificationPipeline,
-            "class": (ORTModelForSequenceClassification,) if is_onnxruntime_available() else (),
-            "default": "distilbert-base-uncased-finetuned-sst-2-english",
-            "type": "text",
-        },
-        "text-generation": {
-            "impl": TextGenerationPipeline,
-            "class": (ORTModelForCausalLM,) if is_onnxruntime_available() else (),
-            "default": "distilgpt2",
-            "type": "text",
-        },
-        "token-classification": {
-            "impl": TokenClassificationPipeline,
-            "class": (ORTModelForTokenClassification,) if is_onnxruntime_available() else (),
-            "default": "dbmdz/bert-large-cased-finetuned-conll03-english",
-            "type": "text",
-        },
-        "zero-shot-classification": {
-            "impl": ZeroShotClassificationPipeline,
-            "class": (ORTModelForSequenceClassification,) if is_onnxruntime_available() else (),
-            "default": "facebook/bart-large-mnli",
-            "type": "text",
-        },
-        "summarization": {
-            "impl": SummarizationPipeline,
-            "class": (ORTModelForSeq2SeqLM,) if is_onnxruntime_available() else (),
-            "default": "t5-base",
-            "type": "text",
-        },
-        "translation": {
-            "impl": TranslationPipeline,
-            "class": (ORTModelForSeq2SeqLM,) if is_onnxruntime_available() else (),
-            "default": "t5-small",
-            "type": "text",
-        },
-        "text2text-generation": {
-            "impl": Text2TextGenerationPipeline,
-            "class": (ORTModelForSeq2SeqLM,) if is_onnxruntime_available() else (),
-            "default": "t5-small",
-            "type": "text",
-        },
-    }
+SUPPORTED_TASKS = {
+    "text-classification": {
+        "impl": TextClassificationPipeline,
+        "class": (ORTModelForSequenceClassification,) if is_onnxruntime_available() else (),
+        "default": "distilbert-base-uncased-finetuned-sst-2-english",
+        "type": "text",
+    },
+}
 
 NO_FEATURE_EXTRACTOR_TASKS = set()
 NO_TOKENIZER_TASKS = set()
