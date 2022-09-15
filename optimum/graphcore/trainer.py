@@ -684,9 +684,9 @@ class IPUTrainer:
         """
         if self.optimizer is None:
             decay_parameters = get_parameter_names(self.model, [nn.LayerNorm])
-            decay_parameters = [name for name in decay_parameters if "bias" not in name]
+            decay_parameters = {name for name in decay_parameters if "bias" not in name}
             if self.args.lamb or self.args.lamb_no_bias_correction:
-                bias_parameters = [n for n, _ in self.model.named_parameters() if "bias" in n]
+                bias_parameters = {n for n, _ in self.model.named_parameters() if "bias" in n}
                 optimizer_grouped_parameters = [
                     {
                         "params": [p for n, p in self.model.named_parameters() if n in decay_parameters],
