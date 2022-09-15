@@ -6,11 +6,11 @@ from optimum.graphcore.modeling_utils import to_pipelined
 from typing import Any, Optional, Union
 
 from transformers import (
+    Pipeline,
+    PreTrainedTokenizer,
     AutoModelForImageClassification,
     AutoModelForSequenceClassification,
     ImageClassificationPipeline,
-    Pipeline,
-    PreTrainedTokenizer,
     TextClassificationPipeline,
 )
 from transformers import pipeline as transformers_pipeline
@@ -23,16 +23,20 @@ SUPPORTED_TASKS = {
     "image-classification": {
         "impl": ImageClassificationPipeline,
         "class": (AutoModelForImageClassification,),
-        "default": "google/vit-base-patch16-224",
-        "default_ipu_config": "Graphcore/vit-base-ipu",
+        "default": {
+            "model": "google/vit-base-patch16-224",
+            "ipu_config": "Graphcore/vit-base-ipu",
+        },
         "type": "image",
     },
     "text-classification": {
         "impl": TextClassificationPipeline,
         "class": (AutoModelForSequenceClassification,),
-        "default": "cardiffnlp/twitter-roberta-base-sentiment",
-        "default_ipu_config": "Graphcore/roberta-base-ipu",
-        "default_max_length": 128,
+        "default": {
+            "model": "cardiffnlp/twitter-roberta-base-sentiment",
+            "ipu_config": "Graphcore/roberta-base-ipu",
+            "max_length": 128,
+        },
         "type": "text",
     },
 }
@@ -124,13 +128,13 @@ def pipeline(
         load_feature_extractor = True
 
     if model is None:
-        model_id = SUPPORTED_TASKS[targeted_task]["default"]
+        model_id = SUPPORTED_TASKS[targeted_task]["default"]["model"]
         model = SUPPORTED_TASKS[targeted_task]["class"][0].from_pretrained(model_id)
-        model = get_poplar_executor(model, ipu_config if ipu_config else SUPPORTED_TASKS[targeted_task]["default_ipu_config"])
+        model = get_poplar_executor(model, ipu_config if ipu_config else SUPPORTED_TASKS[targeted_task]["default"]["ipu_config"])
     elif isinstance(model, str):
         model_id = model
         model = SUPPORTED_TASKS[targeted_task]["class"][0].from_pretrained(model)
-        model = get_poplar_executor(model, ipu_config if ipu_config else SUPPORTED_TASKS[targeted_task]["default_ipu_config"])
+        model = get_poplar_executor(model, ipu_config if ipu_config else SUPPORTED_TASKS[targeted_task]["default"]["ipu_config"])
     elif isinstance(model, poptorch._poplar_executor.PoplarExecutor):
         if tokenizer is None and load_tokenizer:
             raise ValueError("If you pass a model as a poptorch._poplar_executor.PoplarExecutor, you must pass a tokenizer as well")
@@ -156,7 +160,7 @@ def pipeline(
     def new_call(self, *args, **kwargs):
         if SUPPORTED_TASKS[targeted_task]["type"] == "text" and 'padding' not in kwargs:
             kwargs['padding'] = 'max_length'
-            kwargs['max_length'] = SUPPORTED_TASKS[targeted_task]["default_max_length"]
+            kwargs['max_length'] = SUPPORTED_TASKS[targeted_task]["default"]["max_length"]
         return old_call(self, *args, **kwargs)
     Pipeline.__call__ = new_call
 
