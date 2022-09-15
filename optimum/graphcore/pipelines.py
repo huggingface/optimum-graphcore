@@ -32,6 +32,7 @@ SUPPORTED_TASKS = {
         "class": (AutoModelForSequenceClassification,),
         "default": "cardiffnlp/twitter-roberta-base-sentiment",
         "default_ipu_config": "Graphcore/roberta-base-ipu",
+        "default_max_length": 128,
         "type": "text",
     },
 }
@@ -150,6 +151,14 @@ def pipeline(
     # Override Pipeline methods
     Pipeline.get_inference_context = get_inference_context
     Pipeline.check_model_type = check_model_type
+    # Override Pipeline __call__ to support auto padding
+    old_call = Pipeline.__call__
+    def new_call(self, *args, **kwargs):
+        if SUPPORTED_TASKS[targeted_task]["type"] == "text" and 'padding' not in kwargs:
+            kwargs['padding'] = 'max_length'
+            kwargs['max_length'] = 128
+        return old_call(self, *args, **kwargs)
+    Pipeline.__call__ = new_call
 
     return transformers_pipeline(
         task,
