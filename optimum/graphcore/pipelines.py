@@ -156,7 +156,7 @@ def pipeline(
     def new_call(self, *args, **kwargs):
         if SUPPORTED_TASKS[targeted_task]["type"] == "text" and 'padding' not in kwargs:
             kwargs['padding'] = 'max_length'
-            kwargs['max_length'] = 128
+            kwargs['max_length'] = SUPPORTED_TASKS[targeted_task]["default_max_length"]
         return old_call(self, *args, **kwargs)
     Pipeline.__call__ = new_call
 
