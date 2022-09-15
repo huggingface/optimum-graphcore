@@ -46,7 +46,7 @@ class GroupBertConvolution(nn.Module):
             self.hidden_size,
             self.hidden_size,
             self.conv_kernel_size,
-            padding="same",
+            padding=int((self.conv_kernel_size-1)/2),
             groups=int(self.hidden_size / self.conv_group_size),
         )
         self.conv_norm = nn.LayerNorm(config.hidden_size, eps=config.layer_norm_eps)
