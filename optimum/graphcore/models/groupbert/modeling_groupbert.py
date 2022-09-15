@@ -107,14 +107,14 @@ class GroupBertLayer(nn.Module):
 
         convolution_output = self.convolution(hidden_states, attention_mask)
 
-        layer_output = apply_chunking_to_forward(
+        first_layer_output = apply_chunking_to_forward(
             self.feed_forward_chunk_first, self.chunk_size_feed_forward, self.seq_len_dim, convolution_output
         )
 
         # decoder uni-directional self-attention cached key/values tuple is at positions 1,2
         self_attn_past_key_value = past_key_value[:2] if past_key_value is not None else None
         self_attention_outputs = self.attention(
-            hidden_states,
+            first_layer_output,
             attention_mask,
             head_mask,
             output_attentions=output_attentions,
