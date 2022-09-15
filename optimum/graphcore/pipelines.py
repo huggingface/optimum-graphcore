@@ -8,8 +8,10 @@ from typing import Any, Optional, Union
 from transformers import (
     Pipeline,
     PreTrainedTokenizer,
+    AutoModelForAudioClassification,
     AutoModelForImageClassification,
     AutoModelForSequenceClassification,
+    AudioClassificationPipeline,
     ImageClassificationPipeline,
     TextClassificationPipeline,
 )
@@ -20,6 +22,15 @@ from transformers.onnx.utils import get_preprocessor
 
 
 SUPPORTED_TASKS = {
+    "audio-classification": {
+        "impl": AudioClassificationPipeline,
+        "class": (AutoModelForAudioClassification,),
+        "default": {
+            "model": "superb/hubert-base-superb-ks",
+            "ipu_config": "Graphcore/hubert-base-ipu",
+        },
+        "type": "audio",
+    },
     "image-classification": {
         "impl": ImageClassificationPipeline,
         "class": (AutoModelForImageClassification,),
@@ -46,10 +57,10 @@ NO_TOKENIZER_TASKS = set()
 for task, values in SUPPORTED_TASKS.items():
     if values["type"] == "text":
         NO_FEATURE_EXTRACTOR_TASKS.add(task)
-    elif values["type"] == "image":
+    elif values["type"] == "image" or values["type"] == "audio":
         NO_TOKENIZER_TASKS.add(task)
     else:
-        raise ValueError(f"Supported types are 'text' and 'image', got {values['type']}")
+        raise ValueError(f"Supported types are 'text', 'image' and 'audio', got {values['type']}")
 
 def get_poplar_executor(model: PreTrainedModel, ipu_config: Union[str, dict] = None):
     if isinstance(ipu_config, str):
