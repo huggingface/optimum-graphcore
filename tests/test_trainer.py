@@ -1184,8 +1184,6 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         ipu_config = get_ipu_config()
         args = IPUTrainingArguments(".", fp32=True)
         trainer = IPUTrainer(model=model, ipu_config=ipu_config, args=args, force_to_pipelined=True)
-        # from transformers import Trainer
-        # trainer = Trainer(model=model)
         trainer.create_optimizer_and_scheduler(10)
         # fmt: off
         wd_names = ['0.linear1.weight', '0.linear2.weight', '1.0.linear1.weight', '1.0.linear2.weight', '1.1.linear1.weight', '1.1.linear2.weight']
@@ -1208,18 +1206,13 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         ipu_config = get_ipu_config()
         args = IPUTrainingArguments(".", fp32=True, lamb=True)
         trainer = IPUTrainer(model=model, ipu_config=ipu_config, args=args, force_to_pipelined=True)
-        # from transformers import Trainer
-        # trainer = Trainer(model=model)
         trainer.create_optimizer_and_scheduler(10)
         # fmt: off
-        # print([n for n, p in model.named_parameters()])
-        names = ['0.linear1.weight',  '0.linear2.weight', '1.0.linear1.weight', '1.0.linear2.weight', '1.1.linear1.weight', '1.1.linear2.weight']
         wd_names = ['0.linear1.weight', '0.linear2.weight', '1.0.linear1.weight', '1.0.linear2.weight', '1.1.linear1.weight', '1.1.linear2.weight']
         bias_names = ['0.bias', '0.linear1.bias', '0.ln1.bias', '0.linear2.bias', '0.ln2.bias', '1.0.bias', '1.0.linear1.bias', '1.0.ln1.bias',
                       '1.0.linear2.bias', '1.0.ln2.bias', '1.1.bias', '1.1.linear1.bias', '1.1.ln1.bias', '1.1.linear2.bias', '1.1.ln2.bias']
         other_names = ['0.ln1.weight', '0.ln2.weight', '1.0.ln1.weight', '1.0.ln2.weight', '1.1.ln1.weight', '1.1.ln2.weight']
 
-        # fmt: on
         wd_params = [p for n, p in model.named_parameters() if n in wd_names]
         no_lamb_update_params = [p for n, p in model.named_parameters() if n in bias_names]
         other_params = [p for n, p in model.named_parameters() if n in other_names]
