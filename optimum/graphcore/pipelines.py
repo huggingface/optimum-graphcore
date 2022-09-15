@@ -6,7 +6,9 @@ from optimum.graphcore.modeling_utils import to_pipelined
 from typing import Any, Optional, Union
 
 from transformers import (
+    AutoModelForImageClassification,
     AutoModelForSequenceClassification,
+    ImageClassificationPipeline,
     Pipeline,
     PreTrainedTokenizer,
     TextClassificationPipeline,
@@ -18,6 +20,13 @@ from transformers.onnx.utils import get_preprocessor
 
 
 SUPPORTED_TASKS = {
+    "image-classification": {
+        "impl": ImageClassificationPipeline,
+        "class": (AutoModelForImageClassification,),
+        "default": "google/vit-base-patch16-224",
+        "default_ipu_config": "Graphcore/vit-base-ipu",
+        "type": "image",
+    },
     "text-classification": {
         "impl": TextClassificationPipeline,
         "class": (AutoModelForSequenceClassification,),
