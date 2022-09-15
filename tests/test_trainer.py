@@ -1212,6 +1212,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         bias_names = ['0.bias', '0.linear1.bias', '0.ln1.bias', '0.linear2.bias', '0.ln2.bias', '1.0.bias', '1.0.linear1.bias', '1.0.ln1.bias',
                       '1.0.linear2.bias', '1.0.ln2.bias', '1.1.bias', '1.1.linear1.bias', '1.1.ln1.bias', '1.1.linear2.bias', '1.1.ln2.bias']
         other_names = ['0.ln1.weight', '0.ln2.weight', '1.0.ln1.weight', '1.0.ln2.weight', '1.1.ln1.weight', '1.1.ln2.weight']
+        # fmt: on
 
         wd_params = [p for n, p in model.named_parameters() if n in wd_names]
         no_lamb_update_params = [p for n, p in model.named_parameters() if n in bias_names]
