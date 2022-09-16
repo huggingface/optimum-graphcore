@@ -10,10 +10,12 @@ from transformers import (
     PreTrainedTokenizer,
     AutoModelForAudioClassification,
     AutoModelForImageClassification,
+    AutoModelForQuestionAnswering,
     AutoModelForSequenceClassification,
     AutoModelForTokenClassification,
     AudioClassificationPipeline,
     ImageClassificationPipeline,
+    QuestionAnsweringPipeline,
     TextClassificationPipeline,
     TokenClassificationPipeline,
 )
@@ -41,6 +43,15 @@ SUPPORTED_TASKS = {
             "ipu_config": "Graphcore/vit-base-ipu",
         },
         "type": "image",
+    },
+    "question-answering": {
+        "impl": QuestionAnsweringPipeline,
+        "class": (AutoModelForQuestionAnswering,),
+        "default": {
+            "model": "deepset/roberta-base-squad2",
+            "ipu_config": "Graphcore/roberta-base-ipu",
+        },
+        "type": "text",
     },
     "text-classification": {
         "impl": TextClassificationPipeline,
