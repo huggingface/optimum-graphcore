@@ -59,7 +59,7 @@ SUPPORTED_TASKS = {
         "default": {
             "model": "cardiffnlp/twitter-roberta-base-sentiment",
             "ipu_config": "Graphcore/roberta-base-ipu",
-            "max_length": 128,
+            "padding_length": 128,
         },
         "type": "text",
     },
@@ -69,7 +69,6 @@ SUPPORTED_TASKS = {
         "default": {
             "model": "dbmdz/bert-large-cased-finetuned-conll03-english",
             "ipu_config": "Graphcore/bert-large-ipu",
-            "max_length": 128,
         },
         "type": "text",
     },
@@ -192,9 +191,9 @@ def pipeline(
     # Override Pipeline __call__ to support auto padding
     old_call = Pipeline.__call__
     def new_call(self, *args, **kwargs):
-        if SUPPORTED_TASKS[targeted_task]["type"] == "text" and 'padding' not in kwargs:
-            kwargs['padding'] = 'max_length'
-            kwargs['max_length'] = SUPPORTED_TASKS[targeted_task]["default"]["max_length"]
+        if "padding_length" in SUPPORTED_TASKS[targeted_task]["default"] and "padding" not in kwargs:
+            kwargs["padding"] = "max_length"
+            kwargs["max_length"] = SUPPORTED_TASKS[targeted_task]["default"]["padding_length"]
         return old_call(self, *args, **kwargs)
     Pipeline.__call__ = new_call
 
