@@ -179,9 +179,7 @@ class PipelinedRobertaForMaskedLM(RobertaForMaskedLM, PipelineMixin):
             masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), labels.view(-1))
             return (masked_lm_loss,)
         else:
-            return super().forward(
-                input_ids=input_ids, attention_mask=attention_mask, labels=labels, return_dict=False
-            )
+            return super().forward(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
 
 
 @register(RobertaForSequenceClassification)
