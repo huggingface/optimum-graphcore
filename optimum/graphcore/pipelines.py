@@ -28,6 +28,10 @@ from transformers.modeling_utils import PreTrainedModel
 from transformers.onnx.utils import get_preprocessor
 
 
+TASK_ALIASES = {
+    "sentiment-analysis": "text-classification",
+    "ner": "token-classification",
+}
 SUPPORTED_TASKS = {
     "audio-classification": {
         "impl": AudioClassificationPipeline,
@@ -162,6 +166,9 @@ def pipeline(
     use_auth_token: Optional[Union[str, bool]] = None,
     **kwargs,
 ) -> Pipeline:
+
+    if task in TASK_ALIASES:
+        task = TASK_ALIASES[task]
 
     targeted_task = "translation" if task.startswith("translation") else task
 
