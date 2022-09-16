@@ -10,10 +10,12 @@ from transformers import (
     PreTrainedTokenizer,
     AutoModelForAudioClassification,
     AutoModelForImageClassification,
+    AutoModelForMaskedLM,
     AutoModelForQuestionAnswering,
     AutoModelForSequenceClassification,
     AutoModelForTokenClassification,
     AudioClassificationPipeline,
+    FillMaskPipeline,
     ImageClassificationPipeline,
     QuestionAnsweringPipeline,
     TextClassificationPipeline,
@@ -34,6 +36,15 @@ SUPPORTED_TASKS = {
             "ipu_config": "Graphcore/hubert-base-ipu",
         },
         "type": "audio",
+    },
+    "fill-mask": {
+        "impl": FillMaskPipeline,
+        "class": (AutoModelForMaskedLM,),
+        "default": {
+            "model": "roberta-base",
+            "ipu_config": "Graphcore/roberta-base-ipu",
+        },
+        "type": "text",
     },
     "image-classification": {
         "impl": ImageClassificationPipeline,
