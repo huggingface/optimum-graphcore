@@ -66,7 +66,6 @@ class IPUHubertEncoder(HubertEncoder):
                 torch.tensor(self.training, device=hidden_states.device), dropout_probability < self.config.layerdrop
             ).to(dtype=hidden_states.dtype)
             if self.config.layerdrop > 0.0:
-                # hidden_states = torch.where(skip_the_layer, hidden_states, layer_outputs[0])
                 hidden_states = hidden_states * skip_the_layer + layer_outputs[0] * (1 - skip_the_layer)
             else:
                 hidden_states = layer_outputs[0]
@@ -126,7 +125,6 @@ class IPUHubertEncoderStableLayerNorm(HubertEncoderStableLayerNorm):
                 torch.tensor(self.training, device=hidden_states.device), dropout_probability < self.config.layerdrop
             ).to(dtype=hidden_states.dtype)
             if self.config.layerdrop > 0.0:
-                # hidden_states = torch.where(skip_the_layer, hidden_states, layer_outputs[0])
                 hidden_states = hidden_states * skip_the_layer + layer_outputs[0] * (1 - skip_the_layer)
             else:
                 hidden_states = layer_outputs[0]
