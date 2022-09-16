@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import glob
 import json
 import os
 import re
@@ -155,9 +156,10 @@ class ExampleTestMeta(type):
                 )
                 print()
                 print("#### Running command line... ####")
-                print(" ".join(cmd_line))
+                joined_cmd_line = " ".join(cmd_line)
+                print(joined_cmd_line)
                 print()
-                p = subprocess.Popen(cmd_line)
+                p = subprocess.Popen(joined_cmd_line, shell=True)
                 return_code = p.wait()
                 self.assertEqual(return_code, 0)
 
@@ -204,6 +206,13 @@ class ExampleTesterBase(TestCase):
     DATALOADER_DROP_LAST = True
     TRAIN_REPLICATION_FACTOR = 2
     INFERENCE_REPLICATION_FACTOR = 2
+    venv_was_created = False  # TODO: make this an instance attribute instead of class attribute.
+
+    def setUp(self):
+        self._create_venv()
+
+    def tearDown(self):
+        self._remove_venv()
 
     def _create_command_line(
         self,
@@ -235,6 +244,7 @@ class ExampleTesterBase(TestCase):
         )
 
         cmd_line = [
+            "venv/bin/python" if self.venv_was_created else "python",
             f"{script}",
             f"--model_name_or_path {model_name}",
             f"--ipu_config_name {ipu_config_name}",
@@ -257,16 +267,92 @@ class ExampleTesterBase(TestCase):
         if extra_command_line_arguments is not None:
             cmd_line += extra_command_line_arguments
 
+        if self.venv_was_created:
+            enable_poplar_and_popart = [f".{self._get_poplar_enable_path()};", f".{self._get_popart_enable_path()};"]
+            cmd_line = enable_poplar_and_popart + cmd_line
+
         pattern = re.compile(r"([\"\'].+?[\"\'])|\s")
         return [x for y in cmd_line for x in re.split(pattern, y) if x]
+
+    def _create_venv(self):
+        """
+        Creates the virtual environment for the example.
+        """
+        cmd_line = "python -m venv venv".split()
+        p = subprocess.Popen(cmd_line)
+        return_code = p.wait()
+        self.assertEqual(return_code, 0)
+        self.venv_was_created = True
+
+    def _remove_venv(self):
+        """
+        Creates the virtual environment for the example.
+        """
+        if self.venv_was_created:
+            cmd_line = "rm -rf venv".split()
+            p = subprocess.Popen(cmd_line)
+            return_code = p.wait()
+            self.assertEqual(return_code, 0)
+            self.venv_was_created = False
+
+    def _get_poptorch_wheel_path(self, sdk_path: Optional[str] = None) -> str:
+        """
+        Retrieves the path for the poptorch wheel.
+        """
+        if sdk_path is None:
+            sdk_path = os.environ["SDK_PATH"]
+        paths = glob.glob(f"{sdk_path}/poptorch-*.whl")
+        if len(paths) == 0:
+            raise FileNotFoundError(f"Could not find poptorch wheel at {sdk_path}")
+        if len(paths) > 1:
+            raise RuntimeError(f"Multiple poptorch wheels were found at {sdk_path}")
+        return paths[0]
+
+    def _get_enable_path(library_name: str, sdk_path: Optional[str] = None) -> str:
+        """
+        Retrieves the path for the "enable" scripts for either poplar or popart.
+        """
+        if library_name not in ["poplar", "popart"]:
+            raise ValueError(
+                f'The library name must either be "poplar" or "popart" but "{library_name}" was provided here.'
+            )
+        if sdk_path is None:
+            sdk_path = os.environ["SDK_PATH"]
+        paths = glob.glob(f"{sdk_path}/{library_name}*/enable.sh")
+        if len(paths) == 0:
+            raise FileNotFoundError(f"Could not find {library_name} enable script at {sdk_path}")
+        if len(paths) > 1:
+            raise RuntimeError(f"Multiple {library_name} enable scripts were found at {sdk_path}")
+        return paths[0]
+
+    def _get_poplar_enable_path(self, sdk_path: Optional[str] = None):
+        return self._get_enable_path("poplar", sdk_path=sdk_path)
+
+    def _get_popart_enable_path(self, sdk_path: Optional[str] = None):
+        return self._get_enable_path("popart", sdk_path=sdk_path)
 
     def _install_requirements(self, requirements_filename: Union[str, os.PathLike]):
         """
         Installs the necessary requirements to run the example if the provided file exists, otherwise does nothing.
         """
+        pip_name = "venv/bin/pip" if self.venv_was_created else "pip"
+
+        # Update pip
+        cmd_line = f"{pip_name} install --upgrade pip".split()
+        p = subprocess.Popen(cmd_line)
+        return_code = p.wait()
+        self.assertEqual(return_code, 0)
+
+        # Install SDK
+        cmd_line = f"{pip_name} install .[testing] {self._get_poptorch_wheel_path()}".split()
+        p = subprocess.Popen(cmd_line)
+        return_code = p.wait()
+        self.assertEqual(return_code, 0)
+
+        # Install requirements
         if not Path(requirements_filename).exists():
             return
-        cmd_line = f"pip install -r {requirements_filename}".split()
+        cmd_line = f"{pip_name} install -r {requirements_filename}".split()
         p = subprocess.Popen(cmd_line)
         return_code = p.wait()
         self.assertEqual(return_code, 0)
