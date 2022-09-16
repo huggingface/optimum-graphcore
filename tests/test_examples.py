@@ -308,7 +308,7 @@ class ExampleTesterBase(TestCase):
             raise RuntimeError(f"Multiple poptorch wheels were found at {sdk_path}")
         return paths[0]
 
-    def _get_enable_path(library_name: str, sdk_path: Optional[str] = None) -> str:
+    def _get_enable_path(self, library_name: str, sdk_path: Optional[str] = None) -> str:
         """
         Retrieves the path for the "enable" scripts for either poplar or popart.
         """
