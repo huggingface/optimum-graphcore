@@ -267,7 +267,7 @@ class PipelinedT5ForConditionalGeneration(
         self.encoder.__class__ = CustomT5Stack
         self.decoder.__class__ = CustomT5Stack
 
-        # Use a custom T5Block implementation that removes a dynamic if blocks that can't be statically traced 
+        # Use a custom T5Block implementation that removes a dynamic if blocks that can't be statically traced
         for block in self.encoder.block:
             block.__class__ = CustomT5Block
         for block in self.decoder.block:
