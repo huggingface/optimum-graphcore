@@ -20,6 +20,7 @@ from transformers import (
     QuestionAnsweringPipeline,
     TextClassificationPipeline,
     TokenClassificationPipeline,
+    ZeroShotClassificationPipeline,
 )
 from transformers import pipeline as transformers_pipeline
 from transformers.feature_extraction_utils import PreTrainedFeatureExtractor
@@ -80,6 +81,16 @@ SUPPORTED_TASKS = {
         "default": {
             "model": "dbmdz/bert-large-cased-finetuned-conll03-english",
             "ipu_config": "Graphcore/bert-large-ipu",
+        },
+        "type": "text",
+    },
+    "zero-shot-classification": {
+        "impl": ZeroShotClassificationPipeline,
+        "class": (AutoModelForSequenceClassification,),
+        "default": {
+            "model": "roberta-large-mnli",
+            "ipu_config": "Graphcore/roberta-large-ipu",
+            "padding_length": 128,
         },
         "type": "text",
     },
