@@ -105,7 +105,7 @@ NO_TOKENIZER_TASKS = set()
 for task, values in SUPPORTED_TASKS.items():
     if values["type"] == "text":
         NO_FEATURE_EXTRACTOR_TASKS.add(task)
-    elif values["type"] == "image" or values["type"] == "audio":
+    elif values["type"] in {"audio", "image"}:
         NO_TOKENIZER_TASKS.add(task)
     else:
         raise ValueError(f"Supported types are 'text', 'image' and 'audio', got {values['type']}")
