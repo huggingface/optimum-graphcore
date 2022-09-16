@@ -11,9 +11,11 @@ from transformers import (
     AutoModelForAudioClassification,
     AutoModelForImageClassification,
     AutoModelForSequenceClassification,
+    AutoModelForTokenClassification,
     AudioClassificationPipeline,
     ImageClassificationPipeline,
     TextClassificationPipeline,
+    TokenClassificationPipeline,
 )
 from transformers import pipeline as transformers_pipeline
 from transformers.feature_extraction_utils import PreTrainedFeatureExtractor
@@ -46,6 +48,16 @@ SUPPORTED_TASKS = {
         "default": {
             "model": "cardiffnlp/twitter-roberta-base-sentiment",
             "ipu_config": "Graphcore/roberta-base-ipu",
+            "max_length": 128,
+        },
+        "type": "text",
+    },
+    "token-classification": {
+        "impl": TokenClassificationPipeline,
+        "class": (AutoModelForTokenClassification,),
+        "default": {
+            "model": "dbmdz/bert-large-cased-finetuned-conll03-english",
+            "ipu_config": "Graphcore/bert-large-ipu",
             "max_length": 128,
         },
         "type": "text",
