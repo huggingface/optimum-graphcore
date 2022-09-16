@@ -26,7 +26,13 @@ from transformers.modeling_outputs import (
     BaseModelOutputWithPastAndCrossAttentions,
     Seq2SeqModelOutput,
 )
-from transformers.models.bart.modeling_bart import BartAttention, BartDecoder, BartEncoder, BartEncoderLayer, shift_tokens_right
+from transformers.models.bart.modeling_bart import (
+    BartAttention,
+    BartDecoder,
+    BartEncoder,
+    BartEncoderLayer,
+    shift_tokens_right,
+)
 
 from ...generation_utils import IPUGenerationMixin
 from ...modeling_utils import (
