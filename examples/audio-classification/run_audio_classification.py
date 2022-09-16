@@ -340,6 +340,9 @@ def main():
             padding="max_length",
         )
         examples["input_values"] = inputs["input_values"][0]
+        if not training_args.fp32:
+            # Cast audio input to FP16
+            examples["input_values"] = examples["input_values"].astype(np.float16)
         examples["labels"] = examples[data_args.label_column_name]
         return examples
 
