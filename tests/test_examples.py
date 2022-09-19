@@ -20,13 +20,15 @@ import re
 import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Callable, Dict, List, Optional, Tuple, Type, Union
+from typing import Callable, Dict, List, Optional, Tuple, Union
 from unittest import TestCase
 
 from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
 from transformers import (
     CONFIG_MAPPING,
+    MODEL_FOR_AUDIO_CLASSIFICATION_MAPPING,
     MODEL_FOR_CAUSAL_LM_MAPPING,
+    MODEL_FOR_CTC_MAPPING,
     MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING,
     MODEL_FOR_MASKED_LM_MAPPING,
     MODEL_FOR_MULTIPLE_CHOICE_MAPPING,
@@ -56,7 +58,7 @@ def _get_supported_models_for_script(
         Each element of the list follows the same format: (model_type, (model_name_or_path, ipu_config_name)).
     """
 
-    def is_valid_model_type(model_type: str, model_class: Type) -> bool:
+    def is_valid_model_type(model_type: str) -> bool:
         in_task_mapping = CONFIG_MAPPING[model_type] in task_mapping
         if in_task_mapping:
             return task_mapping[CONFIG_MAPPING[model_type]] in _PRETRAINED_TO_PIPELINED_REGISTRY
@@ -65,7 +67,7 @@ def _get_supported_models_for_script(
     supported_models = []
     for model_type, model_names in models_to_test.items():
         names = model_names.get(task, model_names["default"]) if isinstance(model_names, dict) else model_names
-        if is_valid_model_type(model_type, names):
+        if is_valid_model_type(model_type):
             supported_models.append((model_type, names))
 
     return supported_models
@@ -86,6 +88,12 @@ _SCRIPT_TO_MODEL_MAPPING = {
     "run_ner": _get_supported_models_for_script(MODELS_TO_TEST_MAPPING, MODEL_FOR_TOKEN_CLASSIFICATION_MAPPING),
     "run_image_classification": _get_supported_models_for_script(
         MODELS_TO_TEST_MAPPING, MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING
+    ),
+    "run_audio_classification": _get_supported_models_for_script(
+        MODELS_TO_TEST_MAPPING, MODEL_FOR_AUDIO_CLASSIFICATION_MAPPING
+    ),
+    "run_speech_recognition_ctc": _get_supported_models_for_script(
+        MODELS_TO_TEST_MAPPING, MODEL_FOR_CTC_MAPPING, task="ctc"
     ),
 }
 # Take LXMERT out of run_qa because it's incompatible
@@ -148,6 +156,7 @@ class ExampleTestMeta(type):
                     ipu_config_name,
                     tmp_dir,
                     task=self.TASK_NAME,
+                    dataset_config_name=self.DATASET_CONFIG_NAME,
                     do_eval=self.EVAL_IS_SUPPORTED,
                     train_batch_size=self.TRAIN_BATCH_SIZE,
                     eval_batch_size=self.EVAL_BATCH_SIZE,
@@ -195,6 +204,7 @@ class ExampleTesterBase(TestCase):
     EXAMPLE_DIR = Path(os.path.dirname(__file__)).parent / "examples"
     EXAMPLE_NAME = None
     TASK_NAME = None
+    DATASET_CONFIG_NAME = None
     EVAL_IS_SUPPORTED = True
     EVAL_SCORE_THRESHOLD = 0.75
     SCORE_NAME = "eval_accuracy"
@@ -221,6 +231,7 @@ class ExampleTesterBase(TestCase):
         ipu_config_name: str,
         output_dir: str,
         task: Optional[str] = None,
+        dataset_config_name: Optional[str] = None,
         do_eval: bool = True,
         lr: float = 1e-5,
         train_batch_size: int = 2,
@@ -264,6 +275,9 @@ class ExampleTesterBase(TestCase):
             "--save_steps -1",
             "--report_to none",
         ]
+        if dataset_config_name is not None:
+            cmd_line.append(f"--dataset_config_name {dataset_config_name}")
+
         if extra_command_line_arguments is not None:
             cmd_line += extra_command_line_arguments
 
@@ -397,6 +411,7 @@ class QuestionAnsweringExampleTester(ExampleTesterBase, metaclass=ExampleTestMet
         ipu_config_name: str,
         output_dir: str,
         task: Optional[str] = None,
+        dataset_config_name: Optional[str] = None,
         do_eval: bool = True,
         lr: float = 1e-5,
         train_batch_size: int = 1,
@@ -415,6 +430,7 @@ class QuestionAnsweringExampleTester(ExampleTesterBase, metaclass=ExampleTestMet
             ipu_config_name,
             output_dir,
             task=task,
+            dataset_config_name=dataset_config_name,
             do_eval=do_eval,
             lr=lr,
             train_batch_size=train_batch_size,
@@ -442,6 +458,7 @@ class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, e
         ipu_config_name: str,
         output_dir: str,
         task: Optional[str] = None,
+        dataset_config_name: Optional[str] = None,
         do_eval: bool = True,
         lr: float = 1e-5,
         train_batch_size: int = 1,
@@ -466,6 +483,7 @@ class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, e
             ipu_config_name,
             output_dir,
             task=task,
+            dataset_config_name=dataset_config_name,
             do_eval=do_eval,
             lr=lr,
             train_batch_size=train_batch_size,
@@ -493,6 +511,7 @@ class TranslationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, exa
         ipu_config_name: str,
         output_dir: str,
         task: Optional[str] = None,
+        dataset_config_name: Optional[str] = None,
         do_eval: bool = True,
         lr: float = 1e-5,
         train_batch_size: int = 1,
@@ -519,6 +538,7 @@ class TranslationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, exa
             ipu_config_name,
             output_dir,
             task=task,
+            dataset_config_name=dataset_config_name,
             do_eval=do_eval,
             lr=lr,
             train_batch_size=train_batch_size,
@@ -542,6 +562,7 @@ class ImageClassificationExampleTester(
         ipu_config_name: str,
         output_dir: str,
         task: Optional[str] = None,
+        dataset_config_name: Optional[str] = None,
         do_eval: bool = True,
         lr: float = 1e-5,
         train_batch_size: int = 2,
@@ -562,6 +583,102 @@ class ImageClassificationExampleTester(
             ipu_config_name,
             output_dir,
             task=task,
+            dataset_config_name=dataset_config_name,
+            do_eval=do_eval,
+            lr=lr,
+            train_batch_size=train_batch_size,
+            eval_batch_size=eval_batch_size,
+            num_epochs=num_epochs,
+            inference_device_iterations=inference_device_iterations,
+            gradient_accumulation_steps=gradient_accumulation_steps,
+            extra_command_line_arguments=extra_command_line_arguments,
+        )
+
+
+class AudioClassificationExampleTester(
+    ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_audio_classification"
+):
+    TASK_NAME = "superb"
+    DATASET_CONFIG_NAME = "ks"
+    GRADIENT_ACCUMULATION_STEPS = 16
+
+    def _create_command_line(
+        self,
+        script: str,
+        model_name: str,
+        ipu_config_name: str,
+        output_dir: str,
+        task: Optional[str] = None,
+        dataset_config_name: Optional[str] = None,
+        do_eval: bool = True,
+        lr: float = 1e-5,
+        train_batch_size: int = 2,
+        eval_batch_size: int = 2,
+        num_epochs: int = 2,
+        inference_device_iterations: int = 4,
+        gradient_accumulation_steps: int = 64,
+        extra_command_line_arguments: Optional[List[str]] = None,
+    ) -> List[str]:
+        if extra_command_line_arguments is None:
+            extra_command_line_arguments = []
+        extra_command_line_arguments.append("--max_length_seconds 1")
+        extra_command_line_arguments.append("--attention_mask False")
+        return super()._create_command_line(
+            script,
+            model_name,
+            ipu_config_name,
+            output_dir,
+            task=task,
+            dataset_config_name=dataset_config_name,
+            do_eval=do_eval,
+            lr=lr,
+            train_batch_size=train_batch_size,
+            eval_batch_size=eval_batch_size,
+            num_epochs=num_epochs,
+            inference_device_iterations=inference_device_iterations,
+            gradient_accumulation_steps=gradient_accumulation_steps,
+            extra_command_line_arguments=extra_command_line_arguments,
+        )
+
+
+class SpeechRecognitionExampleTester(
+    ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_speech_recognition_ctc"
+):
+    TASK_NAME = "librispeech_asr"
+    DATASET_CONFIG_NAME = "clean"
+
+    def _create_command_line(
+        self,
+        script: str,
+        model_name: str,
+        ipu_config_name: str,
+        output_dir: str,
+        task: Optional[str] = None,
+        dataset_config_name: Optional[str] = None,
+        do_eval: bool = True,
+        lr: float = 1e-5,
+        train_batch_size: int = 2,
+        eval_batch_size: int = 2,
+        num_epochs: int = 2,
+        inference_device_iterations: int = 4,
+        gradient_accumulation_steps: int = 64,
+        extra_command_line_arguments: Optional[List[str]] = None,
+    ) -> List[str]:
+        if extra_command_line_arguments is None:
+            extra_command_line_arguments = []
+        extra_command_line_arguments.append("--mask_time_prob 0.0")
+        extra_command_line_arguments.append("--layerdrop 0.0")
+        extra_command_line_arguments.append("--freeze_feature_encoder")
+        if self.TASK_NAME == "librispeech_asr" and self.DATASET_CONFIG_NAME == "clean":
+            extra_command_line_arguments.append("--train_split_name train.100")
+            extra_command_line_arguments.append("--eval_split_name validation")
+        return super()._create_command_line(
+            script,
+            model_name,
+            ipu_config_name,
+            output_dir,
+            task=task,
+            dataset_config_name=dataset_config_name,
             do_eval=do_eval,
             lr=lr,
             train_batch_size=train_batch_size,
