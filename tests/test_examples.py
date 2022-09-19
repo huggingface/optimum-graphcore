@@ -646,6 +646,8 @@ class SpeechRecognitionExampleTester(
 ):
     TASK_NAME = "librispeech_asr"
     DATASET_CONFIG_NAME = "clean"
+    TRAIN_BATCH_SIZE = 1
+    EVAL_BATCH_SIZE = 1
 
     def _create_command_line(
         self,
