@@ -282,7 +282,7 @@ class ExampleTesterBase(TestCase):
             cmd_line += extra_command_line_arguments
 
         if self.venv_was_created:
-            enable_poplar_and_popart = [f".{self._get_poplar_enable_path()};", f".{self._get_popart_enable_path()};"]
+            enable_poplar_and_popart = [f"source {self._get_poplar_enable_path()};", f"source {self._get_popart_enable_path()};"]
             cmd_line = enable_poplar_and_popart + cmd_line
 
         pattern = re.compile(r"([\"\'].+?[\"\'])|\s")
@@ -444,6 +444,7 @@ class QuestionAnsweringExampleTester(ExampleTesterBase, metaclass=ExampleTestMet
 
 class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_summarization"):
     TASK_NAME = "cnn_dailymail"
+    DATASET_CONFIG = "3.0.0"
     TRAIN_BATCH_SIZE = 1
     EVAL_BATCH_SIZE = 1
     EVAL_IS_SUPPORTED = False
