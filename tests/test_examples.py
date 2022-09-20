@@ -160,8 +160,10 @@ class ExampleTestMeta(type):
                     do_eval=self.EVAL_IS_SUPPORTED,
                     train_batch_size=self.TRAIN_BATCH_SIZE,
                     eval_batch_size=self.EVAL_BATCH_SIZE,
+                    num_epochs=self.NUM_EPOCHS,
                     inference_device_iterations=self.INFERENCE_DEVICE_ITERATIONS,
                     gradient_accumulation_steps=self.GRADIENT_ACCUMULATION_STEPS,
+                    extra_command_line_arguments=self.EXTRA_COMMAND_LINE_ARGUMENTS,
                 )
                 print()
                 print("#### Running command line... ####")
@@ -209,13 +211,15 @@ class ExampleTesterBase(TestCase):
     EVAL_SCORE_THRESHOLD = 0.75
     SCORE_NAME = "eval_accuracy"
     DATASET_PARAMETER_NAME = "dataset_name"
+    NUM_EPOCHS = 1
     TRAIN_BATCH_SIZE = 2
     EVAL_BATCH_SIZE = 2
     INFERENCE_DEVICE_ITERATIONS = 4
     GRADIENT_ACCUMULATION_STEPS = 64
-    DATALOADER_DROP_LAST = True
+    # DATALOADER_DROP_LAST = True
     TRAIN_REPLICATION_FACTOR = 2
     INFERENCE_REPLICATION_FACTOR = 2
+    EXTRA_COMMAND_LINE_ARGUMENTS = None
     venv_was_created = False  # TODO: make this an instance attribute instead of class attribute.
 
     def setUp(self):
@@ -271,7 +275,8 @@ class ExampleTesterBase(TestCase):
             f"--ipu_config_overrides {ipu_config_overrides}",
             f" --num_train_epochs {num_epochs}",
             "--dataloader_num_workers 16",
-            f"--dataloader_drop_last {self.DATALOADER_DROP_LAST}",
+            # f"--dataloader_drop_last {self.DATALOADER_DROP_LAST}",
+            "--pad_on_batch_axis",
             "--save_steps -1",
             "--report_to none",
         ]
@@ -282,7 +287,10 @@ class ExampleTesterBase(TestCase):
             cmd_line += extra_command_line_arguments
 
         if self.venv_was_created:
-            enable_poplar_and_popart = [f"source {self._get_poplar_enable_path()};", f"source {self._get_popart_enable_path()};"]
+            enable_poplar_and_popart = [
+                f"source {self._get_poplar_enable_path()};",
+                f"source {self._get_popart_enable_path()};",
+            ]
             cmd_line = enable_poplar_and_popart + cmd_line
 
         pattern = re.compile(r"([\"\'].+?[\"\'])|\s")
@@ -402,44 +410,6 @@ class MultipleChoiceExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, 
 class QuestionAnsweringExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_qa"):
     TASK_NAME = "squad"
     SCORE_NAME = "eval_f1"
-    DATALOADER_DROP_LAST = False
-
-    def _create_command_line(
-        self,
-        script: str,
-        model_name: str,
-        ipu_config_name: str,
-        output_dir: str,
-        task: Optional[str] = None,
-        dataset_config_name: Optional[str] = None,
-        do_eval: bool = True,
-        lr: float = 1e-5,
-        train_batch_size: int = 1,
-        eval_batch_size: int = 1,
-        num_epochs: int = 1,
-        inference_device_iterations: int = 6,
-        gradient_accumulation_steps: int = 64,
-        extra_command_line_arguments: Optional[List[str]] = None,
-    ) -> List[str]:
-        if extra_command_line_arguments is None:
-            extra_command_line_arguments = []
-        extra_command_line_arguments.append("--pad_on_batch_axis")
-        return super()._create_command_line(
-            script,
-            model_name,
-            ipu_config_name,
-            output_dir,
-            task=task,
-            dataset_config_name=dataset_config_name,
-            do_eval=do_eval,
-            lr=lr,
-            train_batch_size=train_batch_size,
-            eval_batch_size=eval_batch_size,
-            num_epochs=num_epochs,
-            inference_device_iterations=inference_device_iterations,
-            gradient_accumulation_steps=gradient_accumulation_steps,
-            extra_command_line_arguments=extra_command_line_arguments,
-        )
 
 
 class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_summarization"):
@@ -451,6 +421,12 @@ class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, e
     EVAL_SCORE_THRESHOLD = 30
     SCORE_NAME = "eval_rougeLsum"
     INFERENCE_DEVICE_ITERATIONS = 6
+    EXTRA_COMMAND_LINE_ARGUMENTS = [
+        "--dataset_config 3.0.0",
+        "--prediction_loss_only",
+        "--max_target_length 200",
+        "--max_source_length 1024",
+    ]
 
     def _create_command_line(
         self,
@@ -464,18 +440,13 @@ class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, e
         lr: float = 1e-5,
         train_batch_size: int = 1,
         eval_batch_size: int = 1,
-        num_epochs: int = 1,
+        num_epochs: int = 2,
         inference_device_iterations: int = 6,
         gradient_accumulation_steps: int = 64,
         extra_command_line_arguments: Optional[List[str]] = None,
     ) -> List[str]:
         if extra_command_line_arguments is None:
             extra_command_line_arguments = []
-        extra_command_line_arguments.append("--dataset_config 3.0.0")
-        extra_command_line_arguments.append("--prediction_loss_only")
-        extra_command_line_arguments.append("--pad_to_max_length")
-        extra_command_line_arguments.append("--max_target_length 200")
-        extra_command_line_arguments.append("--max_source_length 1024")
         if "t5" in model_name:
             extra_command_line_arguments.append("--source_prefix 'summarize: '")
         return super()._create_command_line(
@@ -504,6 +475,15 @@ class TranslationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, exa
     EVAL_SCORE_THRESHOLD = 22
     SCORE_NAME = "eval_bleu"
     INFERENCE_DEVICE_ITERATIONS = 6
+    EXTRA_COMMAND_LINE_ARGUMENTS = [
+        "--dataset_config ro-en",
+        "--source_lang ro",
+        "--target_lang en",
+        "--pad_to_max_length",
+        "--max_source_length 512",
+        "--max_target_length 512",
+        "--prediction_loss_only",
+    ]
 
     def _create_command_line(
         self,
@@ -517,20 +497,13 @@ class TranslationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, exa
         lr: float = 1e-5,
         train_batch_size: int = 1,
         eval_batch_size: int = 1,
-        num_epochs: int = 1,
+        num_epochs: int = 2,
         inference_device_iterations: int = 6,
         gradient_accumulation_steps: int = 64,
         extra_command_line_arguments: Optional[List[str]] = None,
     ) -> List[str]:
         if extra_command_line_arguments is None:
             extra_command_line_arguments = []
-        extra_command_line_arguments.append("--dataset_config ro-en")
-        extra_command_line_arguments.append("--source_lang ro")
-        extra_command_line_arguments.append("--target_lang en")
-        extra_command_line_arguments.append("--pad_to_max_length")
-        extra_command_line_arguments.append("--max_source_length 512")
-        extra_command_line_arguments.append("--max_target_length 512")
-        extra_command_line_arguments.append("--prediction_loss_only")
         if "t5" in model_name:
             extra_command_line_arguments.append("--source_prefix 'translate English to Romanian: '")
         return super()._create_command_line(
@@ -555,45 +528,11 @@ class ImageClassificationExampleTester(
     ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_image_classification"
 ):
     TASK_NAME = "cifar10"
-
-    def _create_command_line(
-        self,
-        script: str,
-        model_name: str,
-        ipu_config_name: str,
-        output_dir: str,
-        task: Optional[str] = None,
-        dataset_config_name: Optional[str] = None,
-        do_eval: bool = True,
-        lr: float = 1e-5,
-        train_batch_size: int = 2,
-        eval_batch_size: int = 2,
-        num_epochs: int = 2,
-        inference_device_iterations: int = 4,
-        gradient_accumulation_steps: int = 64,
-        extra_command_line_arguments: Optional[List[str]] = None,
-    ) -> List[str]:
-        if extra_command_line_arguments is None:
-            extra_command_line_arguments = []
-        extra_command_line_arguments.append("--remove_unused_columns false")
-        extra_command_line_arguments.append("--dataloader_drop_last true")
-        extra_command_line_arguments.append("--ignore_mismatched_sizes")
-        return super()._create_command_line(
-            script,
-            model_name,
-            ipu_config_name,
-            output_dir,
-            task=task,
-            dataset_config_name=dataset_config_name,
-            do_eval=do_eval,
-            lr=lr,
-            train_batch_size=train_batch_size,
-            eval_batch_size=eval_batch_size,
-            num_epochs=num_epochs,
-            inference_device_iterations=inference_device_iterations,
-            gradient_accumulation_steps=gradient_accumulation_steps,
-            extra_command_line_arguments=extra_command_line_arguments,
-        )
+    EXTRA_COMMAND_LINE_ARGUMENTS = [
+        "--remove_unused_columns false",
+        "--dataloader_drop_last true",
+        "--ignore_mismatched_sizes",
+    ]
 
 
 class AudioClassificationExampleTester(
@@ -602,92 +541,23 @@ class AudioClassificationExampleTester(
     TASK_NAME = "superb"
     DATASET_CONFIG_NAME = "ks"
     GRADIENT_ACCUMULATION_STEPS = 16
-
-    def _create_command_line(
-        self,
-        script: str,
-        model_name: str,
-        ipu_config_name: str,
-        output_dir: str,
-        task: Optional[str] = None,
-        dataset_config_name: Optional[str] = None,
-        do_eval: bool = True,
-        lr: float = 1e-5,
-        train_batch_size: int = 2,
-        eval_batch_size: int = 2,
-        num_epochs: int = 2,
-        inference_device_iterations: int = 4,
-        gradient_accumulation_steps: int = 64,
-        extra_command_line_arguments: Optional[List[str]] = None,
-    ) -> List[str]:
-        if extra_command_line_arguments is None:
-            extra_command_line_arguments = []
-        extra_command_line_arguments.append("--max_length_seconds 1")
-        extra_command_line_arguments.append("--attention_mask False")
-        return super()._create_command_line(
-            script,
-            model_name,
-            ipu_config_name,
-            output_dir,
-            task=task,
-            dataset_config_name=dataset_config_name,
-            do_eval=do_eval,
-            lr=lr,
-            train_batch_size=train_batch_size,
-            eval_batch_size=eval_batch_size,
-            num_epochs=num_epochs,
-            inference_device_iterations=inference_device_iterations,
-            gradient_accumulation_steps=gradient_accumulation_steps,
-            extra_command_line_arguments=extra_command_line_arguments,
-        )
+    NUM_EPOCHS = 3
+    EXTRA_COMMAND_LINE_ARGUMENTS = ["--max_length_seconds 1", "--attention_mask False"]
 
 
 class SpeechRecognitionExampleTester(
     ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_speech_recognition_ctc"
 ):
-    TASK_NAME = "librispeech_asr"
-    DATASET_CONFIG_NAME = "clean"
+    TASK_NAME = "common_voice"
+    DATASET_CONFIG_NAME = "tr"
     TRAIN_BATCH_SIZE = 1
     EVAL_BATCH_SIZE = 1
-
-    def _create_command_line(
-        self,
-        script: str,
-        model_name: str,
-        ipu_config_name: str,
-        output_dir: str,
-        task: Optional[str] = None,
-        dataset_config_name: Optional[str] = None,
-        do_eval: bool = True,
-        lr: float = 1e-5,
-        train_batch_size: int = 2,
-        eval_batch_size: int = 2,
-        num_epochs: int = 2,
-        inference_device_iterations: int = 4,
-        gradient_accumulation_steps: int = 64,
-        extra_command_line_arguments: Optional[List[str]] = None,
-    ) -> List[str]:
-        if extra_command_line_arguments is None:
-            extra_command_line_arguments = []
-        extra_command_line_arguments.append("--mask_time_prob 0.0")
-        extra_command_line_arguments.append("--layerdrop 0.0")
-        extra_command_line_arguments.append("--freeze_feature_encoder")
-        if self.TASK_NAME == "librispeech_asr" and self.DATASET_CONFIG_NAME == "clean":
-            extra_command_line_arguments.append("--train_split_name train.100")
-            extra_command_line_arguments.append("--eval_split_name validation")
-        return super()._create_command_line(
-            script,
-            model_name,
-            ipu_config_name,
-            output_dir,
-            task=task,
-            dataset_config_name=dataset_config_name,
-            do_eval=do_eval,
-            lr=lr,
-            train_batch_size=train_batch_size,
-            eval_batch_size=eval_batch_size,
-            num_epochs=num_epochs,
-            inference_device_iterations=inference_device_iterations,
-            gradient_accumulation_steps=gradient_accumulation_steps,
-            extra_command_line_arguments=extra_command_line_arguments,
-        )
+    SCORE_NAME = "eval_wer"
+    EVAL_SCORE_THRESHOLD = 0.39
+    EXTRA_COMMAND_LINE_ARGUMENTS = [
+        "--mask_time_prob 0.0",
+        "--layerdrop 0.0",
+        "--freeze_feature_encoder",
+        "--text_column_name sentence",
+        "--length_column_name input_length",
+    ]
