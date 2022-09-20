@@ -25,7 +25,7 @@ import logging
 import math
 import os
 import sys
-import json 
+import json
 import datetime
 import functools
 from dataclasses import dataclass, field
@@ -73,6 +73,16 @@ logger = logging.getLogger(__name__)
 MODEL_CONFIG_CLASSES = list(MODEL_FOR_MASKED_LM_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
 
+GROUPBERT_CONFIG_OVERWRITE = {
+    "architectures": ["GroupBertForMaskedLM"],
+    "attention_probs_dropout_prob": 0.0,
+    "hidden_dropout_prob": 0.0,
+    "layer_norm_eps": 1e-12,
+    "ffn_groups": 4,
+    "conv_group_size": 16,
+    "conv_kernel_size": 7,
+}
+
 
 def get_polynomial_decay_schedule_with_polynomial_warmup(
     optimizer, warmup_ratio, num_training_steps, lr_end=1e-7, power=1.0, warmup_power=1.0, last_epoch=-1
@@ -107,7 +117,7 @@ def get_polynomial_decay_schedule_with_polynomial_warmup(
 
     def lr_lambda(current_step: int):
         if current_step < num_warmup_steps:
-            return (current_step ** warmup_power) / (num_warmup_steps ** warmup_power)
+            return (current_step**warmup_power) / (num_warmup_steps**warmup_power)
         elif current_step > num_training_steps:
             return lr_end / lr_init  # as LambdaLR multiplies by lr_init
         else:
@@ -119,11 +129,13 @@ def get_polynomial_decay_schedule_with_polynomial_warmup(
 
     return LambdaLR(optimizer, lr_lambda, last_epoch)
 
+
 @dataclass
 class ModelArguments:
     """
     Arguments pertaining to which model/config/tokenizer we are going to fine-tune, or train from scratch.
     """
+
     model_name_or_path: Optional[str] = field(
         default=None,
         metadata={
@@ -169,9 +181,7 @@ class ModelArguments:
     )
     wandb: bool = field(
         default=False,
-        metadata={
-            "help": "Use wandb logging of the traning runs.)."
-        },
+        metadata={"help": "Use wandb logging of the traning runs.)."},
     )
     wandb_name: Optional[str] = field(
         default=None,
@@ -179,21 +189,21 @@ class ModelArguments:
     )
     make_memory_profile: bool = field(
         default=False,
-        metadata={
-            "help": "Flags to create a memory only profile.)."
-        },
+        metadata={"help": "Flags to create a memory only profile.)."},
     )
     make_execution_profile: bool = field(
         default=False,
-        metadata={
-            "help": "Flags to create a memory and execution profiles.)."
-        },
+        metadata={"help": "Flags to create a memory and execution profiles.)."},
     )
     default_schedule: bool = field(
         default=False,
         metadata={
             "help": "Use to prevent using a prebuilt lr schedule that uses a polynomial warmup and pass it to the Trainer.)."
         },
+    )
+    groupbert: bool = field(
+        default=True,
+        metadata={"help": "Use groupbert model.)."},
     )
 
 
@@ -202,6 +212,7 @@ class DataTrainingArguments:
     """
     Arguments pertaining to what data we are going to input our model for training and eval.
     """
+
     dataset_name: Optional[str] = field(
         default=None, metadata={"help": "The name of the dataset to use (via the datasets library)."}
     )
@@ -328,9 +339,10 @@ def log_args(training_args, model_args, data_args):
     logger.info(f"Model parameters {model_args}")
     logger.info(f"Data parameters {data_args}")
 
+
 def find_last_checkpoint(training_args):
     last_checkpoint = None
-    
+
     if os.path.isdir(training_args.output_dir) and training_args.do_train and not training_args.overwrite_output_dir:
         last_checkpoint = get_last_checkpoint(training_args.output_dir)
         if last_checkpoint is None and len(os.listdir(training_args.output_dir)) > 0:
@@ -343,7 +355,7 @@ def find_last_checkpoint(training_args):
                 f"Checkpoint detected, resuming training at {last_checkpoint}. To avoid this behavior, change "
                 "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
             )
-    
+
     return last_checkpoint
 
 
@@ -353,8 +365,8 @@ def set_profile_flags(profile, execution):
     """
     profile_dir = f'./profiles/poptorch_groupbert_{datetime.datetime.now().strftime("%d_%m_%Y_%H:%M")}'
 
-    if os.environ.get('POPLAR_ENGINE_OPTIONS'):
-        poplar_engine_options = json.loads(os.environ.get('POPLAR_ENGINE_OPTIONS').encode())
+    if os.environ.get("POPLAR_ENGINE_OPTIONS"):
+        poplar_engine_options = json.loads(os.environ.get("POPLAR_ENGINE_OPTIONS").encode())
     else:
         poplar_engine_options = {}
 
@@ -367,7 +379,7 @@ def set_profile_flags(profile, execution):
             "debug.outputAllSymbols": "true",
             "autoReport.all": "true",
             "profiler.format": "v3",
-            "autoReport.directory": profile_dir
+            "autoReport.directory": profile_dir,
         }
 
         # We update the report_dict with the info from the user
@@ -377,7 +389,7 @@ def set_profile_flags(profile, execution):
 
     if len(poplar_engine_options):
         # We then set the poplar engine options to be the ones we defined here
-        os.environ['POPLAR_ENGINE_OPTIONS'] = json.dumps(poplar_engine_options)
+        os.environ["POPLAR_ENGINE_OPTIONS"] = json.dumps(poplar_engine_options)
 
 
 def prepare_datasets(data_args, cache_dir):
@@ -385,10 +397,10 @@ def prepare_datasets(data_args, cache_dir):
     Get the datasets: you can either provide your own CSV/JSON/TXT training and evaluation files (see below)
     or just provide the name of one of the public datasets available on the hub at https://huggingface.co/datasets/
     (the dataset will be downloaded automatically from the datasets Hub
-    
+
     For CSV/JSON files, this script will use the column called 'text' or the first column. You can easily tweak this
     behavior (see below)
-    
+
     In distributed training, the load_dataset function guarantee that only one local process can concurrently
     download the dataset.
 
@@ -451,6 +463,7 @@ def prepare_datasets(data_args, cache_dir):
             )
     return raw_datasets
 
+
 def prepare_configs(model_args, training_args):
     config_kwargs = {
         "cache_dir": model_args.cache_dir,
@@ -465,6 +478,10 @@ def prepare_configs(model_args, training_args):
     else:
         config = CONFIG_MAPPING[model_args.model_type]()
         logger.warning("You are instantiating a new config instance from scratch.")
+
+    if model_args.groupbert:
+        logger.info(f"Using GroupBERT config additions: {GROUPBERT_CONFIG_OVERWRITE}")
+        config.update(GROUPBERT_CONFIG_OVERWRITE)
 
     if model_args.config_overrides is not None:
         logger.info(f"Overriding config: {model_args.config_overrides}")
@@ -481,15 +498,17 @@ def prepare_configs(model_args, training_args):
 
 def prepare_callbacks(model_args, config, entity="research"):
     """
-    Adds callbacks for model training. 
+    Adds callbacks for model training.
     """
     callbacks = []
     if model_args.wandb:
         import wandb
+
         logger.info("Enabling WandB for this run.")
         wandb.init(entity=entity, project="POPTORCH-GROUPBERT", config=config, name=model_args.wandb_name)
         callbacks += [WandbCallback]
-    return 
+    return callbacks
+
 
 def prepare_tokenizer(model_args):
     tokenizer_kwargs = {
@@ -499,10 +518,8 @@ def prepare_tokenizer(model_args):
         "use_auth_token": True if model_args.use_auth_token else None,
     }
     if model_args.tokenizer_name:
-        logger.info("*** 7.1 ***")
         tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name, **tokenizer_kwargs)
     elif model_args.model_name_or_path:
-        logger.info("*** 7.2 ***")
         tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path, **tokenizer_kwargs)
     else:
         raise ValueError(
@@ -528,7 +545,7 @@ def get_groupbert_model(model_args, config):
         )
     else:
         model = GroupBertForPreTraining(config)
-    
+
     return model
 
 
@@ -642,9 +659,10 @@ def process_the_dataset(raw_datasets, data_args, training_args, tokenizer):
                 )
     return tokenized_datasets
 
+
 def get_data_collater(tokenizer, train_dataset, training_args, data_args, ipu_config):
     if not data_args.is_already_masked:
-            # Data collator
+        # Data collator
         # This one will take care of randomly masking the tokens.
         # pad_to_multiple_of_8 = data_args.line_by_line and training_args.fp16 and not data_args.pad_to_max_length
         data_collator = DataCollatorForLanguageModelingWithMaxTokensMasked(
@@ -665,8 +683,9 @@ def get_data_collater(tokenizer, train_dataset, training_args, data_args, ipu_co
             {k: -100 if k in ["labels", "next_sentence_label"] else 0 for k in train_dataset.column_names},
         )
         data_collator = data_collator_wrapper(data_collator)
-    
+
     return data_collator
+
 
 def main():
     # See all possible arguments in src/transformers/training_args.py
@@ -695,7 +714,7 @@ def main():
     last_checkpoint = find_last_checkpoint(training_args)
     # Set seed before initializing model.
     set_seed(training_args.seed)
-    # specifies to set poplar flags that would generate a memory-only or execution profiles 
+    # specifies to set poplar flags that would generate a memory-only or execution profiles
     set_profile_flags(model_args.make_memory_profile, model_args.make_execution_profile)
     # fetch and prepare dataset
     raw_datasets = prepare_datasets(data_args, model_args.cache_dir)
@@ -723,14 +742,17 @@ def main():
         eval_dataset = tokenized_datasets["validation"]
         if data_args.max_eval_samples is not None:
             eval_dataset = eval_dataset.select(range(data_args.max_eval_samples))
-    logger.info("*** 11 ***")
     # get data collator
     data_collator = get_data_collater(tokenizer, train_dataset, training_args, data_args, ipu_config)
-    logger.info("*** 12 ***")
 
     optimizer, lr_schedule = None, None
-    if not model_args.default_schedule:  #and not model_args.default_optimizer:
-        lr_schedule = functools.partial(get_polynomial_decay_schedule_with_polynomial_warmup, warmup_ratio = training_args.warmup_ratio, num_training_steps=training_args.max_steps, warmup_power=0.5)
+    if not model_args.default_schedule:  # and not model_args.default_optimizer:
+        lr_schedule = functools.partial(
+            get_polynomial_decay_schedule_with_polynomial_warmup,
+            warmup_ratio=training_args.warmup_ratio,
+            num_training_steps=training_args.max_steps,
+            warmup_power=0.5,
+        )
 
     trainer = IPUTrainer(
         model=model,

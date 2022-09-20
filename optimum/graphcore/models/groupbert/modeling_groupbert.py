@@ -17,6 +17,8 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from typing import List, Optional, Tuple, Union
+
 import poptorch
 from optimum.utils import logging
 from scipy.stats import truncnorm
@@ -29,6 +31,8 @@ from transformers import (
     BertForTokenClassification,
 )
 from transformers.models.bert.modeling_bert import BertModel
+from transformers.modeling_utils import apply_chunking_to_forward
+from transformers.modeling_outputs import BaseModelOutputWithPastAndCrossAttentions
 
 from ...modeling_utils import (
     OnehotGather,
@@ -44,36 +48,8 @@ from .groupbert_attention import GroupBertAttention
 from .groupbert_convolution import GroupBertConvolution
 from .groupbert_ffn import GroupBertIntermediate, GroupBertOutput
 
-"NEW STUFF HERE"
-
-from typing import List, Optional, Tuple, Union
-from transformers.modeling_utils import apply_chunking_to_forward
-from transformers.modeling_outputs import BaseModelOutputWithPastAndCrossAttentions
-
-from prettytable import PrettyTable
-
 
 logger = logging.get_logger(__name__)
-
-
-def count_parameters(model):
-    table = PrettyTable(["Modules", "Parameters"])
-    total_params = 0
-    layers = len(model.bert.encoder.layer)
-    for name, parameter in model.named_parameters():
-        if not parameter.requires_grad:
-            continue
-        params = parameter.numel()
-
-        if "layer" not in name:
-            table.add_row([name, params])
-        elif "layer.0." in name:
-            name = name.replace("layer.0.", f"layer.[0-{layers}].")
-            table.add_row([name, params])
-        total_params += params
-    logger.info(table)
-    logger.info(f"Total Trainable Params: {total_params}")
-    return total_params
 
 
 class GroupBertLayer(nn.Module):
@@ -405,8 +381,6 @@ class PipelinedGroupBertForPreTraining(GroupBertForPreTraining, PipelineMixin):
             self.tie_weights()
 
         layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
-
-        count_parameters(self)
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding --> IPU 0")

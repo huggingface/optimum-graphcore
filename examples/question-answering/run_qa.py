@@ -32,6 +32,8 @@ from optimum.graphcore import IPUConfig
 from optimum.graphcore import IPUTrainingArguments as TrainingArguments
 from optimum.graphcore.data import pad_on_batch_axis
 from optimum.graphcore.utils import check_min_version
+from optimum.graphcore.models.groupbert import GroupBertForQuestionAnswering
+
 from trainer_qa import QuestionAnsweringTrainer
 from transformers import (
     AutoConfig,
@@ -49,6 +51,9 @@ from transformers.utils import check_min_version as tf_check_min_version
 from transformers.utils import send_example_telemetry
 from transformers.utils.versions import require_version
 from utils_qa import postprocess_qa_predictions
+from transformers.integrations import (  # isort: split
+    WandbCallback,
+)
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
@@ -92,6 +97,22 @@ class ModelArguments:
                 "Will use the token generated when running `transformers-cli login` (necessary to use this script "
                 "with private models)."
             )
+        },
+    )
+    wandb: bool = field(
+        default=False,
+        metadata={
+            "help": "Use wandb logging of the traning runs.)."
+        },
+    )
+    wandb_name: Optional[str] = field(
+        default=None,
+        metadata={"help": "Name for this run to show on the wandb dashboard."},
+    )
+    groupbert: bool = field(
+        default=False,
+        metadata={
+            "help": "Use groupbert model.)."
         },
     )
 
@@ -220,6 +241,19 @@ class DataTrainingArguments:
                 assert extension in ["csv", "json"], "`test_file` should be a csv or a json file."
 
 
+def prepare_callbacks(model_args, config, entity="research"):
+    """
+    Adds callbacks for model training. 
+    """
+    callbacks = []
+    if model_args.wandb:
+        import wandb
+        logger.info("Enabling WandB for this run.")
+        wandb.init(entity=entity, project="POPTORCH-GROUPBERT", config=config, name=model_args.wandb_name)
+        callbacks += [WandbCallback]
+    return callbacks
+
+
 def main():
     # See all possible arguments in src/transformers/training_args.py
     # or by passing the --help flag to this script.
@@ -335,14 +369,24 @@ def main():
         revision=model_args.model_revision,
         use_auth_token=True if model_args.use_auth_token else None,
     )
-    model = AutoModelForQuestionAnswering.from_pretrained(
-        model_args.model_name_or_path,
-        from_tf=bool(".ckpt" in model_args.model_name_or_path),
-        config=config,
-        cache_dir=model_args.cache_dir,
-        revision=model_args.model_revision,
-        use_auth_token=True if model_args.use_auth_token else None,
-    )
+    if not model_args.groupbert:
+        model = AutoModelForQuestionAnswering.from_pretrained(
+            model_args.model_name_or_path,
+            from_tf=bool(".ckpt" in model_args.model_name_or_path),
+            config=config,
+            cache_dir=model_args.cache_dir,
+            revision=model_args.model_revision,
+            use_auth_token=True if model_args.use_auth_token else None,
+        )
+    else:
+        model = GroupBertForQuestionAnswering.from_pretrained(
+            model_args.model_name_or_path,
+            from_tf=bool(".ckpt" in model_args.model_name_or_path),
+            config=config,
+            cache_dir=model_args.cache_dir,
+            revision=model_args.model_revision,
+            use_auth_token=True if model_args.use_auth_token else None,
+        )
 
     # Tokenizer check: this script requires a fast tokenizer.
     if not isinstance(tokenizer, PreTrainedTokenizerFast):
@@ -602,6 +646,9 @@ def main():
         references = [{"id": ex["id"], "answers": ex[answer_column_name]} for ex in examples]
         return EvalPrediction(predictions=formatted_predictions, label_ids=references)
 
+    # prepare callbacks for the model
+    callbacks = prepare_callbacks(model_args, config)
+
     metric = load_metric("squad_v2" if data_args.version_2_with_negative else "squad")
 
     def compute_metrics(p: EvalPrediction):
@@ -616,6 +663,7 @@ def main():
         eval_dataset=eval_dataset if training_args.do_eval else None,
         eval_examples=eval_examples if training_args.do_eval else None,
         tokenizer=tokenizer,
+        callbacks=callbacks,
         data_collator=data_collator,
         post_process_function=post_processing_function,
         compute_metrics=compute_metrics,
