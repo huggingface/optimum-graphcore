@@ -21,6 +21,7 @@ import torch.nn.functional as F
 import poptorch
 from optimum.utils import logging
 from transformers import Wav2Vec2ForPreTraining, Wav2Vec2Model
+from transformers.modeling_outputs import CausalLMOutput
 from transformers.models.wav2vec2.modeling_wav2vec2 import (
     Wav2Vec2Adapter,
     Wav2Vec2Encoder,
@@ -524,7 +525,7 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
         attention_mask=None,
         output_attentions=None,
         output_hidden_states=None,
-        return_dict=False,
+        return_dict=None,
     ):
         r"""
         labels (`torch.LongTensor` of shape `(batch_size, target_length)`, *optional*):
@@ -535,14 +536,13 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
         """
 
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-        return_dict = False
 
         outputs = self.wav2vec2(
             input_values,
             attention_mask=attention_mask,
             output_attentions=False,
             output_hidden_states=False,
-            return_dict=False,
+            return_dict=return_dict,
         )
 
         hidden_states = outputs[0]
@@ -574,7 +574,9 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
                 return (poptorch.identity_loss(loss, "sum"), logits)
             return (logits, hidden_states)
         else:
-            raise NotImplementedError("'return_dict' is not supported.")
+            return CausalLMOutput(
+                loss=loss, logits=logits, hidden_states=outputs.hidden_states, attentions=outputs.attentions
+            )
 
 
 def _sample_negative_indices(
