@@ -374,6 +374,12 @@ class ExampleTesterBase(TestCase):
         return_code = p.wait()
         self.assertEqual(return_code, 0)
 
+        # TODO: remove this.
+        cmd_line = f"{pip_name} install git+https://github.com/huggingface/optimum.git".split()
+        p = subprocess.Popen(cmd_line)
+        return_code = p.wait()
+        self.assertEqual(return_code, 0)
+
         # Install requirements
         if not Path(requirements_filename).exists():
             return

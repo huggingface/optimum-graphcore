@@ -32,6 +32,7 @@ from ...fx.transformations import (
     ShareEmbeddingComputation,
     TieWeights,
     TupleOutput,
+    VocabEmbeddingToSerializedEmbedding,
 )
 from ...fx.utils import symbolic_trace_pipelined_model
 from ...generation_utils import IPUGenerationMixin
@@ -384,10 +385,7 @@ class PipelinedBartForSequenceClassification(BartForSequenceClassification, Pipe
 
         if not isinstance(self, torch.fx.GraphModule):
             if self.ipu_config.embedding_serialization_factor > 1:
-                transformations += [
-                    LinearToSerializedLinear("lm_head"),
-                    TieWeights("model.shared", "lm_head"),
-                ]
+                transformations.append(VocabEmbeddingToSerializedEmbedding())
             transformations += [ShareEmbeddingComputation()]
         return transformations
 
