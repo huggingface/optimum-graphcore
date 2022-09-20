@@ -233,10 +233,10 @@ def pipeline(
         else:
             feature_extractor = preprocessor
 
-    # Modify transformers.pipelines
     # Override Pipeline methods
     Pipeline.get_inference_context = get_inference_context
     Pipeline.check_model_type = check_model_type
+
     # Override Pipeline __call__ to support auto padding
     old_call = Pipeline.__call__
     def new_call(self, *args, **kwargs):
@@ -245,6 +245,16 @@ def pipeline(
             kwargs["max_length"] = SUPPORTED_TASKS[targeted_task]["default"]["padding_length"]
         return old_call(self, *args, **kwargs)
     Pipeline.__call__ = new_call
+
+    # Override pipelines' _forward to support fp16
+    pipeline_class = SUPPORTED_TASKS[targeted_task]["impl"]
+    old_forward =pipeline_class._forward
+    def new_forward(self, model_inputs, *args, **kwargs):
+        for key, input in model_inputs.items():
+            if isinstance(input, torch.Tensor) and input.dtype == torch.float32:
+                model_inputs[key] = input.half()
+        return old_forward(self, model_inputs, *args, **kwargs)
+    pipeline_class._forward = new_forward
 
     return transformers_pipeline(
         task,
