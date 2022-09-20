@@ -8,13 +8,16 @@ from typing import Any, Optional, Union
 from transformers import (
     Pipeline,
     PreTrainedTokenizer,
+    ProcessorMixin,
     AutoModelForAudioClassification,
+    AutoModelForCTC,
     AutoModelForImageClassification,
     AutoModelForMaskedLM,
     AutoModelForQuestionAnswering,
     AutoModelForSequenceClassification,
     AutoModelForTokenClassification,
     AudioClassificationPipeline,
+    AutomaticSpeechRecognitionPipeline,
     FillMaskPipeline,
     ImageClassificationPipeline,
     QuestionAnsweringPipeline,
@@ -41,6 +44,16 @@ SUPPORTED_TASKS = {
             "ipu_config": "Graphcore/hubert-base-ipu",
         },
         "type": "audio",
+    },
+    "automatic-speech-recognition": {
+        "impl": AutomaticSpeechRecognitionPipeline,
+        # "class": (AutoModelForCTC, AutoModelForSpeechSeq2Seq),
+        "class": (AutoModelForCTC,),
+        "default": {
+            "model": "facebook/wav2vec2-base-960h",
+            "ipu_config": "Graphcore/wav2vec2-ctc-base-ipu",
+        },
+        "type": "multimodal",
     },
     "fill-mask": {
         "impl": FillMaskPipeline,
@@ -107,8 +120,8 @@ for task, values in SUPPORTED_TASKS.items():
         NO_FEATURE_EXTRACTOR_TASKS.add(task)
     elif values["type"] in {"audio", "image"}:
         NO_TOKENIZER_TASKS.add(task)
-    else:
-        raise ValueError(f"Supported types are 'text', 'image' and 'audio', got {values['type']}")
+    elif values["type"] != "multimodal":
+        raise ValueError(f"SUPPORTED_TASK {task} contains invalid type {values['type']}")
 
 def get_poplar_executor(model: PreTrainedModel, ipu_config: Union[str, dict] = None):
     if isinstance(ipu_config, str):
@@ -208,10 +221,17 @@ def pipeline(
             You can also provide non model then a default one will be used"""
         )
 
+    preprocessor = get_preprocessor(model_id)
     if tokenizer is None and load_tokenizer:
-        tokenizer = get_preprocessor(model_id)
+        if isinstance(preprocessor, ProcessorMixin):
+            tokenizer = preprocessor.tokenizer
+        else:
+            tokenizer = preprocessor
     if feature_extractor is None and load_feature_extractor:
-        feature_extractor = get_preprocessor(model_id)
+        if isinstance(preprocessor, ProcessorMixin):
+            feature_extractor = preprocessor.feature_extractor
+        else:
+            feature_extractor = preprocessor
 
     # Modify transformers.pipelines
     # Override Pipeline methods
