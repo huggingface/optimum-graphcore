@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -20,6 +20,7 @@ import torch.nn.functional as F
 
 import poptorch
 from optimum.utils import logging
+from transformers.modeling_outputs import CausalLMOutput
 from transformers import Wav2Vec2ForPreTraining, Wav2Vec2Model
 from transformers.models.wav2vec2.modeling_wav2vec2 import (
     Wav2Vec2Adapter,
@@ -191,20 +192,18 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
 
     def forward(
         self,
-        input_values,
-        gumbel_temperature=None,
-        labels=None,
-        attention_mask=None,
-        mask_time_indices=None,
-        sampled_negative_indices=None,
-        reduce_selector=None,
-        mask_reduced=None,
-        output_attentions=None,
-        output_hidden_states=None,
-        return_dict=None,
-    ):
-        # Override the return_dict argument
-        return_dict = False
+        input_values: Optional[torch.Tensor],
+        gumbel_temperature: Optional[torch.Tensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        mask_time_indices: Optional[torch.BoolTensor] = None,
+        sampled_negative_indices: Optional[torch.BoolTensor] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        reduce_selector: Optional[torch.Tensor] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[Tuple, Wav2Vec2ForPreTrainingOutput]:
+
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         if mask_time_indices is not None:
             mask_time_indices = mask_time_indices.to(torch.bool)
@@ -330,6 +329,17 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
                 code_perplexity,
                 prob_perplexity,
             ) + outputs[2:]
+
+        return Wav2Vec2ForPreTrainingOutput(
+            loss=loss,
+            projected_states=transformer_features,
+            projected_quantized_states=quantized_features,
+            codevector_perplexity=code_perplexity,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+            contrastive_loss=contrastive_loss,
+            diversity_loss=diversity_loss,
+        )
 
     @staticmethod
     def compute_contrastive_logits(
@@ -460,13 +470,13 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
 
     def forward(
         self,
-        input_values,
-        labels=None,
-        attention_mask=None,
-        output_attentions=None,
-        output_hidden_states=None,
-        return_dict=False,
-    ):
+        input_values: Optional[torch.Tensor],
+        attention_mask: Optional[torch.Tensor] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+        labels: Optional[torch.Tensor] = None,
+    ) -> Union[Tuple, CausalLMOutput]:
         r"""
         labels (`torch.LongTensor` of shape `(batch_size, target_length)`, *optional*):
             Labels for connectionist temporal classification. Note that `target_length` has to be smaller or equal to
@@ -476,14 +486,13 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
         """
 
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-        return_dict = False
 
         outputs = self.wav2vec2(
             input_values,
             attention_mask=attention_mask,
-            output_attentions=False,
-            output_hidden_states=False,
-            return_dict=False,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
         )
 
         hidden_states = outputs[0]
@@ -509,13 +518,15 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
 
             loss_fn = torch.nn.CTCLoss(blank=self.config.pad_token_id, reduction=self.config.ctc_loss_reduction)
             loss = loss_fn(log_probs.float(), labels, input_lengths, target_lengths)
+            loss = poptorch.identity_loss(loss, "sum")
 
         if not return_dict:
             if loss is not None:
-                return (poptorch.identity_loss(loss, "sum"), logits)
+                return loss, logits
             return (logits, hidden_states)
-        else:
-            raise NotImplementedError("'return_dict' is not supported.")
+        return CausalLMOutput(
+            loss=loss, logits=logits, hidden_states=outputs.hidden_states
+        )
 
 
 def _sample_negative_indices(
