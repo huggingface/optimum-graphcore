@@ -25,6 +25,9 @@ from transformers import (
     TokenClassificationPipeline,
     ZeroShotClassificationPipeline,
 )
+from .ipu_pipeline_classes import (
+    IPUTokenClassificationPipeline,
+)
 from transformers import pipeline as transformers_pipeline
 from transformers.feature_extraction_utils import PreTrainedFeatureExtractor
 from transformers.modeling_utils import PreTrainedModel
@@ -93,11 +96,12 @@ SUPPORTED_TASKS = {
         "type": "text",
     },
     "token-classification": {
-        "impl": TokenClassificationPipeline,
+        "impl": IPUTokenClassificationPipeline,
         "class": (AutoModelForTokenClassification,),
         "default": {
             "model": "dbmdz/bert-large-cased-finetuned-conll03-english",
             "ipu_config": "Graphcore/bert-large-ipu",
+            "padding_length": 128,
         },
         "type": "text",
     },
@@ -263,5 +267,6 @@ def pipeline(
         feature_extractor=feature_extractor,
         use_fast=use_fast,
         use_auth_token=use_auth_token,
+        pipeline_class=SUPPORTED_TASKS[targeted_task]["impl"],
         **kwargs,
     )
