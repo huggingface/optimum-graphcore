@@ -13,7 +13,7 @@
 #  limitations under the License.
 
 import random
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -24,7 +24,9 @@ from transformers import BartForConditionalGeneration, BartForSequenceClassifica
 from transformers.modeling_outputs import (
     BaseModelOutput,
     BaseModelOutputWithPastAndCrossAttentions,
+    Seq2SeqSequenceClassifierOutput,
     Seq2SeqModelOutput,
+    Seq2SeqLMOutput,
 )
 from transformers.models.bart.modeling_bart import (
     BartAttention,
@@ -777,40 +779,59 @@ class PipelinedBartForConditionalGeneration(
 
         return self
 
-    def train(self, mode: bool = True) -> "PipelinedBartForConditionalGeneration":
-        mod = super(BartForConditionalGeneration, self).train(mode=mode)
-        # TODO: enable that once generation is supported.
-        # mod.forward = mod._forward_for_train if mode else mod._forward_for_generate
-        mod.forward = mod._forward_for_train
-        return mod
+    def forward(
+        self,
+        input_ids: torch.LongTensor = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        decoder_input_ids: Optional[torch.LongTensor] = None,
+        decoder_attention_mask: Optional[torch.LongTensor] = None,
+        head_mask: Optional[torch.Tensor] = None,
+        decoder_head_mask: Optional[torch.Tensor] = None,
+        cross_attn_head_mask: Optional[torch.Tensor] = None,
+        encoder_outputs: Optional[List[torch.FloatTensor]] = None,
+        past_key_values: Optional[List[torch.FloatTensor]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        decoder_inputs_embeds: Optional[torch.FloatTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[Tuple, Seq2SeqLMOutput]:
+        r"""
+        labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
+            Labels for computing the masked language modeling loss. Indices should either be in `[0, ...,
+            config.vocab_size]` or -100 (see `input_ids` docstring). Tokens with indices set to `-100` are ignored
+            (masked), the loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`.
 
-    def _forward_for_train(self, input_ids, attention_mask, decoder_input_ids, labels=None):
+        Returns:
+        """
         outputs = super().forward(
-            input_ids=input_ids,
+            input_ids,
             attention_mask=attention_mask,
             decoder_input_ids=decoder_input_ids,
-            labels=labels,
-            use_cache=False,
-            return_dict=True,
-        )
-        # Only returning the loss to make the communication between the host and the device faster.
-        return outputs[0:1]
-
-    def _forward_for_generate(self, encoder_outputs, decoder_input_ids, attention_mask, labels=None):
-        outputs = super().forward(
             encoder_outputs=encoder_outputs,
-            attention_mask=attention_mask,
-            decoder_input_ids=decoder_input_ids,
-            return_dict=True,
-            use_cache=False,
+            decoder_attention_mask=decoder_attention_mask,
+            head_mask=head_mask,
+            decoder_head_mask=decoder_head_mask,
+            cross_attn_head_mask=cross_attn_head_mask,
+            past_key_values=past_key_values,
+            inputs_embeds=inputs_embeds,
+            decoder_inputs_embeds=decoder_inputs_embeds,
             labels=labels,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
         )
-        # Only returning the loss (if labels is provided) and the logits.
-        if labels is None:
-            return outputs[:1]
-        return outputs[:2]
-
-    forward = _forward_for_train
+        if self.training:
+            # Only returning the loss to make the communication between the host and the device faster.
+            if not return_dict:
+                return outputs[0:1]
+            else:
+                return Seq2SeqLMOutput(loss=outputs.loss)
+        else:
+            return outputs
 
 
 @register(BartForSequenceClassification)
@@ -888,12 +909,48 @@ class PipelinedBartForSequenceClassification(BartForSequenceClassification, Pipe
 
         return self
 
-    def forward(self, input_ids, attention_mask, labels=None):
+    def forward(
+        self,
+        input_ids: torch.LongTensor = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        decoder_input_ids: Optional[torch.LongTensor] = None,
+        decoder_attention_mask: Optional[torch.LongTensor] = None,
+        head_mask: Optional[torch.Tensor] = None,
+        decoder_head_mask: Optional[torch.Tensor] = None,
+        cross_attn_head_mask: Optional[torch.Tensor] = None,
+        encoder_outputs: Optional[List[torch.FloatTensor]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        decoder_inputs_embeds: Optional[torch.FloatTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[Tuple, Seq2SeqSequenceClassifierOutput]:
+        r"""
+        labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
+            Labels for computing the sequence classification/regression loss. Indices should be in `[0, ...,
+            config.num_labels - 1]`. If `config.num_labels > 1` a classification loss is computed (Cross-Entropy).
+        """
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        if labels is not None:
+            use_cache = False
+
         outputs = self.model(
             input_ids,
             attention_mask=attention_mask,
-            use_cache=False,
-            return_dict=False,
+            decoder_input_ids=decoder_input_ids,
+            decoder_attention_mask=decoder_attention_mask,
+            head_mask=head_mask,
+            decoder_head_mask=decoder_head_mask,
+            cross_attn_head_mask=cross_attn_head_mask,
+            encoder_outputs=encoder_outputs,
+            inputs_embeds=inputs_embeds,
+            decoder_inputs_embeds=decoder_inputs_embeds,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
         )
 
         hidden_states = outputs[0]  # last hidden state
@@ -933,6 +990,18 @@ class PipelinedBartForSequenceClassification(BartForSequenceClassification, Pipe
                 loss_fct = nn.BCEWithLogitsLoss()
                 loss = loss_fct(logits, labels)
 
-        if labels is None:
-            return (logits,)
-        return loss, logits
+        if not return_dict:
+            output = (logits,) + outputs[1:]
+            return ((loss,) + output) if loss is not None else output
+
+        return Seq2SeqSequenceClassifierOutput(
+            loss=loss,
+            logits=logits,
+            past_key_values=outputs.past_key_values,
+            decoder_hidden_states=outputs.decoder_hidden_states,
+            decoder_attentions=outputs.decoder_attentions,
+            cross_attentions=outputs.cross_attentions,
+            encoder_last_hidden_state=outputs.encoder_last_hidden_state,
+            encoder_hidden_states=outputs.encoder_hidden_states,
+            encoder_attentions=outputs.encoder_attentions,
+        )
