@@ -101,9 +101,7 @@ class ModelArguments:
     )
     wandb: bool = field(
         default=False,
-        metadata={
-            "help": "Use wandb logging of the traning runs.)."
-        },
+        metadata={"help": "Use wandb logging of the traning runs.)."},
     )
     wandb_name: Optional[str] = field(
         default=None,
@@ -111,9 +109,7 @@ class ModelArguments:
     )
     groupbert: bool = field(
         default=False,
-        metadata={
-            "help": "Use groupbert model.)."
-        },
+        metadata={"help": "Use groupbert model.)."},
     )
 
 
@@ -243,11 +239,12 @@ class DataTrainingArguments:
 
 def prepare_callbacks(model_args, config, entity="research"):
     """
-    Adds callbacks for model training. 
+    Adds callbacks for model training.
     """
     callbacks = []
     if model_args.wandb:
         import wandb
+
         logger.info("Enabling WandB for this run.")
         wandb.init(entity=entity, project="POPTORCH-GROUPBERT", config=config, name=model_args.wandb_name)
         callbacks += [WandbCallback]
