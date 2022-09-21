@@ -496,7 +496,7 @@ def prepare_configs(model_args, training_args):
     return config, ipu_config
 
 
-def prepare_callbacks(model_args, config, entity="research"):
+def prepare_callbacks(model_args, config):
     """
     Adds callbacks for model training.
     """
@@ -505,7 +505,7 @@ def prepare_callbacks(model_args, config, entity="research"):
         import wandb
 
         logger.info("Enabling WandB for this run.")
-        wandb.init(entity=entity, project="POPTORCH-GROUPBERT", config=config, name=model_args.wandb_name)
+        wandb.init(project="POPTORCH-GROUPBERT", config=config, name=model_args.wandb_name)
         callbacks += [WandbCallback]
     return callbacks
 
