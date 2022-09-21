@@ -27,8 +27,8 @@ from transformers import (
     BertForSequenceClassification,
     BertForTokenClassification,
 )
-from transformers.models.bert.modeling_bert import BertSelfAttention
-from transformers.modeling_outputs import QuestionAnsweringModelOutput
+from transformers.models.bert.modeling_bert import BertForPreTrainingOutput, BertSelfAttention
+from transformers.modeling_outputs import MaskedLMOutput, QuestionAnsweringModelOutput
 
 from ...modeling_utils import (
     OnehotGather,
@@ -161,13 +161,32 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
 
     def forward(
         self,
-        input_ids=None,
-        attention_mask=None,
-        token_type_ids=None,
-        labels=None,
-        next_sentence_label=None,
-    ):
-        outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+        input_ids: Optional[torch.Tensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        token_type_ids: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.Tensor] = None,
+        head_mask: Optional[torch.Tensor] = None,
+        inputs_embeds: Optional[torch.Tensor] = None,
+        labels: Optional[torch.Tensor] = None,
+        next_sentence_label: Optional[torch.Tensor] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[Tuple[torch.Tensor], BertForPreTrainingOutput]:
+
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        outputs = self.bert(
+            input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
         sequence_output, pooled_output = outputs[:2]
 
         if labels is not None:
@@ -177,8 +196,8 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
                 sequence_output = self.gather_indices(sequence_output, positions)
 
         prediction_scores, seq_relationship_score = self.cls(sequence_output, pooled_output)
-        output = (prediction_scores, seq_relationship_score) + outputs[2:]
 
+        total_loss = None
         if labels is not None and next_sentence_label is not None:
             masked_lm_loss = F.cross_entropy(
                 prediction_scores.view(-1, self.config.vocab_size),
@@ -188,9 +207,19 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
                 seq_relationship_score.view(-1, 2), next_sentence_label.view(-1)
             ).float()
             total_loss = poptorch.identity_loss(masked_lm_loss + next_sentence_loss, reduction="none")
-            return (total_loss, masked_lm_loss, next_sentence_loss)
 
-        return output
+        # If labels are provided (training mode) only output the loss
+        if not return_dict:
+            output = (prediction_scores, seq_relationship_score) + outputs[2:]
+            return (total_loss,) if total_loss is not None else output
+
+        return BertForPreTrainingOutput(
+            loss=total_loss,
+            prediction_logits=prediction_scores if total_loss is None else None,
+            seq_relationship_logits=seq_relationship_score if total_loss is None else None,
+            hidden_states=outputs.hidden_states if total_loss is None else None,
+            attentions=outputs.attentions if total_loss is None else None,
+        )
 
 
 @register(BertForMaskedLM)
@@ -279,9 +308,44 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
             self.tie_weights()
         return self
 
-    def forward(self, input_ids, attention_mask, token_type_ids=None, labels=None):
+    def forward(
+        self,
+        input_ids: Optional[torch.Tensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        token_type_ids: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.Tensor] = None,
+        head_mask: Optional[torch.Tensor] = None,
+        inputs_embeds: Optional[torch.Tensor] = None,
+        encoder_hidden_states: Optional[torch.Tensor] = None,
+        encoder_attention_mask: Optional[torch.Tensor] = None,
+        labels: Optional[torch.Tensor] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[Tuple[torch.Tensor], MaskedLMOutput]:
+        r"""
+        labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
+            Labels for computing the masked language modeling loss. Indices should be in `[-100, 0, ...,
+            config.vocab_size]` (see `input_ids` docstring) Tokens with indices set to `-100` are ignored (masked), the
+            loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`
+        """
+
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
         if self.training:
-            outputs = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids)
+            outputs = self.bert(
+                input_ids,
+                attention_mask=attention_mask,
+                token_type_ids=token_type_ids,
+                position_ids=position_ids,
+                head_mask=head_mask,
+                inputs_embeds=inputs_embeds,
+                encoder_hidden_states=encoder_hidden_states,
+                encoder_attention_mask=encoder_attention_mask,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+            )
             sequence_output = outputs[0]
 
             if hasattr(self.config, "max_num_masked_tokens"):
@@ -290,16 +354,31 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
                 sequence_output = self.gather_indices(sequence_output, positions)
 
             prediction_scores = self.cls(sequence_output)
+            outputs = (prediction_scores,) + outputs[2:]
 
-            masked_lm_loss = F.cross_entropy(prediction_scores.view(-1, self.config.vocab_size), labels.view(-1))
-            return (masked_lm_loss,)
+            masked_lm_loss = F.cross_entropy(
+                prediction_scores.view(-1, self.config.vocab_size), labels.view(-1)
+            ).float()
+            # When training only return the loss
+            if return_dict:
+                return MaskedLMOutput(loss=masked_lm_loss)
+            else:
+                return (masked_lm_loss,)
+
         else:
             return super().forward(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
                 token_type_ids=token_type_ids,
+                position_ids=position_ids,
+                head_mask=head_mask,
+                inputs_embeds=inputs_embeds,
+                encoder_hidden_states=encoder_hidden_states,
+                encoder_attention_mask=encoder_attention_mask,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
                 labels=labels,
-                return_dict=False,
+                return_dict=return_dict,
             )
 
 
