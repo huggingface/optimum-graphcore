@@ -209,7 +209,9 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
             mask_time_indices = mask_time_indices.to(torch.bool)
 
         if gumbel_temperature is None:
-            gumbel_temperature = torch.tensor(self.quantizer.temperature, device=input_values.device, dtype=input_values.dtype)
+            gumbel_temperature = torch.tensor(
+                self.quantizer.temperature, device=input_values.device, dtype=input_values.dtype
+            )
 
         outputs = self.wav2vec2(
             input_values,
@@ -276,7 +278,9 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
             # sample negative quantized vectors BTC => (BxT)C
             # Moved the negative sampling batch offsetting into the model
             if batch_size > 1:
-                sampled_negative_indices += torch.arange(batch_size, device=input_values.device)[:, None, None] * sequence_length
+                sampled_negative_indices += (
+                    torch.arange(batch_size, device=input_values.device)[:, None, None] * sequence_length
+                )
             negative_quantized_features = quantized_features.view(-1, hidden_size)[
                 sampled_negative_indices.long().view(-1)
             ]
@@ -524,9 +528,7 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
             if loss is not None:
                 return loss, logits
             return (logits, hidden_states)
-        return CausalLMOutput(
-            loss=loss, logits=logits, hidden_states=outputs.hidden_states
-        )
+        return CausalLMOutput(loss=loss, logits=logits, hidden_states=outputs.hidden_states)
 
 
 def _sample_negative_indices(

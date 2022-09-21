@@ -512,7 +512,7 @@ def main():
             "layer_norm_eps": 0.0001,
             "do_stable_layer_norm": True,
             "feat_extract_norm": "layer",
-            "apply_spec_augment": False, # spec_augment not currently supported
+            "apply_spec_augment": False,  # spec_augment not currently supported
         }
     )
 

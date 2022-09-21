@@ -563,7 +563,7 @@ def main():
             "vocab_size": len(tokenizer),
             "activation_dropout": model_args.activation_dropout,
             "layer_norm_eps": 0.0001,
-            "apply_spec_augment": False, # spec_augment not currently supported
+            "apply_spec_augment": False,  # spec_augment not currently supported
         }
     )
 

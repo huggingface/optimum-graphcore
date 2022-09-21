@@ -325,7 +325,7 @@ class PipelinedGPT2ForSequenceClassification(GPT2ForSequenceClassification, GPT2
         if not return_dict:
             loss, logits = outputs[0], outputs[1]
             return (loss, logits) if labels is not None else outputs
-            
+
         return SequenceClassifierOutputWithPast(
             loss=outputs.loss,
             logits=outputs.logits,
