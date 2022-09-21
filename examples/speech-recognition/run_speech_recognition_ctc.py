@@ -563,6 +563,7 @@ def main():
             "vocab_size": len(tokenizer),
             "activation_dropout": model_args.activation_dropout,
             "layer_norm_eps": 0.0001,
+            "apply_spec_augment": False, # spec_augment not currently supported
         }
     )
 
@@ -610,6 +611,10 @@ def main():
         inputs = feature_extractor(sample["array"], sampling_rate=sample["sampling_rate"])
         batch["input_values"] = inputs.input_values[0]
         batch["input_length"] = len(batch["input_values"])
+
+        if not training_args.fp32:
+            # Cast audio inputs to FP16
+            batch["input_values"] = batch["input_values"].astype(np.float16)
 
         # encode targets
         additional_kwargs = {}

@@ -210,7 +210,7 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
             mask_time_indices = mask_time_indices.to(torch.bool)
 
         if gumbel_temperature is None:
-            gumbel_temperature = torch.tensor(self.quantizer.temperature, dtype=torch.float32)
+            gumbel_temperature = torch.tensor(self.quantizer.temperature, device=input_values.device, dtype=input_values.dtype)
 
         outputs = self.wav2vec2(
             input_values,
@@ -236,7 +236,7 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
             cropped_length = reduce_selector.shape[1]
 
             if batch_size > 1:
-                reduce_selector += torch.arange(batch_size).unsqueeze(1) * sequence_length
+                reduce_selector += torch.arange(batch_size, device=input_values.device).unsqueeze(1) * sequence_length
             mask_time_indices = mask_reduced.to(torch.bool)
 
             extract_features = extract_features.view(-1, feature_size)[reduce_selector.long().view(-1)]
@@ -277,7 +277,7 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
             # sample negative quantized vectors BTC => (BxT)C
             # Moved the negative sampling batch offsetting into the model
             if batch_size > 1:
-                sampled_negative_indices += torch.arange(batch_size)[:, None, None] * sequence_length
+                sampled_negative_indices += torch.arange(batch_size, device=input_values.device)[:, None, None] * sequence_length
             negative_quantized_features = quantized_features.view(-1, hidden_size)[
                 sampled_negative_indices.long().view(-1)
             ]
