@@ -75,9 +75,6 @@ class IPUWav2Vec2Encoder(Wav2Vec2Encoder):
             else:
                 hidden_states = layer_outputs[0]
 
-            if skip_the_layer:
-                layer_outputs = (None, None)
-
             if output_attentions:
                 if self.config.layerdrop > 0.0:
                     all_self_attentions = all_self_attentions + ((1 - skip_the_layer) * layer_outputs[1],)
@@ -140,9 +137,6 @@ class IPUWav2Vec2EncoderStableLayerNorm(Wav2Vec2EncoderStableLayerNorm):
                 hidden_states = hidden_states * skip_the_layer + layer_outputs[0] * (1 - skip_the_layer)
             else:
                 hidden_states = layer_outputs[0]
-
-            if skip_the_layer:
-                layer_outputs = (None, None)
 
             if output_attentions:
                 if self.config.layerdrop > 0.0:

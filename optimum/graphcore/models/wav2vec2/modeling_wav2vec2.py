@@ -299,65 +299,6 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
             # its cosine similarity will be masked
             neg_is_pos = (quantized_features == negative_quantized_features).all(-1)
 
-            extract_features = extract_features.view(-1, feature_size)[reduce_selector.long().view(-1)]
-            extract_features = extract_features.reshape(batch_size, cropped_length, feature_size)
-
-            _, _, feature_size = transformer_features.shape
-            transformer_features = transformer_features.view(-1, feature_size)[reduce_selector.long().view(-1)]
-            transformer_features = transformer_features.reshape(batch_size, cropped_length, feature_size)
-
-        # 1. project all transformed features (including masked) to final vq dim
-        transformer_features = self.project_hid(transformer_features)
-
-        # 2. quantize all (unmasked) extracted features and project to final vq dim
-        extract_features = self.dropout_features(extract_features)
-
-        if isinstance(self.quantizer, IPUWav2Vec2GumbelVectorQuantizer):
-            quantized_features, code_perplexity, prob_perplexity = self.quantizer(
-                extract_features,
-                gumbel_temperature.mean(),
-                mask_time_indices=mask_time_indices,
-            )
-        else:
-            quantized_features, code_perplexity = self.quantizer(
-                extract_features,
-                mask_time_indices=mask_time_indices,
-            )
-            prob_perplexity = None
-
-        quantized_features = self.project_q(quantized_features)
-
-        loss = contrastive_loss = diversity_loss = None
-        if sampled_negative_indices is not None:
-            batch_size, sequence_length, hidden_size = quantized_features.shape
-
-            # for training, we sample negatives
-            # 3. sample K negatives (distractors) quantized states for contrastive loss
-            # if attention_mask is passed, make sure that padded feature vectors cannot be sampled
-            # sample negative quantized vectors BTC => (BxT)C
-            # Moved the negative sampling batch offsetting into the model
-            if batch_size > 1:
-                sampled_negative_indices += torch.arange(batch_size)[:, None, None] * sequence_length
-            negative_quantized_features = quantized_features.view(-1, hidden_size)[
-                sampled_negative_indices.long().view(-1)
-            ]
-            negative_quantized_features = negative_quantized_features.view(
-                batch_size, sequence_length, -1, hidden_size
-            ).permute(2, 0, 1, 3)
-
-            # 4. compute logits, corresponding to `logs = sim(c_t, [q_t, \sim{q}_t]) / \kappa`
-            # of equation (3) in https://arxiv.org/pdf/2006.11477.pdf
-            logits = self.compute_contrastive_logits(
-                quantized_features[None, :],
-                negative_quantized_features,
-                transformer_features,
-                self.config.contrastive_logits_temperature,
-            )
-
-            # 5. if a negative vector is identical to the positive (i.e. when codebook utilization is low),
-            # its cosine similarity will be masked
-            neg_is_pos = (quantized_features == negative_quantized_features).all(-1)
-
             neg_is_pos = F.pad(neg_is_pos, (0, 0, 0, 0, 1, 0))
             logits = logits.masked_fill(neg_is_pos, -1e3)
 
