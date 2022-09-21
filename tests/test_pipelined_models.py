@@ -172,13 +172,13 @@ class PipelinedModelsTester(TestCase):
         pipelined_model = pipelined_class.from_transformers(pretrained_model, ipu_config).eval()
 
         inputs = self._generate_input_for_model_class(model_name_or_path, pretrained_class)
-        pretrained_model_outputs = pretrained_model(**inputs)
+        pretrained_model_outputs = pretrained_model(**inputs, return_dict=True)
         # The forward method can be different in train and eval mode for some models (seq2seq for instance), so we make
         # sure to use the proper one.
         pipelined_forward_function = getattr(pipelined_model, "_forward_for_train", pipelined_model.forward)
 
         pipelined_model.parallelize()
-        pipelined_model_outputs = pipelined_forward_function(**inputs)
+        pipelined_model_outputs = pipelined_forward_function(**inputs, return_dict=True)
         for idx, k in enumerate(pretrained_model_outputs.keys()):
             pretrained_output, pipelined_output = pretrained_model_outputs[k], pipelined_model_outputs[k]
             # Handle tuple outputs. Outputs such as past_key_values are returned as tuples.

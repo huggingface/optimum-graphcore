@@ -13,6 +13,7 @@
 #  limitations under the License.
 
 import warnings
+from typing import Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -335,25 +336,25 @@ class PipelinedT5ForConditionalGeneration(
 
         return self
 
-    def _forward(
+    def forward(
         self,
-        input_ids=None,
-        attention_mask=None,
-        decoder_input_ids=None,
-        decoder_attention_mask=None,
-        head_mask=None,
-        decoder_head_mask=None,
-        cross_attn_head_mask=None,
-        encoder_outputs=None,
-        past_key_values=None,
-        inputs_embeds=None,
-        decoder_inputs_embeds=None,
-        labels=None,
-        use_cache=None,
-        output_attentions=None,
-        output_hidden_states=None,
-        return_dict=False,
-    ):
+        input_ids: Optional[torch.LongTensor] = None,
+        attention_mask: Optional[torch.FloatTensor] = None,
+        decoder_input_ids: Optional[torch.LongTensor] = None,
+        decoder_attention_mask: Optional[torch.BoolTensor] = None,
+        head_mask: Optional[torch.FloatTensor] = None,
+        decoder_head_mask: Optional[torch.FloatTensor] = None,
+        cross_attn_head_mask: Optional[torch.Tensor] = None,
+        encoder_outputs: Optional[Tuple[Tuple[torch.Tensor]]] = None,
+        past_key_values: Optional[Tuple[Tuple[torch.Tensor]]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        decoder_inputs_embeds: Optional[torch.FloatTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[Tuple[torch.FloatTensor], Seq2SeqLMOutput]:
         use_cache = use_cache if use_cache is not None else self.config.use_cache
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
@@ -394,23 +395,23 @@ class PipelinedT5ForConditionalGeneration(
 
         hidden_states = encoder_outputs[0]
 
-        if self.model_parallel:
-            torch.cuda.set_device(self.decoder.first_device)
+        # if self.model_parallel:
+        #     torch.cuda.set_device(self.decoder.first_device)
 
         if labels is not None and decoder_input_ids is None and decoder_inputs_embeds is None:
             # get decoder inputs from shifting lm labels to the right
             decoder_input_ids = self._shift_right(labels)
 
         # Set device for model parallelism
-        if self.model_parallel:
-            torch.cuda.set_device(self.decoder.first_device)
-            hidden_states = hidden_states.to(self.decoder.first_device)
-            if decoder_input_ids is not None:
-                decoder_input_ids = decoder_input_ids.to(self.decoder.first_device)
-            if attention_mask is not None:
-                attention_mask = attention_mask.to(self.decoder.first_device)
-            if decoder_attention_mask is not None:
-                decoder_attention_mask = decoder_attention_mask.to(self.decoder.first_device)
+        # if self.model_parallel:
+        #     torch.cuda.set_device(self.decoder.first_device)
+        #     hidden_states = hidden_states.to(self.decoder.first_device)
+        #     if decoder_input_ids is not None:
+        #         decoder_input_ids = decoder_input_ids.to(self.decoder.first_device)
+        #     if attention_mask is not None:
+        #         attention_mask = attention_mask.to(self.decoder.first_device)
+        #     if decoder_attention_mask is not None:
+        #         decoder_attention_mask = decoder_attention_mask.to(self.decoder.first_device)
 
         # Decode
         decoder_outputs = self.decoder(
@@ -452,10 +453,15 @@ class PipelinedT5ForConditionalGeneration(
             loss = loss_fct(lm_logits.view(-1, lm_logits.size(-1)), labels.view(-1))
         # TODO(thom): Add z_loss https://github.com/tensorflow/mesh/blob/fa19d69eafc9a482aff0b59ddd96b025c0cb207d/mesh_tensorflow/layers.py#L666
 
+        # Only returning the loss to make the communication between the host and the device faster.
         if not return_dict:
             output = (lm_logits,) + decoder_outputs[1:] + encoder_outputs
-            return ((loss,) + output) if loss is not None else output
+            return (loss,) if labels is not None else output
 
+        if loss is not None:
+            return Seq2SeqLMOutput(
+                loss=loss,
+            )
         return Seq2SeqLMOutput(
             loss=loss,
             logits=lm_logits,
@@ -467,38 +473,3 @@ class PipelinedT5ForConditionalGeneration(
             encoder_hidden_states=encoder_outputs.hidden_states,
             encoder_attentions=encoder_outputs.attentions,
         )
-
-    def train(self, mode: bool = True) -> "PipelinedT5ForConditionalGeneration":
-        mod = super(T5ForConditionalGeneration, self).train(mode=mode)
-        # TODO: enable that once generation is supported.
-        # mod.forward = mod._forward_for_train if mode else mod._forward_for_generate
-        mod.forward = mod._forward_for_train
-        return mod
-
-    def _forward_for_train(self, input_ids, attention_mask, decoder_input_ids, labels=None):
-        outputs = self._forward(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            decoder_input_ids=decoder_input_ids,
-            labels=labels,
-            use_cache=False,
-            return_dict=False,
-        )
-        # Only returning the loss to make the communication between the host and the device faster.
-        return outputs[0:1]
-
-    def _forward_for_generate(self, encoder_outputs, decoder_input_ids, attention_mask, labels=None):
-        outputs = super().forward(
-            encoder_outputs=encoder_outputs,
-            attention_mask=attention_mask,
-            decoder_input_ids=decoder_input_ids,
-            return_dict=False,
-            use_cache=False,
-            labels=labels,
-        )
-        # Only returning the loss (if labels is provided) and the logits.
-        if labels is None:
-            return outputs[:1]
-        return outputs[:2]
-
-    forward = _forward_for_train
