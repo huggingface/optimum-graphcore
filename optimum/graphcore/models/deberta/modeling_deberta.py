@@ -32,7 +32,7 @@ from transformers.models.deberta.modeling_deberta import (
     StableDropout,
     build_relative_position,
 )
-from transformers.modeling_outputs import QuestionAnsweringModelOutput
+from transformers.modeling_outputs import MaskedLMOutput, QuestionAnsweringModelOutput
 
 from ...modeling_utils import (
     OnehotGather,
@@ -356,26 +356,66 @@ class PipelinedDebertaForMaskedLM(DebertaForMaskedLM, DebertaPipelineMixin):
         super().__init__(config)
         self.gather_indices = OnehotGather()
 
-    def forward(self, input_ids, attention_mask, labels=None):
-        if self.training:
-            outputs = self.deberta(input_ids, attention_mask=attention_mask)
-            sequence_output = outputs[0]
+    def forward(
+        self,
+        input_ids: Optional[torch.Tensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        token_type_ids: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.Tensor] = None,
+        inputs_embeds: Optional[torch.Tensor] = None,
+        labels: Optional[torch.Tensor] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[Tuple, MaskedLMOutput]:
+        r"""
+        labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
+            Labels for computing the masked language modeling loss. Indices should be in `[-100, 0, ...,
+            config.vocab_size]` (see `input_ids` docstring) Tokens with indices set to `-100` are ignored (masked), the
+            loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`
+        """
 
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        outputs = self.deberta(
+            input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            inputs_embeds=inputs_embeds,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+        sequence_output = outputs[0]
+
+        if labels is not None:
             # Select only the masked tokens for the classifier
             max_number_of_masked_tokens = int(labels.size(1) * 0.25)
             masked_lm_labels, masked_lm_positions = torch.topk(labels, k=max_number_of_masked_tokens, dim=1)
             masked_output = self.gather_indices(sequence_output, masked_lm_positions)
+        else:
+            # This case should never happen during training
+            masked_output = sequence_output
 
-            prediction_scores = self.cls(masked_output)
+        prediction_scores = self.cls(masked_output)
 
+        masked_lm_loss = None
+        if labels is not None:
             masked_lm_loss = F.cross_entropy(
                 prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1)
             ).float()
-            return (masked_lm_loss,)
-        else:
-            return super().forward(
-                input_ids=input_ids, attention_mask=attention_mask, labels=labels, return_dict=False
-            )
+
+        if not return_dict:
+            output = (prediction_scores,) + outputs[1:]
+            return ((masked_lm_loss,)) if masked_lm_loss is not None else output
+
+        return MaskedLMOutput(
+            loss=masked_lm_loss,
+            logits=prediction_scores if masked_lm_loss is None else None,
+            hidden_states=outputs.hidden_states if masked_lm_loss is None else None,
+            attentions=outputs.attentions if masked_lm_loss is None else None,
+        )
 
 
 @register(DebertaForSequenceClassification)
