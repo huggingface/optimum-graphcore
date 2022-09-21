@@ -1703,7 +1703,6 @@ class IPUTrainer:
                 # If only one IPU is used, loss is a zero dimensional tensor, we unsqueeze to be able to concatenate.
                 if loss.dim() == 0:
                     loss = loss.unsqueeze(0)
-
                 losses_host = loss if losses_host is None else torch.cat((losses_host, loss), dim=0)
             if logits is not None:
                 if self.preprocess_logits_for_metrics is not None:

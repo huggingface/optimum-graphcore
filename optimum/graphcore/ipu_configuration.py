@@ -14,12 +14,12 @@
 
 import copy
 import json
+import warnings
 from typing import Any, Dict, Optional, Union
 
 import torch
 
 import popart
-import popdist
 import poptorch
 from optimum.configuration_utils import BaseConfig
 from optimum.utils import logging
@@ -57,6 +57,10 @@ class IPUConfig(BaseConfig):
             logger.warning("Setting replicated_tensor_sharding to False when replication_factor=1")
             self.replicated_tensor_sharding = False
 
+        if "sharded_execution_for_inference" in kwargs:
+            warnings.warn(
+                'The "sharded_execution_for_inference" parameter is deprecated, sharded execution is always used during inference'
+            )
         self.sharded_execution_for_inference = kwargs.pop("sharded_execution_for_inference", False)
 
         self.matmul_proportion = kwargs.pop("matmul_proportion", 0.6)
@@ -186,7 +190,7 @@ class IPUConfig(BaseConfig):
             .useReplicatedTensorSharding(self.replicated_tensor_sharding)
         )
 
-        if for_inference and self.sharded_execution_for_inference:
+        if for_inference:
             opts.setExecutionStrategy(poptorch.ShardedExecution(poptorch.AutoStage.AutoIncrement))
         else:
             # Use Pipelined Execution
