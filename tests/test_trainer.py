@@ -1,5 +1,5 @@
 # coding=utf-8
-# Copyright 2018 the HuggingFace Inc. team.
+# Copyright 2021 the HuggingFace Inc. team.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -433,23 +433,6 @@ class IPUTrainerIntegrationPrerunTest(TestCasePlus, IPUTrainerIntegrationCommon)
         trainer = IPUTrainer(model, ipu_config, args, train_dataset=train_dataset, force_to_pipelined=True)
         trainer.train()
         self.check_trained_model(trainer.model)
-
-    # TODO: handle this if model_init is supported one day.
-    # def test_model_init(self):
-    #     train_dataset = RegressionDataset()
-    #     args = IPUTrainingArguments("./regression", learning_rate=0.1)
-    #     trainer = IPUTrainer(args=args, train_dataset=train_dataset, model_init=lambda: RegressionModel())
-    #     trainer.train()
-    #     self.check_trained_model(trainer.model)
-
-    #     # Re-training should restart from scratch, thus lead the same results.
-    #     trainer.train()
-    #     self.check_trained_model(trainer.model)
-
-    #     # Re-training should restart from scratch, thus lead the same results and new seed should be used.
-    #     trainer.args.seed = 314
-    #     trainer.train()
-    #     self.check_trained_model(trainer.model, alternate_seed=True)
 
     def test_gradient_accumulation(self):
         # Training with half the batch size but accumulation steps as 2 should give the same results.
