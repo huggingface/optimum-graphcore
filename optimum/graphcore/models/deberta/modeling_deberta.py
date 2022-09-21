@@ -215,14 +215,7 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
             self.max_relative_positions - att_span : self.max_relative_positions + att_span, :
         ].unsqueeze(0)
 
-        score = torch.zeros(
-            query_layer.size(0),
-            query_layer.size(1),
-            query_layer.size(2),
-            query_layer.size(2),
-            device=query_layer.device,
-            dtype=query_layer.dtype,
-        )
+        score = 0
 
         # content->position
         if "c2p" in self.pos_att_type:
@@ -478,6 +471,7 @@ class PipelinedDebertaForQuestionAnswering(DebertaForQuestionAnswering, DebertaP
             are not taken into account for computing the loss.
         """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        # return_dict = False
 
         output = super().forward(
             input_ids,
