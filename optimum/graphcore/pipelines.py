@@ -26,6 +26,7 @@ from transformers import (
     ZeroShotClassificationPipeline,
 )
 from .ipu_pipeline_classes import (
+    IPUFillMaskPipeline,
     IPUTokenClassificationPipeline,
 )
 from transformers import pipeline as transformers_pipeline
@@ -59,11 +60,12 @@ SUPPORTED_TASKS = {
         "type": "multimodal",
     },
     "fill-mask": {
-        "impl": FillMaskPipeline,
+        "impl": IPUFillMaskPipeline,
         "class": (AutoModelForMaskedLM,),
         "default": {
             "model": "roberta-base",
             "ipu_config": "Graphcore/roberta-base-ipu",
+            "padding_length": 128,
         },
         "type": "text",
     },
