@@ -23,9 +23,10 @@ class IPUTokenClassificationPipeline(TokenClassificationPipeline):
         ignore_subwords: Optional[bool] = None,
         aggregation_strategy: Optional[AggregationStrategy] = None,
         offset_mapping: Optional[List[Tuple[int, int]]] = None,
+        **tokenizer_kwargs,
     ):
 
-        preprocess_params = {}
+        preprocess_params = tokenizer_kwargs
         if offset_mapping is not None:
             preprocess_params["offset_mapping"] = offset_mapping
 
@@ -66,7 +67,7 @@ class IPUTokenClassificationPipeline(TokenClassificationPipeline):
             postprocess_params["ignore_labels"] = ignore_labels
         return preprocess_params, {}, postprocess_params
 
-    def preprocess(self, sentence, offset_mapping=None):
+    def preprocess(self, sentence, offset_mapping=None, **tokenizer_kwargs):
         truncation = True if self.tokenizer.model_max_length and self.tokenizer.model_max_length > 0 else False
         model_inputs = self.tokenizer(
             sentence,
@@ -74,6 +75,7 @@ class IPUTokenClassificationPipeline(TokenClassificationPipeline):
             truncation=truncation,
             return_special_tokens_mask=True,
             return_offsets_mapping=self.tokenizer.is_fast,
+            **tokenizer_kwargs,
         )
         if offset_mapping:
             model_inputs["offset_mapping"] = offset_mapping
