@@ -216,11 +216,9 @@ class ExampleTesterBase(TestCase):
     EVAL_BATCH_SIZE = 2
     INFERENCE_DEVICE_ITERATIONS = 4
     GRADIENT_ACCUMULATION_STEPS = 64
-    # DATALOADER_DROP_LAST = True
     TRAIN_REPLICATION_FACTOR = 2
     INFERENCE_REPLICATION_FACTOR = 2
     EXTRA_COMMAND_LINE_ARGUMENTS = None
-    venv_was_created = False  # TODO: make this an instance attribute instead of class attribute.
 
     def setUp(self):
         self._create_venv()
@@ -275,7 +273,6 @@ class ExampleTesterBase(TestCase):
             f"--ipu_config_overrides {ipu_config_overrides}",
             f" --num_train_epochs {num_epochs}",
             "--dataloader_num_workers 16",
-            # f"--dataloader_drop_last {self.DATALOADER_DROP_LAST}",
             "--pad_on_batch_axis",
             "--save_steps -1",
             "--report_to none",
@@ -296,6 +293,10 @@ class ExampleTesterBase(TestCase):
         pattern = re.compile(r"([\"\'].+?[\"\'])|\s")
         return [x for y in cmd_line for x in re.split(pattern, y) if x]
 
+    @property
+    def venv_was_created(self):
+        return os.path.isdir("venv")
+
     def _create_venv(self):
         """
         Creates the virtual environment for the example.
@@ -304,7 +305,6 @@ class ExampleTesterBase(TestCase):
         p = subprocess.Popen(cmd_line)
         return_code = p.wait()
         self.assertEqual(return_code, 0)
-        self.venv_was_created = True
 
     def _remove_venv(self):
         """
@@ -315,7 +315,6 @@ class ExampleTesterBase(TestCase):
             p = subprocess.Popen(cmd_line)
             return_code = p.wait()
             self.assertEqual(return_code, 0)
-            self.venv_was_created = False
 
     def _get_poptorch_wheel_path(self, sdk_path: Optional[str] = None) -> str:
         """
@@ -424,6 +423,7 @@ class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, e
     EXTRA_COMMAND_LINE_ARGUMENTS = [
         "--dataset_config 3.0.0",
         "--prediction_loss_only",
+        "--pad_to_max_length",
         "--max_target_length 200",
         "--max_source_length 1024",
     ]
@@ -528,6 +528,7 @@ class ImageClassificationExampleTester(
     ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_image_classification"
 ):
     TASK_NAME = "cifar10"
+    NUM_EPOCHS = 2
     EXTRA_COMMAND_LINE_ARGUMENTS = [
         "--remove_unused_columns false",
         "--dataloader_drop_last true",
@@ -552,6 +553,7 @@ class SpeechRecognitionExampleTester(
     DATASET_CONFIG_NAME = "tr"
     TRAIN_BATCH_SIZE = 1
     EVAL_BATCH_SIZE = 1
+    NUM_EPOCHS = 15
     SCORE_NAME = "eval_wer"
     EVAL_SCORE_THRESHOLD = 0.39
     EXTRA_COMMAND_LINE_ARGUMENTS = [
@@ -560,4 +562,6 @@ class SpeechRecognitionExampleTester(
         "--freeze_feature_encoder",
         "--text_column_name sentence",
         "--length_column_name input_length",
+        "--logging_steps 10",
+        '--chars_to_ignore , ? . ! - \\; \\: \\" “ % ‘ ” � '
     ]
