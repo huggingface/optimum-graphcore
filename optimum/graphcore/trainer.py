@@ -733,7 +733,7 @@ class IPUTrainer:
                     "bias_correction": False,
                 }
 
-            first_order_type = torch.float16 if self.ipu_config.enable_half_first_order_momentum else torch.float32
+            first_order_type = torch.float32 if self.args.fp32 else torch.float16
             optimizer_kwargs["lr"] = self.args.learning_rate
             optimizer_kwargs["loss_scaling"] = self.args.loss_scaling
             optimizer_kwargs["accum_type"] = first_order_type

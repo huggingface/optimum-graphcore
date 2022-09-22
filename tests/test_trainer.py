@@ -599,7 +599,6 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         train_output = trainer.train()
         self.assertEqual(train_output.global_step, 10)
 
-    # TODO: Handle this once GPT-2 is supported.
     def test_logging_inf_nan_filter(self):
         config = GPT2Config(vocab_size=100, n_positions=128, n_embd=32, n_layer=3, n_head=4)
         tiny_gpt2 = GPT2LMHeadModel(config)
@@ -607,9 +606,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         train_dataset = RepeatDataset(x)
 
         # IPUTrainer without inf/nan filter
-        args = IPUTrainingArguments(
-            "./test", learning_rate=1e9, logging_steps=5, logging_nan_inf_filter=False, fp32=True
-        )
+        args = IPUTrainingArguments("./test", learning_rate=1e9, logging_steps=5, logging_nan_inf_filter=False)
 
         ipu_config = get_ipu_config()
         ipu_config.layers_per_ipu = [3]
