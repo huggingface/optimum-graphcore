@@ -126,7 +126,7 @@ class DistilBertPipelineMixin(PipelineMixin):
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding --> IPU 0")
-        is_masked_lm = DistilBertForMaskedLM in self.__class__.__bases__
+        is_masked_lm = isinstance(self, DistilBertForMaskedLM)
         if self.ipu_config.embedding_serialization_factor > 1 and not is_masked_lm:
             self.distilbert.embeddings.word_embeddings = SerializedEmbedding(
                 self.distilbert.embeddings.word_embeddings, self.ipu_config.embedding_serialization_factor
@@ -154,7 +154,8 @@ class DistilBertPipelineMixin(PipelineMixin):
         for layer in self.distilbert.transformer.layer:
             layer.attention.__class__ = MultiHeadSelfAttention
 
-        if self.ipu_config.embedding_serialization_factor > 1:
+        is_masked_lm = isinstance(self, DistilBertForMaskedLM)
+        if self.ipu_config.embedding_serialization_factor > 1 and not is_masked_lm:
             self.distilbert.embeddings.word_embeddings = self.distilbert.embeddings.word_embeddings.deserialize()
 
         return self
