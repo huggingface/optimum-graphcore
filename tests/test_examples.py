@@ -177,7 +177,10 @@ class ExampleTestMeta(type):
                 if self.EVAL_IS_SUPPORTED:
                     with open(Path(tmp_dir) / "all_results.json") as fp:
                         results = json.load(fp)
-                    self.assertGreaterEqual(float(results[self.SCORE_NAME]), self.EVAL_SCORE_THRESHOLD)
+                    if self.EVAL_SCORE_GREATER_IS_BETTER:
+                        self.assertGreaterEqual(float(results[self.SCORE_NAME]), self.EVAL_SCORE_THRESHOLD)
+                    else:
+                        self.assertLessEqual(float(results[self.SCORE_NAME]), self.EVAL_SCORE_THRESHOLD)
 
         return test
 
@@ -209,6 +212,7 @@ class ExampleTesterBase(TestCase):
     DATASET_CONFIG_NAME = None
     EVAL_IS_SUPPORTED = True
     EVAL_SCORE_THRESHOLD = 0.75
+    EVAL_SCORE_GREATER_IS_BETTER = True
     SCORE_NAME = "eval_accuracy"
     DATASET_PARAMETER_NAME = "dataset_name"
     NUM_EPOCHS = 1
@@ -275,6 +279,7 @@ class ExampleTesterBase(TestCase):
             "--dataloader_num_workers 16",
             "--pad_on_batch_axis",
             "--save_steps -1",
+            "--save_total_limit 1",
             "--report_to none",
         ]
         if dataset_config_name is not None:
@@ -556,12 +561,12 @@ class SpeechRecognitionExampleTester(
     NUM_EPOCHS = 15
     SCORE_NAME = "eval_wer"
     EVAL_SCORE_THRESHOLD = 0.39
+    EVAL_SCORE_GREATER_IS_BETTER = False
     EXTRA_COMMAND_LINE_ARGUMENTS = [
         "--mask_time_prob 0.0",
         "--layerdrop 0.0",
         "--freeze_feature_encoder",
         "--text_column_name sentence",
         "--length_column_name input_length",
-        "--logging_steps 10",
-        '--chars_to_ignore , ? . ! - \\; \\: \\" “ % ‘ ” � '
+        '--chars_to_ignore , ? . ! - \\; \\: \\" “ % ‘ ” � ',
     ]
