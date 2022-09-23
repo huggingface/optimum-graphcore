@@ -336,7 +336,7 @@ class IPUTrainer:
         Returns:
             The converted poptorch optimizer.
         """
-        first_order_type = torch.float16 if self.ipu_config.enable_half_first_order_momentum else torch.float32
+        first_order_type = torch.float32 if self.args.fp32 else torch.float16
         optimizer_kwargs = {
             "loss_scaling": self.args.loss_scaling,
             "accum_type": first_order_type,
@@ -733,7 +733,7 @@ class IPUTrainer:
                     "bias_correction": False,
                 }
 
-            first_order_type = torch.float16 if self.ipu_config.enable_half_first_order_momentum else torch.float32
+            first_order_type = torch.float32 if self.args.fp32 else torch.float16
             optimizer_kwargs["lr"] = self.args.learning_rate
             optimizer_kwargs["loss_scaling"] = self.args.loss_scaling
             optimizer_kwargs["accum_type"] = first_order_type
@@ -1703,7 +1703,6 @@ class IPUTrainer:
                 # If only one IPU is used, loss is a zero dimensional tensor, we unsqueeze to be able to concatenate.
                 if loss.dim() == 0:
                     loss = loss.unsqueeze(0)
-
                 losses_host = loss if losses_host is None else torch.cat((losses_host, loss), dim=0)
             if logits is not None:
                 if self.preprocess_logits_for_metrics is not None:
