@@ -84,6 +84,7 @@ SUPPORTED_TASKS = {
         "default": {
             "model": "deepset/roberta-base-squad2",
             "ipu_config": "Graphcore/roberta-base-ipu",
+            "padding_length": 128,
         },
         "type": "text",
     },
