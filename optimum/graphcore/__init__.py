@@ -27,6 +27,13 @@ from .models.bert import (
     PipelinedBertForTokenClassification,
 )
 from .models.convnext import PipelinedConvNextForImageClassification
+from .models.distilbert import (
+    PipelinedDistilBertForMaskedLM,
+    PipelinedDistilBertForMultipleChoice,
+    PipelinedDistilBertForQuestionAnswering,
+    PipelinedDistilBertForSequenceClassification,
+    PipelinedDistilBertForTokenClassification,
+)
 from .models.gpt2 import (
     PipelinedGPT2ForSequenceClassification,
     PipelinedGPT2ForTokenClassification,
