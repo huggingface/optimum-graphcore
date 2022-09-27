@@ -224,7 +224,9 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
             output = (lm_logits[:, :, : self.actual_vocab_size],) + transformer_outputs[1:]
         else:
             output = (lm_logits,) + transformer_outputs[1:]
-        return (loss,) if loss is not None else output
+        if loss is not None:
+            return (loss,) if self.training else (loss,) + output
+        return output
 
 
 @register(GPT2ForSequenceClassification)
