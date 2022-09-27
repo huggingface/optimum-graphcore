@@ -186,7 +186,7 @@ class PipelinedDistilBertForMaskedLM(DistilBertForMaskedLM, DistilBertPipelineMi
         self.vocab_transform = poptorch.BeginBlock(self.vocab_transform, "LM Head", ipu_id=0)
         self.vocab_layer_norm = poptorch.BeginBlock(self.vocab_layer_norm, "LM Head", ipu_id=0)
         self.vocab_projector = poptorch.BeginBlock(self.vocab_projector, "LM Head", ipu_id=0)
-
+        logger.info("-----------------------------------------------------------")
         return self
 
     def deparallelize(self):
@@ -237,7 +237,7 @@ class PipelinedDistilBertForSequenceClassification(DistilBertForSequenceClassifi
         logger.info(f"Classifier --> IPU {last_ipu}")
         self.pre_classifier = poptorch.BeginBlock(self.pre_classifier, "Classifier", ipu_id=last_ipu)
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier", ipu_id=last_ipu)
-
+        logger.info("-----------------------------------------------------------")
         return self
 
     def forward(
@@ -257,6 +257,8 @@ class PipelinedDistilBertForQuestionAnswering(DistilBertForQuestionAnswering, Di
         last_ipu = self.ipu_config.ipus_per_replica - 1
         logger.info(f"QA Outputs --> IPU {last_ipu}")
         self.qa_outputs = poptorch.BeginBlock(self.qa_outputs, "QA Outputs", ipu_id=last_ipu)
+        logger.info("-----------------------------------------------------------")
+        return self
 
     def forward(self, input_ids, attention_mask, start_positions=None, end_positions=None):
         output = super().forward(
@@ -279,7 +281,7 @@ class PipelinedDistilBertForTokenClassification(DistilBertForTokenClassification
         last_ipu = self.ipu_config.ipus_per_replica - 1
         logger.info(f"Classifier --> IPU {last_ipu}")
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier", ipu_id=last_ipu)
-
+        logger.info("-----------------------------------------------------------")
         return self
 
     def forward(self, input_ids, attention_mask, labels=None):
@@ -300,7 +302,7 @@ class PipelinedDistilBertForMultipleChoice(DistilBertForMultipleChoice, DistilBe
         logger.info(f"Classifier --> IPU {last_ipu}")
         self.pre_classifier = poptorch.BeginBlock(self.pre_classifier, "Classifier", ipu_id=last_ipu)
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier", ipu_id=last_ipu)
-
+        logger.info("-----------------------------------------------------------")
         return self
 
     def forward(self, input_ids, attention_mask, labels=None):
