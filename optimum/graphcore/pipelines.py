@@ -257,6 +257,12 @@ def pipeline(
     pipeline_class = SUPPORTED_TASKS[targeted_task]["impl"]
     old_forward =pipeline_class._forward
     def new_forward(self, model_inputs, *args, **kwargs):
+        # Support change in batch size
+        # TODO: Place this to a more appropriate location.
+        if self.model._executable_inputs:
+            if self.model._executable_inputs.args[0].shape[0] != next(iter(model_inputs.items()))[1].shape[0]:
+                self.model.destroy()
+        # Support fp16
         for key, input in model_inputs.items():
             if isinstance(input, torch.Tensor) and input.dtype == torch.float32:
                 model_inputs[key] = input.half()
