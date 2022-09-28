@@ -20,10 +20,10 @@ To contribute and add support for a model architecture that is not currently sup
 
 1. Make sure the original model implementation inherhints from `transformers.PreTrainedModel`. This is not 100% needed, but it is highly recommended to have access to all the features.
 2. Create a "pipelined" version of the original class, to do that:
-  - Inherint from both the original class and [`graphcore.modeling_utils.PieplineMixin`]
+  - Inherint from both the original class and [`modeling_utils.PieplineMixin`]
   - Implement the `.parallelize` method, which specifies how each part of the model should be placed on the hardware.
   - Implement the `.deparellize` method, which takes a parallelized instance of the model back to its original version. This is needed to make sure both the original and pipelined versions can share the same state dict.
-3. Register the pipelined version. This will enable the [`~graphcore.IPUTrainer`] to automatically convert an original instance of the model to its pipelined counterpart.
+3. Register the pipelined version. This will enable the [`IPUTrainer`] to automatically convert an original instance of the model to its pipelined counterpart.
 
 Example: `transformers.ViTForImageClassification` to `PipelinedViTForImageClassification`
 

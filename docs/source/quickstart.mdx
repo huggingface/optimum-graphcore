@@ -21,10 +21,10 @@ limitations under the License.
 
 There are two main classes one needs to know:
 
-- [`~graphcore.IPUTrainer`]: the trainer class that takes care of compiling the model to run on IPUs, and of performing training and evaluation, check [here](trainer.mdx) for more information..
-- [`~graphcore.IPUConfig`]: the class that specifies attributes and configuration parameters to compile and put the model on the device, check [here](ipu_config.mdx) for more information.
+- [`IPUTrainer`]: the trainer class that takes care of compiling the model to run on IPUs, and of performing training and evaluation, check [here](trainer.mdx) for more information..
+- [`IPUConfig`]: the class that specifies attributes and configuration parameters to compile and put the model on the device, check [here](ipu_config.mdx) for more information.
 
-The [`~graphcore.IPUTrainer`] is very similar to the [🤗 Transformers Trainer](https://huggingface.co/docs/transformers/main_classes/trainer), and adapting a script using the Trainer to make it work with IPUs will mostly consists of simply swapping the `Trainer` class for the [`~graphcore.IPUTrainer`] one. That's how most of the [example scripts](https://github.com/huggingface/optimum-graphcore/tree/main/examples) were adapted from their [original counterparts](https://github.com/huggingface/transformers/tree/master/examples/pytorch).
+The [`IPUTrainer`] is very similar to the [🤗 Transformers Trainer](https://huggingface.co/docs/transformers/main_classes/trainer), and adapting a script using the Trainer to make it work with IPUs will mostly consists of simply swapping the `Trainer` class for the [`IPUTrainer`] one. That's how most of the [example scripts](https://github.com/huggingface/optimum-graphcore/tree/main/examples) were adapted from their [original counterparts](https://github.com/huggingface/transformers/tree/master/examples/pytorch).
 
 ```diff
 -from transformers import Trainer, TrainingArguments
