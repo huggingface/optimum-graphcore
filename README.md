@@ -62,7 +62,7 @@ pip install -r requirements.txt
 
 ## How to use it?
 🤗 Optimum Graphcore was designed with one goal in mind: **make training and evaluation straightforward for any 🤗 Transformers user while leveraging the complete power of IPUs.**
-It requires minimal compared to using `transformers`:
+It requires minimal compared to using 🤗 Transformers:
 
 ```diff
 -from transformers import Trainer, TrainingArguments
@@ -72,12 +72,13 @@ It requires minimal compared to using `transformers`:
 +training_args = IPUTrainingArguments(
      per_device_train_batch_size=4,
      learning_rate=1e-4,
-+    ipu_config_name="Graphcore/bert-base-ipu",  # Or any other IPUConfig on the Hub or stored locally
++    # Any IPUConfig on the Hub or stored locally
++    ipu_config_name="Graphcore/bert-base-ipu",
 +)
 +
 +# Loading the IPUConfig needed by the IPUTrainer to compile and train the model on IPUs
 +ipu_config = IPUConfig.from_pretrained(
-+    training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
++    training_args.ipu_config_name,
  )
 
  # Initialize our Trainer
