@@ -3,10 +3,10 @@
     title: 🤗 Optimum Graphcore
   - local: quickstart
     title: Quickstart
-  -local: ipu_config
-   title: IPU Configuration
-  -local: trainer
-   title: IPU Trainer
-  -local: add_support_for_new_model
-   title: Add support for an architecutre
+  - local: ipu_config
+    title: IPU Configuration
+  - local: trainer
+    title: IPU Trainer
+  - local: add_support_for_new_model
+    title: Add support for an architecutre
   title: Optimum Graphcore
