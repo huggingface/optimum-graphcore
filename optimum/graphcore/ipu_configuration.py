@@ -120,6 +120,7 @@ class IPUConfig(BaseConfig):
               - `default`: `all` for inference, `final` for training.
 
     """
+
     CONFIG_NAME = "ipu_config.json"
     FULL_CONFIGURATION_FILE = "ipu_config.json"
 
