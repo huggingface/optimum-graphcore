@@ -245,7 +245,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
                     torch.ones(self.actual_vocab_size),
                     torch.zeros(self.config.vocab_size - self.actual_vocab_size),
                 )
-            )
+            ).to(dtype=lm_logits.dtype, device=lm_logits.device)
             lm_logits = lm_logits * padding_mask + (1 - padding_mask) * -10000.0
 
             # TODO: Use the following line instead to ignore the padding logits
