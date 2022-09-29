@@ -91,6 +91,7 @@ class IPUMultiHeadSelfAttention(MultiHeadSelfAttention):
         q = q / math.sqrt(dim_per_head)  # (bs, n_heads, q_length, dim_per_head)
         scores = torch.matmul(q, k.transpose(2, 3))  # (bs, n_heads, q_length, k_length)
         # Always use -1e4 to avoid NaN issues in fp16.
+        mask = mask.to(dtype=scores.dtype)
         mask = FLOAT16_LIMIT * (mask - 1)
         mask = mask.view(mask_reshp).expand_as(scores)  # (bs, n_heads, q_length, k_length)
         scores = scores + mask  # (bs, n_heads, q_length, k_length)
