@@ -43,8 +43,6 @@ from ...modeling_utils import (
 
 logger = logging.get_logger(__name__)
 
-FLOAT16_LIMIT = 1e4
-
 
 class IPUMultiHeadSelfAttention(MultiHeadSelfAttention):
     def forward(
@@ -90,9 +88,13 @@ class IPUMultiHeadSelfAttention(MultiHeadSelfAttention):
 
         q = q / math.sqrt(dim_per_head)  # (bs, n_heads, q_length, dim_per_head)
         scores = torch.matmul(q, k.transpose(2, 3))  # (bs, n_heads, q_length, k_length)
-        # Always use -1e4 to avoid NaN issues in fp16.
-        mask = mask.to(dtype=scores.dtype)
-        mask = FLOAT16_LIMIT * (mask - 1)
+        mask = mask.to(dtype=scores.dtype)  # fp16 compatibility
+        # Since attention_mask is 1.0 for positions we want to attend and 0.0 for
+        # masked positions, this operation will create a tensor which is 0.0 for
+        # positions we want to attend and -10000.0 for masked positions.
+        # Since we are adding it to the raw scores before the softmax, this is
+        # effectively the same as removing these entirely.
+        mask = (1.0 - mask) * -10000.0
         mask = mask.view(mask_reshp).expand_as(scores)  # (bs, n_heads, q_length, k_length)
         scores = scores + mask  # (bs, n_heads, q_length, k_length)
 
