@@ -224,7 +224,7 @@ class PipelinedDistilBertForMaskedLM(DistilBertForMaskedLM, DistilBertPipelineMi
             loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`.
         """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-        
+
         if labels is not None:
             dlbrt_output = self.distilbert(
                 input_ids=input_ids,
