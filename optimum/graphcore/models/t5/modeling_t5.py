@@ -23,7 +23,7 @@ import poptorch
 from optimum.utils import logging
 from transformers import T5ForConditionalGeneration
 from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
-from transformers.models.t5.modeling_t5 import __HEAD_MASK_WARNING_MSG, T5Stack, T5Block
+from transformers.models.t5.modeling_t5 import __HEAD_MASK_WARNING_MSG, T5Block, T5Stack
 
 from ...generation_utils import IPUGenerationMixin
 from ...modeling_utils import (

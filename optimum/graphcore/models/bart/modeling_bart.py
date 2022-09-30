@@ -24,9 +24,9 @@ from transformers import BartForConditionalGeneration, BartForSequenceClassifica
 from transformers.modeling_outputs import (
     BaseModelOutput,
     BaseModelOutputWithPastAndCrossAttentions,
-    Seq2SeqSequenceClassifierOutput,
-    Seq2SeqModelOutput,
     Seq2SeqLMOutput,
+    Seq2SeqModelOutput,
+    Seq2SeqSequenceClassifierOutput,
 )
 from transformers.models.bart.modeling_bart import (
     BartAttention,

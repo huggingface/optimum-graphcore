@@ -17,8 +17,8 @@
 # limitations under the License.
 
 from .modeling_deberta import (
+    PipelinedDebertaForMaskedLM,
     PipelinedDebertaForQuestionAnswering,
     PipelinedDebertaForSequenceClassification,
     PipelinedDebertaForTokenClassification,
-    PipelinedDebertaForMaskedLM,
 )

@@ -25,9 +25,9 @@ from typing import Optional
 
 import datasets
 import numpy as np
+import torch
 from datasets import load_dataset, load_metric
 
-import torch
 import transformers
 from optimum.graphcore import IPUConfig, IPUTrainer
 from optimum.graphcore import IPUTrainingArguments as TrainingArguments

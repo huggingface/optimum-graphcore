@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import math
+from typing import Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -26,13 +27,13 @@ from transformers import (
     DebertaForSequenceClassification,
     DebertaForTokenClassification,
 )
+from transformers.modeling_outputs import MaskedLMOutput, QuestionAnsweringModelOutput
 from transformers.models.deberta.modeling_deberta import (
     DebertaEncoder,
     DisentangledSelfAttention,
     StableDropout,
     build_relative_position,
 )
-from transformers.modeling_outputs import MaskedLMOutput, QuestionAnsweringModelOutput
 
 from ...modeling_utils import (
     OnehotGather,
@@ -44,8 +45,6 @@ from ...modeling_utils import (
     recomputation_checkpoint,
     register,
 )
-
-from typing import Optional, Tuple, Union
 
 
 logger = logging.get_logger(__name__)

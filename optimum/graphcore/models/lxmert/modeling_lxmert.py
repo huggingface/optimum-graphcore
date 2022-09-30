@@ -14,13 +14,13 @@
 
 from typing import Optional, Tuple, Union
 
-import poptorch
 import torch
 import torch.nn.functional as F
 
+import poptorch
+from optimum.utils import logging
 from transformers import LxmertForQuestionAnswering
 from transformers.models.lxmert.modeling_lxmert import LxmertForQuestionAnsweringOutput
-from optimum.utils import logging
 
 from ...modeling_utils import PipelineMixin, recomputation_checkpoint, register
 

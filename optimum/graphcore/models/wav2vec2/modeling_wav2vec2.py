@@ -20,8 +20,8 @@ import torch.nn.functional as F
 
 import poptorch
 from optimum.utils import logging
-from transformers.modeling_outputs import CausalLMOutput
 from transformers import Wav2Vec2ForPreTraining, Wav2Vec2Model
+from transformers.modeling_outputs import CausalLMOutput
 from transformers.models.wav2vec2.modeling_wav2vec2 import (
     Wav2Vec2Adapter,
     Wav2Vec2Encoder,

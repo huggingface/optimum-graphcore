@@ -21,8 +21,8 @@ import torch.nn as nn
 import poptorch
 from optimum.utils import logging
 from transformers import GPT2ForSequenceClassification, GPT2ForTokenClassification, GPT2LMHeadModel
-from transformers.models.gpt2.modeling_gpt2 import GPT2Attention
 from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions, SequenceClassifierOutputWithPast
+from transformers.models.gpt2.modeling_gpt2 import GPT2Attention
 
 from ...modeling_utils import (
     PipelineMixin,

@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Optional, Tuple, Union
+
 import torch
 import torch.nn as nn
 from torch.nn import CrossEntropyLoss
@@ -37,8 +39,6 @@ from ...modeling_utils import (
     recomputation_checkpoint,
     register,
 )
-
-from typing import Optional, Tuple, Union
 
 
 logger = logging.get_logger(__name__)

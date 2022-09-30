@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Optional, Tuple, Union
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -27,8 +29,8 @@ from transformers import (
     BertForSequenceClassification,
     BertForTokenClassification,
 )
-from transformers.models.bert.modeling_bert import BertForPreTrainingOutput, BertSelfAttention
 from transformers.modeling_outputs import MaskedLMOutput, QuestionAnsweringModelOutput
+from transformers.models.bert.modeling_bert import BertForPreTrainingOutput, BertSelfAttention
 
 from ...modeling_utils import (
     OnehotGather,
@@ -41,8 +43,6 @@ from ...modeling_utils import (
     register,
 )
 from .bert_fused_attention import BertFusedSelfAttention
-
-from typing import Optional, Tuple, Union
 
 
 logger = logging.get_logger(__name__)
