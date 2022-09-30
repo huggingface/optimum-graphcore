@@ -63,8 +63,8 @@ SUPPORTED_TASKS = {
         "impl": IPUFillMaskPipeline,
         "class": (AutoModelForMaskedLM,),
         "default": {
-            "model": "roberta-base",
-            "ipu_config": "Graphcore/roberta-base-ipu",
+            "model": "distilbert-base-uncased",
+            "ipu_config": "Graphcore/distilbert-base-ipu",
             "padding_length": 128,
         },
         "type": "text",
@@ -82,8 +82,8 @@ SUPPORTED_TASKS = {
         "impl": QuestionAnsweringPipeline,
         "class": (AutoModelForQuestionAnswering,),
         "default": {
-            "model": "deepset/roberta-base-squad2",
-            "ipu_config": "Graphcore/roberta-base-ipu",
+            "model": "distilbert-base-cased-distilled-squad",
+            "ipu_config": "Graphcore/distilbert-base-ipu",
             "padding_length": 128,
         },
         "type": "text",
@@ -92,8 +92,8 @@ SUPPORTED_TASKS = {
         "impl": TextClassificationPipeline,
         "class": (AutoModelForSequenceClassification,),
         "default": {
-            "model": "cardiffnlp/twitter-roberta-base-sentiment",
-            "ipu_config": "Graphcore/roberta-base-ipu",
+            "model": "distilbert-base-uncased-finetuned-sst-2-english",
+            "ipu_config": "Graphcore/distilbert-base-ipu",
             "padding_length": 128,
         },
         "type": "text",
@@ -138,6 +138,8 @@ def get_poplar_executor(model: PreTrainedModel, ipu_config: Union[str, dict] = N
     else:
         raise ValueError("ipu_config must be a string or a dictionary.")
     ipu_config.inference_device_iterations = 1
+    # TODO: inference_replication_factor should be adaptive, especially for batching.
+    ipu_config.inference_replication_factor = 1
     model = to_pipelined(model, ipu_config, force=False)
     model.parallelize()
     model.half()
