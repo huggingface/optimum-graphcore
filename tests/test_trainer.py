@@ -669,7 +669,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         )
 
     def test_evaluate(self):
-        trainer = get_regression_trainer(a=1.5, b=2.5, compute_metrics=AlmostAccuracy())
+        trainer = get_regression_trainer(a=1.5, b=2.5, compute_metrics=AlmostAccuracy(), label_names=["labels"])
         results = trainer.evaluate()
 
         x, y = trainer.eval_dataset.x, trainer.eval_dataset.ys[0]
@@ -680,7 +680,9 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         self.assertAlmostEqual(results["eval_accuracy"], expected_acc)
 
         # With a number of elements not a round multiple of the batch size
-        trainer = get_regression_trainer(a=1.5, b=2.5, eval_len=523, compute_metrics=AlmostAccuracy())
+        trainer = get_regression_trainer(
+            a=1.5, b=2.5, eval_len=523, compute_metrics=AlmostAccuracy(), label_names=["labels"]
+        )
         results = trainer.evaluate()
 
         x, y = trainer.eval_dataset.x, trainer.eval_dataset.ys[0]
@@ -690,6 +692,24 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         self.assertAlmostEqual(results["eval_loss"], expected_loss)
         expected_acc = AlmostAccuracy()((pred, y))["accuracy"]
         self.assertAlmostEqual(results["eval_accuracy"], expected_acc)
+
+        # TODO: not supported for now.
+        # With logits preprocess
+        # trainer = get_regression_trainer(
+        #     a=1.5,
+        #     b=2.5,
+        #     compute_metrics=AlmostAccuracy(),
+        #     label_names=["labels"],
+        #     preprocess_logits_for_metrics=lambda logits, labels: logits + 1,
+        # )
+        # results = trainer.evaluate()
+
+        # x, y = trainer.eval_dataset.x, trainer.eval_dataset.ys[0]
+        # pred = 1.5 * x + 2.5
+        # expected_loss = ((pred - y) ** 2).mean()
+        # self.assertAlmostEqual(results["eval_loss"], expected_loss)
+        # expected_acc = AlmostAccuracy()((pred + 1, y))["accuracy"]
+        # self.assertAlmostEqual(results["eval_accuracy"], expected_acc)
 
     def test_predict(self):
         trainer = get_regression_trainer(a=1.5, b=2.5)

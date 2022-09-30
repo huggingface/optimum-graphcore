@@ -374,7 +374,8 @@ class IPUTrainer:
         self.current_flos = 0
         self.hp_search_backend = None
         self.use_tune_checkpoints = False
-        default_label_names = find_labels(self.model.__class__)
+        default_label_names = find_labels(model.__class__)
+        # default_label_names = ["labels"]
         self.label_names = default_label_names if self.args.label_names is None else self.args.label_names
         self.control = self.callback_handler.on_init_end(self.args, self.state, self.control)
 
@@ -1013,7 +1014,9 @@ class IPUTrainer:
         if resume_from_checkpoint is not None:
             self._load_from_checkpoint(resume_from_checkpoint)
 
-        return self._inner_training_loop(args=args, resume_from_checkpoint=resume_from_checkpoint, ignore_keys_for_eval=ignore_keys_for_eval)
+        return self._inner_training_loop(
+            args=args, resume_from_checkpoint=resume_from_checkpoint, ignore_keys_for_eval=ignore_keys_for_eval
+        )
 
     def _inner_training_loop(
         self, batch_size=None, args=None, resume_from_checkpoint=None, trial=None, ignore_keys_for_eval=None
@@ -1088,7 +1091,9 @@ class IPUTrainer:
 
         # Train!
         num_examples = (
-            self.num_examples(train_dataloader) if has_length(train_dataloader) else total_train_batch_size * args.max_steps
+            self.num_examples(train_dataloader)
+            if has_length(train_dataloader)
+            else total_train_batch_size * args.max_steps
         )
         logger.info("***** Running training *****")
         logger.info(f"  Num examples = {num_examples}")
@@ -1187,7 +1192,9 @@ class IPUTrainer:
                 self._past = None
 
             steps_in_epoch = (
-                len(epoch_iterator) if has_length(train_dataloader) else args.max_steps * args.gradient_accumulation_steps
+                len(epoch_iterator)
+                if has_length(train_dataloader)
+                else args.max_steps * args.gradient_accumulation_steps
             )
 
             self.control = self.callback_handler.on_epoch_begin(args, self.state, self.control)
@@ -1249,7 +1256,7 @@ class IPUTrainer:
                 break
 
             self.control = self.callback_handler.on_epoch_end(args, self.state, self.control)
-            self._maybe_log_save_evaluate(tr_loss, model, trial, epoch, ignore_keys_for_eval)
+            self._maybe_log_save_evaluate(tr_loss, model, epoch, ignore_keys_for_eval)
 
         if args.past_index and hasattr(self, "_past"):
             # Clean the state at the end of training
@@ -1340,6 +1347,20 @@ class IPUTrainer:
                 logger.warn(f"There were missing keys in the checkpoint model loaded: {load_result.missing_keys}.")
         if len(load_result.unexpected_keys) != 0:
             logger.warn(f"There were unexpected keys in the checkpoint model loaded: {load_result.unexpected_keys}.")
+
+    def _issue_warnings_after_load(self, load_result):
+
+        if len(load_result.missing_keys) != 0:
+            if self.model._keys_to_ignore_on_save is not None and set(load_result.missing_keys) == set(
+                self.model._keys_to_ignore_on_save
+            ):
+                self.model.tie_weights()
+            else:
+                logger.warning(f"There were missing keys in the checkpoint model loaded: {load_result.missing_keys}.")
+        if len(load_result.unexpected_keys) != 0:
+            logger.warning(
+                f"There were unexpected keys in the checkpoint model loaded: {load_result.unexpected_keys}."
+            )
 
     def _maybe_log_save_evaluate(self, tr_loss, model, epoch, ignore_keys_for_eval):
         if self.control.should_log:
@@ -1745,7 +1766,7 @@ class IPUTrainer:
         if self.args.pad_on_batch_axis:
             eval_dataset = eval_dataset if eval_dataset is not None else self.eval_dataset
             dataset_len = len(eval_dataset)
-            output = output._replace(predictions=tuple([pred[:dataset_len] for pred in output.predictions]))
+            output = output._replace(predictions=tuple(pred[:dataset_len] for pred in output.predictions))
             output = output._replace(num_samples=dataset_len)
 
         total_batch_size = self.args.per_device_eval_batch_size * self.ipu_config.batch_size_factor(for_inference=True)
@@ -1865,7 +1886,7 @@ class IPUTrainer:
         logger.info(f"  Batch size = {batch_size}")
 
         self.callback_handler.eval_dataloader = dataloader
-        eval_dataset = getattr(dataloader, "dataset", None)
+        # eval_dataset = getattr(dataloader, "dataset", None)
 
         if self.args.past_index >= 0:
             self._past = None
@@ -1962,6 +1983,7 @@ class IPUTrainer:
             all_labels = nested_truncate(all_labels, num_samples)
 
         # Metrics!
+        metrics = self.compute_metrics(EvalPrediction(predictions=all_preds, label_ids=all_labels))
         if self.compute_metrics is not None and all_preds is not None and all_labels is not None:
             metrics = self.compute_metrics(EvalPrediction(predictions=all_preds, label_ids=all_labels))
         else:

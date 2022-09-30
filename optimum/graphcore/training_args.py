@@ -48,6 +48,7 @@ trainer_log_levels = dict(**log_levels, passive=-1)
 class ParallelMode(Enum):
     IPU = "ipu"
 
+
 class OptimizerNames(ExplicitEnum):
     """
     Stores the acceptable string identifiers for optimizers.
@@ -354,6 +355,7 @@ class IPUTrainingArguments:
             Will pad each batch up to a fixed size. This ensures that the compiled model will have an input with the
             proper shape, and allows to not use `dataloader_drop_last` during training.
     """
+
     output_dir: str = field(
         metadata={"help": "The output directory where the model predictions and checkpoints will be written."},
     )
@@ -595,7 +597,9 @@ class IPUTrainingArguments:
         default="sync",
         metadata={"help": "The way data should be accessed.", "choices": ["sync", "async", "async_rebatched"]},
     )
-    compile_only: bool = field(default=False, metadata={"help": "If True, the `IPUTrainer` will only perform model compilation and stop."})
+    compile_only: bool = field(
+        default=False, metadata={"help": "If True, the `IPUTrainer` will only perform model compilation and stop."}
+    )
     ipu_config_overrides: Optional[str] = field(
         default=None,
         metadata={
@@ -607,7 +611,7 @@ class IPUTrainingArguments:
         metadata={
             "help": (
                 "Will pad each batch up to a fixed size. This ensures that the compiled model will have an input with",
-                " the proper shape, and allows to not use drop_last during training."
+                " the proper shape, and allows to not use drop_last during training.",
             ),
         },
     )
