@@ -40,7 +40,6 @@ from transformers import (
     IBertConfig,
     RobertaConfig,
     TextClassificationPipeline,
-    TFAutoModelForSequenceClassification,
     pipeline,
 )
 from transformers.pipelines import PIPELINE_REGISTRY, get_task
@@ -54,12 +53,10 @@ from transformers.testing_utils import (
     is_staging_test,
     nested_simplify,
     require_scatter,
-    require_tensorflow_probability,
-    require_tf,
     require_torch,
     slow,
 )
-from transformers.utils import is_tf_available, is_torch_available
+from transformers.utils import is_torch_available
 from transformers.utils import logging as transformers_logging
 
 
@@ -245,56 +242,54 @@ class PipelineTestCaseMeta(type):
 
             return test
 
-        for prefix, key in [("pt", "model_mapping"), ("tf", "tf_model_mapping")]:
-            mapping = dct.get(key, {})
-            if mapping:
-                for configuration, model_architectures in mapping.items():
-                    if not isinstance(model_architectures, tuple):
-                        model_architectures = (model_architectures,)
+        mapping = dct.get("model_mapping", {})
+        if mapping:
+            for configuration, model_architectures in mapping.items():
+                if not isinstance(model_architectures, tuple):
+                    model_architectures = (model_architectures,)
 
-                    for model_architecture in model_architectures:
-                        checkpoint = get_checkpoint_from_architecture(model_architecture)
-                        tiny_config = get_tiny_config_from_class(configuration)
-                        tokenizer_classes = TOKENIZER_MAPPING.get(configuration, [])
-                        feature_extractor_class = FEATURE_EXTRACTOR_MAPPING.get(configuration, None)
-                        feature_extractor_name = (
-                            feature_extractor_class.__name__ if feature_extractor_class else "nofeature_extractor"
-                        )
-                        if not tokenizer_classes:
-                            # We need to test even if there are no tokenizers.
-                            tokenizer_classes = [None]
+                for model_architecture in model_architectures:
+                    checkpoint = get_checkpoint_from_architecture(model_architecture)
+                    tiny_config = get_tiny_config_from_class(configuration)
+                    tokenizer_classes = TOKENIZER_MAPPING.get(configuration, [])
+                    feature_extractor_class = FEATURE_EXTRACTOR_MAPPING.get(configuration, None)
+                    feature_extractor_name = (
+                        feature_extractor_class.__name__ if feature_extractor_class else "nofeature_extractor"
+                    )
+                    if not tokenizer_classes:
+                        # We need to test even if there are no tokenizers.
+                        tokenizer_classes = [None]
+                    else:
+                        # Remove the non defined tokenizers
+                        # ByT5 and Perceiver are bytes-level and don't define
+                        # FastTokenizer, we can just ignore those.
+                        tokenizer_classes = [
+                            tokenizer_class for tokenizer_class in tokenizer_classes if tokenizer_class is not None
+                        ]
+
+                    for tokenizer_class in tokenizer_classes:
+                        if tokenizer_class is not None:
+                            tokenizer_name = tokenizer_class.__name__
                         else:
-                            # Remove the non defined tokenizers
-                            # ByT5 and Perceiver are bytes-level and don't define
-                            # FastTokenizer, we can just ignore those.
-                            tokenizer_classes = [
-                                tokenizer_class for tokenizer_class in tokenizer_classes if tokenizer_class is not None
-                            ]
+                            tokenizer_name = "notokenizer"
 
-                        for tokenizer_class in tokenizer_classes:
-                            if tokenizer_class is not None:
-                                tokenizer_name = tokenizer_class.__name__
-                            else:
-                                tokenizer_name = "notokenizer"
+                        test_name = f"test_{configuration.__name__}_{model_architecture.__name__}_{tokenizer_name}_{feature_extractor_name}"
 
-                            test_name = f"test_{prefix}_{configuration.__name__}_{model_architecture.__name__}_{tokenizer_name}_{feature_extractor_name}"
-
-                            if tokenizer_class is not None or feature_extractor_class is not None:
-                                dct[test_name] = gen_test(
-                                    model_architecture,
-                                    checkpoint,
-                                    tiny_config,
-                                    tokenizer_class,
-                                    feature_extractor_class,
-                                )
+                        if tokenizer_class is not None or feature_extractor_class is not None:
+                            dct[test_name] = gen_test(
+                                model_architecture,
+                                checkpoint,
+                                tiny_config,
+                                tokenizer_class,
+                                feature_extractor_class,
+                            )
 
         @abstractmethod
         def inner(self):
             raise NotImplementedError("Not implemented test")
 
-        # Force these 2 methods to exist
+        # Force this method to exist
         dct["test_small_model_pt"] = dct.get("test_small_model_pt", inner)
-        dct["test_small_model_tf"] = dct.get("test_small_model_tf", inner)
 
         return type.__new__(mcs, name, bases, dct)
 
@@ -376,20 +371,6 @@ class CommonPipelineTest(unittest.TestCase):
         # This will force using `num_workers=1` with a warning for now.
         results = []
         for out in pipe(data(10), num_workers=2):
-            self.assertEqual(nested_simplify(out), {"label": "LABEL_0", "score": 0.504})
-            results.append(out)
-        self.assertEqual(len(results), 10)
-
-    @require_tf
-    def test_iterator_data_tf(self):
-        def data(n: int):
-            for _ in range(n):
-                yield "This is a test"
-
-        pipe = pipeline(model="hf-internal-testing/tiny-random-distilbert", framework="tf")
-        out = pipe("This is a test")
-        results = []
-        for out in pipe(data(10)):
             self.assertEqual(nested_simplify(out), {"label": "LABEL_0", "score": 0.504})
             results.append(out)
         self.assertEqual(len(results), 10)
@@ -661,21 +642,6 @@ class PipelineUtilsTest(unittest.TestCase):
             self.check_default_pipeline(task, "pt", set_seed_fn, self.check_models_equal_pt)
 
     @slow
-    @require_tf
-    def test_load_default_pipelines_tf(self):
-        import tensorflow as tf
-
-        from transformers.pipelines import SUPPORTED_TASKS
-
-        set_seed_fn = lambda: tf.random.set_seed(0)  # noqa: E731
-        for task in SUPPORTED_TASKS.keys():
-            if task == "table-question-answering":
-                # test table in seperate test due to more dependencies
-                continue
-
-            self.check_default_pipeline(task, "tf", set_seed_fn, self.check_models_equal_tf)
-
-    @slow
     @require_torch
     @require_scatter
     def test_load_default_pipelines_pt_table_qa(self):
@@ -683,15 +649,6 @@ class PipelineUtilsTest(unittest.TestCase):
 
         set_seed_fn = lambda: torch.manual_seed(0)  # noqa: E731
         self.check_default_pipeline("table-question-answering", "pt", set_seed_fn, self.check_models_equal_pt)
-
-    @slow
-    @require_tf
-    @require_tensorflow_probability
-    def test_load_default_pipelines_tf_table_qa(self):
-        import tensorflow as tf
-
-        set_seed_fn = lambda: tf.random.set_seed(0)  # noqa: E731
-        self.check_default_pipeline("table-question-answering", "tf", set_seed_fn, self.check_models_equal_tf)
 
     def check_default_pipeline(self, task, framework, set_seed_fn, check_models_equal_fn):
         from transformers.pipelines import SUPPORTED_TASKS, pipeline
@@ -755,14 +712,6 @@ class PipelineUtilsTest(unittest.TestCase):
         models_are_equal = True
         for model1_p, model2_p in zip(model1.parameters(), model2.parameters()):
             if model1_p.data.ne(model2_p.data).sum() > 0:
-                models_are_equal = False
-
-        return models_are_equal
-
-    def check_models_equal_tf(self, model1, model2):
-        models_are_equal = True
-        for model1_p, model2_p in zip(model1.weights, model2.weights):
-            if np.abs(model1_p.numpy() - model2_p.numpy()).sum() > 1e-5:
                 models_are_equal = False
 
         return models_are_equal
