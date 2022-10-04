@@ -96,7 +96,6 @@ class TextClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTestC
         outputs = text_classifier("This is great !")
         self.assertEqual(nested_simplify(outputs), [{"label": "LABEL_0", "score": 0.504}])
 
-    @slow
     @require_torch
     def test_pt_bert(self):
         text_classifier = pipeline("text-classification")
