@@ -29,10 +29,13 @@ from unittest import skipIf
 import numpy as np
 
 from huggingface_hub import HfFolder, Repository, delete_repo, set_access_token
+from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
 from requests.exceptions import HTTPError
 from transformers import (
+    CONFIG_MAPPING,
     FEATURE_EXTRACTOR_MAPPING,
     TOKENIZER_MAPPING,
+    AutoConfig,
     AutoFeatureExtractor,
     AutoModelForSequenceClassification,
     AutoTokenizer,
@@ -59,6 +62,8 @@ from transformers.testing_utils import (
 from transformers.utils import is_torch_available
 from transformers.utils import logging as transformers_logging
 
+from ..utils import MODELS_TO_TEST_MAPPING
+
 
 sys.path.append(str(Path(__file__).parent.parent.parent / "utils"))
 
@@ -66,6 +71,38 @@ sys.path.append(str(Path(__file__).parent.parent.parent / "utils"))
 
 
 logger = logging.getLogger(__name__)
+
+
+def get_supported_models(models_to_test, task_mapping, task="default"):
+    """
+    Filters models that can perform the task from models_to_test.
+
+    Args:
+        models_to_test: mapping between a model type and a tuple (model_name_or_path, ipu_config_name).
+        task_mapping: mapping bewteen a model config and a model class.
+        task: the task to get the model names for.
+
+    Returns:
+        A list of models that are supported for the task.
+        Each element of the list follows the same format: (configuration, model_architectures, ipu_config_name)).
+    """
+
+    def is_valid_model_type(model_type: str) -> bool:
+        in_task_mapping = CONFIG_MAPPING[model_type] in task_mapping
+        if in_task_mapping:
+            return task_mapping[CONFIG_MAPPING[model_type]] in _PRETRAINED_TO_PIPELINED_REGISTRY
+        return False
+
+    supported_models = []
+    for model_type, model_names in models_to_test.items():
+        names = model_names.get(task, model_names["default"]) if isinstance(model_names, dict) else model_names
+        if is_valid_model_type(model_type):
+            configuration = CONFIG_MAPPING[model_type]
+            model_architectures = task_mapping[CONFIG_MAPPING[model_type]]
+            ipu_config = names[1]
+            supported_models.append((configuration, model_architectures, ipu_config))
+
+    return supported_models
 
 
 def get_checkpoint_from_architecture(architecture):
@@ -244,13 +281,16 @@ class PipelineTestCaseMeta(type):
 
         mapping = dct.get("model_mapping", {})
         if mapping:
-            for configuration, model_architectures in mapping.items():
+            mapping = get_supported_models(MODELS_TO_TEST_MAPPING, mapping)
+            for configuration, model_architectures, ipu_config in mapping:
                 if not isinstance(model_architectures, tuple):
                     model_architectures = (model_architectures,)
 
                 for model_architecture in model_architectures:
                     checkpoint = get_checkpoint_from_architecture(model_architecture)
+                    # TODO: Currently use full size configs loaded from checkpoints. Switch to tiny configs in the future.
                     tiny_config = get_tiny_config_from_class(configuration)
+                    # tiny_config = AutoConfig.from_pretrained(checkpoint)
                     tokenizer_classes = TOKENIZER_MAPPING.get(configuration, [])
                     feature_extractor_class = FEATURE_EXTRACTOR_MAPPING.get(configuration, None)
                     feature_extractor_name = (
