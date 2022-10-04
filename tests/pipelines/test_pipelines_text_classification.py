@@ -14,15 +14,15 @@
 
 import unittest
 
+from optimum.graphcore.pipelines import pipeline
+
 from transformers import (
     MODEL_FOR_SEQUENCE_CLASSIFICATION_MAPPING,
     TextClassificationPipeline,
-    pipeline,
 )
 from transformers.testing_utils import is_pipeline_test, nested_simplify, require_torch, slow
 
 from .test_pipelines_common import ANY, PipelineTestCaseMeta
-
 
 @is_pipeline_test
 class TextClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
@@ -31,7 +31,9 @@ class TextClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTestC
     @require_torch
     def test_small_model_pt(self):
         text_classifier = pipeline(
-            task="text-classification", model="hf-internal-testing/tiny-random-distilbert", framework="pt"
+            task="text-classification",
+            model="hf-internal-testing/tiny-random-distilbert",
+            ipu_config="Graphcore/distilbert-base-ipu",
         )
 
         outputs = text_classifier("This is great !")
@@ -88,8 +90,7 @@ class TextClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTestC
         text_classifier = pipeline(
             task="text-classification",
             model="hf-internal-testing/tiny-random-distilbert",
-            framework="pt",
-            device=torch.device("cpu"),
+            ipu_config="Graphcore/distilbert-base-ipu",
         )
 
         outputs = text_classifier("This is great !")

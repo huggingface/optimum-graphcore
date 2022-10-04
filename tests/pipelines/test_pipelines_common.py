@@ -289,8 +289,8 @@ class PipelineTestCaseMeta(type):
                 for model_architecture in model_architectures:
                     checkpoint = get_checkpoint_from_architecture(model_architecture)
                     # TODO: Currently use full size configs loaded from checkpoints. Switch to tiny configs in the future.
-                    tiny_config = get_tiny_config_from_class(configuration)
-                    # tiny_config = AutoConfig.from_pretrained(checkpoint)
+                    # tiny_config = get_tiny_config_from_class(configuration)
+                    tiny_config = AutoConfig.from_pretrained(checkpoint)
                     tokenizer_classes = TOKENIZER_MAPPING.get(configuration, [])
                     feature_extractor_class = FEATURE_EXTRACTOR_MAPPING.get(configuration, None)
                     feature_extractor_name = (
