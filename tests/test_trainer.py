@@ -712,19 +712,19 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         # self.assertAlmostEqual(results["eval_accuracy"], expected_acc)
 
     def test_predict(self):
-        trainer = get_regression_trainer(a=1.5, b=2.5)
+        trainer = get_regression_trainer(a=1.5, b=2.5, label_names=["labels"])
         preds = trainer.predict(trainer.eval_dataset).predictions
         x = trainer.eval_dataset.x
         self.assertTrue(np.allclose(preds, 1.5 * x + 2.5))
 
         # With a number of elements not a round multiple of the batch size
-        trainer = get_regression_trainer(a=1.5, b=2.5, eval_len=EVAL_LEN + 6)
+        trainer = get_regression_trainer(a=1.5, b=2.5, eval_len=EVAL_LEN + 6, label_names=["labels"])
         preds = trainer.predict(trainer.eval_dataset).predictions
         x = trainer.eval_dataset.x
         self.assertTrue(np.allclose(preds, 1.5 * x + 2.5))
 
         # With more than one output of the model
-        trainer = get_regression_trainer(a=1.5, b=2.5, double_output=True)
+        trainer = get_regression_trainer(a=1.5, b=2.5, double_output=True, label_names=["labels"])
         preds = trainer.predict(trainer.eval_dataset).predictions
         x = trainer.eval_dataset.x
         self.assertTrue(len(preds), 2)
@@ -975,6 +975,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
                 evaluation_strategy="steps",
                 save_steps=5,
                 load_best_model_at_end=True,
+                label_names=["labels"],
             )
             self.assertFalse(trainer.args.greater_is_better)
             trainer.train()
@@ -993,6 +994,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
                 load_best_model_at_end=True,
                 metric_for_best_model="accuracy",
                 compute_metrics=AlmostAccuracy(),
+                label_names=["labels"],
             )
             self.assertTrue(trainer.args.greater_is_better)
             trainer.train()
@@ -1010,6 +1012,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
                 load_best_model_at_end=True,
                 metric_for_best_model="accuracy",
                 compute_metrics=AlmostAccuracy(),
+                label_names=["labels"],
             )
             self.assertTrue(trainer.args.greater_is_better)
             trainer.train()
@@ -1028,6 +1031,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
                 save_steps=5,
                 load_best_model_at_end=True,
                 pretrained=False,
+                label_names=["labels"],
             )
             self.assertFalse(trainer.args.greater_is_better)
             trainer.train()
@@ -1060,6 +1064,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         ipu_config = get_ipu_config()
 
         args = RegressionIPUTrainingArguments(output_dir="./examples")
+        args.label_names = ["labels"]
         trainer = IPUTrainer(
             model=model,
             ipu_config=ipu_config,
@@ -1096,6 +1101,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         ipu_config = get_ipu_config()
 
         args = RegressionIPUTrainingArguments(output_dir="./examples", fp32=True)
+        args.label_names = ["labels"]
         trainer = IPUTrainer(
             model=model,
             ipu_config=ipu_config,
@@ -1151,6 +1157,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
                 save_strategy=IntervalStrategy.EPOCH,
                 compute_metrics=AlmostAccuracy(),
                 metric_for_best_model="accuracy",
+                label_names=["labels"],
             )
             trainer.add_callback(EarlyStoppingCallback(1, 0.0001))
             train_output = trainer.train()
@@ -1167,6 +1174,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
                 evaluation_strategy=IntervalStrategy.EPOCH,
                 compute_metrics=AlmostAccuracy(),
                 metric_for_best_model="accuracy",
+                label_names=["labels"],
             )
             trainer.add_callback(EarlyStoppingCallback(1))
             self.assertEqual(trainer.state.global_step, 0)
@@ -1238,11 +1246,11 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
     def test_mem_metrics(self):
 
         # with mem metrics enabled
-        trainer = get_regression_trainer(skip_memory_metrics=False)
+        trainer = get_regression_trainer(skip_memory_metrics=False, label_names=["labels"])
         self.check_mem_metrics(trainer, self.assertIn)
 
         # with mem metrics disabled
-        trainer = get_regression_trainer(skip_memory_metrics=True)
+        trainer = get_regression_trainer(skip_memory_metrics=True, label_names=["labels"])
         self.check_mem_metrics(trainer, self.assertNotIn)
 
     def test_no_wd_param_group(self):

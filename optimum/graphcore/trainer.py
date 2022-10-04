@@ -375,7 +375,6 @@ class IPUTrainer:
         self.hp_search_backend = None
         self.use_tune_checkpoints = False
         default_label_names = find_labels(model.__class__)
-        # default_label_names = ["labels"]
         self.label_names = default_label_names if self.args.label_names is None else self.args.label_names
         self.control = self.callback_handler.on_init_end(self.args, self.state, self.control)
 
@@ -1068,7 +1067,7 @@ class IPUTrainer:
 
         self.create_optimizer_and_scheduler(num_training_steps=max_steps)
 
-        self.state = TrainerState()
+        self.state = IPUTrainerState()
         if trial is not None:
             raise ValueError("Hyperparameter tuning is not supported by the IPUTrainer.")
             trial = None
@@ -1983,7 +1982,6 @@ class IPUTrainer:
             all_labels = nested_truncate(all_labels, num_samples)
 
         # Metrics!
-        metrics = self.compute_metrics(EvalPrediction(predictions=all_preds, label_ids=all_labels))
         if self.compute_metrics is not None and all_preds is not None and all_labels is not None:
             metrics = self.compute_metrics(EvalPrediction(predictions=all_preds, label_ids=all_labels))
         else:
