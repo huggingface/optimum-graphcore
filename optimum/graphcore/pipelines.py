@@ -33,6 +33,7 @@ from transformers import pipeline as transformers_pipeline
 from transformers.feature_extraction_utils import PreTrainedFeatureExtractor
 from transformers.modeling_utils import PreTrainedModel
 from transformers.onnx.utils import get_preprocessor
+from transformers.pipelines import get_task
 
 
 TASK_ALIASES = {
@@ -188,6 +189,20 @@ def pipeline(
     use_auth_token: Optional[Union[str, bool]] = None,
     **kwargs,
 ) -> Pipeline:
+
+    if task is None and model is None:
+        raise RuntimeError(
+            "Impossible to instantiate a pipeline without either a task or a model "
+            "being specified. "
+            "Please provide a task class or a model"
+        )
+    if task is None and model is not None:
+        if not isinstance(model, str):
+            raise RuntimeError(
+                "Inferring the task automatically requires to check the hub with a model_id defined as a `str`."
+                f"{model} is not a valid model_id."
+            )
+        task = get_task(model, use_auth_token)
 
     if task in TASK_ALIASES:
         task = TASK_ALIASES[task]
