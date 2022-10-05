@@ -30,10 +30,8 @@ import numpy as np
 
 from huggingface_hub import HfFolder, Repository, delete_repo, set_access_token
 from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
-from optimum.graphcore.pipelines import get_poplar_executor, get_inference_context, check_model_type
 from requests.exceptions import HTTPError
 from transformers import (
-    Pipeline,
     CONFIG_MAPPING,
     FEATURE_EXTRACTOR_MAPPING,
     TOKENIZER_MAPPING,
@@ -53,7 +51,7 @@ from transformers.testing_utils import (
     TOKEN,
     USER,
     CaptureLogger,
-    RequestCounter,
+    # RequestCounter,
     is_pipeline_test,
     is_staging_test,
     nested_simplify,
@@ -253,13 +251,7 @@ class PipelineTestCaseMeta(type):
                         f"Ignoring {ModelClass}, cannot create a tokenizer or feature_extractor (PerceiverConfig with"
                         " no FastTokenizer ?)"
                     )
-
-                # Get poplar executor
-                model = get_poplar_executor(model, ipu_config)
-                # Override Pipeline methods
-                Pipeline.get_inference_context = get_inference_context
-                Pipeline.check_model_type = check_model_type
-                pipeline, examples = self.get_test_pipeline(model, tokenizer, feature_extractor)
+                pipeline, examples = self.get_test_pipeline(model, ipu_config, tokenizer, feature_extractor)
                 if pipeline is None:
                     # The test can disable itself, but it should be very marginal
                     # Concerns: Wav2Vec2ForCTC without tokenizer test (FastTokenizer don't exist)
