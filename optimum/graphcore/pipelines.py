@@ -230,16 +230,19 @@ def pipeline(
     if pipeline_class is None:
         pipeline_class = SUPPORTED_TASKS[targeted_task]["impl"]
 
+    if ipu_config is None:
+        ipu_config = SUPPORTED_TASKS[targeted_task]["default"]["ipu_config"]
+
     if model is None:
         model_id = SUPPORTED_TASKS[targeted_task]["default"]["model"]
         model = SUPPORTED_TASKS[targeted_task]["class"][0].from_pretrained(model_id)
-        model = get_poplar_executor(model, ipu_config if ipu_config else SUPPORTED_TASKS[targeted_task]["default"]["ipu_config"])
+        model = get_poplar_executor(model, ipu_config)
     elif isinstance(model, str):
         model_id = model
         model = SUPPORTED_TASKS[targeted_task]["class"][0].from_pretrained(model)
-        model = get_poplar_executor(model, ipu_config if ipu_config else SUPPORTED_TASKS[targeted_task]["default"]["ipu_config"])
+        model = get_poplar_executor(model, ipu_config)
     elif isinstance(model, PreTrainedModel):
-        model = get_poplar_executor(model, ipu_config if ipu_config else SUPPORTED_TASKS[targeted_task]["default"]["ipu_config"])
+        model = get_poplar_executor(model, ipu_config)
         if tokenizer is None and load_tokenizer:
             raise ValueError("If you pass a model as a PreTrainedModel, you must pass a tokenizer as well")
         if feature_extractor is None and load_feature_extractor:
