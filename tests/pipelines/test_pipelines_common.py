@@ -30,6 +30,7 @@ import numpy as np
 
 from huggingface_hub import HfFolder, Repository, delete_repo, set_access_token
 from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
+from optimum.graphcore.pipelines import pipeline
 from requests.exceptions import HTTPError
 from transformers import (
     CONFIG_MAPPING,
@@ -43,7 +44,6 @@ from transformers import (
     IBertConfig,
     RobertaConfig,
     TextClassificationPipeline,
-    pipeline,
 )
 from transformers.pipelines import PIPELINE_REGISTRY, get_task
 from transformers.pipelines.base import Pipeline, _pad
@@ -288,7 +288,7 @@ class PipelineTestCaseMeta(type):
 
                 for model_architecture in model_architectures:
                     checkpoint = get_checkpoint_from_architecture(model_architecture)
-                    # TODO: Currently use full size configs loaded from checkpoints. Switch to tiny configs in the future.
+                    # TODO: Currently use full size configs loaded from checkpoints. Switch to tiny configs in the future. Though just reducing vocab_size may not save time.
                     # tiny_config = get_tiny_config_from_class(configuration)
                     tiny_config = AutoConfig.from_pretrained(checkpoint)
                     tokenizer_classes = TOKENIZER_MAPPING.get(configuration, [])
@@ -355,7 +355,9 @@ class CommonPipelineTest(unittest.TestCase):
                 return self.data[i]
 
         text_classifier = pipeline(
-            task="text-classification", model="hf-internal-testing/tiny-random-distilbert", framework="pt"
+            task="text-classification",
+            model="hf-internal-testing/tiny-random-distilbert",
+            ipu_config="Graphcore/distilbert-base-ipu",
         )
         dataset = MyDataset()
         for output in text_classifier(dataset):
@@ -363,17 +365,28 @@ class CommonPipelineTest(unittest.TestCase):
 
     @require_torch
     def test_check_task_auto_inference(self):
-        pipe = pipeline(model="hf-internal-testing/tiny-random-distilbert")
+        pipe = pipeline(
+            model="hf-internal-testing/tiny-random-distilbert",
+            ipu_config="Graphcore/distilbert-base-ipu",
+        )
 
         self.assertIsInstance(pipe, TextClassificationPipeline)
 
     @require_torch
     def test_pipeline_batch_size_global(self):
-        pipe = pipeline(model="hf-internal-testing/tiny-random-distilbert")
+        pipe = pipeline(
+            model="hf-internal-testing/tiny-random-distilbert",
+            ipu_config="Graphcore/distilbert-base-ipu",
+        )
         self.assertEqual(pipe._batch_size, None)
         self.assertEqual(pipe._num_workers, None)
 
-        pipe = pipeline(model="hf-internal-testing/tiny-random-distilbert", batch_size=2, num_workers=1)
+        pipe = pipeline(
+            model="hf-internal-testing/tiny-random-distilbert",
+            ipu_config="Graphcore/distilbert-base-ipu",
+            batch_size=2,
+            num_workers=1,
+        )
         self.assertEqual(pipe._batch_size, 2)
         self.assertEqual(pipe._num_workers, 1)
 
@@ -382,17 +395,21 @@ class CommonPipelineTest(unittest.TestCase):
         class MyPipeline(TextClassificationPipeline):
             pass
 
-        text_classifier = pipeline(model="hf-internal-testing/tiny-random-distilbert", pipeline_class=MyPipeline)
+        text_classifier = pipeline(
+            model="hf-internal-testing/tiny-random-distilbert",
+            ipu_config="Graphcore/distilbert-base-ipu",
+            pipeline_class=MyPipeline,
+        )
 
         self.assertIsInstance(text_classifier, MyPipeline)
 
-    def test_check_task(self):
-        task = get_task("gpt2")
-        self.assertEqual(task, "text-generation")
+    # def test_check_task(self):
+    #     task = get_task("gpt2")
+    #     self.assertEqual(task, "text-generation")
 
-        with self.assertRaises(RuntimeError):
-            # Wrong framework
-            get_task("espnet/siddhana_slurp_entity_asr_train_asr_conformer_raw_en_word_valid.acc.ave_10best")
+    #     with self.assertRaises(RuntimeError):
+    #         # Wrong framework
+    #         get_task("espnet/siddhana_slurp_entity_asr_train_asr_conformer_raw_en_word_valid.acc.ave_10best")
 
     @require_torch
     def test_iterator_data(self):
@@ -400,7 +417,10 @@ class CommonPipelineTest(unittest.TestCase):
             for _ in range(n):
                 yield "This is a test"
 
-        pipe = pipeline(model="hf-internal-testing/tiny-random-distilbert")
+        pipe = pipeline(
+            model="hf-internal-testing/tiny-random-distilbert",
+            ipu_config="Graphcore/distilbert-base-ipu",
+        )
 
         results = []
         for out in pipe(data(10)):
@@ -422,7 +442,12 @@ class CommonPipelineTest(unittest.TestCase):
             "hf-internal-testing/tiny-random-distilbert", output_hidden_states=True, output_attentions=True
         )
         tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/tiny-random-distilbert")
-        text_classifier = TextClassificationPipeline(model=model, tokenizer=tokenizer)
+        text_classifier = pipeline(
+            task="text-classification",
+            model=model,
+            ipu_config="Graphcore/distilbert-base-ipu",
+            tokenizer=tokenizer,
+        )
 
         # Used to throw an error because `hidden_states` are a tuple of tensors
         # instead of the expected tensor.
@@ -430,249 +455,249 @@ class CommonPipelineTest(unittest.TestCase):
         self.assertEqual(len(outputs), 20)
 
 
-@is_pipeline_test
-class PipelinePadTest(unittest.TestCase):
-    @require_torch
-    def test_pipeline_padding(self):
-        import torch
+# @is_pipeline_test
+# class PipelinePadTest(unittest.TestCase):
+#     @require_torch
+#     def test_pipeline_padding(self):
+#         import torch
 
-        items = [
-            {
-                "label": "label1",
-                "input_ids": torch.LongTensor([[1, 23, 24, 2]]),
-                "attention_mask": torch.LongTensor([[0, 1, 1, 0]]),
-            },
-            {
-                "label": "label2",
-                "input_ids": torch.LongTensor([[1, 23, 24, 43, 44, 2]]),
-                "attention_mask": torch.LongTensor([[0, 1, 1, 1, 1, 0]]),
-            },
-        ]
+#         items = [
+#             {
+#                 "label": "label1",
+#                 "input_ids": torch.LongTensor([[1, 23, 24, 2]]),
+#                 "attention_mask": torch.LongTensor([[0, 1, 1, 0]]),
+#             },
+#             {
+#                 "label": "label2",
+#                 "input_ids": torch.LongTensor([[1, 23, 24, 43, 44, 2]]),
+#                 "attention_mask": torch.LongTensor([[0, 1, 1, 1, 1, 0]]),
+#             },
+#         ]
 
-        self.assertEqual(_pad(items, "label", 0, "right"), ["label1", "label2"])
-        self.assertTrue(
-            torch.allclose(
-                _pad(items, "input_ids", 10, "right"),
-                torch.LongTensor([[1, 23, 24, 2, 10, 10], [1, 23, 24, 43, 44, 2]]),
-            )
-        )
-        self.assertTrue(
-            torch.allclose(
-                _pad(items, "input_ids", 10, "left"),
-                torch.LongTensor([[10, 10, 1, 23, 24, 2], [1, 23, 24, 43, 44, 2]]),
-            )
-        )
-        self.assertTrue(
-            torch.allclose(
-                _pad(items, "attention_mask", 0, "right"), torch.LongTensor([[0, 1, 1, 0, 0, 0], [0, 1, 1, 1, 1, 0]])
-            )
-        )
+#         self.assertEqual(_pad(items, "label", 0, "right"), ["label1", "label2"])
+#         self.assertTrue(
+#             torch.allclose(
+#                 _pad(items, "input_ids", 10, "right"),
+#                 torch.LongTensor([[1, 23, 24, 2, 10, 10], [1, 23, 24, 43, 44, 2]]),
+#             )
+#         )
+#         self.assertTrue(
+#             torch.allclose(
+#                 _pad(items, "input_ids", 10, "left"),
+#                 torch.LongTensor([[10, 10, 1, 23, 24, 2], [1, 23, 24, 43, 44, 2]]),
+#             )
+#         )
+#         self.assertTrue(
+#             torch.allclose(
+#                 _pad(items, "attention_mask", 0, "right"), torch.LongTensor([[0, 1, 1, 0, 0, 0], [0, 1, 1, 1, 1, 0]])
+#             )
+#         )
 
-    @require_torch
-    def test_pipeline_image_padding(self):
-        import torch
+#     @require_torch
+#     def test_pipeline_image_padding(self):
+#         import torch
 
-        items = [
-            {
-                "label": "label1",
-                "pixel_values": torch.zeros((1, 3, 10, 10)),
-            },
-            {
-                "label": "label2",
-                "pixel_values": torch.zeros((1, 3, 10, 10)),
-            },
-        ]
+#         items = [
+#             {
+#                 "label": "label1",
+#                 "pixel_values": torch.zeros((1, 3, 10, 10)),
+#             },
+#             {
+#                 "label": "label2",
+#                 "pixel_values": torch.zeros((1, 3, 10, 10)),
+#             },
+#         ]
 
-        self.assertEqual(_pad(items, "label", 0, "right"), ["label1", "label2"])
-        self.assertTrue(
-            torch.allclose(
-                _pad(items, "pixel_values", 10, "right"),
-                torch.zeros((2, 3, 10, 10)),
-            )
-        )
+#         self.assertEqual(_pad(items, "label", 0, "right"), ["label1", "label2"])
+#         self.assertTrue(
+#             torch.allclose(
+#                 _pad(items, "pixel_values", 10, "right"),
+#                 torch.zeros((2, 3, 10, 10)),
+#             )
+#         )
 
-    @require_torch
-    def test_pipeline_offset_mapping(self):
-        import torch
+#     @require_torch
+#     def test_pipeline_offset_mapping(self):
+#         import torch
 
-        items = [
-            {
-                "offset_mappings": torch.zeros([1, 11, 2], dtype=torch.long),
-            },
-            {
-                "offset_mappings": torch.zeros([1, 4, 2], dtype=torch.long),
-            },
-        ]
+#         items = [
+#             {
+#                 "offset_mappings": torch.zeros([1, 11, 2], dtype=torch.long),
+#             },
+#             {
+#                 "offset_mappings": torch.zeros([1, 4, 2], dtype=torch.long),
+#             },
+#         ]
 
-        self.assertTrue(
-            torch.allclose(
-                _pad(items, "offset_mappings", 0, "right"),
-                torch.zeros((2, 11, 2), dtype=torch.long),
-            ),
-        )
+#         self.assertTrue(
+#             torch.allclose(
+#                 _pad(items, "offset_mappings", 0, "right"),
+#                 torch.zeros((2, 11, 2), dtype=torch.long),
+#             ),
+#         )
 
 
 @is_pipeline_test
 class PipelineUtilsTest(unittest.TestCase):
-    @require_torch
-    def test_pipeline_dataset(self):
-        from transformers.pipelines.pt_utils import PipelineDataset
+    # @require_torch
+    # def test_pipeline_dataset(self):
+    #     from transformers.pipelines.pt_utils import PipelineDataset
 
-        dummy_dataset = [0, 1, 2, 3]
+    #     dummy_dataset = [0, 1, 2, 3]
 
-        def add(number, extra=0):
-            return number + extra
+    #     def add(number, extra=0):
+    #         return number + extra
 
-        dataset = PipelineDataset(dummy_dataset, add, {"extra": 2})
-        self.assertEqual(len(dataset), 4)
-        outputs = [dataset[i] for i in range(4)]
-        self.assertEqual(outputs, [2, 3, 4, 5])
+    #     dataset = PipelineDataset(dummy_dataset, add, {"extra": 2})
+    #     self.assertEqual(len(dataset), 4)
+    #     outputs = [dataset[i] for i in range(4)]
+    #     self.assertEqual(outputs, [2, 3, 4, 5])
 
-    @require_torch
-    def test_pipeline_iterator(self):
-        from transformers.pipelines.pt_utils import PipelineIterator
+    # @require_torch
+    # def test_pipeline_iterator(self):
+    #     from transformers.pipelines.pt_utils import PipelineIterator
 
-        dummy_dataset = [0, 1, 2, 3]
+    #     dummy_dataset = [0, 1, 2, 3]
 
-        def add(number, extra=0):
-            return number + extra
+    #     def add(number, extra=0):
+    #         return number + extra
 
-        dataset = PipelineIterator(dummy_dataset, add, {"extra": 2})
-        self.assertEqual(len(dataset), 4)
+    #     dataset = PipelineIterator(dummy_dataset, add, {"extra": 2})
+    #     self.assertEqual(len(dataset), 4)
 
-        outputs = [item for item in dataset]
-        self.assertEqual(outputs, [2, 3, 4, 5])
+    #     outputs = [item for item in dataset]
+    #     self.assertEqual(outputs, [2, 3, 4, 5])
 
-    @require_torch
-    def test_pipeline_iterator_no_len(self):
-        from transformers.pipelines.pt_utils import PipelineIterator
+    # @require_torch
+    # def test_pipeline_iterator_no_len(self):
+    #     from transformers.pipelines.pt_utils import PipelineIterator
 
-        def dummy_dataset():
-            for i in range(4):
-                yield i
+    #     def dummy_dataset():
+    #         for i in range(4):
+    #             yield i
 
-        def add(number, extra=0):
-            return number + extra
+    #     def add(number, extra=0):
+    #         return number + extra
 
-        dataset = PipelineIterator(dummy_dataset(), add, {"extra": 2})
-        with self.assertRaises(TypeError):
-            len(dataset)
+    #     dataset = PipelineIterator(dummy_dataset(), add, {"extra": 2})
+    #     with self.assertRaises(TypeError):
+    #         len(dataset)
 
-        outputs = [item for item in dataset]
-        self.assertEqual(outputs, [2, 3, 4, 5])
+    #     outputs = [item for item in dataset]
+    #     self.assertEqual(outputs, [2, 3, 4, 5])
 
-    @require_torch
-    def test_pipeline_batch_unbatch_iterator(self):
-        from transformers.pipelines.pt_utils import PipelineIterator
+    # @require_torch
+    # def test_pipeline_batch_unbatch_iterator(self):
+    #     from transformers.pipelines.pt_utils import PipelineIterator
 
-        dummy_dataset = [{"id": [0, 1, 2]}, {"id": [3]}]
+    #     dummy_dataset = [{"id": [0, 1, 2]}, {"id": [3]}]
 
-        def add(number, extra=0):
-            return {"id": [i + extra for i in number["id"]]}
+    #     def add(number, extra=0):
+    #         return {"id": [i + extra for i in number["id"]]}
 
-        dataset = PipelineIterator(dummy_dataset, add, {"extra": 2}, loader_batch_size=3)
+    #     dataset = PipelineIterator(dummy_dataset, add, {"extra": 2}, loader_batch_size=3)
 
-        outputs = [item for item in dataset]
-        self.assertEqual(outputs, [{"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}])
+    #     outputs = [item for item in dataset]
+    #     self.assertEqual(outputs, [{"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}])
 
-    @require_torch
-    def test_pipeline_batch_unbatch_iterator_tensors(self):
-        import torch
+    # @require_torch
+    # def test_pipeline_batch_unbatch_iterator_tensors(self):
+    #     import torch
 
-        from transformers.pipelines.pt_utils import PipelineIterator
+    #     from transformers.pipelines.pt_utils import PipelineIterator
 
-        dummy_dataset = [{"id": torch.LongTensor([[10, 20], [0, 1], [0, 2]])}, {"id": torch.LongTensor([[3]])}]
+    #     dummy_dataset = [{"id": torch.LongTensor([[10, 20], [0, 1], [0, 2]])}, {"id": torch.LongTensor([[3]])}]
 
-        def add(number, extra=0):
-            return {"id": number["id"] + extra}
+    #     def add(number, extra=0):
+    #         return {"id": number["id"] + extra}
 
-        dataset = PipelineIterator(dummy_dataset, add, {"extra": 2}, loader_batch_size=3)
+    #     dataset = PipelineIterator(dummy_dataset, add, {"extra": 2}, loader_batch_size=3)
 
-        outputs = [item for item in dataset]
-        self.assertEqual(
-            nested_simplify(outputs), [{"id": [[12, 22]]}, {"id": [[2, 3]]}, {"id": [[2, 4]]}, {"id": [[5]]}]
-        )
+    #     outputs = [item for item in dataset]
+    #     self.assertEqual(
+    #         nested_simplify(outputs), [{"id": [[12, 22]]}, {"id": [[2, 3]]}, {"id": [[2, 4]]}, {"id": [[5]]}]
+    #     )
 
-    @require_torch
-    def test_pipeline_chunk_iterator(self):
-        from transformers.pipelines.pt_utils import PipelineChunkIterator
+    # @require_torch
+    # def test_pipeline_chunk_iterator(self):
+    #     from transformers.pipelines.pt_utils import PipelineChunkIterator
 
-        def preprocess_chunk(n: int):
-            for i in range(n):
-                yield i
+    #     def preprocess_chunk(n: int):
+    #         for i in range(n):
+    #             yield i
 
-        dataset = [2, 3]
+    #     dataset = [2, 3]
 
-        dataset = PipelineChunkIterator(dataset, preprocess_chunk, {}, loader_batch_size=3)
+    #     dataset = PipelineChunkIterator(dataset, preprocess_chunk, {}, loader_batch_size=3)
 
-        outputs = [item for item in dataset]
+    #     outputs = [item for item in dataset]
 
-        self.assertEqual(outputs, [0, 1, 0, 1, 2])
+    #     self.assertEqual(outputs, [0, 1, 0, 1, 2])
 
-    @require_torch
-    def test_pipeline_pack_iterator(self):
-        from transformers.pipelines.pt_utils import PipelinePackIterator
+    # @require_torch
+    # def test_pipeline_pack_iterator(self):
+    #     from transformers.pipelines.pt_utils import PipelinePackIterator
 
-        def pack(item):
-            return {"id": item["id"] + 1, "is_last": item["is_last"]}
+    #     def pack(item):
+    #         return {"id": item["id"] + 1, "is_last": item["is_last"]}
 
-        dataset = [
-            {"id": 0, "is_last": False},
-            {"id": 1, "is_last": True},
-            {"id": 0, "is_last": False},
-            {"id": 1, "is_last": False},
-            {"id": 2, "is_last": True},
-        ]
+    #     dataset = [
+    #         {"id": 0, "is_last": False},
+    #         {"id": 1, "is_last": True},
+    #         {"id": 0, "is_last": False},
+    #         {"id": 1, "is_last": False},
+    #         {"id": 2, "is_last": True},
+    #     ]
 
-        dataset = PipelinePackIterator(dataset, pack, {})
+    #     dataset = PipelinePackIterator(dataset, pack, {})
 
-        outputs = [item for item in dataset]
-        self.assertEqual(
-            outputs,
-            [
-                [
-                    {"id": 1},
-                    {"id": 2},
-                ],
-                [
-                    {"id": 1},
-                    {"id": 2},
-                    {"id": 3},
-                ],
-            ],
-        )
+    #     outputs = [item for item in dataset]
+    #     self.assertEqual(
+    #         outputs,
+    #         [
+    #             [
+    #                 {"id": 1},
+    #                 {"id": 2},
+    #             ],
+    #             [
+    #                 {"id": 1},
+    #                 {"id": 2},
+    #                 {"id": 3},
+    #             ],
+    #         ],
+    #     )
 
-    @require_torch
-    def test_pipeline_pack_unbatch_iterator(self):
-        from transformers.pipelines.pt_utils import PipelinePackIterator
+    # @require_torch
+    # def test_pipeline_pack_unbatch_iterator(self):
+    #     from transformers.pipelines.pt_utils import PipelinePackIterator
 
-        dummy_dataset = [{"id": [0, 1, 2], "is_last": [False, True, False]}, {"id": [3], "is_last": [True]}]
+    #     dummy_dataset = [{"id": [0, 1, 2], "is_last": [False, True, False]}, {"id": [3], "is_last": [True]}]
 
-        def add(number, extra=0):
-            return {"id": [i + extra for i in number["id"]], "is_last": number["is_last"]}
+    #     def add(number, extra=0):
+    #         return {"id": [i + extra for i in number["id"]], "is_last": number["is_last"]}
 
-        dataset = PipelinePackIterator(dummy_dataset, add, {"extra": 2}, loader_batch_size=3)
+    #     dataset = PipelinePackIterator(dummy_dataset, add, {"extra": 2}, loader_batch_size=3)
 
-        outputs = [item for item in dataset]
-        self.assertEqual(outputs, [[{"id": 2}, {"id": 3}], [{"id": 4}, {"id": 5}]])
+    #     outputs = [item for item in dataset]
+    #     self.assertEqual(outputs, [[{"id": 2}, {"id": 3}], [{"id": 4}, {"id": 5}]])
 
-        # is_false Across batch
-        dummy_dataset = [{"id": [0, 1, 2], "is_last": [False, False, False]}, {"id": [3], "is_last": [True]}]
+    #     # is_false Across batch
+    #     dummy_dataset = [{"id": [0, 1, 2], "is_last": [False, False, False]}, {"id": [3], "is_last": [True]}]
 
-        def add(number, extra=0):
-            return {"id": [i + extra for i in number["id"]], "is_last": number["is_last"]}
+    #     def add(number, extra=0):
+    #         return {"id": [i + extra for i in number["id"]], "is_last": number["is_last"]}
 
-        dataset = PipelinePackIterator(dummy_dataset, add, {"extra": 2}, loader_batch_size=3)
+    #     dataset = PipelinePackIterator(dummy_dataset, add, {"extra": 2}, loader_batch_size=3)
 
-        outputs = [item for item in dataset]
-        self.assertEqual(outputs, [[{"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}]])
+    #     outputs = [item for item in dataset]
+    #     self.assertEqual(outputs, [[{"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}]])
 
     @slow
     @require_torch
     def test_load_default_pipelines_pt(self):
         import torch
 
-        from transformers.pipelines import SUPPORTED_TASKS
+        from optimum.graphcore.pipelines import SUPPORTED_TASKS
 
         set_seed_fn = lambda: torch.manual_seed(0)  # noqa: E731
         for task in SUPPORTED_TASKS.keys():
@@ -680,28 +705,28 @@ class PipelineUtilsTest(unittest.TestCase):
                 # test table in seperate test due to more dependencies
                 continue
 
-            self.check_default_pipeline(task, "pt", set_seed_fn, self.check_models_equal_pt)
+            self.check_default_pipeline(task, set_seed_fn, self.check_models_equal_pt)
 
-    @slow
-    @require_torch
-    @require_scatter
-    def test_load_default_pipelines_pt_table_qa(self):
-        import torch
+    # @slow
+    # @require_torch
+    # @require_scatter
+    # def test_load_default_pipelines_pt_table_qa(self):
+    #     import torch
 
-        set_seed_fn = lambda: torch.manual_seed(0)  # noqa: E731
-        self.check_default_pipeline("table-question-answering", "pt", set_seed_fn, self.check_models_equal_pt)
+    #     set_seed_fn = lambda: torch.manual_seed(0)  # noqa: E731
+    #     self.check_default_pipeline("table-question-answering", "pt", set_seed_fn, self.check_models_equal_pt)
 
-    def check_default_pipeline(self, task, framework, set_seed_fn, check_models_equal_fn):
-        from transformers.pipelines import SUPPORTED_TASKS, pipeline
+    def check_default_pipeline(self, task, set_seed_fn, check_models_equal_fn):
+        from optimum.graphcore.pipelines import SUPPORTED_TASKS, pipeline
 
         task_dict = SUPPORTED_TASKS[task]
         # test to compare pipeline to manually loading the respective model
         model = None
-        relevant_auto_classes = task_dict[framework]
+        relevant_auto_classes = task_dict["class"]
 
         if len(relevant_auto_classes) == 0:
             # task has no default
-            logger.debug(f"{task} in {framework} has no default")
+            logger.debug(f"{task} has no default")
             return
 
         # by default use first class
@@ -714,14 +739,14 @@ class PipelineUtilsTest(unittest.TestCase):
             revisions = []
             tasks = []
             for translation_pair in task_dict["default"].keys():
-                model_id, revision = task_dict["default"][translation_pair]["model"][framework]
+                model_id, revision = task_dict["default"][translation_pair]["model"]
 
                 model_ids.append(model_id)
                 revisions.append(revision)
                 tasks.append(task + f"_{'_to_'.join(translation_pair)}")
         else:
             # normal case - non-translation pipeline
-            model_id, revision = task_dict["default"]["model"][framework]
+            model_id, revision = task_dict["default"]["model"]
 
             model_ids = [model_id]
             revisions = [revision]
@@ -741,13 +766,13 @@ class PipelineUtilsTest(unittest.TestCase):
 
             # load default pipeline
             set_seed_fn()
-            default_pipeline = pipeline(task, framework=framework)
+            default_pipeline = pipeline(task)
 
             # compare pipeline model with default model
             models_are_equal = check_models_equal_fn(default_pipeline.model, model)
             self.assertTrue(models_are_equal, f"{task} model doesn't match pipeline.")
 
-            logger.debug(f"{task} in {framework} succeeded with {model_id}.")
+            logger.debug(f"{task} succeeded with {model_id}.")
 
     def check_models_equal_pt(self, model1, model2):
         models_are_equal = True

@@ -187,6 +187,7 @@ def pipeline(
     feature_extractor: Optional[Union[str, PreTrainedFeatureExtractor]] = None,
     use_fast: bool = True,
     use_auth_token: Optional[Union[str, bool]] = None,
+    pipeline_class: Optional[Any] = None,
     **kwargs,
 ) -> Pipeline:
 
@@ -225,6 +226,9 @@ def pipeline(
         load_feature_extractor = False
     else:
         load_feature_extractor = True
+
+    if pipeline_class is None:
+        pipeline_class = SUPPORTED_TASKS[targeted_task]["impl"]
 
     if model is None:
         model_id = SUPPORTED_TASKS[targeted_task]["default"]["model"]
@@ -282,7 +286,6 @@ def pipeline(
         model.config.pad_token_id = model.config.eos_token_id
 
     # Override pipelines' _forward to support fp16
-    pipeline_class = SUPPORTED_TASKS[targeted_task]["impl"]
     old_forward =pipeline_class._forward
     def new_forward(self, model_inputs, *args, **kwargs):
         # Support change in batch size
@@ -304,6 +307,6 @@ def pipeline(
         feature_extractor=feature_extractor,
         use_fast=use_fast,
         use_auth_token=use_auth_token,
-        pipeline_class=SUPPORTED_TASKS[targeted_task]["impl"],
+        pipeline_class=pipeline_class,
         **kwargs,
     )
