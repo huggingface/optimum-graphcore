@@ -692,7 +692,7 @@ class PipelineUtilsTest(unittest.TestCase):
     #     outputs = [item for item in dataset]
     #     self.assertEqual(outputs, [[{"id": 2}, {"id": 3}, {"id": 4}, {"id": 5}]])
 
-    @slow
+    # @slow
     @require_torch
     def test_load_default_pipelines_pt(self):
         import torch
