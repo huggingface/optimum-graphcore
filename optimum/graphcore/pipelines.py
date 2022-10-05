@@ -133,7 +133,7 @@ for task, values in SUPPORTED_TASKS.items():
 def get_poplar_executor(model: PreTrainedModel, ipu_config: Union[str, dict] = None):
     if isinstance(ipu_config, str):
         ipu_config = IPUConfig.from_pretrained(ipu_config)
-    elif isinstance(ipu_config, str):
+    elif isinstance(ipu_config, dict):
         ipu_config = IPUConfig.from_dict(ipu_config)
     else:
         raise ValueError("ipu_config must be a string or a dictionary.")
@@ -219,6 +219,12 @@ def pipeline(
         model_id = model
         model = SUPPORTED_TASKS[targeted_task]["class"][0].from_pretrained(model)
         model = get_poplar_executor(model, ipu_config if ipu_config else SUPPORTED_TASKS[targeted_task]["default"]["ipu_config"])
+    elif isinstance(model, PreTrainedModel):
+        model = get_poplar_executor(model, ipu_config if ipu_config else SUPPORTED_TASKS[targeted_task]["default"]["ipu_config"])
+        if tokenizer is None and load_tokenizer:
+            raise ValueError("If you pass a model as a PreTrainedModel, you must pass a tokenizer as well")
+        if feature_extractor is None and load_feature_extractor:
+            raise ValueError("If you pass a model as a PreTrainedModel, you must pass a feature extractor as well")
     elif isinstance(model, poptorch._poplar_executor.PoplarExecutor):
         if tokenizer is None and load_tokenizer:
             raise ValueError("If you pass a model as a poptorch._poplar_executor.PoplarExecutor, you must pass a tokenizer as well")
@@ -230,17 +236,18 @@ def pipeline(
             You can also provide non model then a default one will be used"""
         )
 
-    preprocessor = get_preprocessor(model_id)
-    if tokenizer is None and load_tokenizer:
-        if isinstance(preprocessor, ProcessorMixin):
-            tokenizer = preprocessor.tokenizer
-        else:
-            tokenizer = preprocessor
-    if feature_extractor is None and load_feature_extractor:
-        if isinstance(preprocessor, ProcessorMixin):
-            feature_extractor = preprocessor.feature_extractor
-        else:
-            feature_extractor = preprocessor
+    if (tokenizer is None and load_tokenizer) or (feature_extractor is None and load_feature_extractor):
+        preprocessor = get_preprocessor(model_id)
+        if tokenizer is None and load_tokenizer:
+            if isinstance(preprocessor, ProcessorMixin):
+                tokenizer = preprocessor.tokenizer
+            else:
+                tokenizer = preprocessor
+        if feature_extractor is None and load_feature_extractor:
+            if isinstance(preprocessor, ProcessorMixin):
+                feature_extractor = preprocessor.feature_extractor
+            else:
+                feature_extractor = preprocessor
 
     # Override Pipeline methods
     Pipeline.get_inference_context = get_inference_context
@@ -254,6 +261,10 @@ def pipeline(
             kwargs["max_length"] = SUPPORTED_TASKS[targeted_task]["default"]["padding_length"]
         return old_call(self, *args, **kwargs)
     Pipeline.__call__ = new_call
+    # Set pad_token for GPT2
+    if model.config.model_type == "gpt2":
+        tokenizer.pad_token = tokenizer.eos_token
+        model.config.pad_token_id = model.config.eos_token_id
 
     # Override pipelines' _forward to support fp16
     pipeline_class = SUPPORTED_TASKS[targeted_task]["impl"]
