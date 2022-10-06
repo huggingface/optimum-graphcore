@@ -41,8 +41,6 @@ class IPUConfig(BaseConfig):
     Args:
         seed (`int`, *optional*):
             Sets the seed for the random number generator on the IPU.
-        decompose_grad_sum (`bool`, *optional*, defaults to `False`):
-            [TODO] explains this easily
         auto_loss_scaling (`bool`, *optional*, defaults to `False`):
             Whether automatic loss scaling is enabled on the IPU.
             When using float16/half values for activations, gradients, and weights, the loss value needs to be scaled by
@@ -51,9 +49,6 @@ class IPUConfig(BaseConfig):
             **Note: This is an experimental feature and may not behave as expected.**
         executable_cache_dir (`str`, *optional*, defaults to `""`):
             Enables caching the compile executables to a directory.
-        profile_dir (`str`, *optional*, defaults to `""`):
-            The directory to store debugging profiles.
-            [TODO] should we keep this?
 
         > Parameters for controlling the batch size
 
@@ -135,7 +130,6 @@ class IPUConfig(BaseConfig):
         self.inference_device_iterations = kwargs.pop("inference_device_iterations", 1)
         self.optimizer_state_offchip = kwargs.pop("optimizer_state_offchip", True)
         self.replicated_tensor_sharding = kwargs.pop("replicated_tensor_sharding", False)
-        self.decompose_grad_sum = kwargs.pop("decompose_grad_sum", False)
         self.auto_loss_scaling = kwargs.pop("auto_loss_scaling", False)
 
         if self.replicated_tensor_sharding and self.replication_factor == 1:
@@ -156,8 +150,6 @@ class IPUConfig(BaseConfig):
         self.enable_half_partials = kwargs.pop("enable_half_partials", False)
 
         self.executable_cache_dir = kwargs.pop("executable_cache_dir", "")
-        # TODO: should we keep this one?
-        self.profile_dir = kwargs.pop("profile_dir", "")
 
         self.embedding_serialization_factor = kwargs.pop("embedding_serialization_factor", 1)
 
@@ -310,8 +302,6 @@ class IPUConfig(BaseConfig):
             opts.Precision.setPartialsType(torch.float16)
 
         # PopART performance options #
-        # Replaces single sums of partial gradients with a tree of additions
-        opts._Popart.set("decomposeGradSum", self.decompose_grad_sum)
         # Only stream needed tensors back to host
         opts._Popart.set("disableGradAccumulationTensorStreams", True)
         # Parallelize optimizer step update across IPUs
@@ -334,15 +324,6 @@ class IPUConfig(BaseConfig):
             "target.syncReplicasIndependently": "true",
         }
 
-        if self.profile_dir:
-            engine_options = {
-                **engine_options,
-                **{
-                    "debug.allowOutOfMemory": "true",
-                    "autoReport.directory": self.profile_dir,
-                    "autoReport.all": "true",
-                },
-            }
         opts._Popart.set("engineOptions", engine_options)
 
         return opts
