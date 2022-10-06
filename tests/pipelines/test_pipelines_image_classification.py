@@ -49,7 +49,7 @@ class ImageClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     model_mapping = MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING
 
     def get_test_pipeline(self, model, ipu_config, tokenizer, feature_extractor):
-        text_classifier = pipeline(
+        image_classifier = pipeline(
             task="image-classification",
             model=model,
             ipu_config=ipu_config,
