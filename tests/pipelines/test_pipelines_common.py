@@ -768,6 +768,8 @@ class PipelineUtilsTest(unittest.TestCase):
             set_seed_fn()
             default_pipeline = pipeline(task)
 
+            # the pipeline model is deparallelized to avoid problems caused by serialized layers
+            default_pipeline.model.deparallelize()
             # compare pipeline model with default model
             models_are_equal = check_models_equal_fn(default_pipeline.model, model)
             self.assertTrue(models_are_equal, f"{task} model doesn't match pipeline.")
@@ -777,7 +779,7 @@ class PipelineUtilsTest(unittest.TestCase):
     def check_models_equal_pt(self, model1, model2):
         models_are_equal = True
         for model1_p, model2_p in zip(model1.parameters(), model2.parameters()):
-            if model1_p.data.ne(model2_p.data).sum() > 0:
+            if model1_p.data.ne(model2_p.data.half()).sum() > 0:
                 models_are_equal = False
 
         return models_are_equal
