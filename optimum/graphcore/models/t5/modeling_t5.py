@@ -395,23 +395,9 @@ class PipelinedT5ForConditionalGeneration(
 
         hidden_states = encoder_outputs[0]
 
-        # if self.model_parallel:
-        #     torch.cuda.set_device(self.decoder.first_device)
-
         if labels is not None and decoder_input_ids is None and decoder_inputs_embeds is None:
             # get decoder inputs from shifting lm labels to the right
             decoder_input_ids = self._shift_right(labels)
-
-        # Set device for model parallelism
-        # if self.model_parallel:
-        #     torch.cuda.set_device(self.decoder.first_device)
-        #     hidden_states = hidden_states.to(self.decoder.first_device)
-        #     if decoder_input_ids is not None:
-        #         decoder_input_ids = decoder_input_ids.to(self.decoder.first_device)
-        #     if attention_mask is not None:
-        #         attention_mask = attention_mask.to(self.decoder.first_device)
-        #     if decoder_attention_mask is not None:
-        #         decoder_attention_mask = decoder_attention_mask.to(self.decoder.first_device)
 
         # Decode
         decoder_outputs = self.decoder(
