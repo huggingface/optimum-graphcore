@@ -18,11 +18,9 @@ from transformers import (
     AutoModelForTokenClassification,
     AudioClassificationPipeline,
     AutomaticSpeechRecognitionPipeline,
-    FillMaskPipeline,
     ImageClassificationPipeline,
     QuestionAnsweringPipeline,
     TextClassificationPipeline,
-    TokenClassificationPipeline,
     ZeroShotClassificationPipeline,
 )
 from .ipu_pipeline_classes import (
