@@ -12,13 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Optional, Tuple, Union
+
 import torch
-import torch.nn as nn
 import torch.nn.functional as F
 
 import poptorch
-import transformers
 from optimum.utils import logging
+from transformers import LxmertForQuestionAnswering
+from transformers.models.lxmert.modeling_lxmert import LxmertForQuestionAnsweringOutput
 
 from ...modeling_utils import PipelineMixin, recomputation_checkpoint, register
 
@@ -26,8 +28,8 @@ from ...modeling_utils import PipelineMixin, recomputation_checkpoint, register
 logger = logging.get_logger(__name__)
 
 
-@register(transformers.LxmertForQuestionAnswering)
-class PipelinedLxmertForQuestionAnswering(transformers.LxmertForQuestionAnswering, PipelineMixin):
+@register(LxmertForQuestionAnswering)
+class PipelinedLxmertForQuestionAnswering(LxmertForQuestionAnswering, PipelineMixin):
     def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.
@@ -80,14 +82,24 @@ class PipelinedLxmertForQuestionAnswering(transformers.LxmertForQuestionAnswerin
 
     def forward(
         self,
-        input_ids,
-        visual_feats,
-        visual_pos,
-        attention_mask=None,
-        token_type_ids=None,
-        labels=None,
-        visual_attention_mask=None,
-    ):
+        input_ids: Optional[torch.LongTensor] = None,
+        visual_feats: Optional[torch.FloatTensor] = None,
+        visual_pos: Optional[torch.FloatTensor] = None,
+        attention_mask: Optional[torch.FloatTensor] = None,
+        visual_attention_mask: Optional[torch.FloatTensor] = None,
+        token_type_ids: Optional[torch.LongTensor] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        labels: Optional[torch.Tensor] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[LxmertForQuestionAnsweringOutput, Tuple[torch.FloatTensor]]:
+        r"""
+        labels: (`Torch.Tensor` of shape `(batch_size)`, *optional*):
+            A one-hot representation of the correct answer
+        """
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
         lxmert_output = self.lxmert(
             input_ids=input_ids,
             visual_feats=visual_feats,
@@ -95,6 +107,10 @@ class PipelinedLxmertForQuestionAnswering(transformers.LxmertForQuestionAnswerin
             token_type_ids=token_type_ids,
             attention_mask=attention_mask,
             visual_attention_mask=visual_attention_mask,
+            inputs_embeds=inputs_embeds,
+            output_hidden_states=output_hidden_states,
+            output_attentions=output_attentions,
+            return_dict=return_dict,
         )
 
         pooled_output = lxmert_output[2]
@@ -109,5 +125,16 @@ class PipelinedLxmertForQuestionAnswering(transformers.LxmertForQuestionAnswerin
                     answer_score.view(-1, self.num_qa_labels), labels.view(-1, self.num_qa_labels)
                 )
 
-        output = (answer_score,) + lxmert_output[3:]
-        return (loss,) + output if loss is not None else output
+        if not return_dict:
+            output = (answer_score,) + lxmert_output[3:]
+            return (loss,) + output if loss is not None else output
+
+        return LxmertForQuestionAnsweringOutput(
+            loss=loss,
+            question_answering_score=answer_score,
+            language_hidden_states=lxmert_output.language_hidden_states,
+            vision_hidden_states=lxmert_output.vision_hidden_states,
+            language_attentions=lxmert_output.language_attentions,
+            vision_attentions=lxmert_output.vision_attentions,
+            cross_encoder_attentions=lxmert_output.cross_encoder_attentions,
+        )

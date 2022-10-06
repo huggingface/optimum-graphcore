@@ -445,6 +445,10 @@ def main():
         batch["input_values"] = inputs.input_values[0]
         batch["input_length"] = len(inputs.input_values[0])
 
+        if not training_args.fp32:
+            # Cast audio input to FP16
+            batch["input_values"] = batch["input_values"].astype(np.float16)
+
         return batch
 
     # load audio files into numpy arrays
@@ -508,6 +512,7 @@ def main():
             "layer_norm_eps": 0.0001,
             "do_stable_layer_norm": True,
             "feat_extract_norm": "layer",
+            "apply_spec_augment": False,  # spec_augment not currently supported
         }
     )
 

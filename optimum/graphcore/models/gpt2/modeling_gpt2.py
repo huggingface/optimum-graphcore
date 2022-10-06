@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import math
+from typing import Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -20,6 +21,7 @@ import torch.nn as nn
 import poptorch
 from optimum.utils import logging
 from transformers import GPT2ForSequenceClassification, GPT2ForTokenClassification, GPT2LMHeadModel
+from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions, SequenceClassifierOutputWithPast
 from transformers.models.gpt2.modeling_gpt2 import GPT2Attention
 
 from ...modeling_utils import (
@@ -193,8 +195,46 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
             layer.attn.__class__ = GPT2Attention
         return self
 
-    def forward(self, input_ids, attention_mask, labels=None):
-        transformer_outputs = self.transformer(input_ids, attention_mask=attention_mask)
+    def forward(
+        self,
+        input_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[Tuple[Tuple[torch.Tensor]]] = None,
+        attention_mask: Optional[torch.FloatTensor] = None,
+        token_type_ids: Optional[torch.LongTensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        head_mask: Optional[torch.FloatTensor] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        encoder_hidden_states: Optional[torch.Tensor] = None,
+        encoder_attention_mask: Optional[torch.FloatTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[Tuple, CausalLMOutputWithCrossAttentions]:
+        r"""
+        labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
+            Labels for language modeling. Note that the labels **are shifted** inside the model, i.e. you can set
+            `labels = input_ids` Indices are selected in `[-100, 0, ..., config.vocab_size]` All labels set to `-100`
+            are ignored (masked), the loss is only computed for labels in `[0, ..., config.vocab_size]`
+        """
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        transformer_outputs = self.transformer(
+            input_ids,
+            past_key_values=past_key_values,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
+            encoder_hidden_states=encoder_hidden_states,
+            encoder_attention_mask=encoder_attention_mask,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
         hidden_states = transformer_outputs[0]
 
         lm_logits = self.lm_head(hidden_states)
@@ -205,7 +245,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
                     torch.ones(self.actual_vocab_size),
                     torch.zeros(self.config.vocab_size - self.actual_vocab_size),
                 )
-            )
+            ).to(dtype=lm_logits.dtype, device=lm_logits.device)
             lm_logits = lm_logits * padding_mask + (1 - padding_mask) * -10000.0
 
             # TODO: Use the following line instead to ignore the padding logits
@@ -221,12 +261,21 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
             loss = loss_fct(lm_logits.view(-1, lm_logits.size(-1)), labels.view(-1))
 
         if self.ipu_config.embedding_serialization_factor > 1 and self.config.vocab_size > self.actual_vocab_size:
-            output = (lm_logits[:, :, : self.actual_vocab_size],) + transformer_outputs[1:]
-        else:
+            lm_logits = lm_logits[:, :, : self.actual_vocab_size]
+
+        if not return_dict:
             output = (lm_logits,) + transformer_outputs[1:]
-        if loss is not None:
-            return (loss,) if self.training else (loss,) + output
-        return output
+            if loss is not None:
+                return (loss,) if self.training else (loss,) + output
+
+        return CausalLMOutputWithCrossAttentions(
+            loss=loss,
+            logits=lm_logits if loss is None else None,
+            past_key_values=transformer_outputs.past_key_values if loss is None else None,
+            hidden_states=transformer_outputs.hidden_states if loss is None else None,
+            attentions=transformer_outputs.attentions if loss is None else None,
+            cross_attentions=transformer_outputs.cross_attentions if loss is None else None,
+        )
 
 
 @register(GPT2ForSequenceClassification)
@@ -239,19 +288,51 @@ class PipelinedGPT2ForSequenceClassification(GPT2ForSequenceClassification, GPT2
         logger.info("-----------------------------------------------------------")
         return self
 
-    def forward(self, input_ids, attention_mask, labels=None):
-        output = super().forward(
-            input_ids=input_ids,
+    def forward(
+        self,
+        input_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[Tuple[Tuple[torch.Tensor]]] = None,
+        attention_mask: Optional[torch.FloatTensor] = None,
+        token_type_ids: Optional[torch.LongTensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        head_mask: Optional[torch.FloatTensor] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[Tuple, SequenceClassifierOutputWithPast]:
+
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        outputs = super().forward(
+            input_ids,
+            past_key_values=past_key_values,
             attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
             labels=labels,
-            return_dict=False,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
         )
         # By default use_cache=True and the model would return past_key_values, which could be very large and cause OOM.
         # To prevent this we only return loss and logits during training and evaluation (i.e. when there are labels).
-        if labels is not None:
-            loss = output[0]
-            logits = output[1]
-        return (loss, logits) if labels is not None else output
+        if not return_dict:
+            loss, logits = outputs[0], outputs[1]
+            return (loss, logits) if labels is not None else outputs
+
+        return SequenceClassifierOutputWithPast(
+            loss=outputs.loss,
+            logits=outputs.logits,
+            past_key_values=outputs.past_key_values if labels is None else None,
+            hidden_states=outputs.hidden_states if labels is None else None,
+            attentions=outputs.attentions if labels is None else None,
+        )
 
 
 @register(GPT2ForTokenClassification)
@@ -263,11 +344,3 @@ class PipelinedGPT2ForTokenClassification(GPT2ForTokenClassification, GPT2Pipeli
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
         return self
-
-    def forward(self, input_ids, attention_mask, labels=None):
-        return super().forward(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            labels=labels,
-            return_dict=False,
-        )

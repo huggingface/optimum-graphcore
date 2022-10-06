@@ -13,25 +13,33 @@
 # limitations under the License.
 
 import math
+from typing import Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
-from torch.nn import BCEWithLogitsLoss, CrossEntropyLoss, MSELoss
+import torch.nn.functional as F
 
 import poptorch
 from optimum.utils import logging
-from transformers import DebertaForQuestionAnswering, DebertaForSequenceClassification, DebertaForTokenClassification
+from transformers import (
+    DebertaForMaskedLM,
+    DebertaForQuestionAnswering,
+    DebertaForSequenceClassification,
+    DebertaForTokenClassification,
+)
+from transformers.modeling_outputs import MaskedLMOutput, QuestionAnsweringModelOutput
 from transformers.models.deberta.modeling_deberta import (
     DebertaEncoder,
-    DebertaLayerNorm,
     DisentangledSelfAttention,
     StableDropout,
     build_relative_position,
 )
 
 from ...modeling_utils import (
+    OnehotGather,
     PipelineMixin,
     SerializedEmbedding,
+    SerializedLinear,
     get_layer_ipu,
     outline_attribute,
     recomputation_checkpoint,
@@ -40,39 +48,6 @@ from ...modeling_utils import (
 
 
 logger = logging.get_logger(__name__)
-
-
-class FastGatherLastDim(nn.Module):
-    """
-    Custom Op that does a faster specialised version of `gather`
-    on the last dimension of a tensor.
-    """
-
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, data, idx, target=None):
-        if poptorch.isRunningOnIpu():
-            if target is None:
-                target = torch.zeros(idx.shape).half()
-            else:
-                target = target.type_as(data)
-
-            target.requires_grad_()
-            o = poptorch.custom_op(
-                [data, idx],
-                "FastGatherLastDim",
-                "poptorch.custom_ops",
-                1,
-                example_outputs=[target],
-                attributes={"axis": -1},
-            )
-            return o[0]
-        else:
-            return torch.gather(data, -1, idx)
-
-
-gather_last_dim = FastGatherLastDim()
 
 
 class XSoftmax(torch.nn.Module):
@@ -113,6 +88,22 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
     def __init__(self, config):
         super().__init__(config)
         self.xsoftmax = XSoftmax(-1)
+
+    def gather_p2c(self, p2c_att):
+        """
+        Optimized position->content gather for disentangled attention
+        """
+        bs, num_attn_heads, seq_len, _ = p2c_att.size()
+        p2c_att_flat = p2c_att.reshape(bs, num_attn_heads, -1)
+        return p2c_att_flat[:, :, seq_len:].unfold(2, seq_len, 2 * seq_len - 1)
+
+    def gather_c2p(self, c2p_att):
+        """
+        Optimized content->position gather for disentangled attention
+        """
+        bs, num_attn_heads, seq_len, _ = c2p_att.size()
+        c2p_att_flat = c2p_att.flip(3).reshape(bs, num_attn_heads, -1)
+        return c2p_att_flat[:, :, seq_len - 1 :].unfold(2, seq_len, 2 * seq_len - 1)
 
     def forward(
         self,
@@ -223,18 +214,14 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
             self.max_relative_positions - att_span : self.max_relative_positions + att_span, :
         ].unsqueeze(0)
 
-        score = torch.zeros(query_layer.size(0), query_layer.size(1), query_layer.size(2), query_layer.size(2)).half()
+        score = 0
 
         # content->position
         if "c2p" in self.pos_att_type:
             pos_key_layer = self.pos_proj(rel_embeddings)
             pos_key_layer = self.transpose_for_scores(pos_key_layer)
             c2p_att = torch.matmul(query_layer, pos_key_layer.transpose(-1, -2))
-            c2p_pos = torch.clamp(relative_pos + att_span, 0, att_span * 2 - 1)
-            index = c2p_pos.expand(
-                [query_layer.size(0), query_layer.size(1), query_layer.size(2), relative_pos.size(-1)]
-            )
-            c2p_att = gather_last_dim(c2p_att, index)
+            c2p_att = self.gather_c2p(c2p_att)
             score += c2p_att
 
         # position->content
@@ -242,19 +229,11 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
             pos_query_layer = self.pos_q_proj(rel_embeddings)
             pos_query_layer = self.transpose_for_scores(pos_query_layer)
             pos_query_layer /= math.sqrt(pos_query_layer.size(-1) * scale_factor)
-            if query_layer.size(-2) != key_layer.size(-2):
-                r_pos = build_relative_position(key_layer.size(-2), key_layer.size(-2), query_layer.device)
-            else:
-                r_pos = relative_pos
-            p2c_pos = torch.clamp(-r_pos + att_span, 0, att_span * 2 - 1)
             p2c_att = torch.matmul(key_layer, pos_query_layer.transpose(-1, -2))
-            index = p2c_pos.expand([query_layer.size(0), query_layer.size(1), key_layer.size(-2), key_layer.size(-2)])
-            p2c_att = gather_last_dim(p2c_att, index).transpose(-1, -2)
+            p2c_att = self.gather_p2c(p2c_att).transpose(-1, -2)
 
             if query_layer.size(-2) != key_layer.size(-2):
-                pos_index = relative_pos[:, :, :, 0].unsqueeze(-1)
-                index = pos_index.expand(pos_index, p2c_att, key_layer)
-                p2c_att = gather_last_dim(p2c_att, index)
+                p2c_att = self.gather_p2c(p2c_att)
             score += p2c_att
 
         return score
@@ -280,12 +259,6 @@ class DebertaPipelineMixin(PipelineMixin):
                     mod.__class__ = nn.Dropout
                     mod.p = mod.drop_prob
                     mod.inplace = False
-            if isinstance(mod, DebertaLayerNorm):
-                mod.forward = (
-                    DebertaLayerNorm.forward.__get__(mod, DebertaLayerNorm)
-                    if restore
-                    else poptorch.autocast(enabled=True)(mod.forward)
-                )
             if isinstance(mod, DebertaEncoder):
                 func = DebertaEncoder.get_rel_embedding if restore else _get_rel_embedding
                 mod.get_rel_embedding = func.__get__(mod, DebertaEncoder)
@@ -304,9 +277,21 @@ class DebertaPipelineMixin(PipelineMixin):
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding  --> IPU 0")
         if self.ipu_config.embedding_serialization_factor > 1:
-            self.deberta.embeddings.word_embeddings = SerializedEmbedding(
-                self.deberta.embeddings.word_embeddings, self.config.embedding_serialization_factor
-            )
+            if isinstance(self, PipelinedDebertaForMaskedLM):
+                serialized_decoder = SerializedLinear(
+                    self.config.hidden_size,
+                    self.config.vocab_size,
+                    self.ipu_config.embedding_serialization_factor,
+                    bias=True,
+                    mode=poptorch.MatMulSerializationMode.OutputChannels,
+                )
+                serialized_decoder.load_state_dict(self.cls.predictions.decoder.state_dict())
+                self.cls.predictions.decoder = serialized_decoder
+                self.tie_weights()
+            else:
+                self.deberta.embeddings.word_embeddings = SerializedEmbedding(
+                    self.deberta.embeddings.word_embeddings, self.ipu_config.embedding_serialization_factor
+                )
 
         self.change_modules_for_ipu(False)
 
@@ -325,6 +310,10 @@ class DebertaPipelineMixin(PipelineMixin):
                 self._hooks.append(h)
             self.deberta.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
             logger.info(f"Encoder {index:<2} --> IPU {ipu}")
+
+        if isinstance(self, PipelinedDebertaForMaskedLM):
+            logger.info(f"Projection {index:<2} --> IPU {0}")
+            self.cls.predictions.decoder = poptorch.BeginBlock(self.cls.predictions.decoder, "Projection", ipu_id=0)
         return self
 
     def deparallelize(self):
@@ -335,10 +324,97 @@ class DebertaPipelineMixin(PipelineMixin):
         """
         super().deparallelize()
         self.change_modules_for_ipu(True)
-        # Deserialize the serialized word embedding
         if self.ipu_config.embedding_serialization_factor > 1:
-            self.deberta.embeddings.word_embeddings = self.deberta.embeddings.word_embeddings.deserialize()
+            if isinstance(self, PipelinedDebertaForMaskedLM):
+                decoder = nn.Linear(
+                    self.config.hidden_size,
+                    self.config.vocab_size,
+                    bias=True,
+                )
+                decoder.load_state_dict(self.cls.predictions.decoder.state_dict())
+                self.cls.predictions.decoder = decoder
+                self.tie_weights()
+            else:
+                # Deserialize the serialized word embedding
+                self.deberta.embeddings.word_embeddings = self.deberta.embeddings.word_embeddings.deserialize()
         return self
+
+
+@register(DebertaForMaskedLM)
+class PipelinedDebertaForMaskedLM(DebertaForMaskedLM, DebertaPipelineMixin):
+    """
+    DebertaForMaskedLM transformed to run in an IPU pipeline.
+
+    Recommended usage:
+    ```
+    model = PipelinedDebertaForMaskedLM(config).parallelize().half()
+    ```
+    """
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.gather_indices = OnehotGather()
+
+    def forward(
+        self,
+        input_ids: Optional[torch.Tensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        token_type_ids: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.Tensor] = None,
+        inputs_embeds: Optional[torch.Tensor] = None,
+        labels: Optional[torch.Tensor] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[Tuple, MaskedLMOutput]:
+        r"""
+        labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
+            Labels for computing the masked language modeling loss. Indices should be in `[-100, 0, ...,
+            config.vocab_size]` (see `input_ids` docstring) Tokens with indices set to `-100` are ignored (masked), the
+            loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`
+        """
+
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        outputs = self.deberta(
+            input_ids,
+            attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            inputs_embeds=inputs_embeds,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+        sequence_output = outputs[0]
+
+        if labels is not None:
+            # Select only the masked tokens for the classifier
+            max_number_of_masked_tokens = int(labels.size(1) * 0.25)
+            masked_lm_labels, masked_lm_positions = torch.topk(labels, k=max_number_of_masked_tokens, dim=1)
+            masked_output = self.gather_indices(sequence_output, masked_lm_positions)
+        else:
+            # This case should never happen during training
+            masked_output = sequence_output
+
+        prediction_scores = self.cls(masked_output)
+
+        masked_lm_loss = None
+        if labels is not None:
+            masked_lm_loss = F.cross_entropy(
+                prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1)
+            ).float()
+
+        if not return_dict:
+            output = (prediction_scores,) + outputs[1:]
+            return ((masked_lm_loss,)) if masked_lm_loss is not None else output
+
+        return MaskedLMOutput(
+            loss=masked_lm_loss,
+            logits=prediction_scores if masked_lm_loss is None else None,
+            hidden_states=outputs.hidden_states if masked_lm_loss is None else None,
+            attentions=outputs.attentions if masked_lm_loss is None else None,
+        )
 
 
 @register(DebertaForSequenceClassification)
@@ -359,51 +435,6 @@ class PipelinedDebertaForSequenceClassification(DebertaForSequenceClassification
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
         return self
-
-    def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
-        return_dict = False
-
-        outputs = self.deberta(
-            input_ids,
-            token_type_ids=token_type_ids,
-            attention_mask=attention_mask,
-            position_ids=None,
-            inputs_embeds=None,
-            output_attentions=None,
-            output_hidden_states=None,
-            return_dict=return_dict,
-        )
-
-        encoder_layer = outputs[0]
-        pooled_output = self.pooler(encoder_layer)
-        pooled_output = self.dropout(pooled_output)
-        logits = self.classifier(pooled_output)
-
-        loss = None
-        if labels is not None:
-            if self.config.problem_type is None:
-                if self.num_labels == 1:
-                    self.config.problem_type = "regression"
-                elif self.num_labels > 1 and (labels.dtype == torch.long or labels.dtype == torch.int):
-                    self.config.problem_type = "single_label_classification"
-                else:
-                    self.config.problem_type = "multi_label_classification"
-
-            if self.config.problem_type == "regression":
-                loss_fct = MSELoss()
-                if self.num_labels == 1:
-                    loss = loss_fct(logits.squeeze(), labels.squeeze())
-                else:
-                    loss = loss_fct(logits, labels)
-            elif self.config.problem_type == "single_label_classification":
-                loss_fct = CrossEntropyLoss()
-                loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
-            elif self.config.problem_type == "multi_label_classification":
-                loss_fct = BCEWithLogitsLoss()
-                loss = loss_fct(logits, labels)
-
-        output = (logits,) + outputs[1:]
-        return ((loss,) + output) if loss is not None else output
 
 
 @register(DebertaForTokenClassification)
@@ -435,15 +466,6 @@ class PipelinedDebertaForTokenClassification(DebertaForTokenClassification, Debe
             mod.p = mod.drop_prob
             mod.inplace = False
 
-    def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
-        return super().forward(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            token_type_ids=token_type_ids,
-            labels=labels,
-            return_dict=False,
-        )
-
 
 @register(DebertaForQuestionAnswering)
 class PipelinedDebertaForQuestionAnswering(DebertaForQuestionAnswering, DebertaPipelineMixin):
@@ -464,14 +486,43 @@ class PipelinedDebertaForQuestionAnswering(DebertaForQuestionAnswering, DebertaP
         logger.info("-----------------------------------------------------------")
         return self
 
-    def forward(self, input_ids, attention_mask, token_type_ids, start_positions=None, end_positions=None):
+    def forward(
+        self,
+        input_ids: Optional[torch.Tensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        token_type_ids: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.Tensor] = None,
+        inputs_embeds: Optional[torch.Tensor] = None,
+        start_positions: Optional[torch.Tensor] = None,
+        end_positions: Optional[torch.Tensor] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[Tuple, QuestionAnsweringModelOutput]:
+        r"""
+        start_positions (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
+            Labels for position (index) of the start of the labelled span for computing the token classification loss.
+            Positions are clamped to the length of the sequence (`sequence_length`). Position outside of the sequence
+            are not taken into account for computing the loss.
+        end_positions (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
+            Labels for position (index) of the end of the labelled span for computing the token classification loss.
+            Positions are clamped to the length of the sequence (`sequence_length`). Position outside of the sequence
+            are not taken into account for computing the loss.
+        """
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        # return_dict = False
+
         output = super().forward(
-            input_ids=input_ids,
+            input_ids,
             attention_mask=attention_mask,
             token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            inputs_embeds=inputs_embeds,
             start_positions=start_positions,
             end_positions=end_positions,
-            return_dict=False,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
         )
         if start_positions is not None and end_positions is not None:
             output = (poptorch.identity_loss(output[0], reduction="none"),) + output[1:]

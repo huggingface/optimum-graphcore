@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import math
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -28,6 +28,7 @@ from transformers import (
     DistilBertForSequenceClassification,
     DistilBertForTokenClassification,
 )
+from transformers.modeling_outputs import MaskedLMOutput, QuestionAnsweringModelOutput
 from transformers.models.distilbert.modeling_distilbert import MultiHeadSelfAttention
 
 from ...modeling_utils import (
@@ -42,8 +43,6 @@ from ...modeling_utils import (
 
 
 logger = logging.get_logger(__name__)
-
-FLOAT16_LIMIT = 1e4
 
 
 class IPUMultiHeadSelfAttention(MultiHeadSelfAttention):
@@ -90,8 +89,13 @@ class IPUMultiHeadSelfAttention(MultiHeadSelfAttention):
 
         q = q / math.sqrt(dim_per_head)  # (bs, n_heads, q_length, dim_per_head)
         scores = torch.matmul(q, k.transpose(2, 3))  # (bs, n_heads, q_length, k_length)
-        # Always use -1e4 to avoid NaN issues in fp16.
-        mask = FLOAT16_LIMIT * (mask - 1)
+        mask = mask.to(dtype=scores.dtype)  # fp16 compatibility
+        # Since attention_mask is 1.0 for positions we want to attend and 0.0 for
+        # masked positions, this operation will create a tensor which is 0.0 for
+        # positions we want to attend and -10000.0 for masked positions.
+        # Since we are adding it to the raw scores before the softmax, this is
+        # effectively the same as removing these entirely.
+        mask = (1.0 - mask) * -10000.0
         mask = mask.view(mask_reshp).expand_as(scores)  # (bs, n_heads, q_length, k_length)
         scores = scores + mask  # (bs, n_heads, q_length, k_length)
 
@@ -202,29 +206,63 @@ class PipelinedDistilBertForMaskedLM(DistilBertForMaskedLM, DistilBertPipelineMi
             self.vocab_projector = vocab_projector
             self.tie_weights()
 
-    def forward(self, input_ids, attention_mask, labels=None):
-        if self.training:
-            outputs = self.distilbert(input_ids=input_ids, attention_mask=attention_mask)
-            sequence_output = outputs[0]
+    def forward(
+        self,
+        input_ids: Optional[torch.Tensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        head_mask: Optional[torch.Tensor] = None,
+        inputs_embeds: Optional[torch.Tensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[MaskedLMOutput, Tuple[torch.Tensor, ...]]:
+        r"""
+        labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
+            Labels for computing the masked language modeling loss. Indices should be in `[-100, 0, ...,
+            config.vocab_size]` (see `input_ids` docstring) Tokens with indices set to `-100` are ignored (masked), the
+            loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`.
+        """
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        if labels is not None:
+            dlbrt_output = self.distilbert(
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                head_mask=head_mask,
+                inputs_embeds=inputs_embeds,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+            )
+            hidden_states = dlbrt_output[0]  # (bs, seq_length, dim)
 
             if hasattr(self.config, "max_num_masked_tokens"):
                 # Select only the masked tokens for the classifier
                 labels, positions = torch.topk(labels, k=self.config.max_num_masked_tokens, dim=1)
-                sequence_output = self.gather_indices(sequence_output, positions)
+                hidden_states = self.gather_indices(hidden_states, positions)
 
-            prediction_logits = self.vocab_transform(sequence_output)  # (bs, seq_length, dim)
+            prediction_logits = self.vocab_transform(hidden_states)  # (bs, seq_length, dim)
             prediction_logits = self.activation(prediction_logits)  # (bs, seq_length, dim)
             prediction_logits = self.vocab_layer_norm(prediction_logits)  # (bs, seq_length, dim)
             prediction_logits = self.vocab_projector(prediction_logits)  # (bs, seq_length, vocab_size)
 
             masked_lm_loss = F.cross_entropy(prediction_logits.view(-1, self.config.vocab_size), labels.view(-1))
-            return (masked_lm_loss,)
+            # When training only return the loss
+            if return_dict:
+                return MaskedLMOutput(loss=masked_lm_loss)
+            else:
+                return (masked_lm_loss,)
         else:
             return super().forward(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
+                head_mask=head_mask,
+                inputs_embeds=inputs_embeds,
                 labels=labels,
-                return_dict=False,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
             )
 
 
@@ -240,14 +278,6 @@ class PipelinedDistilBertForSequenceClassification(DistilBertForSequenceClassifi
         logger.info("-----------------------------------------------------------")
         return self
 
-    def forward(
-        self,
-        input_ids: torch.Tensor,
-        attention_mask: torch.Tensor,
-        labels: Optional[torch.LongTensor] = None,
-    ) -> Tuple[torch.Tensor, ...]:
-        return super().forward(input_ids=input_ids, attention_mask=attention_mask, labels=labels, return_dict=False)
-
 
 @register(DistilBertForQuestionAnswering)
 class PipelinedDistilBertForQuestionAnswering(DistilBertForQuestionAnswering, DistilBertPipelineMixin):
@@ -260,13 +290,40 @@ class PipelinedDistilBertForQuestionAnswering(DistilBertForQuestionAnswering, Di
         logger.info("-----------------------------------------------------------")
         return self
 
-    def forward(self, input_ids, attention_mask, start_positions=None, end_positions=None):
+    def forward(
+        self,
+        input_ids: Optional[torch.Tensor] = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        head_mask: Optional[torch.Tensor] = None,
+        inputs_embeds: Optional[torch.Tensor] = None,
+        start_positions: Optional[torch.Tensor] = None,
+        end_positions: Optional[torch.Tensor] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[QuestionAnsweringModelOutput, Tuple[torch.Tensor, ...]]:
+        r"""
+        start_positions (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
+            Labels for position (index) of the start of the labelled span for computing the token classification loss.
+            Positions are clamped to the length of the sequence (`sequence_length`). Position outside of the sequence
+            are not taken into account for computing the loss.
+        end_positions (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
+            Labels for position (index) of the end of the labelled span for computing the token classification loss.
+            Positions are clamped to the length of the sequence (`sequence_length`). Position outside of the sequence
+            are not taken into account for computing the loss.
+        """
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
         output = super().forward(
             input_ids=input_ids,
             attention_mask=attention_mask,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
             start_positions=start_positions,
             end_positions=end_positions,
-            return_dict=False,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
         )
         if start_positions is not None and end_positions is not None:
             output = (poptorch.identity_loss(output[0], reduction="none"),) + output[1:]
@@ -284,14 +341,6 @@ class PipelinedDistilBertForTokenClassification(DistilBertForTokenClassification
         logger.info("-----------------------------------------------------------")
         return self
 
-    def forward(self, input_ids, attention_mask, labels=None):
-        return super().forward(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            labels=labels,
-            return_dict=False,
-        )
-
 
 @register(DistilBertForMultipleChoice)
 class PipelinedDistilBertForMultipleChoice(DistilBertForMultipleChoice, DistilBertPipelineMixin):
@@ -304,11 +353,3 @@ class PipelinedDistilBertForMultipleChoice(DistilBertForMultipleChoice, DistilBe
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
         return self
-
-    def forward(self, input_ids, attention_mask, labels=None):
-        return super().forward(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            labels=labels,
-            return_dict=False,
-        )

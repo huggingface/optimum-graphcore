@@ -52,7 +52,7 @@
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
-350a330,345
+350a330,348
 >     def preprocess_function(examples):
 >         audio = examples[data_args.audio_column_name]
 >         subsampled_audio = random_subsample(
@@ -66,24 +66,27 @@
 >             padding="max_length",
 >         )
 >         examples["input_values"] = inputs["input_values"][0]
+>         if not training_args.fp32:
+>             # Cast audio input to FP16
+>             examples["input_values"] = examples["input_values"].astype(np.float16)
 >         examples["labels"] = examples[data_args.label_column_name]
 >         return examples
 > 
-357c352,354
+357c355,357
 <         raw_datasets["train"].set_transform(train_transforms, output_all_columns=False)
 ---
 >         raw_datasets["train"] = raw_datasets["train"].map(
 >             preprocess_function, remove_columns=raw_datasets["train"].column_names
 >         )
-365c362,364
+365c365,367
 <         raw_datasets["eval"].set_transform(val_transforms, output_all_columns=False)
 ---
 >         raw_datasets["eval"] = raw_datasets["eval"].map(
 >             preprocess_function, remove_columns=raw_datasets["eval"].column_names
 >         )
-368c367
+368c370
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-369a369
+369a372
 >         ipu_config=ipu_config,

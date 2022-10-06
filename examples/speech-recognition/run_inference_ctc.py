@@ -108,7 +108,9 @@ def main():
     opts = ipu_config.to_options(for_inference=True)
     inference_model = poptorch.inferenceModel(ipu_model.half().eval(), options=opts)
 
-    sample_batch = {"input_values": torch.zeros([num_device_iterations, inference_args.max_samples])}
+    sample_batch = {
+        "input_values": torch.zeros([num_device_iterations, inference_args.max_samples], dtype=torch.float16)
+    }
 
     inference_model.compile(**sample_batch)
 
@@ -126,7 +128,7 @@ def main():
             length = input_values.size(1)
             x[i, :length] = input_values[0]
 
-        batch = {"input_values": x}
+        batch = {"input_values": x.to(dtype=torch.float16)}
 
         # take argmax and decode
         output = inference_model(**batch)

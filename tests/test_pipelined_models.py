@@ -172,42 +172,60 @@ class PipelinedModelsTester(TestCase):
         pipelined_model = pipelined_class.from_transformers(pretrained_model, ipu_config).eval()
 
         inputs = self._generate_input_for_model_class(model_name_or_path, pretrained_class)
-        pretrained_model_outputs = pretrained_model(**inputs, return_dict=False)
+        pretrained_model_outputs = pretrained_model(**inputs, return_dict=True)
         # The forward method can be different in train and eval mode for some models (seq2seq for instance), so we make
         # sure to use the proper one.
         pipelined_forward_function = getattr(pipelined_model, "_forward_for_train", pipelined_model.forward)
 
         pipelined_model.parallelize()
-        pipelined_model_outputs = pipelined_forward_function(**inputs)
-        for idx, t in enumerate(zip(pretrained_model_outputs, pipelined_model_outputs)):
-            pretrained_output, pipelined_output = t
+        pipelined_model_outputs = pipelined_forward_function(**inputs, return_dict=True)
+        for idx, k in enumerate(pretrained_model_outputs.keys()):
+            pretrained_output, pipelined_output = pretrained_model_outputs[k], pipelined_model_outputs[k]
             # Handle tuple outputs. Outputs such as past_key_values are returned as tuples.
             if isinstance(pretrained_output, tuple):
-                # If tuples in tuple
-                if isinstance(pretrained_output[0], tuple):
-                    pretrained_output = [torch.stack(x) for x in pretrained_output]
-                    pipelined_output = [torch.stack(x) for x in pipelined_output]
-                pretrained_output, pipelined_output = torch.stack(pretrained_output), torch.stack(pipelined_output)
-            self.assertTrue(
-                torch.allclose(pretrained_output, pipelined_output, atol=1e-5),
-                f"Pretrained and pipelined model {idx}th outputs do not match, max difference = {(pretrained_output - pipelined_output).abs().max()}",
-            )
+                for x, y in zip(pretrained_output, pipelined_output):
+                    if isinstance(x, tuple):
+                        for x1, y1 in zip(x, y):
+                            self.assertTrue(
+                                torch.allclose(x1, y1, atol=1e-5),
+                                f"Pretrained and pipelined model {idx}th outputs do not match, max difference = {(x1 - y1).abs().max()}",
+                            )
+                    else:
+                        self.assertTrue(
+                            torch.allclose(x, y, atol=1e-5),
+                            f"Pretrained and pipelined model {idx}th outputs do not match, max difference = {(x - y).abs().max()}",
+                        )
+
+            else:
+                self.assertTrue(
+                    torch.allclose(pretrained_output, pipelined_output, atol=1e-5),
+                    f"Pretrained and pipelined model {idx}th outputs do not match, max difference = {(pretrained_output - pipelined_output).abs().max()}",
+                )
 
         pipelined_model.deparallelize()
         pipelined_model_outputs = pipelined_forward_function(**inputs)
-        for idx, t in enumerate(zip(pretrained_model_outputs, pipelined_model_outputs)):
-            pretrained_output, pipelined_output = t
+        for idx, k in enumerate(pretrained_model_outputs.keys()):
+            pretrained_output, pipelined_output = pretrained_model_outputs[k], pipelined_model_outputs[k]
             # Handle tuple outputs. Outputs such as past_key_values are returned as tuples.
             if isinstance(pretrained_output, tuple):
-                # If tuples in tuple
-                if isinstance(pretrained_output[0], tuple):
-                    pretrained_output = [torch.stack(x) for x in pretrained_output]
-                    pipelined_output = [torch.stack(x) for x in pipelined_output]
-                pretrained_output, pipelined_output = torch.stack(pretrained_output), torch.stack(pipelined_output)
-            self.assertTrue(
-                torch.equal(pretrained_output, pipelined_output),
-                f"Pretrained and pipelined model {idx}th outputs do not match, max difference = {(pretrained_output - pipelined_output).abs().max()}",
-            )
+                for x, y in zip(pretrained_output, pipelined_output):
+                    if isinstance(x, tuple):
+                        for x1, y1 in zip(x, y):
+                            self.assertTrue(
+                                torch.allclose(x1, y1, atol=1e-5),
+                                f"Pretrained and pipelined model {idx}th outputs do not match, max difference = {(x1 - y1).abs().max()}",
+                            )
+                    else:
+                        self.assertTrue(
+                            torch.allclose(x, y, atol=1e-5),
+                            f"Pretrained and pipelined model {idx}th outputs do not match, max difference = {(x - y).abs().max()}",
+                        )
+
+            else:
+                self.assertTrue(
+                    torch.allclose(pretrained_output, pipelined_output, atol=1e-5),
+                    f"Pretrained and pipelined model {idx}th outputs do not match, max difference = {(pretrained_output - pipelined_output).abs().max()}",
+                )
 
     @parameterized.expand(MODELS_TO_TEST)
     def test_parallelize_deparallelize(

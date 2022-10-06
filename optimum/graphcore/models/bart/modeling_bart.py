@@ -13,7 +13,7 @@
 #  limitations under the License.
 
 import random
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
@@ -24,9 +24,17 @@ from transformers import BartForConditionalGeneration, BartForSequenceClassifica
 from transformers.modeling_outputs import (
     BaseModelOutput,
     BaseModelOutputWithPastAndCrossAttentions,
+    Seq2SeqLMOutput,
     Seq2SeqModelOutput,
+    Seq2SeqSequenceClassifierOutput,
 )
-from transformers.models.bart.modeling_bart import BartAttention, BartDecoder, BartEncoder, shift_tokens_right
+from transformers.models.bart.modeling_bart import (
+    BartAttention,
+    BartDecoder,
+    BartEncoder,
+    BartEncoderLayer,
+    shift_tokens_right,
+)
 
 from ...generation_utils import IPUGenerationMixin
 from ...modeling_utils import (
@@ -53,8 +61,8 @@ def _make_causal_mask(input_ids_shape: torch.Size, dtype: torch.dtype, past_key_
         - Not expanding the final mask to [bsz, 1, tgt_len, src_len]
     """
     bsz, tgt_len = input_ids_shape
-    mask = torch.full((tgt_len, tgt_len), -FLOAT16_LIMIT)
-    mask = torch.triu(mask, diagonal=1)
+    mask = torch.full((tgt_len, tgt_len), -FLOAT16_LIMIT, dtype=dtype)
+    mask = torch.triu(mask, diagonal=1).to(dtype=dtype)
     return mask[None, None, :, :]
 
 
@@ -72,7 +80,7 @@ def _expand_mask(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] 
 
     # Using FLOAT16_LIMIT instead of -float("inf") to avoid NaNs on the IPUs.
     inverted_mask = -FLOAT16_LIMIT * inverted_mask
-    return inverted_mask
+    return inverted_mask.to(dtype)
 
 
 class _BartAttentionWithoutException(BartAttention):
@@ -188,6 +196,64 @@ class _BartAttentionWithoutException(BartAttention):
         attn_output = self.out_proj(attn_output)
 
         return attn_output, attn_weights_reshaped, past_key_value
+
+
+class _BartEncoderLayerNoClamp(BartEncoderLayer):
+    """
+    Same as BartEncoderLayer except it removed the dynamic if statement
+    for clamping fp16 tensor values.
+    """
+
+    def forward(
+        self,
+        hidden_states: torch.FloatTensor,
+        attention_mask: torch.FloatTensor,
+        layer_head_mask: torch.FloatTensor,
+        output_attentions: Optional[bool] = False,
+    ) -> Tuple[torch.FloatTensor, Optional[torch.FloatTensor]]:
+        """
+        Args:
+            hidden_states (`torch.FloatTensor`): input to the layer of shape `(seq_len, batch, embed_dim)`
+            attention_mask (`torch.FloatTensor`): attention mask of size
+                `(batch, 1, tgt_len, src_len)` where padding elements are indicated by very large negative values.
+            layer_head_mask (`torch.FloatTensor`): mask for attention heads in a given layer of size
+                `(encoder_attention_heads,)`.
+            output_attentions (`bool`, *optional*):
+                Whether or not to return the attentions tensors of all attention layers. See `attentions` under
+                returned tensors for more detail.
+        """
+        residual = hidden_states
+        hidden_states, attn_weights, _ = self.self_attn(
+            hidden_states=hidden_states,
+            attention_mask=attention_mask,
+            layer_head_mask=layer_head_mask,
+            output_attentions=output_attentions,
+        )
+        hidden_states = nn.functional.dropout(hidden_states, p=self.dropout, training=self.training)
+        hidden_states = residual + hidden_states
+        hidden_states = self.self_attn_layer_norm(hidden_states)
+
+        residual = hidden_states
+        hidden_states = self.activation_fn(self.fc1(hidden_states))
+        hidden_states = nn.functional.dropout(hidden_states, p=self.activation_dropout, training=self.training)
+        hidden_states = self.fc2(hidden_states)
+        hidden_states = nn.functional.dropout(hidden_states, p=self.dropout, training=self.training)
+        hidden_states = residual + hidden_states
+        hidden_states = self.final_layer_norm(hidden_states)
+
+        # Change: removing this `if` because it can't be statically compiled.
+        # if hidden_states.dtype == torch.float16 and (
+        #     torch.isinf(hidden_states).any() or torch.isnan(hidden_states).any()
+        # ):
+        #     clamp_value = torch.finfo(hidden_states.dtype).max - 1000
+        #     hidden_states = torch.clamp(hidden_states, min=-clamp_value, max=clamp_value)
+
+        outputs = (hidden_states,)
+
+        if output_attentions:
+            outputs += (attn_weights,)
+
+        return outputs
 
 
 class _BartEncoderWithCustomExpandMask(BartEncoder):
@@ -500,6 +566,8 @@ class _BartModelWithSharedEmbedding(BartModel):
         """
         self.encoder.__class__ = BartEncoder if restore else _BartEncoderWithCustomExpandMask
         self.decoder.__class__ = BartDecoder if restore else _BartDecoderWithCustomMakeCausalAndExpandMask
+        for layer in self.encoder.layers:
+            layer.__class__ = BartEncoderLayer if restore else _BartEncoderLayerNoClamp
 
     def change_bart_attention_class(self, restore: bool):
         """Changes the attention layers to either use the original BartAttention forward or
@@ -711,40 +779,59 @@ class PipelinedBartForConditionalGeneration(
 
         return self
 
-    def train(self, mode: bool = True) -> "PipelinedBartForConditionalGeneration":
-        mod = super(BartForConditionalGeneration, self).train(mode=mode)
-        # TODO: enable that once generation is supported.
-        # mod.forward = mod._forward_for_train if mode else mod._forward_for_generate
-        mod.forward = mod._forward_for_train
-        return mod
+    def forward(
+        self,
+        input_ids: torch.LongTensor = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        decoder_input_ids: Optional[torch.LongTensor] = None,
+        decoder_attention_mask: Optional[torch.LongTensor] = None,
+        head_mask: Optional[torch.Tensor] = None,
+        decoder_head_mask: Optional[torch.Tensor] = None,
+        cross_attn_head_mask: Optional[torch.Tensor] = None,
+        encoder_outputs: Optional[List[torch.FloatTensor]] = None,
+        past_key_values: Optional[List[torch.FloatTensor]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        decoder_inputs_embeds: Optional[torch.FloatTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[Tuple, Seq2SeqLMOutput]:
+        r"""
+        labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
+            Labels for computing the masked language modeling loss. Indices should either be in `[0, ...,
+            config.vocab_size]` or -100 (see `input_ids` docstring). Tokens with indices set to `-100` are ignored
+            (masked), the loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`.
 
-    def _forward_for_train(self, input_ids, attention_mask, decoder_input_ids, labels=None):
+        Returns: Tuple or Seq2SeqLMOutput
+        """
         outputs = super().forward(
-            input_ids=input_ids,
+            input_ids,
             attention_mask=attention_mask,
             decoder_input_ids=decoder_input_ids,
-            labels=labels,
-            use_cache=False,
-            return_dict=False,
-        )
-        # Only returning the loss to make the communication between the host and the device faster.
-        return outputs[0:1]
-
-    def _forward_for_generate(self, encoder_outputs, decoder_input_ids, attention_mask, labels=None):
-        outputs = super().forward(
             encoder_outputs=encoder_outputs,
-            attention_mask=attention_mask,
-            decoder_input_ids=decoder_input_ids,
-            return_dict=False,
-            use_cache=False,
+            decoder_attention_mask=decoder_attention_mask,
+            head_mask=head_mask,
+            decoder_head_mask=decoder_head_mask,
+            cross_attn_head_mask=cross_attn_head_mask,
+            past_key_values=past_key_values,
+            inputs_embeds=inputs_embeds,
+            decoder_inputs_embeds=decoder_inputs_embeds,
             labels=labels,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
         )
-        # Only returning the loss (if labels is provided) and the logits.
-        if labels is None:
-            return outputs[:1]
-        return outputs[:2]
-
-    forward = _forward_for_train
+        if self.training:
+            # Only returning the loss to make the communication between the host and the device faster.
+            if not return_dict:
+                return outputs[0:1]
+            else:
+                return Seq2SeqLMOutput(loss=outputs.loss)
+        else:
+            return outputs
 
 
 @register(BartForSequenceClassification)
@@ -822,12 +909,48 @@ class PipelinedBartForSequenceClassification(BartForSequenceClassification, Pipe
 
         return self
 
-    def forward(self, input_ids, attention_mask, labels=None):
+    def forward(
+        self,
+        input_ids: torch.LongTensor = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        decoder_input_ids: Optional[torch.LongTensor] = None,
+        decoder_attention_mask: Optional[torch.LongTensor] = None,
+        head_mask: Optional[torch.Tensor] = None,
+        decoder_head_mask: Optional[torch.Tensor] = None,
+        cross_attn_head_mask: Optional[torch.Tensor] = None,
+        encoder_outputs: Optional[List[torch.FloatTensor]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        decoder_inputs_embeds: Optional[torch.FloatTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[Tuple, Seq2SeqSequenceClassifierOutput]:
+        r"""
+        labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
+            Labels for computing the sequence classification/regression loss. Indices should be in `[0, ...,
+            config.num_labels - 1]`. If `config.num_labels > 1` a classification loss is computed (Cross-Entropy).
+        """
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        if labels is not None:
+            use_cache = False
+
         outputs = self.model(
             input_ids,
             attention_mask=attention_mask,
-            use_cache=False,
-            return_dict=False,
+            decoder_input_ids=decoder_input_ids,
+            decoder_attention_mask=decoder_attention_mask,
+            head_mask=head_mask,
+            decoder_head_mask=decoder_head_mask,
+            cross_attn_head_mask=cross_attn_head_mask,
+            encoder_outputs=encoder_outputs,
+            inputs_embeds=inputs_embeds,
+            decoder_inputs_embeds=decoder_inputs_embeds,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
         )
 
         hidden_states = outputs[0]  # last hidden state
@@ -867,6 +990,18 @@ class PipelinedBartForSequenceClassification(BartForSequenceClassification, Pipe
                 loss_fct = nn.BCEWithLogitsLoss()
                 loss = loss_fct(logits, labels)
 
-        if labels is None:
-            return (logits,)
-        return loss, logits
+        if not return_dict:
+            output = (logits,) + outputs[1:]
+            return ((loss,) + output) if loss is not None else output
+
+        return Seq2SeqSequenceClassifierOutput(
+            loss=loss,
+            logits=logits,
+            past_key_values=outputs.past_key_values,
+            decoder_hidden_states=outputs.decoder_hidden_states,
+            decoder_attentions=outputs.decoder_attentions,
+            cross_attentions=outputs.cross_attentions,
+            encoder_last_hidden_state=outputs.encoder_last_hidden_state,
+            encoder_hidden_states=outputs.encoder_hidden_states,
+            encoder_attentions=outputs.encoder_attentions,
+        )

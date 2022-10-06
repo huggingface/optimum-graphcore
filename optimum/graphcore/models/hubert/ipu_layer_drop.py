@@ -60,18 +60,22 @@ class IPUHubertEncoder(HubertEncoder):
             layer_outputs = layer(hidden_states, attention_mask=attention_mask, output_attentions=output_attentions)
 
             # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
-            dropout_probability = torch.rand(tuple())
-            skip_the_layer = torch.tensor(self.training) and (dropout_probability < self.config.layerdrop)
+            # Modify LayerDrop so it can be statically compiled without eager mode
             if self.config.layerdrop > 0.0:
-                hidden_states = torch.where(skip_the_layer, hidden_states, layer_outputs[0])
+                dropout_probability = torch.rand(tuple(), device=hidden_states.device)
+                skip_the_layer = (
+                    torch.tensor(self.training, device=hidden_states.device)
+                    & (dropout_probability < self.config.layerdrop)
+                ).to(dtype=hidden_states.dtype)
+                hidden_states = hidden_states * skip_the_layer + layer_outputs[0] * (1 - skip_the_layer)
             else:
                 hidden_states = layer_outputs[0]
 
-            if skip_the_layer:
-                layer_outputs = (None, None)
-
             if output_attentions:
-                all_self_attentions = all_self_attentions + (layer_outputs[1],)
+                if self.config.layerdrop > 0.0:
+                    all_self_attentions = all_self_attentions + ((1 - skip_the_layer) * layer_outputs[1],)
+                else:
+                    all_self_attentions = all_self_attentions + (layer_outputs[1],)
 
         if output_hidden_states:
             all_hidden_states = all_hidden_states + (hidden_states,)
@@ -119,18 +123,22 @@ class IPUHubertEncoderStableLayerNorm(HubertEncoderStableLayerNorm):
             layer_outputs = layer(hidden_states, attention_mask=attention_mask, output_attentions=output_attentions)
 
             # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
-            dropout_probability = torch.rand(tuple())
-            skip_the_layer = torch.tensor(self.training) and (dropout_probability < self.config.layerdrop)
+            # Modify LayerDrop so it can be statically compiled without eager mode
             if self.config.layerdrop > 0.0:
-                hidden_states = torch.where(skip_the_layer, hidden_states, layer_outputs[0])
+                dropout_probability = torch.rand(tuple(), device=hidden_states.device)
+                skip_the_layer = (
+                    torch.tensor(self.training, device=hidden_states.device)
+                    & (dropout_probability < self.config.layerdrop)
+                ).to(dtype=hidden_states.dtype)
+                hidden_states = hidden_states * skip_the_layer + layer_outputs[0] * (1 - skip_the_layer)
             else:
                 hidden_states = layer_outputs[0]
 
-            if skip_the_layer:
-                layer_outputs = (None, None)
-
             if output_attentions:
-                all_self_attentions = all_self_attentions + (layer_outputs[1],)
+                if self.config.layerdrop > 0.0:
+                    all_self_attentions = all_self_attentions + ((1 - skip_the_layer) * layer_outputs[1],)
+                else:
+                    all_self_attentions = all_self_attentions + (layer_outputs[1],)
 
         hidden_states = self.layer_norm(hidden_states)
 
