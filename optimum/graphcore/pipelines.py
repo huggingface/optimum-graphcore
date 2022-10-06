@@ -45,7 +45,7 @@ SUPPORTED_TASKS = {
         "impl": AudioClassificationPipeline,
         "class": (AutoModelForAudioClassification,),
         "default": {
-            "model": "superb/hubert-base-superb-ks",
+            "model": ("superb/hubert-base-superb-ks", "d7e0efe"),
             "ipu_config": "Graphcore/hubert-base-ipu",
         },
         "type": "audio",
@@ -55,7 +55,7 @@ SUPPORTED_TASKS = {
         # "class": (AutoModelForCTC, AutoModelForSpeechSeq2Seq),
         "class": (AutoModelForCTC,),
         "default": {
-            "model": "facebook/wav2vec2-base-960h",
+            "model": ("facebook/wav2vec2-base-960h", "55bb623"),
             "ipu_config": "Graphcore/wav2vec2-ctc-base-ipu",
         },
         "type": "multimodal",
@@ -64,7 +64,7 @@ SUPPORTED_TASKS = {
         "impl": IPUFillMaskPipeline,
         "class": (AutoModelForMaskedLM,),
         "default": {
-            "model": "distilbert-base-uncased",
+            "model": ("distilbert-base-uncased", "043235d"),
             "ipu_config": "Graphcore/distilbert-base-ipu",
             "padding_length": 128,
         },
@@ -74,7 +74,7 @@ SUPPORTED_TASKS = {
         "impl": ImageClassificationPipeline,
         "class": (AutoModelForImageClassification,),
         "default": {
-            "model": "google/vit-base-patch16-224",
+            "model": ("google/vit-base-patch16-224", "5dca96d"),
             "ipu_config": "Graphcore/vit-base-ipu",
         },
         "type": "image",
@@ -83,7 +83,7 @@ SUPPORTED_TASKS = {
         "impl": QuestionAnsweringPipeline,
         "class": (AutoModelForQuestionAnswering,),
         "default": {
-            "model": "distilbert-base-cased-distilled-squad",
+            "model": ("distilbert-base-cased-distilled-squad", "626af31"),
             "ipu_config": "Graphcore/distilbert-base-ipu",
             "padding_length": 128,
         },
@@ -93,7 +93,7 @@ SUPPORTED_TASKS = {
         "impl": TextClassificationPipeline,
         "class": (AutoModelForSequenceClassification,),
         "default": {
-            "model": "distilbert-base-uncased-finetuned-sst-2-english",
+            "model": ("distilbert-base-uncased-finetuned-sst-2-english", "af0f99b"),
             "ipu_config": "Graphcore/distilbert-base-ipu",
             "padding_length": 128,
         },
@@ -103,7 +103,7 @@ SUPPORTED_TASKS = {
         "impl": IPUTokenClassificationPipeline,
         "class": (AutoModelForTokenClassification,),
         "default": {
-            "model": "dbmdz/bert-large-cased-finetuned-conll03-english",
+            "model": ("dbmdz/bert-large-cased-finetuned-conll03-english", "f2482bf"),
             "ipu_config": "Graphcore/bert-large-ipu",
             "padding_length": 128,
         },
@@ -113,7 +113,7 @@ SUPPORTED_TASKS = {
         "impl": ZeroShotClassificationPipeline,
         "class": (AutoModelForSequenceClassification,),
         "default": {
-            "model": "roberta-large-mnli",
+            "model": ("roberta-large-mnli", "130fb28"),
             "ipu_config": "Graphcore/roberta-large-ipu",
             "padding_length": 128,
         },
@@ -185,6 +185,7 @@ def pipeline(
     ipu_config: Union[str, dict] = None,
     tokenizer: Optional[Union[str, PreTrainedTokenizer]] = None,
     feature_extractor: Optional[Union[str, PreTrainedFeatureExtractor]] = None,
+    revision: Optional[str] = None,
     use_fast: bool = True,
     use_auth_token: Optional[Union[str, bool]] = None,
     pipeline_class: Optional[Any] = None,
@@ -234,12 +235,12 @@ def pipeline(
         ipu_config = SUPPORTED_TASKS[targeted_task]["default"]["ipu_config"]
 
     if model is None:
-        model_id = SUPPORTED_TASKS[targeted_task]["default"]["model"]
-        model = SUPPORTED_TASKS[targeted_task]["class"][0].from_pretrained(model_id)
+        model_id, revision = SUPPORTED_TASKS[targeted_task]["default"]["model"]
+        model = SUPPORTED_TASKS[targeted_task]["class"][0].from_pretrained(model_id, revision=revision)
         model = get_poplar_executor(model, ipu_config)
     elif isinstance(model, str):
         model_id = model
-        model = SUPPORTED_TASKS[targeted_task]["class"][0].from_pretrained(model)
+        model = SUPPORTED_TASKS[targeted_task]["class"][0].from_pretrained(model_id, revision=revision)
         model = get_poplar_executor(model, ipu_config)
     elif isinstance(model, PreTrainedModel):
         model = get_poplar_executor(model, ipu_config)
