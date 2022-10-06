@@ -60,7 +60,12 @@ from transformers.data.data_collator import DataCollator, DataCollatorWithPaddin
 from transformers.debug_utils import DebugOption, DebugUnderflowOverflow
 from transformers.file_utils import CONFIG_NAME, WEIGHTS_NAME, get_full_repo_name, is_datasets_available
 from transformers.modeling_utils import PreTrainedModel
-from transformers.models.auto.modeling_auto import MODEL_FOR_QUESTION_ANSWERING_MAPPING_NAMES, MODEL_FOR_PRETRAINING_MAPPING, MODEL_FOR_CAUSAL_LM_MAPPING, MODEL_FOR_MASKED_LM_MAPPING
+from transformers.models.auto.modeling_auto import (
+    MODEL_FOR_QUESTION_ANSWERING_MAPPING_NAMES,
+    MODEL_FOR_PRETRAINING_MAPPING,
+    MODEL_FOR_CAUSAL_LM_MAPPING,
+    MODEL_FOR_MASKED_LM_MAPPING,
+)
 from transformers.optimization import get_scheduler
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from transformers.trainer import OPTIMIZER_NAME, SCALER_NAME, SCHEDULER_NAME, TRAINER_STATE_NAME, TRAINING_ARGS_NAME
@@ -122,7 +127,11 @@ _is_torch_generator_available = False
 DEFAULT_CALLBACKS = [DefaultFlowCallback]
 DEFAULT_PROGRESS_CALLBACK = ProgressCallback
 
-TIED_WEIGHT_MODELS = set(MODEL_FOR_PRETRAINING_MAPPING.values() + MODEL_FOR_MASKED_LM_MAPPING.values() + MODEL_FOR_CAUSAL_LM_MAPPING.values())
+TIED_WEIGHT_MODELS = set(
+    MODEL_FOR_PRETRAINING_MAPPING.values()
+    + MODEL_FOR_MASKED_LM_MAPPING.values()
+    + MODEL_FOR_CAUSAL_LM_MAPPING.values()
+)
 
 
 @dataclass
@@ -824,7 +833,7 @@ class IPUTrainer:
             self.training_model = None
         else:
             self.training_model.detachFromDevice()
-    
+
     def _detach_inference_model(self):
         """
         Detach inference model from IPUs
@@ -1730,7 +1739,11 @@ class IPUTrainer:
                 step == len(dataloader) - 1 if isinstance(dataloader.dataset, collections.abc.Sized) else False
             )
             loss, logits, labels = self.prediction_step(
-                self.inference_model, inputs, prediction_loss_only, ignore_keys=ignore_keys, is_last_batch=is_last_batch
+                self.inference_model,
+                inputs,
+                prediction_loss_only,
+                ignore_keys=ignore_keys,
+                is_last_batch=is_last_batch,
             )
 
             # Update containers on host
