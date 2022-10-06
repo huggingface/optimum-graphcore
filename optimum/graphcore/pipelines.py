@@ -132,7 +132,7 @@ for task, values in SUPPORTED_TASKS.items():
     elif values["type"] != "multimodal":
         raise ValueError(f"SUPPORTED_TASK {task} contains invalid type {values['type']}")
 
-def get_poplar_executor(model: PreTrainedModel, ipu_config: Union[str, dict] = None):
+def get_poplar_executor(model: PreTrainedModel, ipu_config: Union[str, dict] = None, fp16: bool = True):
     if isinstance(ipu_config, str):
         ipu_config = IPUConfig.from_pretrained(ipu_config)
     elif isinstance(ipu_config, dict):
@@ -144,7 +144,8 @@ def get_poplar_executor(model: PreTrainedModel, ipu_config: Union[str, dict] = N
     ipu_config.inference_replication_factor = 1
     model = to_pipelined(model, ipu_config, force=False)
     model.parallelize()
-    model.half()
+    if fp16:
+        model.half()
     opts = ipu_config.to_options(for_inference=True)
     opts.setExecutionStrategy(poptorch.ShardedExecution())
     model = poptorch.inferenceModel(model.eval(), opts)
@@ -190,6 +191,7 @@ def pipeline(
     use_fast: bool = True,
     use_auth_token: Optional[Union[str, bool]] = None,
     pipeline_class: Optional[Any] = None,
+    fp16: bool = True,
     **kwargs,
 ) -> Pipeline:
 
@@ -243,13 +245,13 @@ def pipeline(
             "Using a pipeline without specifying a model name and revision in production is not recommended."
         )
         model = SUPPORTED_TASKS[targeted_task]["class"][0].from_pretrained(model_id, revision=revision)
-        model = get_poplar_executor(model, ipu_config)
+        model = get_poplar_executor(model, ipu_config, fp16)
     elif isinstance(model, str):
         model_id = model
         model = SUPPORTED_TASKS[targeted_task]["class"][0].from_pretrained(model_id, revision=revision)
-        model = get_poplar_executor(model, ipu_config)
+        model = get_poplar_executor(model, ipu_config, fp16)
     elif isinstance(model, PreTrainedModel):
-        model = get_poplar_executor(model, ipu_config)
+        model = get_poplar_executor(model, ipu_config, fp16)
         if tokenizer is None and load_tokenizer:
             raise ValueError("If you pass a model as a PreTrainedModel, you must pass a tokenizer as well")
         if feature_extractor is None and load_feature_extractor:
@@ -295,20 +297,21 @@ def pipeline(
         tokenizer.pad_token = tokenizer.eos_token
         model.config.pad_token_id = model.config.eos_token_id
 
-    # Override pipelines' _forward to support fp16
-    old_forward =pipeline_class._forward
-    def new_forward(self, model_inputs, *args, **kwargs):
-        # Support change in batch size
-        # TODO: Place this to a more appropriate location.
-        if self.model._executable_inputs:
-            if self.model._executable_inputs.args[0].shape[0] != next(iter(model_inputs.items()))[1].shape[0]:
-                self.model.destroy()
-        # Support fp16
-        for key, input in model_inputs.items():
-            if isinstance(input, torch.Tensor) and input.dtype == torch.float32:
-                model_inputs[key] = input.half()
-        return old_forward(self, model_inputs, *args, **kwargs)
-    pipeline_class._forward = new_forward
+    if fp16:
+        # Override pipelines' _forward to support fp16
+        old_forward =pipeline_class._forward
+        def new_forward(self, model_inputs, *args, **kwargs):
+            # Support change in batch size
+            # TODO: Place this to a more appropriate location.
+            if self.model._executable_inputs:
+                if self.model._executable_inputs.args[0].shape[0] != next(iter(model_inputs.items()))[1].shape[0]:
+                    self.model.destroy()
+            # Support fp16
+            for key, input in model_inputs.items():
+                if isinstance(input, torch.Tensor) and input.dtype == torch.float32:
+                    model_inputs[key] = input.half()
+            return old_forward(self, model_inputs, *args, **kwargs)
+        pipeline_class._forward = new_forward
 
     return transformers_pipeline(
         task,
