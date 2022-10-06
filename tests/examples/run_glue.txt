@@ -1,4 +1,4 @@
-29a30
+27a28
 > import torch
 30a32,34
 > from optimum.graphcore import IPUConfig, IPUTrainer
