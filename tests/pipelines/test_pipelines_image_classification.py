@@ -16,7 +16,6 @@ import unittest
 
 from transformers import (
     MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING,
-    TF_MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING,
     PreTrainedTokenizer,
     is_vision_available,
 )
@@ -24,7 +23,6 @@ from transformers.pipelines import ImageClassificationPipeline, pipeline
 from transformers.testing_utils import (
     is_pipeline_test,
     nested_simplify,
-    require_tf,
     require_torch,
     require_vision,
     slow,
@@ -47,7 +45,6 @@ else:
 @require_vision
 class ImageClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
     model_mapping = MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING
-    tf_model_mapping = TF_MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING
 
     def get_test_pipeline(self, model, tokenizer, feature_extractor):
         image_classifier = ImageClassificationPipeline(model=model, feature_extractor=feature_extractor, top_k=2)
@@ -113,32 +110,6 @@ class ImageClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
 
     @require_torch
     def test_small_model_pt(self):
-        small_model = "hf-internal-testing/tiny-random-vit"
-        image_classifier = pipeline("image-classification", model=small_model)
-
-        outputs = image_classifier("http://images.cocodataset.org/val2017/000000039769.jpg")
-        self.assertEqual(
-            nested_simplify(outputs, decimals=4),
-            [{"label": "LABEL_1", "score": 0.574}, {"label": "LABEL_0", "score": 0.426}],
-        )
-
-        outputs = image_classifier(
-            [
-                "http://images.cocodataset.org/val2017/000000039769.jpg",
-                "http://images.cocodataset.org/val2017/000000039769.jpg",
-            ],
-            top_k=2,
-        )
-        self.assertEqual(
-            nested_simplify(outputs, decimals=4),
-            [
-                [{"label": "LABEL_1", "score": 0.574}, {"label": "LABEL_0", "score": 0.426}],
-                [{"label": "LABEL_1", "score": 0.574}, {"label": "LABEL_0", "score": 0.426}],
-            ],
-        )
-
-    @require_tf
-    def test_small_model_tf(self):
         small_model = "hf-internal-testing/tiny-random-vit"
         image_classifier = pipeline("image-classification", model=small_model)
 
