@@ -16,11 +16,10 @@ import torch
 import torch.nn as nn
 
 import poptorch
-import transformers
 from optimum.utils import logging
-from transformers.models.convnext.modeling_convnext import ConvNextLayer, ConvNextLayerNorm
+from transformers.models.convnext.modeling_convnext import ConvNextForImageClassification, ConvNextLayer, ConvNextLayerNorm
 
-from ...modeling_utils import PipelineMixin, get_layer_ipu, recomputation_checkpoint, register
+from ...modeling_utils import PipelineMixin, get_layer_ipu, register
 from .optimized_convnextlayer import OptimizedConvNextLayer
 
 
@@ -57,8 +56,8 @@ class IPUConvNextLayerNorm(nn.Module):
         return x
 
 
-@register(transformers.ConvNextForImageClassification)
-class PipelinedConvNextForImageClassification(transformers.ConvNextForImageClassification, PipelineMixin):
+@register(ConvNextForImageClassification)
+class PipelinedConvNextForImageClassification(ConvNextForImageClassification, PipelineMixin):
     def parallelize(self):
         super().parallelize()
 
