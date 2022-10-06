@@ -21,11 +21,11 @@ To contribute and add support for a model architecture that is not currently sup
 1. Make sure the original model implementation inherhints from `transformers.PreTrainedModel`. This is not 100% needed, but it is highly recommended to have access to all the features.
 2. Create a "pipelined" version of the original class, to do that:
   - Inherint from both the original class and [`modeling_utils.PieplineMixin`]
-  - Implement the `.parallelize` method, which specifies how each part of the model should be placed on the hardware.
-  - Implement the `.deparellize` method, which takes a parallelized instance of the model back to its original version. This is needed to make sure both the original and pipelined versions can share the same state dict.
+  - Implement the [`~modeling_utils.PipelineMixin.parallelize`] method, which specifies how each part of the model should be placed on the hardware.
+  - Implement the [`~modeling_utils.PipelineMixin.deparellize`] method, which takes a parallelized instance of the model back to its original version. This is needed to make sure both the original and pipelined versions can share the same state dict.
 3. Register the pipelined version. This will enable the [`IPUTrainer`] to automatically convert an original instance of the model to its pipelined counterpart.
 
-Example: `transformers.ViTForImageClassification` to `PipelinedViTForImageClassification`
+**Example:** `transformers.ViTForImageClassification` to `PipelinedViTForImageClassification`
 
 ```python
 import poptorch
@@ -64,3 +64,13 @@ class PipelinedViTForImageClassification(transformers.ViTForImageClassification,
 
 As you can see, you can specify where each part of the model should be put by wrapping them around `poptorch.BeginBlock`, which takes a layer, a block name, and an IPU id as inputs.
 To know which IPU id to use, you can use the `ipu_config.layers_per_ipu` attribute, for more information check [here](ipu_config.mdx#IPUConfig)
+
+
+## PipelineMixin
+
+[[autodoc]] modeling_utils.PipelineMixin
+    - parallelize
+    - deparallelize
+    - from_transformers
+    - from_pretrained_transformers
+    - ipu_config
