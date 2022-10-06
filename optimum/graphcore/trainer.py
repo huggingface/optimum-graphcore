@@ -1211,6 +1211,8 @@ class IPUTrainer:
                     steps_trained_progress_bar.close()
                     steps_trained_progress_bar = None
 
+                self.control = self.callback_handler.on_step_begin(args, self.state, self.control)
+
                 tr_loss_step = self.training_step(model, inputs)
 
                 if args.logging_nan_inf_filter and (torch.isnan(tr_loss_step) or torch.isinf(tr_loss_step)):
@@ -1246,11 +1248,11 @@ class IPUTrainer:
                 )
                 self.control.should_training_stop = True
 
-            if self.control.should_training_stop:
-                break
-
             self.control = self.callback_handler.on_epoch_end(args, self.state, self.control)
             self._maybe_log_save_evaluate(tr_loss, model, epoch, ignore_keys_for_eval)
+
+            if self.control.should_training_stop:
+                break
 
         if args.past_index and hasattr(self, "_past"):
             # Clean the state at the end of training

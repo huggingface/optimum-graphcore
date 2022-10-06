@@ -77,7 +77,7 @@ class PipelineMixin:
     @classmethod
     def from_transformers(cls, model: PreTrainedModel, ipu_config: IPUConfig):
         """
-        Creates a pipeline model from a `transformers.PreTrainedModel`.
+        Creates a pipeline model from a [`~transformers.PreTrainedModel`].
 
         Args:
             model ([`~transformers.PreTrainedModel`]):
@@ -131,6 +131,7 @@ class PipelineMixin:
 
     @property
     def ipu_config(self):
+        """Property that checks that the model has an [`IPUConfig`] attached, and returns it."""
         self._has_ipu_config_check()
         return self._ipu_config
 

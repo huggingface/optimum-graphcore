@@ -971,16 +971,16 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
                 b=2.5,
                 output_dir=tmpdir,
                 learning_rate=0.1,
-                eval_steps=5,
+                eval_steps=30,
                 evaluation_strategy="steps",
-                save_steps=5,
+                save_steps=30,
                 load_best_model_at_end=True,
                 label_names=["labels"],
             )
             self.assertFalse(trainer.args.greater_is_better)
             trainer.train()
-            self.check_saved_checkpoints(tmpdir, 5, total)
-            self.check_best_model_has_been_loaded(tmpdir, 5, total, trainer, "eval_loss")
+            self.check_saved_checkpoints(tmpdir, 30, total)
+            self.check_best_model_has_been_loaded(tmpdir, 30, total, trainer, "eval_loss")
 
         with tempfile.TemporaryDirectory() as tmpdir:
             trainer = get_regression_trainer(
@@ -988,9 +988,9 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
                 b=2.5,
                 output_dir=tmpdir,
                 learning_rate=0.1,
-                eval_steps=5,
+                eval_steps=30,
                 evaluation_strategy="steps",
-                save_steps=5,
+                save_steps=30,
                 load_best_model_at_end=True,
                 metric_for_best_model="accuracy",
                 compute_metrics=AlmostAccuracy(),
@@ -998,8 +998,8 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
             )
             self.assertTrue(trainer.args.greater_is_better)
             trainer.train()
-            self.check_saved_checkpoints(tmpdir, 5, total)
-            self.check_best_model_has_been_loaded(tmpdir, 5, total, trainer, "eval_accuracy", greater_is_better=True)
+            self.check_saved_checkpoints(tmpdir, 30, total)
+            self.check_best_model_has_been_loaded(tmpdir, 30, total, trainer, "eval_accuracy", greater_is_better=True)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             trainer = get_regression_trainer(
@@ -1017,6 +1017,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
             self.assertTrue(trainer.args.greater_is_better)
             trainer.train()
             self.check_saved_checkpoints(tmpdir, TRAIN_LEN // combined_batch_size, total)
+            print(os.listdir(tmpdir))
             self.check_best_model_has_been_loaded(
                 tmpdir, TRAIN_LEN // combined_batch_size, total, trainer, "eval_accuracy", greater_is_better=True
             )
@@ -1026,17 +1027,17 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
             trainer = get_regression_trainer(
                 output_dir=tmpdir,
                 learning_rate=0.1,
-                eval_steps=5,
+                eval_steps=30,
                 evaluation_strategy="steps",
-                save_steps=5,
+                save_steps=30,
                 load_best_model_at_end=True,
                 pretrained=False,
                 label_names=["labels"],
             )
             self.assertFalse(trainer.args.greater_is_better)
             trainer.train()
-            self.check_saved_checkpoints(tmpdir, 5, total, is_pretrained=False)
-            self.check_best_model_has_been_loaded(tmpdir, 5, total, trainer, "eval_loss", is_pretrained=False)
+            self.check_saved_checkpoints(tmpdir, 30, total, is_pretrained=False)
+            self.check_best_model_has_been_loaded(tmpdir, 30, total, trainer, "eval_loss", is_pretrained=False)
 
     def test_training_iterable_dataset(self):
         config = RegressionModelConfig()
