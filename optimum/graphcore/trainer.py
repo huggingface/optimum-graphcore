@@ -60,7 +60,7 @@ from transformers.data.data_collator import DataCollator, DataCollatorWithPaddin
 from transformers.debug_utils import DebugOption, DebugUnderflowOverflow
 from transformers.file_utils import CONFIG_NAME, WEIGHTS_NAME, get_full_repo_name, is_datasets_available
 from transformers.modeling_utils import PreTrainedModel
-from transformers.models.auto.modeling_auto import MODEL_FOR_QUESTION_ANSWERING_MAPPING_NAMES
+from transformers.models.auto.modeling_auto import MODEL_FOR_QUESTION_ANSWERING_MAPPING_NAMES, MODEL_FOR_PRETRAINING_MAPPING, MODEL_FOR_CAUSAL_LM_MAPPING, MODEL_FOR_MASKED_LM_MAPPING
 from transformers.optimization import get_scheduler
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from transformers.trainer import OPTIMIZER_NAME, SCALER_NAME, SCHEDULER_NAME, TRAINER_STATE_NAME, TRAINING_ARGS_NAME
@@ -121,6 +121,8 @@ _is_torch_generator_available = False
 
 DEFAULT_CALLBACKS = [DefaultFlowCallback]
 DEFAULT_PROGRESS_CALLBACK = ProgressCallback
+
+TIED_WEIGHT_MODELS = set(MODEL_FOR_PRETRAINING_MAPPING.values() + MODEL_FOR_MASKED_LM_MAPPING.values() + MODEL_FOR_CAUSAL_LM_MAPPING.values())
 
 
 @dataclass
@@ -808,6 +810,44 @@ class IPUTrainer:
             wrapped.attachToDevice()
         return wrapped
 
+    def _detach_training_model(self):
+        """
+        Detach training model from IPUs
+        """
+        if type(self.original_model) in TIED_WEIGHT_MODELS:
+            # Work-around bug with models with tied-weights
+            # TODO: Remove this when bug fixed
+            self.optimizer_state = self.optimizer.state_dict()
+            self.training_model.destroy()
+            for obj in self.model_wrapped.buffers():
+                obj.__class__ = obj.__class__.__bases__[0]
+            self.training_model = None
+        else:
+            self.training_model.detachFromDevice()
+    
+    def _detach_inference_model(self):
+        """
+        Detach inference model from IPUs
+        """
+        if type(self.original_model) in TIED_WEIGHT_MODELS:
+            # Work-around bug with models with tied-weights
+            # TODO: Remove this when bug fixed
+            self.inference_model.destroy()
+            self.inference_model = None
+            for obj in self.model_wrapped.buffers():
+                obj.__class__ = obj.__class__.__bases__[0]
+        else:
+            self.inference_model.detachFromDevice()
+
+    def _reattach_training_model(self):
+        """
+        Reattach training model from IPUs
+        """
+        if type(self.original_model) in TIED_WEIGHT_MODELS:
+            self.training_model = self._wrap_model(self.model_wrapped.train().half())
+        else:
+            self.training_model.attachToDevice()
+
     def train(
         self,
         resume_from_checkpoint: Optional[Union[str, bool]] = None,
@@ -929,11 +969,7 @@ class IPUTrainer:
         if args.gradient_checkpointing:
             self.model.gradient_checkpointing_enable()
 
-        model = self._wrap_model(self.model_wrapped)
-
-        # for the rest of this function `model` is the outside model, whether it was wrapped or not
-        if model is not self.model:
-            self.model_wrapped = model
+        self.training_model = self._wrap_model(self.model_wrapped)
 
         # TODO: handle optimizer and scheduler creation
         # if delay_optimizer_creation:
@@ -942,7 +978,7 @@ class IPUTrainer:
         # Check if saved optimizer or scheduler states exist
         self._load_optimizer_and_scheduler(resume_from_checkpoint)
 
-        self._compile_model(model, next(iter(train_dataloader)), log=True)
+        self._compile_model(self.training_model, next(iter(train_dataloader)), log=True)
 
         # Train!
         num_examples = (
@@ -1057,7 +1093,7 @@ class IPUTrainer:
 
                 self.control = self.callback_handler.on_step_begin(args, self.state, self.control)
 
-                tr_loss_step = self.training_step(model, inputs)
+                tr_loss_step = self.training_step(self.training_model, inputs)
 
                 if args.logging_nan_inf_filter and (torch.isnan(tr_loss_step) or torch.isinf(tr_loss_step)):
                     # if loss is nan or inf simply add the average of previous logged losses
@@ -1079,13 +1115,13 @@ class IPUTrainer:
                 self.state.epoch = epoch + (step + 1) / steps_in_epoch
                 self.control = self.callback_handler.on_step_end(args, self.state, self.control)
 
-                self._maybe_log_save_evaluate(tr_loss, model, epoch, ignore_keys_for_eval)
+                self._maybe_log_save_evaluate(tr_loss, self.training_model, epoch, ignore_keys_for_eval)
 
                 if self.control.should_epoch_stop or self.control.should_training_stop:
                     break
 
             self.control = self.callback_handler.on_epoch_end(args, self.state, self.control)
-            self._maybe_log_save_evaluate(tr_loss, model, epoch, ignore_keys_for_eval)
+            self._maybe_log_save_evaluate(tr_loss, self.training_model, epoch, ignore_keys_for_eval)
 
             if self.control.should_training_stop:
                 break
@@ -1130,7 +1166,7 @@ class IPUTrainer:
         self.control = self.callback_handler.on_train_end(args, self.state, self.control)
 
         # Detaching model from device to let the inference model attach itself
-        model.detachFromDevice()
+        self._detach_training_model()
 
         return TrainOutput(self.state.global_step, train_loss, metrics)
 
@@ -1169,9 +1205,9 @@ class IPUTrainer:
 
         metrics = None
         if self.control.should_evaluate:
-            model.detachFromDevice()
+            self._detach_training_model()
             metrics = self.evaluate(ignore_keys=ignore_keys_for_eval)
-            model.attachToDevice()
+            self._reattach_training_model()
 
         if self.control.should_save:
             self._save_checkpoint(model, metrics=metrics)
@@ -1627,7 +1663,7 @@ class IPUTrainer:
         return PredictionOutput(predictions=output.predictions, label_ids=output.label_ids, metrics=output.metrics)
 
     def _wrap_and_compile_model_for_evaluation(self, dataloader, prediction_loss_only):
-        model = self._wrap_model(self.model, training=False)
+        model = self._wrap_model(self.model_wrapped, training=False)
         self._compile_model(model, next(iter(dataloader)), log=True)
         return model
 
@@ -1648,7 +1684,7 @@ class IPUTrainer:
             prediction_loss_only if prediction_loss_only is not None else self.args.prediction_loss_only
         )
 
-        model = self._wrap_and_compile_model_for_evaluation(dataloader, prediction_loss_only)
+        self.inference_model = self._wrap_and_compile_model_for_evaluation(dataloader, prediction_loss_only)
 
         batch_size = dataloader.batch_size
 
@@ -1694,7 +1730,7 @@ class IPUTrainer:
                 step == len(dataloader) - 1 if isinstance(dataloader.dataset, collections.abc.Sized) else False
             )
             loss, logits, labels = self.prediction_step(
-                model, inputs, prediction_loss_only, ignore_keys=ignore_keys, is_last_batch=is_last_batch
+                self.inference_model, inputs, prediction_loss_only, ignore_keys=ignore_keys, is_last_batch=is_last_batch
             )
 
             # Update containers on host
@@ -1757,12 +1793,7 @@ class IPUTrainer:
                 metrics[f"{metric_key_prefix}_{key}"] = metrics.pop(key)
 
         # Detaching model from device to let the training model attach itself
-        if isinstance(model, PoplarExecutor):
-            model.detachFromDevice()
-        else:
-            if not self.ipu_config.execute_encoder_on_cpu_for_generation:
-                model.get_encoder().detachFromDevice()
-            model.poptorch_model.detachFromDevice()
+        self._detach_inference_model()
 
         return EvalLoopOutput(predictions=all_preds, label_ids=all_labels, metrics=metrics, num_samples=num_samples)
 
