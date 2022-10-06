@@ -34,6 +34,7 @@ from transformers.feature_extraction_utils import PreTrainedFeatureExtractor
 from transformers.modeling_utils import PreTrainedModel
 from transformers.onnx.utils import get_preprocessor
 from transformers.pipelines import get_task
+from transformers.utils import HUGGINGFACE_CO_RESOLVE_ENDPOINT
 
 
 TASK_ALIASES = {
@@ -236,6 +237,11 @@ def pipeline(
 
     if model is None:
         model_id, revision = SUPPORTED_TASKS[targeted_task]["default"]["model"]
+        logger.warning(
+            f"No model was supplied, defaulted to {model_id} and revision"
+            f" {revision} ({HUGGINGFACE_CO_RESOLVE_ENDPOINT}/{model_id}).\n"
+            "Using a pipeline without specifying a model name and revision in production is not recommended."
+        )
         model = SUPPORTED_TASKS[targeted_task]["class"][0].from_pretrained(model_id, revision=revision)
         model = get_poplar_executor(model, ipu_config)
     elif isinstance(model, str):
