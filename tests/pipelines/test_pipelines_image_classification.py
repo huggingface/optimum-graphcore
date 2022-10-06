@@ -14,12 +14,14 @@
 
 import unittest
 
+from optimum.graphcore.pipelines import pipeline
+
 from transformers import (
     MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING,
     PreTrainedTokenizer,
     is_vision_available,
 )
-from transformers.pipelines import ImageClassificationPipeline, pipeline
+from transformers.pipelines import ImageClassificationPipeline
 from transformers.testing_utils import (
     is_pipeline_test,
     nested_simplify,
@@ -46,8 +48,14 @@ else:
 class ImageClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
     model_mapping = MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING
 
-    def get_test_pipeline(self, model, tokenizer, feature_extractor):
-        image_classifier = ImageClassificationPipeline(model=model, feature_extractor=feature_extractor, top_k=2)
+    def get_test_pipeline(self, model, ipu_config, tokenizer, feature_extractor):
+        text_classifier = pipeline(
+            task="image-classification",
+            model=model,
+            ipu_config=ipu_config,
+            feature_extractor=feature_extractor,
+            top_k=2,
+        )
         examples = [
             Image.open("./tests/fixtures/tests_samples/COCO/000000039769.png"),
             "http://images.cocodataset.org/val2017/000000039769.jpg",
@@ -111,7 +119,11 @@ class ImageClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_small_model_pt(self):
         small_model = "hf-internal-testing/tiny-random-vit"
-        image_classifier = pipeline("image-classification", model=small_model)
+        image_classifier = pipeline(
+            "image-classification",
+            model=small_model,
+            ipu_config="Graphcore/vit-base-ipu",
+        )
 
         outputs = image_classifier("http://images.cocodataset.org/val2017/000000039769.jpg")
         self.assertEqual(
@@ -139,7 +151,10 @@ class ImageClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
 
         # Assert that the pipeline can be initialized with a feature extractor that is not in any mapping
         image_classifier = pipeline(
-            "image-classification", model="hf-internal-testing/tiny-random-vit", tokenizer=tokenizer
+            "image-classification",
+            model="hf-internal-testing/tiny-random-vit",
+            ipu_config="Graphcore/vit-base-ipu",
+            tokenizer=tokenizer,
         )
 
         self.assertIs(image_classifier.tokenizer, tokenizer)
