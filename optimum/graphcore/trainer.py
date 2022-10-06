@@ -39,12 +39,7 @@ import numpy as np
 import torch
 from packaging import version
 from torch import nn, optim
-from torch.utils.data import (
-    Dataset,
-    RandomSampler,
-    SequentialSampler,
-    SubsetRandomSampler,
-)
+from torch.utils.data import Dataset, RandomSampler, SequentialSampler, SubsetRandomSampler
 from torch.utils.data.distributed import DistributedSampler
 
 import poptorch
@@ -56,15 +51,6 @@ from poptorch.optim import LAMB, AdamW
 from transformers.configuration_utils import PretrainedConfig
 from transformers.data.data_collator import DataCollator, DataCollatorWithPadding, default_data_collator
 from transformers.debug_utils import DebugOption, DebugUnderflowOverflow
-from transformers.pytorch_utils import is_torch_less_than_1_11
-from transformers.utils import (
-    CONFIG_NAME,
-    WEIGHTS_INDEX_NAME,
-    WEIGHTS_NAME,
-    find_labels,
-    get_full_repo_name,
-    is_datasets_available,
-)
 from transformers.modeling_utils import PreTrainedModel
 from transformers.models.auto.modeling_auto import (
     MODEL_FOR_QUESTION_ANSWERING_MAPPING_NAMES,
@@ -73,6 +59,7 @@ from transformers.models.auto.modeling_auto import (
     MODEL_FOR_MASKED_LM_MAPPING,
 )
 from transformers.optimization import get_scheduler
+from transformers.pytorch_utils import is_torch_less_than_1_11
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from transformers.trainer import OPTIMIZER_NAME, SCHEDULER_NAME, TRAINER_STATE_NAME, TRAINING_ARGS_NAME
 from transformers.trainer_callback import (
@@ -111,6 +98,14 @@ from transformers.trainer_utils import (
     has_length,
     set_seed,
     speed_metrics,
+)
+from transformers.utils import (
+    CONFIG_NAME,
+    WEIGHTS_INDEX_NAME,
+    WEIGHTS_NAME,
+    find_labels,
+    get_full_repo_name,
+    is_datasets_available,
 )
 
 from .data.data_collator import pad_on_batch_axis

@@ -27,12 +27,7 @@ import torch
 from optimum.utils import logging
 from poptorch import DataLoaderMode
 from transformers.debug_utils import DebugOption
-from transformers.file_utils import (
-    cached_property,
-    get_full_repo_name,
-    is_torch_available,
-    torch_required,
-)
+from transformers.file_utils import cached_property, get_full_repo_name, is_torch_available, torch_required
 from transformers.trainer_utils import EvaluationStrategy, HubStrategy, IntervalStrategy, SchedulerType
 from transformers.training_args import default_logdir
 from transformers.utils import ExplicitEnum
