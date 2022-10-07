@@ -829,7 +829,8 @@ class IPUTrainer:
             self.optimizer_state = self.optimizer.state_dict()
             self.training_model.destroy()
             for obj in self.model_wrapped.buffers():
-                obj.__class__ = obj.__class__.__bases__[0]
+                if "PoptorchBuffer" in str(obj.__class__):
+                    obj.__class__ = obj.__class__.__bases__[0]
             self.training_model = None
         else:
             self.training_model.detachFromDevice()
@@ -844,7 +845,8 @@ class IPUTrainer:
             self.inference_model.destroy()
             self.inference_model = None
             for obj in self.model_wrapped.buffers():
-                obj.__class__ = obj.__class__.__bases__[0]
+                if "PoptorchBuffer" in str(obj.__class__):
+                    obj.__class__ = obj.__class__.__bases__[0]
         else:
             self.inference_model.detachFromDevice()
 
@@ -853,6 +855,8 @@ class IPUTrainer:
         Reattach training model from IPUs
         """
         if type(self.original_model) in TIED_WEIGHT_MODELS:
+            # Work-around bug with models with tied-weights
+            # TODO: Remove this when bug fixed
             self.training_model = self._wrap_model(self.model_wrapped.train().half())
         else:
             self.training_model.attachToDevice()
