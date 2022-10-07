@@ -427,7 +427,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_aggregation_strategy_no_b_i_prefix(self):
         model_name = "sshleifer/tiny-dbmdz-bert-large-cased-finetuned-conll03-english"
-        ipu_config = "Graphcore/bert-large-ipu",
+        ipu_config = "Graphcore/bert-large-ipu"
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
         token_classifier = pipeline(
             task="ner",
@@ -486,7 +486,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_aggregation_strategy(self):
         model_name = "sshleifer/tiny-dbmdz-bert-large-cased-finetuned-conll03-english"
-        ipu_config = "Graphcore/bert-large-ipu",
+        ipu_config = "Graphcore/bert-large-ipu"
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
         token_classifier = pipeline(
             task="ner",
@@ -569,7 +569,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_aggregation_strategy_example2(self):
         model_name = "sshleifer/tiny-dbmdz-bert-large-cased-finetuned-conll03-english"
-        ipu_config = "Graphcore/bert-large-ipu",
+        ipu_config = "Graphcore/bert-large-ipu"
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
         token_classifier = pipeline(
             task="ner",
@@ -639,7 +639,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     def test_aggregation_strategy_offsets_with_leading_space(self):
         sentence = "We're from New York"
         model_name = "brandon25/deberta-base-finetuned-ner"
-        ipu_config = "Graphcore/deberta-base-ipu",
+        ipu_config = "Graphcore/deberta-base-ipu"
         ner = pipeline(
             "ner",
             model=model_name,
@@ -703,7 +703,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_word_heuristic_leading_space(self):
         model_name = "hf-internal-testing/tiny-random-deberta-v2"
-        ipu_config = "Graphcore/deberta-base-ipu",
+        ipu_config = "Graphcore/deberta-base-ipu"
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
         token_classifier = pipeline(
             task="ner",
@@ -744,7 +744,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_no_offset_tokenizer(self):
         model_name = "hf-internal-testing/tiny-bert-for-token-classification"
-        ipu_config = "Graphcore/bert-base-ipu",
+        ipu_config = "Graphcore/bert-base-ipu"
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
         token_classifier = pipeline(
             task="token-classification",
@@ -764,7 +764,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_small_model_pt(self):
         model_name = "hf-internal-testing/tiny-bert-for-token-classification"
-        ipu_config = "Graphcore/bert-base-ipu",
+        ipu_config = "Graphcore/bert-base-ipu"
         token_classifier = pipeline(
             task="token-classification",
             model=model_name,
@@ -828,7 +828,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_pt_ignore_subwords_slow_tokenizer_raises(self):
         model_name = "sshleifer/tiny-dbmdz-bert-large-cased-finetuned-conll03-english"
-        ipu_config = "Graphcore/bert-large-ipu",
+        ipu_config = "Graphcore/bert-large-ipu"
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
 
         with self.assertRaises(ValueError):
