@@ -76,6 +76,18 @@ def to_pipelined(model: nn.Module, ipu_config: IPUConfig, force: bool = False):
 class PipelineMixin:
     @classmethod
     def from_transformers(cls, model: PreTrainedModel, ipu_config: IPUConfig):
+        """
+        Creates a pipeline model from a [`~transformers.PreTrainedModel`].
+
+        Args:
+            model ([`~transformers.PreTrainedModel`]):
+                The model to convert to a pipelined model.
+            ipu_config ([`IPUConfig`]):
+                The IPUConfig of the pipelined model.
+
+        Returns:
+            The pipelined version of the model.
+        """
         config = copy.deepcopy(model.config)
         pipelined_model = cls(config)
         pipelined_model.load_state_dict(model.state_dict())
@@ -84,8 +96,23 @@ class PipelineMixin:
 
     @classmethod
     def from_pretrained_transformers(cls, model_name_or_path: str, ipu_config: IPUConfig, *model_args, **kwargs):
-        # config = AutoConfig.from_pretrained(model_name_or_path)
-        pipelined_model = cls.from_pretrained(model_name_or_path, *model_args, **kwargs)  # config=config)
+        """
+        Creates a pipeline model by using `from_pretrained`.
+
+        Args:
+            model_name_or_path (`str`):
+                The model name or path.
+            ipu_config ([`IPUConfig`]):
+                The IPUConfig of the pipelined model.
+            model_args (`Tuple[Any]`):
+                The positional arguments to use when instantiating the model.
+            kwargs (`Dict[str, Any]`):
+                The keyword arguments to use when instantiating the model.
+
+        Returns:
+            The pipelined model.
+        """
+        pipelined_model = cls.from_pretrained(model_name_or_path, *model_args, **kwargs)
         pipelined_model.ipu_config = copy.deepcopy(ipu_config)
         return pipelined_model
 
@@ -104,6 +131,7 @@ class PipelineMixin:
 
     @property
     def ipu_config(self):
+        """Property that checks that the model has an [`IPUConfig`] attached, and returns it."""
         self._has_ipu_config_check()
         return self._ipu_config
 
@@ -114,14 +142,14 @@ class PipelineMixin:
         self._ipu_config = value
 
     def parallelize(self):
-        """Transform the model to run in an IPU pipeline."""
+        """Transforms the model to run in an IPU pipeline."""
         self._hooks = []
         self._has_ipu_config_check()
         return self
 
     def deparallelize(self):
         """
-        Undo the changes to the model done by `parallelize`.
+        Undoes the changes to the model done by `parallelize`.
         You should call this before doing `save_pretrained` so that the `model.state_dict` is fully compatible with the
         original model.
         """

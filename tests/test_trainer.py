@@ -669,7 +669,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         )
 
     def test_evaluate(self):
-        trainer = get_regression_trainer(a=1.5, b=2.5, compute_metrics=AlmostAccuracy())
+        trainer = get_regression_trainer(a=1.5, b=2.5, compute_metrics=AlmostAccuracy(), label_names=["labels"])
         results = trainer.evaluate()
 
         x, y = trainer.eval_dataset.x, trainer.eval_dataset.ys[0]
@@ -680,7 +680,9 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         self.assertAlmostEqual(results["eval_accuracy"], expected_acc)
 
         # With a number of elements not a round multiple of the batch size
-        trainer = get_regression_trainer(a=1.5, b=2.5, eval_len=523, compute_metrics=AlmostAccuracy())
+        trainer = get_regression_trainer(
+            a=1.5, b=2.5, eval_len=523, compute_metrics=AlmostAccuracy(), label_names=["labels"]
+        )
         results = trainer.evaluate()
 
         x, y = trainer.eval_dataset.x, trainer.eval_dataset.ys[0]
@@ -691,20 +693,38 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         expected_acc = AlmostAccuracy()((pred, y))["accuracy"]
         self.assertAlmostEqual(results["eval_accuracy"], expected_acc)
 
+        # TODO: not supported for now.
+        # With logits preprocess
+        # trainer = get_regression_trainer(
+        #     a=1.5,
+        #     b=2.5,
+        #     compute_metrics=AlmostAccuracy(),
+        #     label_names=["labels"],
+        #     preprocess_logits_for_metrics=lambda logits, labels: logits + 1,
+        # )
+        # results = trainer.evaluate()
+
+        # x, y = trainer.eval_dataset.x, trainer.eval_dataset.ys[0]
+        # pred = 1.5 * x + 2.5
+        # expected_loss = ((pred - y) ** 2).mean()
+        # self.assertAlmostEqual(results["eval_loss"], expected_loss)
+        # expected_acc = AlmostAccuracy()((pred + 1, y))["accuracy"]
+        # self.assertAlmostEqual(results["eval_accuracy"], expected_acc)
+
     def test_predict(self):
-        trainer = get_regression_trainer(a=1.5, b=2.5)
+        trainer = get_regression_trainer(a=1.5, b=2.5, label_names=["labels"])
         preds = trainer.predict(trainer.eval_dataset).predictions
         x = trainer.eval_dataset.x
         self.assertTrue(np.allclose(preds, 1.5 * x + 2.5))
 
         # With a number of elements not a round multiple of the batch size
-        trainer = get_regression_trainer(a=1.5, b=2.5, eval_len=EVAL_LEN + 6)
+        trainer = get_regression_trainer(a=1.5, b=2.5, eval_len=EVAL_LEN + 6, label_names=["labels"])
         preds = trainer.predict(trainer.eval_dataset).predictions
         x = trainer.eval_dataset.x
         self.assertTrue(np.allclose(preds, 1.5 * x + 2.5))
 
         # With more than one output of the model
-        trainer = get_regression_trainer(a=1.5, b=2.5, double_output=True)
+        trainer = get_regression_trainer(a=1.5, b=2.5, double_output=True, label_names=["labels"])
         preds = trainer.predict(trainer.eval_dataset).predictions
         x = trainer.eval_dataset.x
         self.assertTrue(len(preds), 2)
@@ -951,15 +971,16 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
                 b=2.5,
                 output_dir=tmpdir,
                 learning_rate=0.1,
-                eval_steps=5,
+                eval_steps=30,
                 evaluation_strategy="steps",
-                save_steps=5,
+                save_steps=30,
                 load_best_model_at_end=True,
+                label_names=["labels"],
             )
             self.assertFalse(trainer.args.greater_is_better)
             trainer.train()
-            self.check_saved_checkpoints(tmpdir, 5, total)
-            self.check_best_model_has_been_loaded(tmpdir, 5, total, trainer, "eval_loss")
+            self.check_saved_checkpoints(tmpdir, 30, total)
+            self.check_best_model_has_been_loaded(tmpdir, 30, total, trainer, "eval_loss")
 
         with tempfile.TemporaryDirectory() as tmpdir:
             trainer = get_regression_trainer(
@@ -967,17 +988,18 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
                 b=2.5,
                 output_dir=tmpdir,
                 learning_rate=0.1,
-                eval_steps=5,
+                eval_steps=30,
                 evaluation_strategy="steps",
-                save_steps=5,
+                save_steps=30,
                 load_best_model_at_end=True,
                 metric_for_best_model="accuracy",
                 compute_metrics=AlmostAccuracy(),
+                label_names=["labels"],
             )
             self.assertTrue(trainer.args.greater_is_better)
             trainer.train()
-            self.check_saved_checkpoints(tmpdir, 5, total)
-            self.check_best_model_has_been_loaded(tmpdir, 5, total, trainer, "eval_accuracy", greater_is_better=True)
+            self.check_saved_checkpoints(tmpdir, 30, total)
+            self.check_best_model_has_been_loaded(tmpdir, 30, total, trainer, "eval_accuracy", greater_is_better=True)
 
         with tempfile.TemporaryDirectory() as tmpdir:
             trainer = get_regression_trainer(
@@ -990,10 +1012,12 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
                 load_best_model_at_end=True,
                 metric_for_best_model="accuracy",
                 compute_metrics=AlmostAccuracy(),
+                label_names=["labels"],
             )
             self.assertTrue(trainer.args.greater_is_better)
             trainer.train()
             self.check_saved_checkpoints(tmpdir, TRAIN_LEN // combined_batch_size, total)
+            print(os.listdir(tmpdir))
             self.check_best_model_has_been_loaded(
                 tmpdir, TRAIN_LEN // combined_batch_size, total, trainer, "eval_accuracy", greater_is_better=True
             )
@@ -1003,16 +1027,17 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
             trainer = get_regression_trainer(
                 output_dir=tmpdir,
                 learning_rate=0.1,
-                eval_steps=5,
+                eval_steps=30,
                 evaluation_strategy="steps",
-                save_steps=5,
+                save_steps=30,
                 load_best_model_at_end=True,
                 pretrained=False,
+                label_names=["labels"],
             )
             self.assertFalse(trainer.args.greater_is_better)
             trainer.train()
-            self.check_saved_checkpoints(tmpdir, 5, total, is_pretrained=False)
-            self.check_best_model_has_been_loaded(tmpdir, 5, total, trainer, "eval_loss", is_pretrained=False)
+            self.check_saved_checkpoints(tmpdir, 30, total, is_pretrained=False)
+            self.check_best_model_has_been_loaded(tmpdir, 30, total, trainer, "eval_loss", is_pretrained=False)
 
     def test_training_iterable_dataset(self):
         config = RegressionModelConfig()
@@ -1040,6 +1065,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         ipu_config = get_ipu_config()
 
         args = RegressionIPUTrainingArguments(output_dir="./examples")
+        args.label_names = ["labels"]
         trainer = IPUTrainer(
             model=model,
             ipu_config=ipu_config,
@@ -1076,6 +1102,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         ipu_config = get_ipu_config()
 
         args = RegressionIPUTrainingArguments(output_dir="./examples", fp32=True)
+        args.label_names = ["labels"]
         trainer = IPUTrainer(
             model=model,
             ipu_config=ipu_config,
@@ -1131,6 +1158,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
                 save_strategy=IntervalStrategy.EPOCH,
                 compute_metrics=AlmostAccuracy(),
                 metric_for_best_model="accuracy",
+                label_names=["labels"],
             )
             trainer.add_callback(EarlyStoppingCallback(1, 0.0001))
             train_output = trainer.train()
@@ -1147,6 +1175,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
                 evaluation_strategy=IntervalStrategy.EPOCH,
                 compute_metrics=AlmostAccuracy(),
                 metric_for_best_model="accuracy",
+                label_names=["labels"],
             )
             trainer.add_callback(EarlyStoppingCallback(1))
             self.assertEqual(trainer.state.global_step, 0)
@@ -1218,11 +1247,11 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
     def test_mem_metrics(self):
 
         # with mem metrics enabled
-        trainer = get_regression_trainer(skip_memory_metrics=False)
+        trainer = get_regression_trainer(skip_memory_metrics=False, label_names=["labels"])
         self.check_mem_metrics(trainer, self.assertIn)
 
         # with mem metrics disabled
-        trainer = get_regression_trainer(skip_memory_metrics=True)
+        trainer = get_regression_trainer(skip_memory_metrics=True, label_names=["labels"])
         self.check_mem_metrics(trainer, self.assertNotIn)
 
     def test_no_wd_param_group(self):

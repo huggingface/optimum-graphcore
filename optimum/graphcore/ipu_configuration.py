@@ -1,3 +1,4 @@
+# coding=utf-8
 #  Copyright 2021 The HuggingFace Team. All rights reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
@@ -33,11 +34,90 @@ ALLOWED_POD_TYPES = ["pod4", "pod8", "pod16", "pod32", "pod64"]
 
 
 class IPUConfig(BaseConfig):
+    """
+    Class for PopArt and PopTorch configuration. Handles the conversion to poptorch options as well as configuration
+    pod type specialization.
+
+    Args:
+        seed (`int`, *optional*):
+            Sets the seed for the random number generator on the IPU.
+        auto_loss_scaling (`bool`, *optional*, defaults to `False`):
+            Whether automatic loss scaling is enabled on the IPU.
+            When using float16/half values for activations, gradients, and weights, the loss value needs to be scaled by
+            a constant factor to avoid underflow/overflow. This adjustment is known as loss scaling. This setting
+            automatically sets a global loss scaling factor during training.
+            **Note: This is an experimental feature and may not behave as expected.**
+        executable_cache_dir (`str`, *optional*, defaults to `""`):
+            Enables caching the compile executables to a directory.
+
+        > Parameters for controlling the batch size
+
+        replication_factor (`int`, *optional*, defaults to 1):
+            The number of replicas for data-parallelism during training. It depends on the size of the pipeline as well
+            as the number of IPUs available. For example: on a Pod16, with a 4-IPU pipeline, replication_factor must
+            be betwen 1 and 4.
+        inference_replication_factor (`int`, *optional*, defaults to 1):
+            Same as `replication_factor` for inference.
+        gradient_accumulation_steps (`int`, *optional*, defaults to 1):
+            Number of micro-batches to accumulate for the gradient calculation.
+            Accumulates the gradient gradient_accumulation times before updating the model using the gradient.
+
+        > Parameters related to parallelism
+
+        layers_per_ipu (`List[int]`):
+            Specifies the number of layers that will be put on each IPU for pipelined execution.
+            For instance: `[2, 3, 4, 2]` specifies a 4-IPU pipeline, where the first two layers will be put on IPU0,
+            the following three on IPU1, the next four on IPU2 and the last two on IPU3.
+        sharded_execution_for_inference (`bool`, *optional*, defaults to `False`):
+            Whether to use a shared execution strategy for inference instead of pipelined.
+            To learn more, read the [PopTorch documentation](https://docs.graphcore.ai/projects/poptorch-user-guide/en/latest/reference.html?highlight=device%20iterations#poptorch.Options.setExecutionStrategy).
+
+        > Parameters for memory management
+
+        optimizer_state_offchip (`bool`, *optional*, defaults to `True`):
+            Whether to use the off chip memory to store the optimizer state or to use the on chip memory.
+        replicated_tensor_sharding (`bool`, *optional*, defaults to `False`):
+            Shards the optimizer between replicas with zero-redundancy.
+        matmul_proportion (`List[float]` or `float`, *optional*, defaults to 0.6):
+            Sets the amount of temporary memory made available on per-IPU basis.
+            Use this setting to control the amount of temporary memory available to operations such as:
+              - convolution
+              - matrix multiplication
+              - embedding lookups
+              - indexing operations
+        enable_half_partials (`bool`, *optional*, defaults to `True`):
+            Whether the data type of partial results for matrix multiplication and convolution operators should be
+            float16 or not.
+        embedding_serialization_factor (`int`, *optional*, defaults to 1):
+            The factor to use to serialze embeddings. Nothing happens if `embedding_serialization_factor = 1`, and for
+            `embedding_serialization_factor > 1`, the `torch.nn.Embedding` layer is replaced by a
+            `optimum.graphcore.modeling_utils.SerializedEmbedding` layer.
+        recompute_checkpoint_every_layer (`bool`, *optional*, defaults to `False`):
+            Whether to use gradient checkpointing at the end of every layer. It can help in reducing the memory impact.
+
+        > Parameters related to host / device synchronization
+
+        device_iterations (`int`, *optional*, defaults to 1):
+            Number of iterations the device should run over the data before returning to the user during training. This
+            is equivalent to running the IPU in a loop over that the specified number of iterations, with a new batch of
+            data each time. However, increasing deviceIterations is more efficient because the loop runs on the IPU
+            directly.
+        inference_device_iterations (`int`, *optional*, defaults to 1):
+            Same as `device_iterations` for inference.
+        output_mode (`str`, *optional*, defaults to `"final"`):
+            Specifies which data to return from a model.
+            Allowed values:
+              - `all`: returns a result for each batch.
+              - `sum`: returns the sum of all batches.
+              - `final`: returns the last batch.
+              - `default`: `all` for inference, `final` for training.
+
+    """
+
     CONFIG_NAME = "ipu_config.json"
     FULL_CONFIGURATION_FILE = "ipu_config.json"
 
     def __init__(self, **kwargs):
-        self.use_popdist = kwargs.pop("use_popdist", False)
         self.seed = kwargs.pop("seed", None)
 
         self.ipus_per_replica = kwargs.pop("ipus_per_replica", 1)
@@ -50,7 +130,6 @@ class IPUConfig(BaseConfig):
         self.inference_device_iterations = kwargs.pop("inference_device_iterations", 1)
         self.optimizer_state_offchip = kwargs.pop("optimizer_state_offchip", True)
         self.replicated_tensor_sharding = kwargs.pop("replicated_tensor_sharding", False)
-        self.decompose_grad_sum = kwargs.pop("decompose_grad_sum", False)
         self.auto_loss_scaling = kwargs.pop("auto_loss_scaling", False)
 
         if self.replicated_tensor_sharding and self.replication_factor == 1:
@@ -71,13 +150,13 @@ class IPUConfig(BaseConfig):
         self.enable_half_partials = kwargs.pop("enable_half_partials", False)
 
         self.executable_cache_dir = kwargs.pop("executable_cache_dir", "")
-        self.profile_dir = kwargs.pop("profile_dir", "")
 
         self.embedding_serialization_factor = kwargs.pop("embedding_serialization_factor", 1)
 
         self.recompute_checkpoint_every_layer = kwargs.pop("recompute_checkpoint_every_layer", False)
         self.output_mode = kwargs.pop("output_mode", "final")
 
+        # TODO: remove this if unnecessary.
         self.execute_encoder_on_cpu_for_generation = kwargs.pop("execute_encoder_on_cpu_for_generation", False)
 
     def _prepare_config_attribute_for_pod_type(
@@ -119,14 +198,15 @@ class IPUConfig(BaseConfig):
 
     def for_pod_type(self, pod_type: Optional[str] = None) -> "IPUConfig":
         """
-        Creates an IPUConfig specialized for a POD type.
+        Creates an `IPUConfig` specialized for a POD type.
 
         Args:
-            pod_type: The POD type. If left to None, either the default value or the lowest value will be used for each
+            pod_type (`str`, *optional*):
+                The POD type. If left to None, either the default value or the lowest value will be used for each
                 configuration field.
 
         Returns:
-            The IPUConfig instance.
+            `IPUConfig`: The IPUConfig instance.
         """
         config_dict = self.to_dict()
         config_dict = {k: self._prepare_config_attribute_for_pod_type(k, v, pod_type) for k, v in config_dict.items()}
@@ -183,7 +263,7 @@ class IPUConfig(BaseConfig):
             opts.randomSeed(self.seed)
 
         # Enable Replicated Tensor Sharding (RTS) of optimizer state
-        #  with optimizer state residing either on-chip or in DRAM
+        # with optimizer state residing either on-chip or in DRAM
         opts.TensorLocations.setOptimizerLocation(
             poptorch.TensorLocationSettings()
             # Optimizer state lives on- or off-chip
@@ -222,8 +302,6 @@ class IPUConfig(BaseConfig):
             opts.Precision.setPartialsType(torch.float16)
 
         # PopART performance options #
-        # Replaces single sums of partial gradients with a tree of additions
-        opts._Popart.set("decomposeGradSum", self.decompose_grad_sum)
         # Only stream needed tensors back to host
         opts._Popart.set("disableGradAccumulationTensorStreams", True)
         # Parallelize optimizer step update across IPUs
@@ -246,15 +324,6 @@ class IPUConfig(BaseConfig):
             "target.syncReplicasIndependently": "true",
         }
 
-        if self.profile_dir:
-            engine_options = {
-                **engine_options,
-                **{
-                    "debug.allowOutOfMemory": "true",
-                    "autoReport.directory": self.profile_dir,
-                    "autoReport.all": "true",
-                },
-            }
         opts._Popart.set("engineOptions", engine_options)
 
         return opts
@@ -263,16 +332,19 @@ class IPUConfig(BaseConfig):
         self, for_inference: bool = False, compile_only: bool = False, pod_type: Optional[str] = None
     ) -> poptorch.Options:
         """
-        Creates a poptorch.Options from the IPUConfig.
+        Creates a `poptorch.Options` from the `IPUConfig`.
 
         Args:
-            for_inference: If True, the resulting poptorch.Options will be adapted inference, it will be adapted for
-                training otherwise.
-            compile_only: If True, compilation will be performed offline, no IPUs required.
-            pod_type: The POD type to specialize the poptorch.Options for.
+            for_inference (`bool`, defaults to `False`):
+                If True, the resulting poptorch.Options will be adapted inference, it will be adapted for training
+                otherwise.
+            compile_only (`bool`, defaults to `False`):
+                If True, compilation will be performed offline, no IPUs required.
+            pod_type (`str`, *optional*):
+                The POD type to specialize the `poptorch.Options` for.
 
         Returns:
-            The poptorch.Options instance.
+            `poptorch.Options`: The option representing the `IPUConfig`.
         """
         return self.for_pod_type(pod_type)._to_options(for_inference=for_inference, compile_only=compile_only)
 
@@ -281,10 +353,13 @@ class IPUConfig(BaseConfig):
         Computes the factor to apply to the micro batch size to get the combined batch size.
 
         Args:
-            for_inference: Whether the factor is being use to compute the batch size for inference or not.
+            for_inference (`bool`, defaults to `False`):
+                Whether the factor is being use to compute the batch size for inference or not.
+            pod_type (`str`, *optional*):
+                The pod type that is being used. This is needed because the batch size factor can be pod type dependent.
 
         Returns:
-            The batch size factor.
+            `int`: The batch size factor.
         """
         ipu_config = self.for_pod_type(pod_type)
         replication_factor = (
@@ -299,8 +374,8 @@ class IPUConfig(BaseConfig):
         Updates attributes of this class with attributes from `update_str`.
 
         The expected format is ints, floats and strings as is, and for booleans use `true` or `false`, and for lists
-        use `[a b c d]`. For example: "n_embd=10,resid_pdrop=0.2,scale_attn_weights=false,summary_type=cls_index,
-        matmul_proportion=[0.08 0.2 0.25 0.25]"
+        use `[a b c d]`. For example: `"n_embd=10,resid_pdrop=0.2,scale_attn_weights=false,summary_type=cls_index,
+        matmul_proportion=[0.08 0.2 0.25 0.25]"`.
 
         The keys to change have to already exist in the config object.
 

@@ -33,16 +33,17 @@ Quote from the Hugging Face [blog post](https://huggingface.co/blog/graphcore#wh
 
 The following model architectures and tasks are currently supported by 🤗 Optimum Graphcore:
 
-|         | Pre-Training       | Masked LM          | Causal LM          | Seq2Seq LM (Summarization, Translation, etc) | Sequence Classification | Token Classification | Question Answering | Multiple Choice    | Image Classification |
-|---------|--------------------|--------------------|--------------------|----------------------------------------------|-------------------------|----------------------|--------------------|--------------------|----------------------|
-| BART    | ✔ |                    | ✗                  | ✔                           | ✗                       |                      | ✗                  |                    |                      |
-| BERT    | ✔ | ✔ | ✗                  |                                              | ✔      | ✔   | ✔ | ✔ |                      |
-| ConvNeXt| ✔ |                    |                    |                                              |                         |                      |                    |                    | ✔   |
-| DeBERTa | ✗                  | ✗                  |                    |                                              | ✔      | ✔   | ✔ |                    |                      |
-| GPT-2   | ✔ |                    | ✔ |                                              | ✔      | ✔   |                    |                    |                      |
-| HuBERT  | ✗                  |                    |                    |                                              | ✔      |                      |                    |                    |                      |
-| LXMERT  | ✗                  |                    |                    |                                              |                         |                      | ✔ |                    |                      |
-| RoBERTa | ✔ | ✔ | ✗                  |                                              | ✔      | ✔   | ✔ | ✔ |                      |
-| T5      | ✔ |                    |                    | ✔                           |                         |                      |                    |                    |                      |
-| ViT     | ✗                  |                    |                    |                                              |                         |                      |                    |                    | ✔   |
-| Wav2Vec2| ✔ |                    |                    |                                              |                         |                      |                    |                    |                      |
+|            | Pre-Training | Masked LM | Causal LM | Seq2Seq LM (Summarization, Translation, etc) | Sequence Classification | Token Classification | Question Answering | Multiple Choice | Image Classification |
+|------------|--------------|-----------|-----------|----------------------------------------------|-------------------------|----------------------|--------------------|-----------------|----------------------|
+| BART       | ✅            |           | ❌         | ✅                                            | ✅                       |                      | ❌                  |                 |                      |
+| BERT       | ✅            | ✅         | ❌         |                                              | ✅                       | ✅                    | ✅                  | ✅               |                      |
+| ConvNeXt   | ✅            |           |           |                                              |                         |                      |                    |                 | ✅                    |
+| DeBERTa    | ❌            | ❌         |           |                                              | ✅                       | ✅                    | ✅                  |                 |                      |
+| DistilBERT | ❌            | ✅         |           |                                              | ✅                       | ✅                    | ✅                  | ✅               |                      |
+| GPT-2      | ✅            |           | ✅         |                                              | ✅                       | ✅                    |                    |                 |                      |
+| HuBERT     | ❌            |           |           |                                              | ✅                       |                      |                    |                 |                      |
+| LXMERT     | ❌            |           |           |                                              |                         |                      | ✅                  |                 |                      |
+| RoBERTa    | ✅            | ✅         | ❌         |                                              | ✅                       | ✅                    | ✅                  | ✅               |                      |
+| T5         | ✅            |           |           | ✅                                            |                         |                      |                    |                 |                      |
+| ViT        | ❌            |           |           |                                              |                         |                      |                    |                 | ✅                    |
+| Wav2Vec2   | ✅            |           |           |                                              |                         |                      |                    |                 |                      |
