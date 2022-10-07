@@ -232,7 +232,7 @@ def pipeline(
     if pipeline_class is None:
         pipeline_class = SUPPORTED_TASKS[targeted_task]["impl"]
 
-    if ipu_config is None:
+    if ipu_config is None and not isinstance(model, poptorch._poplar_executor.PoplarExecutor):
         ipu_config = SUPPORTED_TASKS[targeted_task]["default"]["ipu_config"]
 
     if model is None:
@@ -261,8 +261,8 @@ def pipeline(
             raise ValueError("If you pass a model as a poptorch._poplar_executor.PoplarExecutor, you must pass a feature extractor as well")
     else:
         raise ValueError(
-            f"""Model {model} is not supported. Please provide a valid model either as string or poptorch._poplar_executor.PoplarExecutor.
-            You can also provide non model then a default one will be used"""
+            f"""Model {model} is not supported. Please provide a valid model either as string, PreTrainedModel or
+            poptorch._poplar_executor.PoplarExecutor. You can also provide non model then a default one will be used"""
         )
 
     if (tokenizer is None and load_tokenizer) or (feature_extractor is None and load_feature_extractor):
