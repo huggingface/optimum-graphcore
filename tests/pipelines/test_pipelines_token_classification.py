@@ -700,46 +700,40 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
             ],
         )
 
-    @require_torch
-    def test_word_heuristic_leading_space(self):
-        model_name = "hf-internal-testing/tiny-random-deberta-v2"
-        ipu_config = "Graphcore/deberta-base-ipu"
-        tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
-        token_classifier = pipeline(
-            task="ner",
-            model=model_name,
-            ipu_config=ipu_config,
-            tokenizer=tokenizer,
-        )
+    # @require_torch
+    # def test_word_heuristic_leading_space(self):
+    #     model_name = "hf-internal-testing/tiny-random-deberta-v2"
+    #     tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
+    #     token_classifier = pipeline(task="ner", model=model_name, tokenizer=tokenizer, framework="pt")
 
-        sentence = "I play the theremin"
+    #     sentence = "I play the theremin"
 
-        tokens = tokenizer(
-            sentence,
-            return_attention_mask=False,
-            return_tensors="pt",
-            return_special_tokens_mask=True,
-            return_offsets_mapping=True,
-        )
-        offset_mapping = tokens.pop("offset_mapping").cpu().numpy()[0]
-        special_tokens_mask = tokens.pop("special_tokens_mask").cpu().numpy()[0]
-        input_ids = tokens["input_ids"].numpy()[0]
-        scores = np.array([[1, 0] for _ in input_ids])  # values irrelevant for heuristic
+    #     tokens = tokenizer(
+    #         sentence,
+    #         return_attention_mask=False,
+    #         return_tensors="pt",
+    #         return_special_tokens_mask=True,
+    #         return_offsets_mapping=True,
+    #     )
+    #     offset_mapping = tokens.pop("offset_mapping").cpu().numpy()[0]
+    #     special_tokens_mask = tokens.pop("special_tokens_mask").cpu().numpy()[0]
+    #     input_ids = tokens["input_ids"].numpy()[0]
+    #     scores = np.array([[1, 0] for _ in input_ids])  # values irrelevant for heuristic
 
-        pre_entities = token_classifier.gather_pre_entities(
-            sentence,
-            input_ids,
-            scores,
-            offset_mapping,
-            special_tokens_mask,
-            aggregation_strategy=AggregationStrategy.FIRST,
-        )
+    #     pre_entities = token_classifier.gather_pre_entities(
+    #         sentence,
+    #         input_ids,
+    #         scores,
+    #         offset_mapping,
+    #         special_tokens_mask,
+    #         aggregation_strategy=AggregationStrategy.FIRST,
+    #     )
 
-        # ensure expected tokenization and correct is_subword values
-        self.assertEqual(
-            [(entity["word"], entity["is_subword"]) for entity in pre_entities],
-            [("▁I", False), ("▁play", False), ("▁the", False), ("▁there", False), ("min", True)],
-        )
+    #     # ensure expected tokenization and correct is_subword values
+    #     self.assertEqual(
+    #         [(entity["word"], entity["is_subword"]) for entity in pre_entities],
+    #         [("▁I", False), ("▁play", False), ("▁the", False), ("▁there", False), ("min", True)],
+    #     )
 
     @require_torch
     def test_no_offset_tokenizer(self):
