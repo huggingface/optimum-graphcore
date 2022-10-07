@@ -83,19 +83,6 @@ class TextClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTestC
             ],
         )
 
-    @require_torch
-    def test_accepts_torch_device(self):
-        import torch
-
-        text_classifier = pipeline(
-            task="text-classification",
-            model="hf-internal-testing/tiny-random-distilbert",
-            ipu_config="Graphcore/distilbert-base-ipu",
-        )
-
-        outputs = text_classifier("This is great !")
-        self.assertEqual(nested_simplify(outputs), [{"label": "LABEL_0", "score": 0.504}])
-
     # @slow
     @require_torch
     def test_pt_bert(self):
