@@ -53,10 +53,10 @@ from transformers.data.data_collator import DataCollator, DataCollatorWithPaddin
 from transformers.debug_utils import DebugOption, DebugUnderflowOverflow
 from transformers.modeling_utils import PreTrainedModel
 from transformers.models.auto.modeling_auto import (
-    MODEL_FOR_QUESTION_ANSWERING_MAPPING_NAMES,
-    MODEL_FOR_PRETRAINING_MAPPING,
     MODEL_FOR_CAUSAL_LM_MAPPING,
     MODEL_FOR_MASKED_LM_MAPPING,
+    MODEL_FOR_PRETRAINING_MAPPING,
+    MODEL_FOR_QUESTION_ANSWERING_MAPPING_NAMES,
 )
 from transformers.optimization import get_scheduler
 from transformers.pytorch_utils import is_torch_less_than_1_11
@@ -309,7 +309,6 @@ class IPUTrainer:
         if not self.args.fp32:
             self.model = self.model.half()
 
-        self.model_wrapped = self.model
         self.training_model = None
         self.inference_model = None
 
@@ -381,7 +380,7 @@ class IPUTrainer:
             logger.info("Called with compile_only=True. Compiling models then exiting.")
             if args.do_train:
                 train_dl = self.get_train_dataloader()
-                model = self.wrap_model(self.model_wrapped)
+                model = self.wrap_model(self.model)
                 self.compile_model(model, next(iter(train_dl)), log=True)
             if args.do_eval:
                 # Same thing with _wrap_and_compile_for_evaluation
@@ -951,7 +950,7 @@ class IPUTrainer:
         if type(self.original_model) in TIED_WEIGHT_MODELS:
             # Work-around bug with models with tied-weights
             # TODO: Remove this when bug fixed
-            self.training_model = self._wrap_model(self.model_wrapped.train().half())
+            self.training_model = self.wrap_model(self.model.train().half())
         else:
             self.training_model.attachToDevice()
 
@@ -1070,10 +1069,6 @@ class IPUTrainer:
 
         self.training_model = self.wrap_model(self.model)
 
-        # for the rest of this function `model` is the outside model, whether it was wrapped or not
-        if model is not self.model:
-            self.model_wrapped = model
-
         # TODO: handle optimizer and scheduler creation
         # if delay_optimizer_creation:
         #     self.create_optimizer_and_scheduler(num_training_steps=max_steps)
@@ -1151,8 +1146,6 @@ class IPUTrainer:
         self._total_loss_scalar = 0.0
         self._globalstep_last_logged = self.state.global_step
 
-        model.zero_grad()
-
         self.control = self.callback_handler.on_train_begin(args, self.state, self.control)
 
         # Skip the first epochs_trained epochs to get the random state of the dataloader at the right point.
@@ -1213,7 +1206,7 @@ class IPUTrainer:
 
                 self.control = self.callback_handler.on_step_begin(args, self.state, self.control)
 
-                tr_loss_step = self.training_step(model, inputs)
+                tr_loss_step = self.training_step(self.training_model, inputs)
 
                 if args.logging_nan_inf_filter and (torch.isnan(tr_loss_step) or torch.isinf(tr_loss_step)):
                     # if loss is nan or inf simply add the average of previous logged losses
@@ -1249,7 +1242,7 @@ class IPUTrainer:
                 self.control.should_training_stop = True
 
             self.control = self.callback_handler.on_epoch_end(args, self.state, self.control)
-            self._maybe_log_save_evaluate(tr_loss, model, epoch, ignore_keys_for_eval)
+            self._maybe_log_save_evaluate(tr_loss, self.training_model, epoch, ignore_keys_for_eval)
 
             if self.control.should_training_stop:
                 break

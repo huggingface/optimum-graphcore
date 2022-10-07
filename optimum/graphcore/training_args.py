@@ -502,10 +502,11 @@ class IPUTrainingArguments:
         default=0.0, metadata={"help": "The label smoothing epsilon to apply (zero means no label smoothing)."}
     )
     # TODO: support this.
-    optim: Union[OptimizerNames, str] = field(
-        default="adamw_hf",
-        metadata={"help": "The optimizer to use."},
-    )
+    # Type annotation not supported in transformers 4.20.1
+    # optim: Union[OptimizerNames, str] = field(
+    #    default="adamw_hf",
+    #    metadata={"help": "The optimizer to use."},
+    # )
     group_by_length: bool = field(
         default=False,
         metadata={"help": "Whether or not to group samples of roughly the same length together when batching."},

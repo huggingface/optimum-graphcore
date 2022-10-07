@@ -294,13 +294,6 @@ class ExampleTesterBase(TestCase):
         if extra_command_line_arguments is not None:
             cmd_line += extra_command_line_arguments
 
-        if self.venv_was_created:
-            enable_poplar_and_popart = [
-                f"source {self._get_poplar_enable_path()};",
-                f"source {self._get_popart_enable_path()};",
-            ]
-            cmd_line = enable_poplar_and_popart + cmd_line
-
         pattern = re.compile(r"([\"\'].+?[\"\'])|\s")
         return [x for y in cmd_line for x in re.split(pattern, y) if x]
 
