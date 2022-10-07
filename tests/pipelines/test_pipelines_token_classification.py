@@ -16,19 +16,19 @@ import unittest
 
 import numpy as np
 
+from optimum.graphcore.pipelines import pipeline
+
 from transformers import (
     MODEL_FOR_TOKEN_CLASSIFICATION_MAPPING,
     AutoModelForTokenClassification,
     AutoTokenizer,
     TokenClassificationPipeline,
-    pipeline,
 )
 from transformers.pipelines import AggregationStrategy, TokenClassificationArgumentHandler
 from transformers.testing_utils import (
     is_pipeline_test,
     nested_simplify,
     require_torch,
-    require_torch_gpu,
     slow,
 )
 
@@ -42,8 +42,13 @@ VALID_INPUTS = ["A simple string", ["list of strings", "A simple string that is 
 class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
     model_mapping = MODEL_FOR_TOKEN_CLASSIFICATION_MAPPING
 
-    def get_test_pipeline(self, model, tokenizer, feature_extractor):
-        token_classifier = TokenClassificationPipeline(model=model, tokenizer=tokenizer)
+    def get_test_pipeline(self, model, ipu_config, tokenizer, feature_extractor):
+        token_classifier = pipeline(
+            task="token-classification",
+            model=model,
+            ipu_config=ipu_config,
+            tokenizer=tokenizer,
+        )
         return token_classifier, ["A simple string", "A simple string that is quite a bit longer"]
 
     def run_pipeline_test(self, token_classifier, _):
@@ -104,7 +109,12 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
         self.run_aggregation_strategy(model, tokenizer)
 
     def run_aggregation_strategy(self, model, tokenizer):
-        token_classifier = TokenClassificationPipeline(model=model, tokenizer=tokenizer, aggregation_strategy="simple")
+        token_classifier = pipeline(
+            task="token-classification",
+            model=model,
+            tokenizer=tokenizer,
+            aggregation_strategy="simple",
+        )
         self.assertEqual(token_classifier._postprocess_params["aggregation_strategy"], AggregationStrategy.SIMPLE)
         outputs = token_classifier("A simple string")
         self.assertIsInstance(outputs, list)
@@ -123,7 +133,12 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
             ],
         )
 
-        token_classifier = TokenClassificationPipeline(model=model, tokenizer=tokenizer, aggregation_strategy="first")
+        token_classifier = pipeline(
+            task="token-classification",
+            model=model,
+            tokenizer=tokenizer,
+            aggregation_strategy="first",
+        )
         self.assertEqual(token_classifier._postprocess_params["aggregation_strategy"], AggregationStrategy.FIRST)
         outputs = token_classifier("A simple string")
         self.assertIsInstance(outputs, list)
@@ -142,7 +157,12 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
             ],
         )
 
-        token_classifier = TokenClassificationPipeline(model=model, tokenizer=tokenizer, aggregation_strategy="max")
+        token_classifier = pipeline(
+            task="token-classification",
+            model=model,
+            tokenizer=tokenizer,
+            aggregation_strategy="max",
+        )
         self.assertEqual(token_classifier._postprocess_params["aggregation_strategy"], AggregationStrategy.MAX)
         outputs = token_classifier("A simple string")
         self.assertIsInstance(outputs, list)
@@ -161,8 +181,11 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
             ],
         )
 
-        token_classifier = TokenClassificationPipeline(
-            model=model, tokenizer=tokenizer, aggregation_strategy="average"
+        token_classifier = pipeline(
+            task="token-classification",
+            model=model,
+            tokenizer=tokenizer,
+            aggregation_strategy="average",
         )
         self.assertEqual(token_classifier._postprocess_params["aggregation_strategy"], AggregationStrategy.AVERAGE)
         outputs = token_classifier("A simple string")
@@ -183,11 +206,20 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
         )
 
         with self.assertWarns(UserWarning):
-            token_classifier = pipeline(task="ner", model=model, tokenizer=tokenizer, grouped_entities=True)
+            token_classifier = pipeline(
+                task="ner",
+                model=model,
+                tokenizer=tokenizer,
+                grouped_entities=True,
+            )
         self.assertEqual(token_classifier._postprocess_params["aggregation_strategy"], AggregationStrategy.SIMPLE)
         with self.assertWarns(UserWarning):
             token_classifier = pipeline(
-                task="ner", model=model, tokenizer=tokenizer, grouped_entities=True, ignore_subwords=True
+                task="ner",
+                model=model,
+                tokenizer=tokenizer,
+                grouped_entities=True,
+                ignore_subwords=True,
             )
         self.assertEqual(token_classifier._postprocess_params["aggregation_strategy"], AggregationStrategy.FIRST)
 
@@ -197,10 +229,16 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
         # https://github.com/huggingface/transformers/pull/4987
         NER_MODEL = "mrm8488/bert-spanish-cased-finetuned-ner"
         model = AutoModelForTokenClassification.from_pretrained(NER_MODEL)
+        ipu_config = "Graphcore/bert-base-ipu"
         tokenizer = AutoTokenizer.from_pretrained(NER_MODEL, use_fast=True)
         sentence = """Consuelo Araújo Noguera, ministra de cultura del presidente Andrés Pastrana (1998.2002) fue asesinada por las Farc luego de haber permanecido secuestrada por algunos meses."""
 
-        token_classifier = pipeline("ner", model=model, tokenizer=tokenizer)
+        token_classifier = pipeline(
+            "ner",
+            model=model,
+            ipu_config=ipu_config,
+            tokenizer=tokenizer,
+        )
         output = token_classifier(sentence)
         self.assertEqual(
             nested_simplify(output[:3]),
@@ -211,7 +249,13 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
             ],
         )
 
-        token_classifier = pipeline("ner", model=model, tokenizer=tokenizer, aggregation_strategy="simple")
+        token_classifier = pipeline(
+            "ner",
+            model=model,
+            ipu_config=ipu_config,
+            tokenizer=tokenizer,
+            aggregation_strategy="simple",
+        )
         output = token_classifier(sentence)
         self.assertEqual(
             nested_simplify(output[:3]),
@@ -222,7 +266,13 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
             ],
         )
 
-        token_classifier = pipeline("ner", model=model, tokenizer=tokenizer, aggregation_strategy="first")
+        token_classifier = pipeline(
+            "ner",
+            model=model,
+            ipu_config=ipu_config,
+            tokenizer=tokenizer,
+            aggregation_strategy="first",
+        )
         output = token_classifier(sentence)
         self.assertEqual(
             nested_simplify(output[:3]),
@@ -233,7 +283,13 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
             ],
         )
 
-        token_classifier = pipeline("ner", model=model, tokenizer=tokenizer, aggregation_strategy="max")
+        token_classifier = pipeline(
+            "ner",
+            model=model,
+            ipu_config=ipu_config,
+            tokenizer=tokenizer,
+            aggregation_strategy="max",
+        )
         output = token_classifier(sentence)
         self.assertEqual(
             nested_simplify(output[:3]),
@@ -244,7 +300,13 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
             ],
         )
 
-        token_classifier = pipeline("ner", model=model, tokenizer=tokenizer, aggregation_strategy="average")
+        token_classifier = pipeline(
+            "ner",
+            model=model,
+            ipu_config=ipu_config,
+            tokenizer=tokenizer,
+            aggregation_strategy="average",
+        )
         output = token_classifier(sentence)
         self.assertEqual(
             nested_simplify(output[:3]),
@@ -255,28 +317,21 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
             ],
         )
 
-    @require_torch_gpu
-    @slow
-    def test_gpu(self):
-        sentence = "This is dummy sentence"
-        ner = pipeline(
-            "token-classification",
-            device=0,
-            aggregation_strategy=AggregationStrategy.SIMPLE,
-        )
-
-        output = ner(sentence)
-        self.assertEqual(nested_simplify(output), [])
-
     @require_torch
     @slow
     def test_dbmdz_english(self):
         # Other sentence
         NER_MODEL = "dbmdz/bert-large-cased-finetuned-conll03-english"
         model = AutoModelForTokenClassification.from_pretrained(NER_MODEL)
+        ipu_config = "Graphcore/bert-large-ipu"
         tokenizer = AutoTokenizer.from_pretrained(NER_MODEL, use_fast=True)
         sentence = """Enzo works at the UN"""
-        token_classifier = pipeline("ner", model=model, tokenizer=tokenizer)
+        token_classifier = pipeline(
+            "ner",
+            model=model,
+            ipu_config=ipu_config,
+            tokenizer=tokenizer,
+        )
         output = token_classifier(sentence)
         self.assertEqual(
             nested_simplify(output),
@@ -287,7 +342,13 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
             ],
         )
 
-        token_classifier = pipeline("ner", model=model, tokenizer=tokenizer, aggregation_strategy="simple")
+        token_classifier = pipeline(
+            "ner",
+            model=model,
+            ipu_config=ipu_config,
+            tokenizer=tokenizer,
+            aggregation_strategy="simple",
+        )
         output = token_classifier(sentence)
         self.assertEqual(
             nested_simplify(output),
@@ -297,7 +358,13 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
             ],
         )
 
-        token_classifier = pipeline("ner", model=model, tokenizer=tokenizer, aggregation_strategy="first")
+        token_classifier = pipeline(
+            "ner",
+            model=model,
+            ipu_config=ipu_config,
+            tokenizer=tokenizer,
+            aggregation_strategy="first",
+        )
         output = token_classifier(sentence)
         self.assertEqual(
             nested_simplify(output[:3]),
@@ -307,7 +374,13 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
             ],
         )
 
-        token_classifier = pipeline("ner", model=model, tokenizer=tokenizer, aggregation_strategy="max")
+        token_classifier = pipeline(
+            "ner",
+            model=model,
+            ipu_config=ipu_config,
+            tokenizer=tokenizer,
+            aggregation_strategy="max",
+        )
         output = token_classifier(sentence)
         self.assertEqual(
             nested_simplify(output[:3]),
@@ -317,7 +390,13 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
             ],
         )
 
-        token_classifier = pipeline("ner", model=model, tokenizer=tokenizer, aggregation_strategy="average")
+        token_classifier = pipeline(
+            "ner",
+            model=model,
+            ipu_config=ipu_config,
+            tokenizer=tokenizer,
+            aggregation_strategy="average",
+        )
         output = token_classifier(sentence)
         self.assertEqual(
             nested_simplify(output),
@@ -331,7 +410,12 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @slow
     def test_aggregation_strategy_byte_level_tokenizer(self):
         sentence = "Groenlinks praat over Schiphol."
-        ner = pipeline("ner", model="xlm-roberta-large-finetuned-conll02-dutch", aggregation_strategy="max")
+        ner = pipeline(
+            "ner",
+            model="xlm-roberta-large-finetuned-conll02-dutch",
+            ipu_config = "Graphcore/roberta-large-ipu",
+            aggregation_strategy="max",
+        )
         self.assertEqual(
             nested_simplify(ner(sentence)),
             [
@@ -343,8 +427,14 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_aggregation_strategy_no_b_i_prefix(self):
         model_name = "sshleifer/tiny-dbmdz-bert-large-cased-finetuned-conll03-english"
+        ipu_config = "Graphcore/bert-large-ipu",
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
-        token_classifier = pipeline(task="ner", model=model_name, tokenizer=tokenizer, framework="pt")
+        token_classifier = pipeline(
+            task="ner",
+            model=model_name,
+            ipu_config=ipu_config,
+            tokenizer=tokenizer,
+        )
         # Just to understand scores indexes in this test
         token_classifier.model.config.id2label = {0: "O", 1: "MISC", 2: "PER", 3: "ORG", 4: "LOC"}
         example = [
@@ -396,8 +486,14 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_aggregation_strategy(self):
         model_name = "sshleifer/tiny-dbmdz-bert-large-cased-finetuned-conll03-english"
+        ipu_config = "Graphcore/bert-large-ipu",
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
-        token_classifier = pipeline(task="ner", model=model_name, tokenizer=tokenizer, framework="pt")
+        token_classifier = pipeline(
+            task="ner",
+            model=model_name,
+            ipu_config=ipu_config,
+            tokenizer=tokenizer,
+        )
         # Just to understand scores indexes in this test
         self.assertEqual(
             token_classifier.model.config.id2label,
@@ -473,8 +569,14 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_aggregation_strategy_example2(self):
         model_name = "sshleifer/tiny-dbmdz-bert-large-cased-finetuned-conll03-english"
+        ipu_config = "Graphcore/bert-large-ipu",
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
-        token_classifier = pipeline(task="ner", model=model_name, tokenizer=tokenizer, framework="pt")
+        token_classifier = pipeline(
+            task="ner",
+            model=model_name,
+            ipu_config=ipu_config,
+            tokenizer=tokenizer,
+        )
         # Just to understand scores indexes in this test
         self.assertEqual(
             token_classifier.model.config.id2label,
@@ -537,7 +639,14 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     def test_aggregation_strategy_offsets_with_leading_space(self):
         sentence = "We're from New York"
         model_name = "brandon25/deberta-base-finetuned-ner"
-        ner = pipeline("ner", model=model_name, ignore_labels=[], aggregation_strategy="max")
+        ipu_config = "Graphcore/deberta-base-ipu",
+        ner = pipeline(
+            "ner",
+            model=model_name,
+            ipu_config=ipu_config,
+            ignore_labels=[],
+            aggregation_strategy="max",
+        )
         self.assertEqual(
             nested_simplify(ner(sentence)),
             [
@@ -594,8 +703,14 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_word_heuristic_leading_space(self):
         model_name = "hf-internal-testing/tiny-random-deberta-v2"
+        ipu_config = "Graphcore/deberta-base-ipu",
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
-        token_classifier = pipeline(task="ner", model=model_name, tokenizer=tokenizer, framework="pt")
+        token_classifier = pipeline(
+            task="ner",
+            model=model_name,
+            ipu_config=ipu_config,
+            tokenizer=tokenizer,
+        )
 
         sentence = "I play the theremin"
 
@@ -629,8 +744,14 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_no_offset_tokenizer(self):
         model_name = "hf-internal-testing/tiny-bert-for-token-classification"
+        ipu_config = "Graphcore/bert-base-ipu",
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
-        token_classifier = pipeline(task="token-classification", model=model_name, tokenizer=tokenizer, framework="pt")
+        token_classifier = pipeline(
+            task="token-classification",
+            model=model_name,
+            ipu_config=ipu_config,
+            tokenizer=tokenizer,
+        )
         outputs = token_classifier("This is a test !")
         self.assertEqual(
             nested_simplify(outputs),
@@ -643,7 +764,12 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_small_model_pt(self):
         model_name = "hf-internal-testing/tiny-bert-for-token-classification"
-        token_classifier = pipeline(task="token-classification", model=model_name, framework="pt")
+        ipu_config = "Graphcore/bert-base-ipu",
+        token_classifier = pipeline(
+            task="token-classification",
+            model=model_name,
+            ipu_config=ipu_config,
+        )
         outputs = token_classifier("This is a test !")
         self.assertEqual(
             nested_simplify(outputs),
@@ -654,7 +780,10 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
         )
 
         token_classifier = pipeline(
-            task="token-classification", model=model_name, framework="pt", ignore_labels=["O", "I-MISC"]
+            task="token-classification",
+            model=model_name,
+            ipu_config=ipu_config,
+            ignore_labels=["O", "I-MISC"],
         )
         outputs = token_classifier("This is a test !")
         self.assertEqual(
@@ -662,7 +791,11 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
             [],
         )
 
-        token_classifier = pipeline(task="token-classification", model=model_name, framework="pt")
+        token_classifier = pipeline(
+            task="token-classification",
+            model=model_name,
+            ipu_config=ipu_config,
+        )
         # Overload offset_mapping
         outputs = token_classifier(
             "This is a test !", offset_mapping=[(0, 0), (0, 1), (0, 2), (0, 0), (0, 0), (0, 0), (0, 0)]
@@ -695,21 +828,43 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_pt_ignore_subwords_slow_tokenizer_raises(self):
         model_name = "sshleifer/tiny-dbmdz-bert-large-cased-finetuned-conll03-english"
+        ipu_config = "Graphcore/bert-large-ipu",
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
 
         with self.assertRaises(ValueError):
-            pipeline(task="ner", model=model_name, tokenizer=tokenizer, aggregation_strategy=AggregationStrategy.FIRST)
-        with self.assertRaises(ValueError):
             pipeline(
-                task="ner", model=model_name, tokenizer=tokenizer, aggregation_strategy=AggregationStrategy.AVERAGE
+                task="ner",
+                model=model_name,
+                ipu_config=ipu_config,
+                tokenizer=tokenizer,
+                aggregation_strategy=AggregationStrategy.FIRST,
             )
         with self.assertRaises(ValueError):
-            pipeline(task="ner", model=model_name, tokenizer=tokenizer, aggregation_strategy=AggregationStrategy.MAX)
+            pipeline(
+                task="ner",
+                model=model_name,
+                ipu_config=ipu_config,
+                tokenizer=tokenizer,
+                aggregation_strategy=AggregationStrategy.AVERAGE,
+            )
+        with self.assertRaises(ValueError):
+            pipeline(
+                task="ner",
+                model=model_name,
+                ipu_config=ipu_config,
+                tokenizer=tokenizer,
+                aggregation_strategy=AggregationStrategy.MAX,
+            )
 
     @slow
     @require_torch
     def test_simple(self):
-        token_classifier = pipeline(task="ner", model="dslim/bert-base-NER", grouped_entities=True)
+        token_classifier = pipeline(
+            task="ner",
+            model="dslim/bert-base-NER",
+            ipu_config="Graphcore/bert-base-ipu",
+            grouped_entities=True,
+        )
         sentence = "Hello Sarah Jessica Parker who Jessica lives in New York"
         sentence2 = "This is a simple test"
         output = token_classifier(sentence)
