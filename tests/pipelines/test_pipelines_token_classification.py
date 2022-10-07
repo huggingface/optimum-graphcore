@@ -18,7 +18,6 @@ import numpy as np
 
 from transformers import (
     MODEL_FOR_TOKEN_CLASSIFICATION_MAPPING,
-    TF_MODEL_FOR_TOKEN_CLASSIFICATION_MAPPING,
     AutoModelForTokenClassification,
     AutoTokenizer,
     TokenClassificationPipeline,
@@ -28,7 +27,6 @@ from transformers.pipelines import AggregationStrategy, TokenClassificationArgum
 from transformers.testing_utils import (
     is_pipeline_test,
     nested_simplify,
-    require_tf,
     require_torch,
     require_torch_gpu,
     slow,
@@ -43,7 +41,6 @@ VALID_INPUTS = ["A simple string", ["list of strings", "A simple string that is 
 @is_pipeline_test
 class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
     model_mapping = MODEL_FOR_TOKEN_CLASSIFICATION_MAPPING
-    tf_model_mapping = TF_MODEL_FOR_TOKEN_CLASSIFICATION_MAPPING
 
     def get_test_pipeline(self, model, tokenizer, feature_extractor):
         token_classifier = TokenClassificationPipeline(model=model, tokenizer=tokenizer)
@@ -627,26 +624,6 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
         self.assertEqual(
             [(entity["word"], entity["is_subword"]) for entity in pre_entities],
             [("▁I", False), ("▁play", False), ("▁the", False), ("▁there", False), ("min", True)],
-        )
-
-    @require_tf
-    def test_tf_only(self):
-        model_name = "hf-internal-testing/tiny-random-bert-tf-only"  # This model only has a TensorFlow version
-        # We test that if we don't specificy framework='tf', it gets detected automatically
-        token_classifier = pipeline(task="ner", model=model_name)
-        self.assertEqual(token_classifier.framework, "tf")
-
-    @require_tf
-    def test_small_model_tf(self):
-        model_name = "hf-internal-testing/tiny-bert-for-token-classification"
-        token_classifier = pipeline(task="token-classification", model=model_name, framework="tf")
-        outputs = token_classifier("This is a test !")
-        self.assertEqual(
-            nested_simplify(outputs),
-            [
-                {"entity": "I-MISC", "score": 0.115, "index": 1, "word": "this", "start": 0, "end": 4},
-                {"entity": "I-MISC", "score": 0.115, "index": 2, "word": "is", "start": 5, "end": 7},
-            ],
         )
 
     @require_torch
