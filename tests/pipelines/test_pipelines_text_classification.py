@@ -83,7 +83,7 @@ class TextClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTestC
             ],
         )
 
-    # @slow
+    @slow
     @require_torch
     def test_pt_bert(self):
         text_classifier = pipeline("text-classification")
