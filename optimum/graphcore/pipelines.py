@@ -290,17 +290,17 @@ def pipeline(
             kwargs["max_length"] = SUPPORTED_TASKS[targeted_task]["default"]["padding_length"]
         return old_call(self, *args, **kwargs)
     Pipeline.__call__ = new_call
-    # Set pad_token for GPT2
+
+    # Set pad_token for models that do not have pad_token
     if model.config.model_type == "gpt2":
         tokenizer.pad_token = tokenizer.eos_token
         model.config.pad_token_id = model.config.eos_token_id
 
     if fp16:
-        # Override pipelines' _forward to support fp16
+        # Override pipelines' _forward
         old_forward =pipeline_class._forward
         def new_forward(self, model_inputs, *args, **kwargs):
             # Support change in batch size
-            # TODO: Place this to a more appropriate location.
             if self.model._executable_inputs:
                 if self.model._executable_inputs.args[0].shape[0] != next(iter(model_inputs.items()))[1].shape[0]:
                     self.model.destroy()
