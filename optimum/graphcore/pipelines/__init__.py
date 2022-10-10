@@ -28,7 +28,8 @@ from transformers.onnx.utils import get_preprocessor
 from transformers.pipelines import get_task
 from transformers.utils import HUGGINGFACE_CO_RESOLVE_ENDPOINT
 
-from .ipu_pipeline_classes import IPUFillMaskPipeline, IPUTokenClassificationPipeline
+from .fill_mask import IPUFillMaskPipeline
+from .token_classification import IPUTokenClassificationPipeline
 
 
 TASK_ALIASES = {
