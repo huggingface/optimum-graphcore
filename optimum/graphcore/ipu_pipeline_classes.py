@@ -1,18 +1,18 @@
 import warnings
 from typing import Dict, List, Optional, Tuple
-from transformers.pipelines.base import PIPELINE_INIT_ARGS, GenericTensor, PipelineException
 
 from transformers import (
-    Pipeline,
     AudioClassificationPipeline,
     AutomaticSpeechRecognitionPipeline,
     FillMaskPipeline,
     ImageClassificationPipeline,
+    Pipeline,
     QuestionAnsweringPipeline,
     TextClassificationPipeline,
     TokenClassificationPipeline,
     ZeroShotClassificationPipeline,
 )
+from transformers.pipelines.base import PIPELINE_INIT_ARGS, GenericTensor, PipelineException
 
 
 class IPUFillMaskPipeline(FillMaskPipeline):
@@ -43,6 +43,8 @@ class IPUFillMaskPipeline(FillMaskPipeline):
 
 
 from transformers.pipelines.token_classification import AggregationStrategy
+
+
 class IPUTokenClassificationPipeline(TokenClassificationPipeline):
     def _sanitize_parameters(
         self,

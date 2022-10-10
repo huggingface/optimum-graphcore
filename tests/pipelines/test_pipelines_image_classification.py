@@ -15,20 +15,9 @@
 import unittest
 
 from optimum.graphcore.pipelines import pipeline
-
-from transformers import (
-    MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING,
-    PreTrainedTokenizer,
-    is_vision_available,
-)
+from transformers import MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING, PreTrainedTokenizer, is_vision_available
 from transformers.pipelines import ImageClassificationPipeline
-from transformers.testing_utils import (
-    is_pipeline_test,
-    nested_simplify,
-    require_torch,
-    require_vision,
-    slow,
-)
+from transformers.testing_utils import is_pipeline_test, nested_simplify, require_torch, require_vision, slow
 
 from .test_pipelines_common import ANY, PipelineTestCaseMeta
 

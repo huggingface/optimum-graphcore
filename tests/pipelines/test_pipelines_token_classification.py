@@ -17,7 +17,6 @@ import unittest
 import numpy as np
 
 from optimum.graphcore.pipelines import pipeline
-
 from transformers import (
     MODEL_FOR_TOKEN_CLASSIFICATION_MAPPING,
     AutoModelForTokenClassification,
@@ -25,12 +24,7 @@ from transformers import (
     TokenClassificationPipeline,
 )
 from transformers.pipelines import AggregationStrategy, TokenClassificationArgumentHandler
-from transformers.testing_utils import (
-    is_pipeline_test,
-    nested_simplify,
-    require_torch,
-    slow,
-)
+from transformers.testing_utils import is_pipeline_test, nested_simplify, require_torch, slow
 
 from .test_pipelines_common import ANY, PipelineTestCaseMeta
 

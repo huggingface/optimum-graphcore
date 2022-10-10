@@ -51,7 +51,6 @@ from transformers.testing_utils import (
     TOKEN,
     USER,
     CaptureLogger,
-    # RequestCounter,
     is_pipeline_test,
     is_staging_test,
     nested_simplify,

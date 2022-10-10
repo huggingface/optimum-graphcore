@@ -1,14 +1,11 @@
-import poptorch
-
-from optimum.graphcore import IPUConfig
-from optimum.graphcore.modeling_utils import to_pipelined
-
 from typing import Any, Optional, Union
 
+import poptorch
+from optimum.graphcore import IPUConfig
+from optimum.graphcore.modeling_utils import to_pipelined
 from transformers import (
-    Pipeline,
-    PreTrainedTokenizer,
-    ProcessorMixin,
+    AudioClassificationPipeline,
+    AutomaticSpeechRecognitionPipeline,
     AutoModelForAudioClassification,
     AutoModelForCTC,
     AutoModelForImageClassification,
@@ -16,16 +13,13 @@ from transformers import (
     AutoModelForQuestionAnswering,
     AutoModelForSequenceClassification,
     AutoModelForTokenClassification,
-    AudioClassificationPipeline,
-    AutomaticSpeechRecognitionPipeline,
     ImageClassificationPipeline,
+    Pipeline,
+    PreTrainedTokenizer,
+    ProcessorMixin,
     QuestionAnsweringPipeline,
     TextClassificationPipeline,
     ZeroShotClassificationPipeline,
-)
-from .ipu_pipeline_classes import (
-    IPUFillMaskPipeline,
-    IPUTokenClassificationPipeline,
 )
 from transformers import pipeline as transformers_pipeline
 from transformers.feature_extraction_utils import PreTrainedFeatureExtractor
@@ -33,6 +27,8 @@ from transformers.modeling_utils import PreTrainedModel
 from transformers.onnx.utils import get_preprocessor
 from transformers.pipelines import get_task
 from transformers.utils import HUGGINGFACE_CO_RESOLVE_ENDPOINT
+
+from .ipu_pipeline_classes import IPUFillMaskPipeline, IPUTokenClassificationPipeline
 
 
 TASK_ALIASES = {
@@ -130,6 +126,7 @@ for task, values in SUPPORTED_TASKS.items():
     elif values["type"] != "multimodal":
         raise ValueError(f"SUPPORTED_TASK {task} contains invalid type {values['type']}")
 
+
 def get_poplar_executor(model: PreTrainedModel, ipu_config: Union[str, dict] = None, fp16: bool = True):
     if isinstance(ipu_config, str):
         ipu_config = IPUConfig.from_pretrained(ipu_config)
@@ -149,13 +146,22 @@ def get_poplar_executor(model: PreTrainedModel, ipu_config: Union[str, dict] = N
     model = poptorch.inferenceModel(model.eval(), opts)
     return model
 
+
 import torch
+
+
 def get_inference_context(self):
     return torch.no_grad
 
+
 from typing import List
+
 from transformers.utils import logging
+
+
 logger = logging.get_logger(__name__)
+
+
 def check_model_type(self, supported_models: Union[List[str], dict]):
     """
     Check if the model class is in supported by the pipeline.
@@ -178,6 +184,7 @@ def check_model_type(self, supported_models: Union[List[str], dict]):
             f"The model '{self.model._user_model.__class__.__bases__[0].__name__}' is not supported for {self.task}. Supported models are"
             f" {supported_models}."
         )
+
 
 def pipeline(
     task: str = None,
@@ -256,9 +263,13 @@ def pipeline(
             raise ValueError("If you pass a model as a PreTrainedModel, you must pass a feature extractor as well")
     elif isinstance(model, poptorch._poplar_executor.PoplarExecutor):
         if tokenizer is None and load_tokenizer:
-            raise ValueError("If you pass a model as a poptorch._poplar_executor.PoplarExecutor, you must pass a tokenizer as well")
+            raise ValueError(
+                "If you pass a model as a poptorch._poplar_executor.PoplarExecutor, you must pass a tokenizer as well"
+            )
         if feature_extractor is None and load_feature_extractor:
-            raise ValueError("If you pass a model as a poptorch._poplar_executor.PoplarExecutor, you must pass a feature extractor as well")
+            raise ValueError(
+                "If you pass a model as a poptorch._poplar_executor.PoplarExecutor, you must pass a feature extractor as well"
+            )
     else:
         raise ValueError(
             f"""Model {model} is not supported. Please provide a valid model either as string, PreTrainedModel or
@@ -284,11 +295,13 @@ def pipeline(
 
     # Override Pipeline __call__ to support auto padding
     old_call = Pipeline.__call__
+
     def new_call(self, *args, **kwargs):
         if "padding_length" in SUPPORTED_TASKS[targeted_task]["default"] and "padding" not in kwargs:
             kwargs["padding"] = "max_length"
             kwargs["max_length"] = SUPPORTED_TASKS[targeted_task]["default"]["padding_length"]
         return old_call(self, *args, **kwargs)
+
     Pipeline.__call__ = new_call
 
     # Set pad_token for models that do not have pad_token
@@ -298,7 +311,8 @@ def pipeline(
 
     if fp16:
         # Override pipelines' _forward
-        old_forward =pipeline_class._forward
+        old_forward = pipeline_class._forward
+
         def new_forward(self, model_inputs, *args, **kwargs):
             # Support change in batch size
             if self.model._executable_inputs:
@@ -309,6 +323,7 @@ def pipeline(
                 if isinstance(input, torch.Tensor) and input.dtype == torch.float32:
                     model_inputs[key] = input.half()
             return old_forward(self, model_inputs, *args, **kwargs)
+
         pipeline_class._forward = new_forward
 
     return transformers_pipeline(
