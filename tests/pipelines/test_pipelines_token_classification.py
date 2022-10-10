@@ -16,7 +16,7 @@ import unittest
 
 import numpy as np
 
-from optimum.graphcore.pipelines import pipeline
+from optimum.graphcore import pipeline
 from transformers import (
     MODEL_FOR_TOKEN_CLASSIFICATION_MAPPING,
     AutoModelForTokenClassification,

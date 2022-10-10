@@ -29,8 +29,8 @@ from unittest import skipIf
 import numpy as np
 
 from huggingface_hub import HfFolder, Repository, delete_repo, set_access_token
+from optimum.graphcore import pipeline
 from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
-from optimum.graphcore.pipelines import pipeline
 from requests.exceptions import HTTPError
 from transformers import (
     CONFIG_MAPPING,
