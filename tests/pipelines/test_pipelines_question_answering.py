@@ -16,19 +16,20 @@ import unittest
 
 from transformers import (
     MODEL_FOR_QUESTION_ANSWERING_MAPPING,
+    TF_MODEL_FOR_QUESTION_ANSWERING_MAPPING,
     LxmertConfig,
     QuestionAnsweringPipeline,
 )
 from transformers.data.processors.squad import SquadExample
 from transformers.pipelines import QuestionAnsweringArgumentHandler, pipeline
-from transformers.testing_utils import is_pipeline_test, nested_simplify, require_torch, slow
+from transformers.testing_utils import nested_simplify, require_tf, require_torch, require_torch_or_tf, slow
 
 from .test_pipelines_common import ANY, PipelineTestCaseMeta
 
 
-@is_pipeline_test
 class QAPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
     model_mapping = MODEL_FOR_QUESTION_ANSWERING_MAPPING
+    tf_model_mapping = TF_MODEL_FOR_QUESTION_ANSWERING_MAPPING
 
     def get_test_pipeline(self, model, tokenizer, feature_extractor):
         if isinstance(model.config, LxmertConfig):
@@ -207,6 +208,17 @@ class QAPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
         )
         self.assertEqual(nested_simplify(outputs), {"score": 0.988, "start": 0, "end": 0, "answer": ""})
 
+    @require_tf
+    def test_small_model_tf(self):
+        question_answerer = pipeline(
+            "question-answering", model="sshleifer/tiny-distilbert-base-cased-distilled-squad", framework="tf"
+        )
+        outputs = question_answerer(
+            question="Where was HuggingFace founded ?", context="HuggingFace was founded in Paris."
+        )
+
+        self.assertEqual(nested_simplify(outputs), {"score": 0.011, "start": 0, "end": 11, "answer": "HuggingFace"})
+
     @slow
     @require_torch
     def test_large_model_pt(self):
@@ -321,8 +333,18 @@ between them. It's straightforward to train your models with one before loading 
             {"answer": "Jax, PyTorch and TensorFlow", "end": 1919, "score": 0.971, "start": 1892},
         )
 
+    @slow
+    @require_tf
+    def test_large_model_tf(self):
+        question_answerer = pipeline("question-answering", framework="tf")
+        outputs = question_answerer(
+            question="Where was HuggingFace founded ?", context="HuggingFace was founded in Paris."
+        )
 
-@is_pipeline_test
+        self.assertEqual(nested_simplify(outputs), {"score": 0.979, "start": 27, "end": 32, "answer": "Paris"})
+
+
+@require_torch_or_tf
 class QuestionAnsweringArgumentHandlerTests(unittest.TestCase):
     def test_argument_handler(self):
         qa = QuestionAnsweringArgumentHandler()
