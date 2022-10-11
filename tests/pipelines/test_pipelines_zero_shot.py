@@ -201,6 +201,8 @@ class ZeroShotClassificationPipelineTests(unittest.TestCase, metaclass=PipelineT
             " large and limited training data.",
             candidate_labels=["machine learning", "statistics", "translation", "vision"],
             multi_label=True,
+            padding='max_length',
+            max_length=512,
         )
         self.assertEqual(
             nested_simplify(outputs),
