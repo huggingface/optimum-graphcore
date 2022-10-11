@@ -19,7 +19,6 @@ from transformers import (
     ProcessorMixin,
     QuestionAnsweringPipeline,
     TextClassificationPipeline,
-    ZeroShotClassificationPipeline,
 )
 from transformers import pipeline as transformers_pipeline
 from transformers.feature_extraction_utils import PreTrainedFeatureExtractor
@@ -30,6 +29,7 @@ from transformers.utils import HUGGINGFACE_CO_RESOLVE_ENDPOINT
 
 from .fill_mask import IPUFillMaskPipeline
 from .token_classification import IPUTokenClassificationPipeline
+from .zero_shot_classification import IPUZeroShotClassificationPipeline
 
 
 TASK_ALIASES = {
@@ -106,7 +106,7 @@ SUPPORTED_TASKS = {
         "type": "text",
     },
     "zero-shot-classification": {
-        "impl": ZeroShotClassificationPipeline,
+        "impl": IPUZeroShotClassificationPipeline,
         "class": (AutoModelForSequenceClassification,),
         "default": {
             "model": ("roberta-large-mnli", "130fb28"),
