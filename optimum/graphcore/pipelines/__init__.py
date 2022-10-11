@@ -317,7 +317,12 @@ def pipeline(
         def new_forward(self, model_inputs, *args, **kwargs):
             # Support change in batch size
             if self.model._executable_inputs:
-                if self.model._executable_inputs.args[0].shape[0] != next(iter(model_inputs.items()))[1].shape[0]:
+                compiled_bs = self.model._executable_inputs.args[0].shape[0]
+                for input in model_inputs.values():
+                    if isinstance(input, torch.Tensor):
+                        input_bs = input.shape[0]
+                        break
+                if compiled_bs != input_bs:
                     self.model.destroy()
             # Support fp16
             for key, input in model_inputs.items():
