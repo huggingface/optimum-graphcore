@@ -380,12 +380,10 @@ class IPUTrainer:
             logger.info("Called with compile_only=True. Compiling models then exiting.")
             if args.do_train:
                 train_dl = self.get_train_dataloader()
-                model = self.wrap_model(self.model)
-                self.compile_model(self.training_model, next(iter(train_dl)), log=True)
+                self.compile_model(next(iter(train_dl)), log=True)
             if args.do_eval:
-                # Same thing with _wrap_and_compile_for_evaluation
                 eval_dl = self.get_eval_dataloader()
-                model = self._wrap_and_compile_model_for_evaluation(eval_dl, False)
+                self.compile_model(next(iter(eval_dl)), training=False)
             logger.info("Exiting after compiling models with compile_only=True")
             sys.exit(0)
 
@@ -491,7 +489,7 @@ class IPUTrainer:
                 self.model = model
             else:
                 self.model_for_eval = model
-            model = self._wrap_model(model, training=training)
+            model = self.wrap_model(model, training=training)
             if log:
                 logger.info("Compiling Model...")
             start_compile = time.perf_counter()
@@ -914,7 +912,7 @@ class IPUTrainer:
         Wraps a model for PopTorch, either for training or for inference.
 
         Args:
-            model ([`~transformers.modeling_utils.PreTrainedModel`] or `poptorch.PoplarExecutor`):
+            model ([`transformers.PreTrainedModel`] or `poptorch.PoplarExecutor`):
                 The model to wrap.
             training (`bool`, *optional*, defaults to `True`):
                 Whether to wrap the model for training or not.
@@ -1091,23 +1089,22 @@ class IPUTrainer:
         if DebugOption.UNDERFLOW_OVERFLOW in self.args.debug:
             debug_overflow = DebugUnderflowOverflow(self.model)  # noqa
 
-        self.create_optimizer_and_scheduler(num_training_steps=max_steps)
 
         if trial is not None:
             raise ValueError("Hyperparameter tuning is not supported by the IPUTrainer.")
             trial = None
         self.state.is_hyper_param_search = trial is not None
 
-        self.training_model = self.wrap_model(self.model)
 
+
+        # self.training_model = self.wrap_model(self.model)
+        self.traning_model = self.compile_model(next(iter(train_dataloader)), training=True)
+
+        self.create_optimizer_and_scheduler(num_training_steps=max_steps)
+        self._load_optimizer_and_scheduler(resume_from_checkpoint)
         # TODO: handle optimizer and scheduler creation
         # if delay_optimizer_creation:
         #     self.create_optimizer_and_scheduler(num_training_steps=max_steps)
-
-        # Check if saved optimizer or scheduler states exist
-        self._load_optimizer_and_scheduler(resume_from_checkpoint)
-
-        self.compile_model(self.training_model, next(iter(train_dataloader)), log=True)
 
         # Train!
         num_examples = (
@@ -1770,7 +1767,7 @@ class IPUTrainer:
 
         # Running this here (even though it is being recalled in self.evaluation_loop to make compilation happen here.
         # That way, compilation will not mess inference speed metrics.
-        _ = self._wrap_and_compile_model_for_evaluation(eval_dataloader, prediction_loss_only)
+        _ = self.compile_model(next(iter(eval_dataloader)), training=False)
 
         start_time = time.time()
 
@@ -1891,7 +1888,7 @@ class IPUTrainer:
             prediction_loss_only if prediction_loss_only is not None else self.args.prediction_loss_only
         )
 
-        self.inference_model = self._wrap_and_compile_model_for_evaluation(dataloader, prediction_loss_only)
+        self.inference_model = self.compile_model(next(iter(dataloader)), training=False)
 
         batch_size = dataloader.batch_size
 

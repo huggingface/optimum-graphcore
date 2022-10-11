@@ -446,6 +446,6 @@ class OnehotGather(nn.Module):
         """
         Gather the vectors at the specific positions over a batch.
         """
-        num_classes = int(sequence.shape[1])
+        num_classes = sequence.shape[1]
         one_hot_positions = F.one_hot(positions, num_classes).to(dtype=sequence.dtype)
         return torch.matmul(one_hot_positions.detach(), sequence)
