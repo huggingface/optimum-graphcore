@@ -381,7 +381,7 @@ class IPUTrainer:
             if args.do_train:
                 train_dl = self.get_train_dataloader()
                 model = self.wrap_model(self.model)
-                self.compile_model(model, next(iter(train_dl)), log=True)
+                self.compile_model(self.training_model, next(iter(train_dl)), log=True)
             if args.do_eval:
                 # Same thing with _wrap_and_compile_for_evaluation
                 eval_dl = self.get_eval_dataloader()
@@ -1091,21 +1091,13 @@ class IPUTrainer:
         if DebugOption.UNDERFLOW_OVERFLOW in self.args.debug:
             debug_overflow = DebugUnderflowOverflow(self.model)  # noqa
 
-        # Activate gradient checkpointing if needed
-        if args.gradient_checkpointing:
-            self.model.gradient_checkpointing_enable()
-
-        model = self._compile_model(next(iter(train_dataloader)), training=True, log=True)
-
         self.create_optimizer_and_scheduler(num_training_steps=max_steps)
 
-        self.state = IPUTrainerState()
         if trial is not None:
             raise ValueError("Hyperparameter tuning is not supported by the IPUTrainer.")
             trial = None
         self.state.is_hyper_param_search = trial is not None
 
-        # TODO: brought by sdk3.0 pr
         self.training_model = self.wrap_model(self.model)
 
         # TODO: handle optimizer and scheduler creation
@@ -1115,7 +1107,6 @@ class IPUTrainer:
         # Check if saved optimizer or scheduler states exist
         self._load_optimizer_and_scheduler(resume_from_checkpoint)
 
-        # TODO: brought by sdk3.0 pr
         self.compile_model(self.training_model, next(iter(train_dataloader)), log=True)
 
         # Train!
@@ -1779,7 +1770,7 @@ class IPUTrainer:
 
         # Running this here (even though it is being recalled in self.evaluation_loop to make compilation happen here.
         # That way, compilation will not mess inference speed metrics.
-        _ = self._compile_model(next(iter(eval_dataloader)), training=False)
+        _ = self._wrap_and_compile_model_for_evaluation(eval_dataloader, prediction_loss_only)
 
         start_time = time.time()
 
@@ -1900,7 +1891,7 @@ class IPUTrainer:
             prediction_loss_only if prediction_loss_only is not None else self.args.prediction_loss_only
         )
 
-        model = self._compile_model(next(iter(dataloader)), training=False)
+        self.inference_model = self._wrap_and_compile_model_for_evaluation(dataloader, prediction_loss_only)
 
         batch_size = dataloader.batch_size
 
