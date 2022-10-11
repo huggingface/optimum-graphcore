@@ -14,11 +14,11 @@
 
 import unittest
 
+from optimum.graphcore import pipeline
 from transformers import (
     MODEL_FOR_SEQUENCE_CLASSIFICATION_MAPPING,
     Pipeline,
     ZeroShotClassificationPipeline,
-    pipeline,
 )
 from transformers.testing_utils import nested_simplify, require_torch, slow
 
@@ -28,9 +28,13 @@ from .test_pipelines_common import ANY, PipelineTestCaseMeta
 class ZeroShotClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
     model_mapping = MODEL_FOR_SEQUENCE_CLASSIFICATION_MAPPING
 
-    def get_test_pipeline(self, model, tokenizer, feature_extractor):
-        classifier = ZeroShotClassificationPipeline(
-            model=model, tokenizer=tokenizer, candidate_labels=["polics", "health"]
+    def get_test_pipeline(self, model, ipu_config, tokenizer, feature_extractor):
+        classifier = pipeline(
+            task="zero-shot-classification",
+            model=model,
+            ipu_config=ipu_config,
+            tokenizer=tokenizer,
+            candidate_labels=["polics", "health"],
         )
         return classifier, ["Who are you voting for in 2020?", "My stomach hurts."]
 
@@ -133,7 +137,7 @@ class ZeroShotClassificationPipelineTests(unittest.TestCase, metaclass=PipelineT
         zero_shot_classifier = pipeline(
             "zero-shot-classification",
             model="sshleifer/tiny-distilbert-base-cased-distilled-squad",
-            framework="pt",
+            ipu_config="Graphcore/distilbert-base-ipu",
         )
         # There was a regression in 4.10 for this
         # Adding a test so we don't make the mistake again.
@@ -147,7 +151,7 @@ class ZeroShotClassificationPipelineTests(unittest.TestCase, metaclass=PipelineT
         zero_shot_classifier = pipeline(
             "zero-shot-classification",
             model="sshleifer/tiny-distilbert-base-cased-distilled-squad",
-            framework="pt",
+            ipu_config="Graphcore/distilbert-base-ipu",
         )
         outputs = zero_shot_classifier(
             "Who are you voting for in 2020?", candidate_labels=["politics", "public health", "science"]
@@ -165,7 +169,11 @@ class ZeroShotClassificationPipelineTests(unittest.TestCase, metaclass=PipelineT
     @slow
     @require_torch
     def test_large_model_pt(self):
-        zero_shot_classifier = pipeline("zero-shot-classification", model="roberta-large-mnli", framework="pt")
+        zero_shot_classifier = pipeline(
+            "zero-shot-classification",
+            model="roberta-large-mnli",
+            ipu_config="Graphcore/roberta-large-ipu",
+        )
         outputs = zero_shot_classifier(
             "Who are you voting for in 2020?", candidate_labels=["politics", "public health", "science"]
         )
