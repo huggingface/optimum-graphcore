@@ -310,27 +310,27 @@ def pipeline(
         tokenizer.pad_token = tokenizer.eos_token
         model.config.pad_token_id = model.config.eos_token_id
 
-    if fp16:
-        # Override pipelines' _forward
-        old_forward = pipeline_class._forward
+    # Override pipelines' _forward
+    old_forward = pipeline_class._forward
 
-        def new_forward(self, model_inputs, *args, **kwargs):
-            # Support change in batch size
-            if self.model._executable_inputs:
-                compiled_bs = self.model._executable_inputs.args[0].shape[0]
-                for input in model_inputs.values():
-                    if isinstance(input, torch.Tensor):
-                        input_bs = input.shape[0]
-                        break
-                if compiled_bs != input_bs:
-                    self.model.destroy()
+    def new_forward(self, model_inputs, *args, **kwargs):
+        # Support change in batch size
+        if self.model._executable_inputs:
+            compiled_bs = self.model._executable_inputs.args[0].shape[0]
+            for input in model_inputs.values():
+                if isinstance(input, torch.Tensor):
+                    input_bs = input.shape[0]
+                    break
+            if compiled_bs != input_bs:
+                self.model.destroy()
+        if fp16:
             # Support fp16
             for key, input in model_inputs.items():
                 if isinstance(input, torch.Tensor) and input.dtype == torch.float32:
                     model_inputs[key] = input.half()
-            return old_forward(self, model_inputs, *args, **kwargs)
+        return old_forward(self, model_inputs, *args, **kwargs)
 
-        pipeline_class._forward = new_forward
+    pipeline_class._forward = new_forward
 
     return transformers_pipeline(
         task,
