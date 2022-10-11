@@ -11,8 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import math
-
 from typing import Optional, Tuple, Union
 
 import torch
@@ -22,15 +20,17 @@ import torch.nn.functional as F
 import poptorch
 from optimum.utils import logging
 from scipy.stats import truncnorm
-from transformers import (
+from transformers.models.bert.modeling_bert import (
     BertForMaskedLM,
     BertForMultipleChoice,
     BertForPreTraining,
     BertForQuestionAnswering,
     BertForSequenceClassification,
     BertForTokenClassification,
+    BertForPreTrainingOutput,
 )
 from transformers.utils.fx import _gen_constructor_wrapper
+from transformers.modeling_outputs import MaskedLMOutput, QuestionAnsweringModelOutput
 
 from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, compose
 from ...fx.transformations import (

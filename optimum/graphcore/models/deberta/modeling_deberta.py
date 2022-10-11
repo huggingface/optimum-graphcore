@@ -14,18 +14,20 @@
 
 import math
 import operator
+from typing import Optional, Union, Tuple
 
 import torch
 import torch.nn as nn
 
 import poptorch
-from transformers import DebertaForQuestionAnswering, DebertaForSequenceClassification, DebertaForTokenClassification
+from transformers import DebertaForMaskedLM, DebertaForQuestionAnswering, DebertaForSequenceClassification, DebertaForTokenClassification
 from transformers.models.deberta.modeling_deberta import (
     DebertaEncoder,
     DisentangledSelfAttention,
     StableDropout,
     build_relative_position,
 )
+from transformers.modeling_outputs import MaskedLMOutput, QuestionAnsweringModelOutput
 
 from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, compose
 from ....utils import logging
@@ -445,8 +447,6 @@ class PipelinedDebertaForSequenceClassification(DebertaForSequenceClassification
     ```
     """
 
-    # def forward(self, input_ids, attention_mask, token_type_ids, labels=None):
-    #     return_dict = False
 
 @register(DebertaForTokenClassification)
 class PipelinedDebertaForTokenClassification(DebertaForTokenClassification, DebertaPipelineMixin):

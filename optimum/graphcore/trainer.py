@@ -909,7 +909,7 @@ class IPUTrainer:
         """
         return len(dataloader.dataset)
 
-def wrap_model(self, model: Union[PreTrainedModel, PoplarExecutor], training: bool =True) -> PoplarExecutor:
+    def wrap_model(self, model: Union[PreTrainedModel, PoplarExecutor], training: bool = True) -> PoplarExecutor:
         """
         Wraps a model for PopTorch, either for training or for inference.
 

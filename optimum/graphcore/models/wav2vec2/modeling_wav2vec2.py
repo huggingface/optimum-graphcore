@@ -27,6 +27,7 @@ from transformers.models.wav2vec2.modeling_wav2vec2 import (
     Wav2Vec2EncoderStableLayerNorm,
     Wav2Vec2ForCTC,
     Wav2Vec2GumbelVectorQuantizer,
+    Wav2Vec2ForPreTrainingOutput,
 )
 
 from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, compose

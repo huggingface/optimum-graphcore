@@ -11,7 +11,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
-from typing import Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 import torch
 from torch import nn
@@ -20,6 +20,7 @@ import transformers
 from optimum.utils import logging
 from transformers import BartForConditionalGeneration, BartForSequenceClassification
 from transformers.models.bart.modeling_bart import BartAttention
+from transformers.modeling_outputs import Seq2SeqLMOutput, Seq2SeqSequenceClassifierOutput
 
 from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, ReversibleTransformation, compose
 from ...fx.transformations import (
