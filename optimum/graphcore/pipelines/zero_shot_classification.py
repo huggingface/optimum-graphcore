@@ -66,6 +66,8 @@ class IPUZeroShotClassificationPipeline(ZeroShotClassificationPipeline):
         preprocess_params = {}
         if "candidate_labels" in kwargs:
             preprocess_params["candidate_labels"] = self._args_parser._parse_labels(kwargs["candidate_labels"])
+        if "hypothesis_template" in kwargs:
+            preprocess_params["hypothesis_template"] = kwargs["hypothesis_template"]
         if "padding" in kwargs:
             preprocess_params["padding"] = kwargs["padding"]
         if "max_length" in kwargs:
