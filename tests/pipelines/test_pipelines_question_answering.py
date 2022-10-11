@@ -14,13 +14,14 @@
 
 import unittest
 
+from optimum.graphcore import pipeline
 from transformers import (
     MODEL_FOR_QUESTION_ANSWERING_MAPPING,
     LxmertConfig,
     QuestionAnsweringPipeline,
 )
 from transformers.data.processors.squad import SquadExample
-from transformers.pipelines import QuestionAnsweringArgumentHandler, pipeline
+from transformers.pipelines import QuestionAnsweringArgumentHandler
 from transformers.testing_utils import nested_simplify, require_torch, slow
 
 from .test_pipelines_common import ANY, PipelineTestCaseMeta
@@ -29,12 +30,17 @@ from .test_pipelines_common import ANY, PipelineTestCaseMeta
 class QAPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
     model_mapping = MODEL_FOR_QUESTION_ANSWERING_MAPPING
 
-    def get_test_pipeline(self, model, tokenizer, feature_extractor):
+    def get_test_pipeline(self, model, ipu_config, tokenizer, feature_extractor):
         if isinstance(model.config, LxmertConfig):
             # This is an bimodal model, we need to find a more consistent way
             # to switch on those models.
             return None, None
-        question_answerer = QuestionAnsweringPipeline(model, tokenizer)
+        question_answerer = pipeline(
+            task="question-answering",
+            model=model,
+            ipu_config=ipu_config,
+            tokenizer=tokenizer,
+        )
 
         examples = [
             {"question": "Where was HuggingFace founded ?", "context": "HuggingFace was founded in Paris."},
@@ -113,7 +119,9 @@ class QAPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
     @require_torch
     def test_small_model_pt(self):
         question_answerer = pipeline(
-            "question-answering", model="sshleifer/tiny-distilbert-base-cased-distilled-squad"
+            "question-answering",
+            model="sshleifer/tiny-distilbert-base-cased-distilled-squad",
+            ipu_config="Graphcore/distilbert-base-ipu",
         )
 
         outputs = question_answerer(
@@ -125,7 +133,11 @@ class QAPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
     @require_torch
     def test_small_model_pt_iterator(self):
         # https://github.com/huggingface/transformers/issues/18510
-        pipe = pipeline(model="sshleifer/tiny-distilbert-base-cased-distilled-squad", batch_size=16, framework="pt")
+        pipe = pipeline(
+            model="sshleifer/tiny-distilbert-base-cased-distilled-squad",
+            batch_size=16,
+            ipu_config="Graphcore/distilbert-base-ipu",
+        )
 
         def data():
             for i in range(10):
@@ -137,7 +149,9 @@ class QAPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
     @require_torch
     def test_small_model_pt_softmax_trick(self):
         question_answerer = pipeline(
-            "question-answering", model="sshleifer/tiny-distilbert-base-cased-distilled-squad"
+            "question-answering",
+            model="sshleifer/tiny-distilbert-base-cased-distilled-squad",
+            ipu_config="Graphcore/distilbert-base-ipu",
         )
 
         real_postprocess = question_answerer.postprocess
@@ -174,6 +188,7 @@ class QAPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
         question_answerer = pipeline(
             "question-answering",
             model="KoichiYasuoka/deberta-base-japanese-aozora-ud-head",
+            ipu_config="Graphcore/deberta-base-ipu",
         )
         output = question_answerer(question="国語", context="全学年にわたって小学校の国語の教科書に挿し絵が用いられている")
 
@@ -197,6 +212,7 @@ class QAPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
         question_answerer = pipeline(
             "question-answering",
             model="deepset/roberta-base-squad2",
+            ipu_config="Graphcore/roberta-base-ipu",
             handle_impossible_answer=True,
             max_seq_length=512,
         )
@@ -224,6 +240,7 @@ class QAPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
         qa_pipeline = pipeline(
             "question-answering",
             model="mrm8488/bert-multi-cased-finetuned-xquadv1",
+            ipu_config="Graphcore/bert-base-ipu",
         )
         outputs = qa_pipeline(
             {
