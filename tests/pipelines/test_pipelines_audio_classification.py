@@ -78,23 +78,24 @@ class AudioClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
             ],
         )
 
-    # @require_torch
-    # def test_small_model_pt(self):
-    #     model = "anton-l/wav2vec2-random-tiny-classifier"
+    @require_torch
+    def test_small_model_pt(self):
+        pass
+        # model = "anton-l/wav2vec2-random-tiny-classifier"
 
-    #     audio_classifier = pipeline("audio-classification", model=model)
+        # audio_classifier = pipeline("audio-classification", model=model)
 
-    #     audio = np.ones((8000,))
-    #     output = audio_classifier(audio, top_k=4)
-    #     self.assertEqual(
-    #         nested_simplify(output, decimals=4),
-    #         [
-    #             {"score": 0.0842, "label": "no"},
-    #             {"score": 0.0838, "label": "up"},
-    #             {"score": 0.0837, "label": "go"},
-    #             {"score": 0.0834, "label": "right"},
-    #         ],
-    #     )
+        # audio = np.ones((8000,))
+        # output = audio_classifier(audio, top_k=4)
+        # self.assertEqual(
+        #     nested_simplify(output, decimals=4),
+        #     [
+        #         {"score": 0.0842, "label": "no"},
+        #         {"score": 0.0838, "label": "up"},
+        #         {"score": 0.0837, "label": "go"},
+        #         {"score": 0.0834, "label": "right"},
+        #     ],
+        # )
 
     # @require_torch
     # @slow
