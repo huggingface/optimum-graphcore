@@ -144,17 +144,17 @@ class FillMaskPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
             ],
         )
 
-    @require_torch
-    def test_model_no_pad_pt(self):
-        unmasker = pipeline(
-            task="fill-mask",
-            model="sshleifer/tiny-distilroberta-base",
-            ipu_config="Graphcore/roberta-base-ipu",
-            framework="pt",
-        )
-        unmasker.tokenizer.pad_token_id = None
-        unmasker.tokenizer.pad_token = None
-        self.run_pipeline_test(unmasker, [])
+    # @require_torch
+    # def test_model_no_pad_pt(self):
+    #     unmasker = pipeline(
+    #         task="fill-mask",
+    #         model="sshleifer/tiny-distilroberta-base",
+    #         ipu_config="Graphcore/roberta-base-ipu",
+    #         framework="pt",
+    #     )
+    #     unmasker.tokenizer.pad_token_id = None
+    #     unmasker.tokenizer.pad_token = None
+    #     self.run_pipeline_test(unmasker, [])
 
     def get_test_pipeline(self, model, ipu_config, tokenizer, feature_extractor):
         if tokenizer is None or tokenizer.mask_token_id is None:
