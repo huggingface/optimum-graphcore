@@ -13,11 +13,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import List, Optional, Tuple, Union
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-from typing import List, Optional, Tuple, Union
 
 import poptorch
 from optimum.utils import logging
@@ -30,9 +30,9 @@ from transformers import (
     BertForSequenceClassification,
     BertForTokenClassification,
 )
-from transformers.models.bert.modeling_bert import BertModel
-from transformers.modeling_utils import apply_chunking_to_forward
 from transformers.modeling_outputs import BaseModelOutputWithPastAndCrossAttentions
+from transformers.modeling_utils import apply_chunking_to_forward
+from transformers.models.bert.modeling_bert import BertModel
 
 from ...modeling_utils import (
     OnehotGather,

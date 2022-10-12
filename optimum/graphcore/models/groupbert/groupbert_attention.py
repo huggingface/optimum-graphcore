@@ -22,9 +22,8 @@ import torch
 import torch.nn as nn
 
 from optimum.utils import logging
-
-from transformers.models.bert.modeling_bert import BertSelfAttention
 from transformers.modeling_utils import find_pruneable_heads_and_indices, prune_linear_layer
+from transformers.models.bert.modeling_bert import BertSelfAttention
 
 
 logger = logging.get_logger(__name__)

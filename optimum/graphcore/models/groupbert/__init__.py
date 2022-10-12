@@ -17,9 +17,9 @@
 # limitations under the License.
 
 from .modeling_groupbert import (
-    GroupBertForPreTraining,
     GroupBertForMaskedLM,
     GroupBertForMultipleChoice,
+    GroupBertForPreTraining,
     GroupBertForQuestionAnswering,
     GroupBertForSequenceClassification,
     GroupBertForTokenClassification,

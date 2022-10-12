@@ -14,6 +14,7 @@
 
 import collections
 import copy
+import functools
 import inspect
 import math
 import os
@@ -23,7 +24,6 @@ import shutil
 import sys
 import time
 import warnings
-import functools
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union

@@ -31,9 +31,8 @@ import transformers
 from optimum.graphcore import IPUConfig
 from optimum.graphcore import IPUTrainingArguments as TrainingArguments
 from optimum.graphcore.data import pad_on_batch_axis
-from optimum.graphcore.utils import check_min_version
 from optimum.graphcore.models.groupbert import GroupBertForQuestionAnswering
-
+from optimum.graphcore.utils import check_min_version
 from trainer_qa import QuestionAnsweringTrainer
 from transformers import (
     AutoConfig,
@@ -51,6 +50,8 @@ from transformers.utils import check_min_version as tf_check_min_version
 from transformers.utils import send_example_telemetry
 from transformers.utils.versions import require_version
 from utils_qa import postprocess_qa_predictions
+
+
 from transformers.integrations import (  # isort: split
     WandbCallback,
 )
