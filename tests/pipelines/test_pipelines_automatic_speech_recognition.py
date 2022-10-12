@@ -36,7 +36,6 @@ from transformers.testing_utils import (
     is_torch_available,
     nested_simplify,
     require_pyctcdecode,
-    require_tf,
     require_torch,
     require_torchaudio,
     slow,
@@ -210,10 +209,6 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
                 ],
             },
         )
-
-    @require_tf
-    def test_small_model_tf(self):
-        self.skipTest("Tensorflow not supported yet.")
 
     @require_torch
     def test_torch_small_no_tokenizer_files(self):
