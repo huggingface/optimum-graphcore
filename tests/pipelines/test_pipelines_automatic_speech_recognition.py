@@ -53,6 +53,8 @@ if is_torch_available():
 
 
 class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
+    # TODO: seq2seq disabled for now. Will be supported in the future.
+    MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING = None
     model_mapping = {
         k: v
         for k, v in (list(MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING.items()) if MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING else [])
