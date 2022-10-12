@@ -72,42 +72,42 @@ class AudioClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
             ],
         )
 
-    @require_torch
-    def test_small_model_pt(self):
-        model = "anton-l/wav2vec2-random-tiny-classifier"
+    # @require_torch
+    # def test_small_model_pt(self):
+    #     model = "anton-l/wav2vec2-random-tiny-classifier"
 
-        audio_classifier = pipeline("audio-classification", model=model)
+    #     audio_classifier = pipeline("audio-classification", model=model)
 
-        audio = np.ones((8000,))
-        output = audio_classifier(audio, top_k=4)
-        self.assertEqual(
-            nested_simplify(output, decimals=4),
-            [
-                {"score": 0.0842, "label": "no"},
-                {"score": 0.0838, "label": "up"},
-                {"score": 0.0837, "label": "go"},
-                {"score": 0.0834, "label": "right"},
-            ],
-        )
+    #     audio = np.ones((8000,))
+    #     output = audio_classifier(audio, top_k=4)
+    #     self.assertEqual(
+    #         nested_simplify(output, decimals=4),
+    #         [
+    #             {"score": 0.0842, "label": "no"},
+    #             {"score": 0.0838, "label": "up"},
+    #             {"score": 0.0837, "label": "go"},
+    #             {"score": 0.0834, "label": "right"},
+    #         ],
+    #     )
 
-    @require_torch
-    @slow
-    def test_large_model_pt(self):
-        import datasets
+    # @require_torch
+    # @slow
+    # def test_large_model_pt(self):
+    #     import datasets
 
-        model = "superb/wav2vec2-base-superb-ks"
+    #     model = "superb/wav2vec2-base-superb-ks"
 
-        audio_classifier = pipeline("audio-classification", model=model)
-        dataset = datasets.load_dataset("anton-l/superb_dummy", "ks", split="test")
+    #     audio_classifier = pipeline("audio-classification", model=model)
+    #     dataset = datasets.load_dataset("anton-l/superb_dummy", "ks", split="test")
 
-        audio = np.array(dataset[3]["speech"], dtype=np.float32)
-        output = audio_classifier(audio, top_k=4)
-        self.assertEqual(
-            nested_simplify(output, decimals=3),
-            [
-                {"score": 0.981, "label": "go"},
-                {"score": 0.007, "label": "up"},
-                {"score": 0.006, "label": "_unknown_"},
-                {"score": 0.001, "label": "down"},
-            ],
-        )
+    #     audio = np.array(dataset[3]["speech"], dtype=np.float32)
+    #     output = audio_classifier(audio, top_k=4)
+    #     self.assertEqual(
+    #         nested_simplify(output, decimals=3),
+    #         [
+    #             {"score": 0.981, "label": "go"},
+    #             {"score": 0.007, "label": "up"},
+    #             {"score": 0.006, "label": "_unknown_"},
+    #             {"score": 0.001, "label": "down"},
+    #         ],
+    #     )
