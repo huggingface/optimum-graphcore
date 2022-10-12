@@ -324,7 +324,7 @@ def pipeline(
         kwargs["padding"] = "max_length"
 
     # Set pad_token for models that do not have pad_token
-    if model.config.model_type == "gpt2":
+    if model.config.model_type in {"gpt2"}:
         tokenizer.pad_token = tokenizer.eos_token
         model.config.pad_token_id = model.config.eos_token_id
 
