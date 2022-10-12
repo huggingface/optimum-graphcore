@@ -18,7 +18,9 @@ class OptimizedGPT2Attention(GPT2Attention):
         if not self.is_cross_attention:
             # if only "normal" attention layer implements causal mask
             query_length, key_length = query.size(-2), key.size(-2)
-            causal_mask = self.bias[:, :, key_length - query_length : key_length, :key_length]
+            causal_mask = self.bias[:, :, key_length - query_length : key_length, :key_length].to(
+                dtype=attn_weights.dtype
+            )
             attn_weights = attn_weights * causal_mask + -1e4 * (1 - causal_mask)
 
         if attention_mask is not None:

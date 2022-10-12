@@ -38,31 +38,13 @@ class IPUWav2Vec2Encoder(Wav2Vec2Encoder):
         output_hidden_states=False,
         return_dict=True,
     ):
-        all_self_attentions = None
-        all_hidden_states = None
+        all_hidden_states = () if output_hidden_states else None
+        all_self_attentions = () if output_attentions else None
 
-        if output_attentions:
-            raise ValueError("output_attetntions=True is not supported " "for IPUWav2Vec2Encoder")
-        if output_hidden_states:
-            raise ValueError("output_hidden_states=True is not supported " "for IPUWav2Vec2Encoder")
-
-        pad_length = 0
         if attention_mask is not None:
             # make sure padded tokens output 0
-            hidden_states[~attention_mask] = 0.0
-
-            sequence_length_padding_divisor = 4
-            # Pad attention mask to more divisible length
-            remainder = attention_mask.size(-1) % sequence_length_padding_divisor
-
-            if remainder != 0:
-                pad_length = sequence_length_padding_divisor - remainder
-                attention_mask = F.pad(
-                    attention_mask,
-                    # Want e.g. (..., 999) -> (..., 1000)
-                    pad=(0, pad_length),
-                    value=0.0,
-                )
+            expand_attention_mask = attention_mask.unsqueeze(-1).repeat(1, 1, hidden_states.shape[2])
+            hidden_states[~expand_attention_mask] = 0
 
             # extend attention_mask
             attention_mask = (1.0 - attention_mask[:, None, None, :].to(dtype=hidden_states.dtype)) * -10000.0
@@ -75,27 +57,35 @@ class IPUWav2Vec2Encoder(Wav2Vec2Encoder):
         hidden_states = self.layer_norm(hidden_states)
         hidden_states = self.dropout(hidden_states)
 
-        hidden_states = F.pad(
-            hidden_states,
-            # Want e.g. (..., 999, 768) -> (..., 1000, 768)
-            pad=(0, 0, 0, pad_length),
-        )
-
         for layer in self.layers:
-            # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
-            dropout_probability = torch.rand(tuple())
-            skip_the_layer = self.training and (dropout_probability < self.config.layerdrop)
-            layer_outputs = layer(hidden_states, attention_mask=attention_mask, output_attentions=output_attentions)
-            hidden_states = torch.where(torch.BoolTensor([skip_the_layer]), hidden_states, layer_outputs[0])
+            if output_hidden_states:
+                all_hidden_states = all_hidden_states + (hidden_states,)
 
-        # Remove padded values
-        # Want e.g. (..., 1000, 768) -> (..., 999, 768)
-        if pad_length > 0:
-            hidden_states = hidden_states[..., 0:(-pad_length), :]
+            layer_outputs = layer(hidden_states, attention_mask=attention_mask, output_attentions=output_attentions)
+
+            # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
+            # Modify LayerDrop so it can be statically compiled without eager mode
+            if self.config.layerdrop > 0.0:
+                dropout_probability = torch.rand(tuple(), device=hidden_states.device)
+                skip_the_layer = (
+                    torch.tensor(self.training, device=hidden_states.device)
+                    & (dropout_probability < self.config.layerdrop)
+                ).to(dtype=hidden_states.dtype)
+                hidden_states = hidden_states * skip_the_layer + layer_outputs[0] * (1 - skip_the_layer)
+            else:
+                hidden_states = layer_outputs[0]
+
+            if output_attentions:
+                if self.config.layerdrop > 0.0:
+                    all_self_attentions = all_self_attentions + ((1 - skip_the_layer) * layer_outputs[1],)
+                else:
+                    all_self_attentions = all_self_attentions + (layer_outputs[1],)
+
+        if output_hidden_states:
+            all_hidden_states = all_hidden_states + (hidden_states,)
 
         if not return_dict:
             return tuple(v for v in [hidden_states, all_hidden_states, all_self_attentions] if v is not None)
-
         return BaseModelOutput(
             last_hidden_state=hidden_states,
             hidden_states=all_hidden_states,
@@ -112,31 +102,13 @@ class IPUWav2Vec2EncoderStableLayerNorm(Wav2Vec2EncoderStableLayerNorm):
         output_hidden_states=False,
         return_dict=True,
     ):
-        all_self_attentions = None
-        all_hidden_states = None
+        all_hidden_states = () if output_hidden_states else None
+        all_self_attentions = () if output_attentions else None
 
-        if output_attentions:
-            raise ValueError("output_attetntions=True is not supported " "for IPUWav2Vec2EncoderStableLayerNorm")
-        if output_hidden_states:
-            raise ValueError("output_hidden_states=True is not supported " "for IPUWav2Vec2EncoderStableLayerNorm")
-
-        pad_length = 0
         if attention_mask is not None:
-            # make sure padded tokens output 0
-            hidden_states[~attention_mask] = 0.0
-
-            sequence_length_padding_divisor = 4
-            # Pad attention mask to more divisible length
-            remainder = attention_mask.size(-1) % sequence_length_padding_divisor
-
-            if remainder != 0:
-                pad_length = sequence_length_padding_divisor - remainder
-                attention_mask = F.pad(
-                    attention_mask,
-                    # Want e.g. (..., 999) -> (..., 1000)
-                    pad=(0, pad_length),
-                    value=0.0,
-                )
+            # make sure padded tokens are not attended to
+            expand_attention_mask = attention_mask.unsqueeze(-1).repeat(1, 1, hidden_states.shape[2])
+            hidden_states[~expand_attention_mask] = 0
 
             # extend attention_mask
             attention_mask = (1.0 - attention_mask[:, None, None, :].to(dtype=hidden_states.dtype)) * -10000.0
@@ -148,29 +120,37 @@ class IPUWav2Vec2EncoderStableLayerNorm(Wav2Vec2EncoderStableLayerNorm):
         hidden_states = hidden_states + position_embeddings
         hidden_states = self.dropout(hidden_states)
 
-        hidden_states = F.pad(
-            hidden_states,
-            # Want e.g. (..., 999, 768) -> (..., 1000, 768)
-            pad=(0, 0, 0, pad_length),
-        )
-
         for layer in self.layers:
-            # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
-            dropout_probability = torch.rand(tuple())
-            skip_the_layer = self.training and (dropout_probability < self.config.layerdrop)
-            layer_outputs = layer(hidden_states, attention_mask=attention_mask, output_attentions=output_attentions)
-            hidden_states = torch.where(torch.BoolTensor([skip_the_layer]), hidden_states, layer_outputs[0])
+            if output_hidden_states:
+                all_hidden_states = all_hidden_states + (hidden_states,)
 
-        # Remove padded values
-        # Want e.g. (..., 1000, 768) -> (..., 999, 768)
-        if pad_length > 0:
-            hidden_states = hidden_states[..., 0:(-pad_length), :]
+            layer_outputs = layer(hidden_states, attention_mask=attention_mask, output_attentions=output_attentions)
+
+            # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
+            # Modify LayerDrop so it can be statically compiled without eager mode
+            if self.config.layerdrop > 0.0:
+                dropout_probability = torch.rand(tuple(), device=hidden_states.device)
+                skip_the_layer = (
+                    torch.tensor(self.training, device=hidden_states.device)
+                    & (dropout_probability < self.config.layerdrop)
+                ).to(dtype=hidden_states.dtype)
+                hidden_states = hidden_states * skip_the_layer + layer_outputs[0] * (1 - skip_the_layer)
+            else:
+                hidden_states = layer_outputs[0]
+
+            if output_attentions:
+                if self.config.layerdrop > 0.0:
+                    all_self_attentions = all_self_attentions + ((1 - skip_the_layer) * layer_outputs[1],)
+                else:
+                    all_self_attentions = all_self_attentions + (layer_outputs[1],)
 
         hidden_states = self.layer_norm(hidden_states)
 
+        if output_hidden_states:
+            all_hidden_states = all_hidden_states + (hidden_states,)
+
         if not return_dict:
             return tuple(v for v in [hidden_states, all_hidden_states, all_self_attentions] if v is not None)
-
         return BaseModelOutput(
             last_hidden_state=hidden_states,
             hidden_states=all_hidden_states,
@@ -188,10 +168,12 @@ class IPUWav2Vec2Adapter(Wav2Vec2Adapter):
         hidden_states = hidden_states.transpose(1, 2)
 
         for layer in self.layers:
-            layerdrop_prob = torch.rand(tuple())
             layer_output = layer(hidden_states)
-            use_the_layer = not self.training or (layerdrop_prob > self.layerdrop)
-            hidden_states = torch.where(torch.BoolTensor([use_the_layer]), layer_output, hidden_states)
+            layerdrop_prob = torch.rand(tuple(), device=hidden_states.device)
+            use_the_layer = ~(
+                torch.tensor(self.training, device=hidden_states.device) | (layerdrop_prob > self.layerdrop)
+            )
+            hidden_states = use_the_layer * layer_output + (1 - use_the_layer) * hidden_states
 
         hidden_states = hidden_states.transpose(1, 2)
         return hidden_states

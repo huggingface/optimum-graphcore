@@ -12,9 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Optional, Tuple, Union
+
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
+from torch.nn import CrossEntropyLoss
 
 import poptorch
 from optimum.utils import logging
@@ -25,6 +27,7 @@ from transformers import (
     RobertaForSequenceClassification,
     RobertaForTokenClassification,
 )
+from transformers.modeling_outputs import MaskedLMOutput, QuestionAnsweringModelOutput
 
 from ...modeling_utils import (
     OnehotGather,
@@ -160,25 +163,76 @@ class PipelinedRobertaForMaskedLM(RobertaForMaskedLM, PipelineMixin):
             self.tie_weights()
         return self
 
-    def forward(self, input_ids, attention_mask, labels=None):
-        if self.training:
-            outputs = self.roberta(input_ids, attention_mask=attention_mask)
+    def forward(
+        self,
+        input_ids: Optional[torch.LongTensor] = None,
+        attention_mask: Optional[torch.FloatTensor] = None,
+        token_type_ids: Optional[torch.LongTensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        head_mask: Optional[torch.FloatTensor] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        encoder_hidden_states: Optional[torch.FloatTensor] = None,
+        encoder_attention_mask: Optional[torch.FloatTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[Tuple[torch.Tensor], MaskedLMOutput]:
+        r"""
+        labels (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
+            Labels for computing the masked language modeling loss. Indices should be in `[-100, 0, ...,
+            config.vocab_size]` (see `input_ids` docstring) Tokens with indices set to `-100` are ignored (masked), the
+            loss is only computed for the tokens with labels in `[0, ..., config.vocab_size]`
+        kwargs (`Dict[str, any]`, optional, defaults to *{}*):
+            Used to hide legacy arguments that have been deprecated.
+        """
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        if labels is not None:
+            outputs = self.roberta(
+                input_ids,
+                attention_mask=attention_mask,
+                token_type_ids=token_type_ids,
+                position_ids=position_ids,
+                head_mask=head_mask,
+                inputs_embeds=inputs_embeds,
+                encoder_hidden_states=encoder_hidden_states,
+                encoder_attention_mask=encoder_attention_mask,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                return_dict=return_dict,
+            )
             sequence_output = outputs[0]
 
-            # Select only the masked tokens for the classifier
-            max_number_of_masked_tokens = int(labels.size(1) * 0.25)
-            masked_lm_labels, masked_lm_positions = torch.topk(labels, k=max_number_of_masked_tokens, dim=1)
-            masked_output = self.gather_indices(sequence_output, masked_lm_positions)
+            if hasattr(self.config, "max_num_masked_tokens"):
+                # Select only the masked tokens for the classifier
+                labels, positions = torch.topk(labels, k=self.config.max_num_masked_tokens, dim=1)
+                sequence_output = self.gather_indices(sequence_output, positions)
 
-            prediction_scores = self.lm_head(masked_output)
+            prediction_scores = self.lm_head(sequence_output)
 
-            masked_lm_loss = F.cross_entropy(
-                prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1)
-            ).float()
-            return (masked_lm_loss,)
+            loss_fct = CrossEntropyLoss()
+            masked_lm_loss = loss_fct(prediction_scores.view(-1, self.config.vocab_size), labels.view(-1))
+            # When training only return the loss
+            if return_dict:
+                return MaskedLMOutput(loss=masked_lm_loss)
+            else:
+                return (masked_lm_loss,)
+
         else:
             return super().forward(
-                input_ids=input_ids, attention_mask=attention_mask, labels=labels, return_dict=False
+                input_ids=input_ids,
+                attention_mask=attention_mask,
+                token_type_ids=token_type_ids,
+                position_ids=position_ids,
+                head_mask=head_mask,
+                inputs_embeds=inputs_embeds,
+                encoder_hidden_states=encoder_hidden_states,
+                encoder_attention_mask=encoder_attention_mask,
+                output_attentions=output_attentions,
+                output_hidden_states=output_hidden_states,
+                labels=labels,
+                return_dict=return_dict,
             )
 
 
@@ -201,14 +255,6 @@ class PipelinedRobertaForSequenceClassification(RobertaForSequenceClassification
         logger.info("-----------------------------------------------------------")
         return self
 
-    def forward(self, input_ids, attention_mask, labels=None):
-        return super().forward(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            labels=labels,
-            return_dict=False,
-        )
-
 
 @register(RobertaForMultipleChoice)
 class PipelinedRobertaForMultipleChoice(RobertaForMultipleChoice, RobertaPipelineMixin):
@@ -228,14 +274,6 @@ class PipelinedRobertaForMultipleChoice(RobertaForMultipleChoice, RobertaPipelin
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
         return self
-
-    def forward(self, input_ids, attention_mask, labels=None):
-        return super().forward(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            labels=labels,
-            return_dict=False,
-        )
 
 
 @register(RobertaForTokenClassification)
@@ -257,14 +295,6 @@ class PipelinedRobertaForTokenClassification(RobertaForTokenClassification, Robe
         logger.info("-----------------------------------------------------------")
         return self
 
-    def forward(self, input_ids, attention_mask, labels=None):
-        return super().forward(
-            input_ids=input_ids,
-            attention_mask=attention_mask,
-            labels=labels,
-            return_dict=False,
-        )
-
 
 @register(RobertaForQuestionAnswering)
 class PipelinedRobertaForQuestionAnswering(RobertaForQuestionAnswering, RobertaPipelineMixin):
@@ -285,13 +315,44 @@ class PipelinedRobertaForQuestionAnswering(RobertaForQuestionAnswering, RobertaP
         logger.info("-----------------------------------------------------------")
         return self
 
-    def forward(self, input_ids, attention_mask, start_positions=None, end_positions=None):
+    def forward(
+        self,
+        input_ids: Optional[torch.LongTensor] = None,
+        attention_mask: Optional[torch.FloatTensor] = None,
+        token_type_ids: Optional[torch.LongTensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        head_mask: Optional[torch.FloatTensor] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        start_positions: Optional[torch.LongTensor] = None,
+        end_positions: Optional[torch.LongTensor] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[Tuple[torch.Tensor], QuestionAnsweringModelOutput]:
+        r"""
+        start_positions (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
+            Labels for position (index) of the start of the labelled span for computing the token classification loss.
+            Positions are clamped to the length of the sequence (`sequence_length`). Position outside of the sequence
+            are not taken into account for computing the loss.
+        end_positions (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
+            Labels for position (index) of the end of the labelled span for computing the token classification loss.
+            Positions are clamped to the length of the sequence (`sequence_length`). Position outside of the sequence
+            are not taken into account for computing the loss.
+        """
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
         output = super().forward(
-            input_ids=input_ids,
+            input_ids,
             attention_mask=attention_mask,
+            token_type_ids=token_type_ids,
+            position_ids=position_ids,
+            head_mask=head_mask,
+            inputs_embeds=inputs_embeds,
             start_positions=start_positions,
             end_positions=end_positions,
-            return_dict=False,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
         )
         if start_positions is not None and end_positions is not None:
             output = (poptorch.identity_loss(output[0], reduction="none"),) + output[1:]

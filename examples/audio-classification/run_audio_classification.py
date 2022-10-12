@@ -303,9 +303,8 @@ def main():
         use_auth_token=True if model_args.use_auth_token else None,
     )
 
-    # Disable these features that can't run on IPU yet
+    # Disable the feature that can't run on IPU yet
     # TODO handle this properly
-    config.layerdrop = 0.0
     config.mask_time_prob = 0.0
 
     ipu_config = IPUConfig.from_pretrained(
@@ -341,6 +340,9 @@ def main():
             padding="max_length",
         )
         examples["input_values"] = inputs["input_values"][0]
+        if not training_args.fp32:
+            # Cast audio input to FP16
+            examples["input_values"] = examples["input_values"].astype(np.float16)
         examples["labels"] = examples[data_args.label_column_name]
         return examples
 

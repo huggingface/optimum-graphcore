@@ -17,7 +17,12 @@
 > 
 > # Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
 > check_min_version("0.2.4.dev0")
-164a170,184
+164a170,189
+> class ToHalf(torch.nn.Module):
+>     def forward(self, tensor):
+>         return tensor.half()
+> 
+> 
 > # Implement transforms as a functor instead of a function because the Async Dataloader
 > # can't handle functions with closures because it uses pickle underneath.
 > class ApplyTransforms:
@@ -33,43 +38,79 @@
 >         return example_batch
 > 
 > 
-195,199d214
+195,199d219
 <     # Log on each process the small summary:
 <     logger.warning(
 <         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
 <         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
 <     )
-272a288,293
+272a293,298
 >     ipu_config = IPUConfig.from_pretrained(
 >         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
 >         cache_dir=model_args.cache_dir,
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
-308,319d328
+291,313c317,332
+<     _train_transforms = Compose(
+<         [
+<             RandomResizedCrop(feature_extractor.size),
+<             RandomHorizontalFlip(),
+<             ToTensor(),
+<             normalize,
+<         ]
+<     )
+<     _val_transforms = Compose(
+<         [
+<             Resize(feature_extractor.size),
+<             CenterCrop(feature_extractor.size),
+<             ToTensor(),
+<             normalize,
+<         ]
+<     )
+< 
 <     def train_transforms(example_batch):
 <         """Apply _train_transforms across a batch."""
 <         example_batch["pixel_values"] = [
 <             _train_transforms(pil_img.convert("RGB")) for pil_img in example_batch["image"]
 <         ]
 <         return example_batch
-< 
+---
+>     _train_transforms = [
+>         RandomResizedCrop(feature_extractor.size),
+>         RandomHorizontalFlip(),
+>         ToTensor(),
+>         normalize,
+>     ]
+>     _val_transforms = [
+>         Resize(feature_extractor.size),
+>         CenterCrop(feature_extractor.size),
+>         ToTensor(),
+>         normalize,
+>     ]
+> 
+>     if not training_args.fp32:
+>         _train_transforms.append(ToHalf())
+>         _val_transforms.append(ToHalf())
+315,318c334,335
 <     def val_transforms(example_batch):
 <         """Apply _val_transforms across a batch."""
 <         example_batch["pixel_values"] = [_val_transforms(pil_img.convert("RGB")) for pil_img in example_batch["image"]]
 <         return example_batch
-< 
-328c337
+---
+>     _train_transforms = Compose(_train_transforms)
+>     _val_transforms = Compose(_val_transforms)
+328c345
 <         dataset["train"].set_transform(train_transforms)
 ---
 >         dataset["train"].set_transform(ApplyTransforms(_train_transforms))
-338c347
+338c355
 <         dataset["validation"].set_transform(val_transforms)
 ---
 >         dataset["validation"].set_transform(ApplyTransforms(_val_transforms))
-341c350
+341c358
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-342a352
+342a360
 >         ipu_config=ipu_config,

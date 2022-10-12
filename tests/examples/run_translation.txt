@@ -17,6 +17,10 @@
 > 
 > # Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
 > check_min_version("0.2.4.dev0")
+145c150
+<         default=128,
+---
+>         default=1024,
 281,285d285
 <     # Log on each process the small summary:
 <     logger.warning(
@@ -30,7 +34,7 @@
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
-515,523c521,526
+515,523c521,528
 <     if data_args.pad_to_max_length:
 <         data_collator = default_data_collator
 <     else:
@@ -44,12 +48,14 @@
 >     data_collator = DataCollatorForSeq2Seq(
 >         tokenizer,
 >         model=model,
+>         # If data_args.pad_to_max_length then already padded during preprocessing.
+>         padding=False if data_args.pad_to_max_length else "max_length",
 >         label_pad_token_id=label_pad_token_id,
 >         pad_to_multiple_of=None,
 >     )
-556c559
+556c561
 <     trainer = Seq2SeqTrainer(
 ---
 >     trainer = IPUSeq2SeqTrainer(
-557a561
+557a563
 >         ipu_config=ipu_config,

@@ -33,7 +33,7 @@ Here is an example on a summarization task:
 python examples/summarization/run_summarization.py \
     --model_name_or_path t5-small \
     --ipu_config_name Graphcore/t5-small-ipu \
-    --ipu_config_overrides="inference_device_iterations=1,inference_replication_factor=2,sharded_execution_for_inference=True,execute_encoder_on_cpu_for_generation=False" \
+    --ipu_config_overrides "inference_device_iterations=1,inference_replication_factor=2,sharded_execution_for_inference=True,execute_encoder_on_cpu_for_generation=False" \
     --do_train \
     --do_eval \
     --dataset_name cnn_dailymail \
@@ -98,12 +98,12 @@ The same tasks can be run with BART models by using arguments `--model_name_or_p
 python examples/summarization/run_summarization.py \
     --model_name_or_path facebook/bart-base \
     --ipu_config_name Graphcore/bart-base-ipu \
-    --ipu_config_overrides="inference_device_iterations=1,inference_replication_factor=2,sharded_execution_for_inference=True,execute_encoder_on_cpu_for_generation=False" \
+    --ipu_config_overrides "inference_device_iterations=1,inference_replication_factor=2,sharded_execution_for_inference=True,execute_encoder_on_cpu_for_generation=False,layers_per_ipu=[0 4 4 4]" \
     --do_train True \
     --do_eval True \
     --dataset_name cnn_dailymail \
     --dataset_config "3.0.0" \
-    --per_device_train_batch_size 1 \
+    --per_device_train_batch_size 2 \
     --per_device_eval_batch_size 4 \
     --pod_type pod16 \
     --num_train_epochs 2 \

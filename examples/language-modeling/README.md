@@ -74,7 +74,7 @@ python examples/language-modeling/run_pretraining.py \
   --tokenizer_name bert-base-uncased \
   --model_name_or_path ./output-pretrain-bert-base-phase1 \
   --ipu_config_name Graphcore/bert-base-ipu \
-  --dataset_path_name Graphcore/wikipedia-bert-512 \
+  --dataset_name Graphcore/wikipedia-bert-512 \
   --do_train \
   --logging_steps 5 \
   --max_seq_length 512 \
@@ -167,12 +167,21 @@ When training a model from scratch, configuration values may be overridden with 
 python run_pretraining.py --config_overrides="hidden_size=1024,num_attention_heads=16,num_hidden_layers=24" [...]
 ```
 
+### Employing automatic loss scaling (ALS) for half precision training
+	
+ALS is an experimental feature in the Poplar SDK which brings stability to training large models in half precision, specially when gradient accumulation and reduction across replicas also happen in half precision. 
+
+NB. This feature expects the `poptorch` training option `accumulationAndReplicationReductionType` to be set to `poptorch.ReductionType.Mean`, and for accumulation by the optimizer to be done in half precision (using `accum_type=torch.float16` when instantiating the optimizer), or else it may lead to unexpected behaviour.
+
+To employ ALS, just add the flag `--auto_loss_scaling` to the command. The loss scaling value specified with `--loss_scaling` will be the initial one before ALS updates it during training — you can set it to `1`.
+
+
 ## RoBERTa/BERT and masked language modeling
 
-The following example fine-tunes RoBERTa-base on WikiText-2. We're using the raw WikiText-2. Note that some IPU configurations are overridden.
+The following example fine-tunes RoBERTa-base on WikiText-2. We're using the raw WikiText-2. Note that `inference_device_iterations` is overridden.
 
 ```bash
-python run_mlm.py \
+python examples/language-modeling/run_mlm.py \
     --model_name_or_path roberta-base  \
     --ipu_config_name Graphcore/roberta-base-ipu \
     --dataset_name wikitext \
@@ -185,26 +194,8 @@ python run_mlm.py \
     --num_train_epochs 5 \
     --pod_type pod16 \
     --output_dir /tmp/mlm_output \
-    --ipu_config_overrides="inference_device_iterations=5"
-```
-
-To fine-tune RoBERTa-large on WikiText-2, we need to override a different set of IPU configurations.
-
-```bash
-python run_mlm.py \
-    --model_name_or_path roberta-large  \
-    --ipu_config_name Graphcore/roberta-large-ipu \
-    --dataset_name wikitext \
-    --dataset_config_name wikitext-2-raw-v1 \
-    --per_device_train_batch_size 1 \
-    --per_device_eval_batch_size 1 \
-    --gradient_accumulation_steps 16 \
-    --do_train \
-    --do_eval \
-    --num_train_epochs 5 \
-    --pod_type pod16 \
-    --output_dir /tmp/mlm_output \
-    --ipu_config_overrides="inference_device_iterations=5"
+    --ipu_config_overrides="inference_device_iterations=5" \
+    --dataloader_drop_last
 ```
 
 The same can be done with the BERT model by changing the flags: `--model_name_or_path bert-base-uncased --ipu_config_name Graphcore/bert-base-ipu`. 

@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Union
 
 import datasets
+import numpy as np
 import torch
 from datasets import DatasetDict, load_dataset
 
@@ -34,6 +35,7 @@ from transformers import (
     AutoFeatureExtractor,
     AutoModelForPreTraining,
     HfArgumentParser,
+    TrainerCallback,
     Wav2Vec2FeatureExtractor,
     Wav2Vec2ForPreTraining,
     set_seed,
@@ -45,10 +47,12 @@ from transformers.utils.versions import require_version
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-check_min_version("4.15.0.dev0")
+check_min_version("4.18.0")
 
-require_version("datasets>=1.18.0", "To fix: pip install -r examples/speech-pretraining/requirements.txt")
-
+require_version(
+    "datasets>=1.18.0",
+    "To fix: pip install -r examples/speech-pretraining/requirements.txt",
+)
 
 logger = logging.getLogger(__name__)
 
@@ -67,10 +71,12 @@ class ModelArguments:
         metadata={"help": "Where do you want to store the pretrained models downloaded from huggingface.co"},
     )
     attention_dropout: float = field(
-        default=0.0, metadata={"help": "The dropout ratio for the attention probabilities."}
+        default=0.0,
+        metadata={"help": "The dropout ratio for the attention probabilities."},
     )
     activation_dropout: float = field(
-        default=0.0, metadata={"help": "The dropout ratio for activations inside the fully connected layer."}
+        default=0.0,
+        metadata={"help": "The dropout ratio for activations inside the fully connected layer."},
     )
     feat_proj_dropout: float = field(default=0.0, metadata={"help": "The dropout ratio for the projected features."})
     hidden_dropout: float = field(
@@ -107,9 +113,6 @@ class ModelArguments:
         metadata={"help": "Length of vector span to mask along the feature axis."},
     )
     layerdrop: float = field(default=0.0, metadata={"help": "The LayerDrop probability."})
-    ctc_loss_reduction: Optional[str] = field(
-        default="mean", metadata={"help": "The way the ctc loss should be reduced. Should be one of 'mean' or 'sum'."}
-    )
     max_gumbel_temperature: Optional[float] = field(
         default=2.0, metadata={"help": "Maximum temperature for gumbel softmax."}
     )
@@ -118,6 +121,13 @@ class ModelArguments:
     )
     gumbel_temperature_decay: Optional[float] = field(
         default=0.9, metadata={"help": "Decay of gumbel temperature during training."}
+    )
+    crop_aggression: Optional[float] = field(
+        default=0.0,
+        metadata={
+            "help": "Increase the tensor cropping to beyond the guaranteed max size."
+            "The reducer keep factor is ``mask_time_prob * (1 - crop_aggression)``."
+        },
     )
 
 
@@ -135,7 +145,8 @@ class DataTrainingArguments:
         metadata={"help": "The configuration name of the dataset to use (via the datasets library)."}
     )
     dataset_config_name: str = field(
-        default=None, metadata={"help": "The configuration name of the dataset to use (via the datasets library)."}
+        default=None,
+        metadata={"help": "The configuration name of the dataset to use (via the datasets library)."},
     )
     train_split_name: str = field(
         default="train+validation",
@@ -155,7 +166,8 @@ class DataTrainingArguments:
         metadata={"help": "The name of the dataset column containing the audio data. Defaults to 'audio'"},
     )
     overwrite_cache: bool = field(
-        default=False, metadata={"help": "Overwrite the cached preprocessed datasets or not."}
+        default=False,
+        metadata={"help": "Overwrite the cached preprocessed datasets or not."},
     )
     preprocessing_num_workers: Optional[int] = field(
         default=None,
@@ -182,7 +194,8 @@ class DataTrainingArguments:
         },
     )
     min_duration_in_seconds: float = field(
-        default=0.0, metadata={"help": "Filter audio files that are shorter than `min_duration_in_seconds` seconds"}
+        default=0.0,
+        metadata={"help": "Filter audio files that are shorter than `min_duration_in_seconds` seconds"},
     )
     preprocessing_only: bool = field(
         default=False,
@@ -227,16 +240,21 @@ class DataCollatorForWav2Vec2Pretraining:
             Maximum length of the ``input_values`` of the returned list and optionally padding length (see above).
         pad_to_multiple_of (:obj:`int`, `optional`):
             If set will pad the sequence to a multiple of the provided value.
+        reducer_keep_factor (:obj:`float`, `optional`):
+            The amount, as a factor of length, to keep when reducing the representations before computing the loss.
+            When a crop is applied the masked indices are moved to the start of tensor,
+            this prioritises removing unmasked indices.
     """
 
     model: Wav2Vec2ForPreTraining
     feature_extractor: Wav2Vec2FeatureExtractor
+    padding: Union[bool, str] = "longest"
+    pad_to_multiple_of: Optional[int] = None
+    reducer_keep_factor: float = 1.0
     max_gumbel_temperature: float = 2.0
     min_gumbel_temperature: float = 0.5
     gumbel_temperature_decay: float = 0.9
     global_step: int = 0
-    padding: Union[bool, str] = "longest"
-    pad_to_multiple_of: Optional[int] = None
 
     def __call__(self, features: List[Dict[str, Union[List[int], torch.Tensor]]]) -> Dict[str, torch.Tensor]:
         # reformat list to dict and set to pytorch format
@@ -275,22 +293,38 @@ class DataCollatorForWav2Vec2Pretraining:
             min_masks=1,
         )
 
+        cropped_length = int(mask_indices_seq_length * self.reducer_keep_factor) + 1
+        # move true masked indexes first and crop, later used to gather a reduced size tensor.
+        reduce_selector = np.argsort(~mask_time_indices, 1)[:, :cropped_length]
+        num_masked = np.sum(mask_time_indices, 1)
+        mask_reduced = np.expand_dims(np.arange(cropped_length), 0) < np.expand_dims(num_masked, 1)
+
         # sample negative indices
         sampled_negative_indices = _sample_negative_indices(
-            features_shape,
+            (batch_size, cropped_length),
             self.model.config.num_negatives,
-            mask_time_indices=mask_time_indices,
+            mask_time_indices=mask_reduced,
         )
+
         batch["mask_time_indices"] = torch.tensor(mask_time_indices, dtype=torch.long, device=device)
         batch["sampled_negative_indices"] = torch.tensor(sampled_negative_indices, dtype=torch.long, device=device)
-        # Update the Gumbel temperature
+        batch["reduce_selector"] = torch.tensor(reduce_selector, dtype=torch.int, device=device)
+        batch["mask_reduced"] = torch.tensor(mask_reduced, dtype=torch.bool, device=device)
+        # this is passed and not used to allow metrics to be computed
+        batch["labels"] = torch.full([batch_size], False, dtype=torch.bool)
+
+        # update gumbel temperature
         gumbel_temperature = max(
             self.max_gumbel_temperature * self.gumbel_temperature_decay**self.global_step,
             self.min_gumbel_temperature,
         )
-        self.model.set_gumbel_temperature(gumbel_temperature)
+        if hasattr(self.model, "module"):
+            self.model.module.set_gumbel_temperature(gumbel_temperature)
+        else:
+            self.model.set_gumbel_temperature(gumbel_temperature)
         self.global_step += 1
         batch["gumbel_temperature"] = torch.full([batch_size], gumbel_temperature, dtype=torch.float32)
+
         return batch.data
 
 
@@ -377,12 +411,15 @@ def main():
     # so that we just need to set the correct target sampling rate and normalize the input
     # via the `feature_extractor`
     feature_extractor = AutoFeatureExtractor.from_pretrained(
-        model_args.model_name_or_path, cache_dir=model_args.cache_dir, use_auth_token=data_args.use_auth_token
+        model_args.model_name_or_path,
+        cache_dir=model_args.cache_dir,
+        use_auth_token=data_args.use_auth_token,
     )
 
     # make sure that dataset decodes audio with correct sampling rate
     raw_datasets = raw_datasets.cast_column(
-        data_args.audio_column_name, datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate)
+        data_args.audio_column_name,
+        datasets.features.Audio(sampling_rate=feature_extractor.sampling_rate),
     )
 
     # only normalized-inputs-training is supported
@@ -407,6 +444,10 @@ def main():
         )
         batch["input_values"] = inputs.input_values[0]
         batch["input_length"] = len(inputs.input_values[0])
+
+        if not training_args.fp32:
+            # Cast audio input to FP16
+            batch["input_values"] = batch["input_values"].astype(np.float16)
 
         return batch
 
@@ -439,7 +480,9 @@ def main():
     # 3. Next, let's load the config
     # load config
     config = AutoConfig.from_pretrained(
-        model_args.model_name_or_path, cache_dir=model_args.cache_dir, use_auth_token=data_args.use_auth_token
+        model_args.model_name_or_path,
+        cache_dir=model_args.cache_dir,
+        use_auth_token=data_args.use_auth_token,
     )
 
     ipu_config = IPUConfig.from_pretrained(
@@ -465,11 +508,11 @@ def main():
             "mask_feature_length": model_args.mask_feature_length,
             "gradient_checkpointing": training_args.gradient_checkpointing,
             "layerdrop": model_args.layerdrop,
-            "ctc_loss_reduction": model_args.ctc_loss_reduction,
             "activation_dropout": model_args.activation_dropout,
             "layer_norm_eps": 0.0001,
             "do_stable_layer_norm": True,
             "feat_extract_norm": "layer",
+            "apply_spec_augment": False,  # spec_augment not currently supported
         }
     )
 
@@ -483,10 +526,14 @@ def main():
     feature_extractor.save_pretrained(training_args.output_dir)
     config.save_pretrained(training_args.output_dir)
 
+    # Create a new model under no_grad() just for the collator to avoid causing multiprocessing error.
+    with torch.no_grad():
+        model_collator = AutoModelForPreTraining.from_config(config)
     # Instantiate custom data collator
     data_collator = DataCollatorForWav2Vec2Pretraining(
-        model=model,
+        model=model_collator,
         feature_extractor=feature_extractor,
+        reducer_keep_factor=model_args.mask_time_prob * (1.0 - model_args.crop_aggression),
         max_gumbel_temperature=model_args.max_gumbel_temperature,
         min_gumbel_temperature=model_args.min_gumbel_temperature,
         gumbel_temperature_decay=model_args.gumbel_temperature_decay,

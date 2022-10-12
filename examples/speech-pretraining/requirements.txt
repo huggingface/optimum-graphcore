@@ -4,3 +4,4 @@ torchaudio == 0.10.0+cpu
 librosa
 jiwer
 soundfile
+
