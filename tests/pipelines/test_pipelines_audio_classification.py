@@ -16,8 +16,9 @@ import unittest
 
 import numpy as np
 
+from optimum.graphcore import pipeline
 from transformers import MODEL_FOR_AUDIO_CLASSIFICATION_MAPPING
-from transformers.pipelines import AudioClassificationPipeline, pipeline
+from transformers.pipelines import AudioClassificationPipeline
 from transformers.testing_utils import nested_simplify, require_torch, require_torchaudio, slow
 
 from .test_pipelines_common import ANY, PipelineTestCaseMeta
@@ -27,8 +28,13 @@ from .test_pipelines_common import ANY, PipelineTestCaseMeta
 class AudioClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
     model_mapping = MODEL_FOR_AUDIO_CLASSIFICATION_MAPPING
 
-    def get_test_pipeline(self, model, tokenizer, feature_extractor):
-        audio_classifier = AudioClassificationPipeline(model=model, feature_extractor=feature_extractor)
+    def get_test_pipeline(self, model, ipu_config, tokenizer, feature_extractor):
+        audio_classifier = pipeline(
+            task="audio-classification",
+            model=model,
+            ipu_config=ipu_config,
+            feature_extractor=feature_extractor,
+        )
 
         # test with a raw waveform
         audio = np.zeros((34000,))
