@@ -18,7 +18,7 @@ import numpy as np
 
 from transformers import MODEL_FOR_AUDIO_CLASSIFICATION_MAPPING
 from transformers.pipelines import AudioClassificationPipeline, pipeline
-from transformers.testing_utils import nested_simplify, require_tf, require_torch, require_torchaudio, slow
+from transformers.testing_utils import nested_simplify, require_torch, require_torchaudio, slow
 
 from .test_pipelines_common import ANY, PipelineTestCaseMeta
 
@@ -111,8 +111,3 @@ class AudioClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
                 {"score": 0.001, "label": "down"},
             ],
         )
-
-    @require_tf
-    @unittest.skip("Audio classification is not implemented for TF")
-    def test_small_model_tf(self):
-        pass
