@@ -99,7 +99,8 @@ def get_supported_models(models_to_test, task_mapping, task="default"):
             configuration = CONFIG_MAPPING[model_type]
             model_architectures = task_mapping[CONFIG_MAPPING[model_type]]
             ipu_config = names[1]
-            supported_models.append((configuration, model_architectures, ipu_config))
+            checkpoint = names[0]
+            supported_models.append((configuration, model_architectures, ipu_config, checkpoint))
 
     return supported_models
 
@@ -280,13 +281,13 @@ class PipelineTestCaseMeta(type):
 
         mapping = dct.get("model_mapping", {})
         if mapping:
-            mapping = get_supported_models(MODELS_TO_TEST_MAPPING, mapping)
-            for configuration, model_architectures, ipu_config in mapping:
+            mapping_items = get_supported_models(MODELS_TO_TEST_MAPPING, mapping)
+            for configuration, model_architectures, ipu_config, checkpoint in mapping_items:
                 if not isinstance(model_architectures, tuple):
                     model_architectures = (model_architectures,)
 
                 for model_architecture in model_architectures:
-                    checkpoint = get_checkpoint_from_architecture(model_architecture)
+                    # checkpoint = get_checkpoint_from_architecture(model_architecture)
                     # TODO: Currently use full size configs loaded from checkpoints. Switch to tiny configs in the future. Though just reducing vocab_size may not save time.
                     # tiny_config = get_tiny_config_from_class(configuration)
                     tiny_config = AutoConfig.from_pretrained(checkpoint)
