@@ -60,8 +60,8 @@ SUPPORTED_TASKS = {
         "impl": IPUFillMaskPipeline,
         "class": (AutoModelForMaskedLM,),
         "default": {
-            "model": ("distilbert-base-uncased", "043235d"),
-            "ipu_config": "Graphcore/distilbert-base-ipu",
+            "model": ("distilroberta-base", "ec58a5b"),
+            "ipu_config": "Graphcore/roberta-base-ipu",
             "padding_length": 128,
         },
         "type": "text",
