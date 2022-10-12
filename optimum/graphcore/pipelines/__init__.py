@@ -81,7 +81,6 @@ SUPPORTED_TASKS = {
         "default": {
             "model": ("distilbert-base-cased-distilled-squad", "626af31"),
             "ipu_config": "Graphcore/distilbert-base-ipu",
-            "padding_length": 128,
         },
         "type": "text",
     },
@@ -320,6 +319,9 @@ def pipeline(
     if "padding_length" in SUPPORTED_TASKS[targeted_task]["default"] and "padding" not in kwargs:
         kwargs["padding"] = "max_length"
         kwargs["max_length"] = SUPPORTED_TASKS[targeted_task]["default"]["padding_length"]
+    # question-answering already has its own default padding length `max_seq_len` defined, so we just enable padding to max length.
+    if targeted_task in {'question-answering'}:
+        kwargs["padding"] = "max_length"
 
     # Set pad_token for models that do not have pad_token
     if model.config.model_type == "gpt2":
