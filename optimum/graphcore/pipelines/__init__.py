@@ -294,22 +294,6 @@ def pipeline(
     Pipeline.get_inference_context = get_inference_context
     Pipeline.check_model_type = check_model_type
 
-    # Override Pipeline __call__ to support auto padding
-    old_call = Pipeline.__call__
-
-    def new_call(self, *args, **kwargs):
-        if "padding_length" in SUPPORTED_TASKS[targeted_task]["default"] and "padding" not in kwargs:
-            kwargs["padding"] = "max_length"
-            kwargs["max_length"] = SUPPORTED_TASKS[targeted_task]["default"]["padding_length"]
-        return old_call(self, *args, **kwargs)
-
-    Pipeline.__call__ = new_call
-
-    # Set pad_token for models that do not have pad_token
-    if model.config.model_type == "gpt2":
-        tokenizer.pad_token = tokenizer.eos_token
-        model.config.pad_token_id = model.config.eos_token_id
-
     # Override pipelines' _forward
     old_forward = pipeline_class._forward
 
@@ -331,6 +315,16 @@ def pipeline(
         return old_forward(self, model_inputs, *args, **kwargs)
 
     pipeline_class._forward = new_forward
+
+    # Auto padding for some tasks
+    if "padding_length" in SUPPORTED_TASKS[targeted_task]["default"] and "padding" not in kwargs:
+        kwargs["padding"] = "max_length"
+        kwargs["max_length"] = SUPPORTED_TASKS[targeted_task]["default"]["padding_length"]
+
+    # Set pad_token for models that do not have pad_token
+    if model.config.model_type == "gpt2":
+        tokenizer.pad_token = tokenizer.eos_token
+        model.config.pad_token_id = model.config.eos_token_id
 
     return transformers_pipeline(
         task,
