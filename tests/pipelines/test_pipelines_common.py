@@ -41,8 +41,6 @@ from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
     DistilBertForSequenceClassification,
-    IBertConfig,
-    RobertaConfig,
     TextClassificationPipeline,
 )
 from transformers.pipelines import PIPELINE_REGISTRY, get_task
@@ -51,7 +49,6 @@ from transformers.testing_utils import (
     TOKEN,
     USER,
     CaptureLogger,
-    is_pipeline_test,
     is_staging_test,
     nested_simplify,
     require_scatter,
@@ -70,6 +67,16 @@ sys.path.append(str(Path(__file__).parent.parent.parent / "utils"))
 
 
 logger = logging.getLogger(__name__)
+
+
+ROBERTA_EMBEDDING_ADJUSMENT_CONFIGS = [
+    "CamembertConfig",
+    "IBertConfig",
+    "LongformerConfig",
+    "MarkupLMConfig",
+    "RobertaConfig",
+    "XLMRobertaConfig",
+]
 
 
 def get_supported_models(models_to_test, task_mapping, task="default"):
@@ -228,7 +235,7 @@ class PipelineTestCaseMeta(type):
                     try:
                         tokenizer = get_tiny_tokenizer_from_checkpoint(checkpoint)
                         # XLNet actually defines it as -1.
-                        if isinstance(model.config, (RobertaConfig, IBertConfig)):
+                        if model.config.__class__.__name__ in ROBERTA_EMBEDDING_ADJUSMENT_CONFIGS:
                             tokenizer.model_max_length = model.config.max_position_embeddings - 2
                         elif (
                             hasattr(model.config, "max_position_embeddings")
@@ -335,7 +342,6 @@ class PipelineTestCaseMeta(type):
         return type.__new__(mcs, name, bases, dct)
 
 
-@is_pipeline_test
 class CommonPipelineTest(unittest.TestCase):
     @require_torch
     def test_pipeline_iteration(self):
@@ -455,7 +461,6 @@ class CommonPipelineTest(unittest.TestCase):
         self.assertEqual(len(outputs), 20)
 
 
-# @is_pipeline_test
 # class PipelinePadTest(unittest.TestCase):
 #     @require_torch
 #     def test_pipeline_padding(self):
@@ -537,7 +542,6 @@ class CommonPipelineTest(unittest.TestCase):
 #         )
 
 
-@is_pipeline_test
 class PipelineUtilsTest(unittest.TestCase):
     # @require_torch
     # def test_pipeline_dataset(self):
@@ -805,7 +809,6 @@ class PipelineUtilsTest(unittest.TestCase):
 #         return model_outputs["logits"].softmax(-1).numpy()
 
 
-# @is_pipeline_test
 # class CustomPipelineTest(unittest.TestCase):
 #     def test_warning_logs(self):
 #         transformers_logging.set_verbosity_debug()
