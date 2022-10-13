@@ -47,6 +47,16 @@ if is_torch_available():
     import torch
 
 
+TINY_IPU_CONFIG_DICT = {
+  "inference_device_iterations": 1,
+  "inference_replication_factor": {"default": 1},
+  "executable_cache_dir": "./exe_cache",
+  "ipus_per_replica": 2,
+  "layers_per_ipu": [4, 5],
+  "matmul_proportion": 0.25,
+}
+
+
 # We can't use this mixin because it assumes TF support.
 # from .test_pipelines_common import CustomInputPipelineCommonMixin
 
@@ -223,7 +233,7 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
             pipeline(
                 task="automatic-speech-recognition",
                 model="patrickvonplaten/tiny-wav2vec2-no-tokenizer",
-                ipu_config="Graphcore/wav2vec2-ctc-base-ipu",
+                ipu_config=TINY_IPU_CONFIG_DICT,
             )
 
     @require_torch
@@ -419,7 +429,7 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
         speech_recognizer = pipeline(
             task="automatic-speech-recognition",
             model="hf-internal-testing/tiny-random-wav2vec2",
-            ipu_config="Graphcore/wav2vec2-ctc-base-ipu",
+            ipu_config=TINY_IPU_CONFIG_DICT,
             chunk_length_s=10.0,
         )
 
@@ -437,7 +447,7 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
         speech_recognizer = pipeline(
             task="automatic-speech-recognition",
             model="hf-internal-testing/tiny-random-wav2vec2",
-            ipu_config="Graphcore/wav2vec2-ctc-base-ipu",
+            ipu_config=TINY_IPU_CONFIG_DICT,
         )
 
         ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation").sort("id")
@@ -773,7 +783,7 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
         speech_recognizer = pipeline(
             task="automatic-speech-recognition",
             model="hf-internal-testing/tiny-random-wav2vec2",
-            ipu_config="Graphcore/wav2vec2-ctc-base-ipu",
+            ipu_config=TINY_IPU_CONFIG_DICT,
         )
         waveform = np.tile(np.arange(1000, dtype=np.float32), 10)
         output = speech_recognizer({"raw": waveform, "stride": (0, 0), "sampling_rate": 16_000})
