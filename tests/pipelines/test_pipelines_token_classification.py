@@ -24,7 +24,7 @@ from transformers import (
     TokenClassificationPipeline,
 )
 from transformers.pipelines import AggregationStrategy, TokenClassificationArgumentHandler
-from transformers.testing_utils import is_pipeline_test, nested_simplify, require_torch, slow
+from transformers.testing_utils import nested_simplify, require_torch, slow
 
 from .test_pipelines_common import ANY, PipelineTestCaseMeta
 
@@ -32,7 +32,6 @@ from .test_pipelines_common import ANY, PipelineTestCaseMeta
 VALID_INPUTS = ["A simple string", ["list of strings", "A simple string that is quite a bit longer"]]
 
 
-@is_pipeline_test
 class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
     model_mapping = MODEL_FOR_TOKEN_CLASSIFICATION_MAPPING
 
@@ -885,7 +884,6 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
         )
 
 
-@is_pipeline_test
 class TokenClassificationArgumentHandlerTestCase(unittest.TestCase):
     def setUp(self):
         self.args_parser = TokenClassificationArgumentHandler()
