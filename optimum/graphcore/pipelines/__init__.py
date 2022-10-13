@@ -1,4 +1,6 @@
-from typing import Any, Optional, Union
+from typing import Any, List, Optional, Union
+
+import torch
 
 import poptorch
 from optimum.graphcore import IPUConfig
@@ -25,12 +27,14 @@ from transformers.feature_extraction_utils import PreTrainedFeatureExtractor
 from transformers.modeling_utils import PreTrainedModel
 from transformers.onnx.utils import get_preprocessor
 from transformers.pipelines import get_task
-from transformers.utils import HUGGINGFACE_CO_RESOLVE_ENDPOINT
+from transformers.utils import HUGGINGFACE_CO_RESOLVE_ENDPOINT, logging
 
 from .fill_mask import IPUFillMaskPipeline
 from .token_classification import IPUTokenClassificationPipeline
 from .zero_shot_classification import IPUZeroShotClassificationPipeline
 
+
+logger = logging.get_logger(__name__)
 
 TASK_ALIASES = {
     "sentiment-analysis": "text-classification",
@@ -147,19 +151,8 @@ def get_poplar_executor(model: PreTrainedModel, ipu_config: Union[str, dict] = N
     return model
 
 
-import torch
-
-
 def get_inference_context(self):
     return torch.no_grad
-
-
-from typing import List
-
-from transformers.utils import logging
-
-
-logger = logging.get_logger(__name__)
 
 
 def check_model_type(self, supported_models: Union[List[str], dict]):
