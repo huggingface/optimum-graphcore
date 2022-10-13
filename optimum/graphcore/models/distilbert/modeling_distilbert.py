@@ -20,6 +20,24 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import poptorch
+
+from transformers.modeling_outputs import MaskedLMOutput, QuestionAnsweringModelOutput
+from transformers.models.distilbert.modeling_distilbert import MultiHeadSelfAttention
+from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, compose
+from ...fx.transformations import (
+    AddPoptorchBlock,
+    AddPoptorchBlocksInSeries,
+    ClipValues,
+    ClipValuesSymmetric,
+    LinearToSerializedLinear,
+    OutlineAttribute,
+    RecomputationCheckpoint,
+    TieWeights,
+    TupleOutput,
+    VocabEmbeddingToSerializedEmbedding,
+)
+from ...fx.utils import symbolic_trace_pipelined_model
+from ...modeling_utils import OnehotGather, PipelineMixin, get_layer_ipu, register
 from optimum.utils import logging
 from transformers import (
     DistilBertForMaskedLM,
@@ -28,23 +46,24 @@ from transformers import (
     DistilBertForSequenceClassification,
     DistilBertForTokenClassification,
 )
-from transformers.modeling_outputs import MaskedLMOutput, QuestionAnsweringModelOutput
-from transformers.models.distilbert.modeling_distilbert import MultiHeadSelfAttention
-
-from ...modeling_utils import (
-    OnehotGather,
-    PipelineMixin,
-    SerializedEmbedding,
-    SerializedLinear,
-    get_layer_ipu,
-    recomputation_checkpoint,
-    register,
-)
 
 
 logger = logging.get_logger(__name__)
 
+_OPTIMIZATION_TRANSFORMATIONS = [
+    ChangeTrueDivToMulByInverse(),
+    MergeLinears(),
+    #    FuseBiasInLinear(),
+]
 
+_NON_REVERSIBLE_TRANSFORMATIONS = [
+    ClipValuesSymmetric(1e4, exclude_targets=["view"]),
+    ClipValues(1e-4, float("inf"), include_targets=[torch.nn.LayerNorm]),
+    TupleOutput(),
+]
+
+
+# TODO: should we make a fx transformation for this?
 class IPUMultiHeadSelfAttention(MultiHeadSelfAttention):
     def forward(
         self,
@@ -89,13 +108,12 @@ class IPUMultiHeadSelfAttention(MultiHeadSelfAttention):
 
         q = q / math.sqrt(dim_per_head)  # (bs, n_heads, q_length, dim_per_head)
         scores = torch.matmul(q, k.transpose(2, 3))  # (bs, n_heads, q_length, k_length)
-        mask = mask.to(dtype=scores.dtype)  # fp16 compatibility
         # Since attention_mask is 1.0 for positions we want to attend and 0.0 for
-        # masked positions, this operation will create a tensor which is 0.0 for
-        # positions we want to attend and -10000.0 for masked positions.
+        # masked positions, this operation will create a tensor which is 0 for
+        # positions we want to attend and -10000 for masked positions.
         # Since we are adding it to the raw scores before the softmax, this is
         # effectively the same as removing these entirely.
-        mask = (1.0 - mask) * -10000.0
+        mask = (1 - mask) * -10000
         mask = mask.view(mask_reshp).expand_as(scores)  # (bs, n_heads, q_length, k_length)
         scores = scores + mask  # (bs, n_heads, q_length, k_length)
 
@@ -117,35 +135,50 @@ class IPUMultiHeadSelfAttention(MultiHeadSelfAttention):
 
 
 class DistilBertPipelineMixin(PipelineMixin):
+    def get_transformations(self):
+        log_insertions = self.ipu_config.log_insertions
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        last_ipu = len(self.ipu_config.layers_per_ipu) - 1
+        transformations = [
+            AddPoptorchBlock("Embedding", 0, "distilbert.embeddings", log_insertions=log_insertions),
+            OutlineAttribute("distilbert.embeddings.LayerNorm", "Embedding"),
+            AddPoptorchBlocksInSeries(
+                "Encoder", layer_ipu, r"distilbert.encoder.layer.[0-9]+", log_insertions=log_insertions
+            ),
+            # Only one of the following AddPoptorchBlock, will actually add a block.
+            AddPoptorchBlock("Classifier Output", last_ipu, "classifier", log_insertions=log_insertions),
+            AddPoptorchBlock("QA Outputs", last_ipu, "qa_outputs", log_insertions=log_insertions),
+        ]
+        if self.ipu_config.recompute_checkpoint_every_layer:
+            transformations.append(
+                RecomputationCheckpoint(
+                    "distilbert.encoder.layer.[0-9]+", to_exclude=f"distilbert.encoder.layer.{self.config.num_hidden_layers - 1}"
+                )
+            )
+        if self.ipu_config.embedding_serialization_factor > 1:
+            transformations.append(VocabEmbeddingToSerializedEmbedding())
+        return transformations
+
     def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model
+        - Replaces self-attention layers with fused-qkv self-attention layers
+        - (If enabled) Replaces the word embedding with a SerializedEmbedding
         - Adds recomputation checkpoints
         """
         super().parallelize()
-
-        for layer in self.distilbert.transformer.layer:
-            layer.attention.__class__ = IPUMultiHeadSelfAttention
-
-        logger.info("-------------------- Device Allocation --------------------")
-        logger.info("Embedding --> IPU 0")
-        is_masked_lm = isinstance(self, DistilBertForMaskedLM)
-        if self.ipu_config.embedding_serialization_factor > 1 and not is_masked_lm:
-            self.distilbert.embeddings.word_embeddings = SerializedEmbedding(
-                self.distilbert.embeddings.word_embeddings, self.ipu_config.embedding_serialization_factor
-            )
-        self.distilbert.embeddings = poptorch.BeginBlock(self.distilbert.embeddings, "Embedding", 0)
-
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
-        for index, layer in enumerate(self.distilbert.transformer.layer):
-            ipu = layer_ipu[index]
-            if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
-                recomputation_checkpoint(layer)
-            self.distilbert.transformer.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
-            logger.info(f"Encoder {index:<2} --> IPU {ipu}")
-
-        return self
+        for mod in self.modules():
+            if isinstance(mod, MultiHeadSelfAttention):
+                mod.__class__ = IPUMultiHeadSelfAttention
+        traced = symbolic_trace_pipelined_model(self)
+        transformations = self.get_transformations()
+        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        composition = compose(*transformations)
+        non_reversible_composition = compose(*_NON_REVERSIBLE_TRANSFORMATIONS)
+        traced = composition(traced)
+        traced = non_reversible_composition(traced)
+        return traced
 
     def deparallelize(self):
         """
@@ -154,14 +187,13 @@ class DistilBertPipelineMixin(PipelineMixin):
         compatible with the original model.
         """
         super().deparallelize()
-
-        for layer in self.distilbert.transformer.layer:
-            layer.attention.__class__ = MultiHeadSelfAttention
-
-        is_masked_lm = isinstance(self, DistilBertForMaskedLM)
-        if self.ipu_config.embedding_serialization_factor > 1 and not is_masked_lm:
-            self.distilbert.embeddings.word_embeddings = self.distilbert.embeddings.word_embeddings.deserialize()
-
+        for mod in self.modules():
+            if isinstance(mod, IPUMultiHeadSelfAttention):
+                mod.__class__ = MultiHeadSelfAttention
+        transformations = self.get_transformations()
+        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        composition = compose(*transformations)
+        self = composition(self, reverse=True)
         return self
 
 
@@ -171,40 +203,67 @@ class PipelinedDistilBertForMaskedLM(DistilBertForMaskedLM, DistilBertPipelineMi
         super().__init__(config)
         self.gather_indices = OnehotGather()
 
-    def parallelize(self):
-        super().parallelize()
-
-        if self.ipu_config.embedding_serialization_factor > 1:
-            serialized_vocab_projector = SerializedLinear(
-                self.config.dim,
-                self.config.vocab_size,
-                self.ipu_config.embedding_serialization_factor,
-                bias=True,
-                mode=poptorch.MatMulSerializationMode.OutputChannels,
+    # TODO: validate that.
+    def get_transformations(self):
+        log_insertions = self.ipu_config.log_insertions
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        transformations = [
+            AddPoptorchBlock("Embedding", 0, "distilbert.embeddings", log_insertions=log_insertions),
+            OutlineAttribute("distilbert.embeddings.LayerNorm", "Embedding"),
+            AddPoptorchBlocksInSeries(
+                "Encoder", layer_ipu, r"distilbert.encoder.layer.[0-9]+", log_insertions=log_insertions
+            ),
+            AddPoptorchBlock("Classifier Output", 0, "cls", log_insertions=log_insertions),
+        ]
+        if self.ipu_config.recompute_checkpoint_every_layer:
+            transformations.append(
+                RecomputationCheckpoint(
+                    "distilbert.encoder.layer.[0-9]+", to_exclude=f"distilbert.encoder.layer.{self.config.num_hidden_layers - 1}"
+                )
             )
-            serialized_vocab_projector.load_state_dict(self.vocab_projector.state_dict())
-            self.vocab_projector = serialized_vocab_projector
-            self.tie_weights()
+        if self.ipu_config.embedding_serialization_factor > 1:
+            transformations += [
+                LinearToSerializedLinear("cls.predictions.decoder"),
+                TieWeights("distilbert.embeddings.word_embeddings", "cls.predictions.decoder"),
+            ]
+        return transformations
 
-        logger.info("LM Head --> IPU 0")
-        self.vocab_transform = poptorch.BeginBlock(self.vocab_transform, "LM Head", ipu_id=0)
-        self.vocab_layer_norm = poptorch.BeginBlock(self.vocab_layer_norm, "LM Head", ipu_id=0)
-        self.vocab_projector = poptorch.BeginBlock(self.vocab_projector, "LM Head", ipu_id=0)
-        logger.info("-----------------------------------------------------------")
-        return self
+    def parallelize(self):
+        """
+        Transform the model to run in an IPU pipeline.
+        - Adds pipeline stages to the model
+        - Replaces self-attention layers with fused-qkv self-attention layers
+        - (If enabled) Replaces the word embedding projection with a SerializedLinear layer
+        - Adds recomputation checkpoints
+        """
+        super().parallelize()
+        for mod in self.modules():
+            if isinstance(mod, MultiHeadSelfAttention):
+                mod.__class__ = IPUMultiHeadSelfAttention
+        traced = symbolic_trace_pipelined_model(self)
+        transformations = self.get_transformations()
+        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        composition = compose(*transformations)
+        non_reversible_composition = compose(*_NON_REVERSIBLE_TRANSFORMATIONS)
+        traced = composition(traced)
+        traced = non_reversible_composition(traced)
+        return traced
 
     def deparallelize(self):
+        """
+        Undo the changes to the model done by `parallelize`.
+        You should call this before doing `save_pretrained` so that the `model.state_dict` is
+        compatible with the original model.
+        """
         super().deparallelize()
-
-        if self.ipu_config.embedding_serialization_factor > 1:
-            vocab_projector = nn.Linear(
-                self.config.hidden_size,
-                self.config.vocab_size,
-                bias=True,
-            )
-            vocab_projector.load_state_dict(self.vocab_projector.state_dict())
-            self.vocab_projector = vocab_projector
-            self.tie_weights()
+        transformations = self.get_transformations()
+        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        composition = compose(*transformations)
+        self = composition(self, reverse=True)
+        for mod in self.modules():
+            if isinstance(mod, IPUMultiHeadSelfAttention):
+                mod.__class__ = MultiHeadSelfAttention
+        return self
 
     def forward(
         self,
@@ -268,27 +327,11 @@ class PipelinedDistilBertForMaskedLM(DistilBertForMaskedLM, DistilBertPipelineMi
 
 @register(DistilBertForSequenceClassification)
 class PipelinedDistilBertForSequenceClassification(DistilBertForSequenceClassification, DistilBertPipelineMixin):
-    def parallelize(self):
-        super().parallelize()
-
-        last_ipu = self.ipu_config.ipus_per_replica - 1
-        logger.info(f"Classifier --> IPU {last_ipu}")
-        self.pre_classifier = poptorch.BeginBlock(self.pre_classifier, "Classifier", ipu_id=last_ipu)
-        self.classifier = poptorch.BeginBlock(self.classifier, "Classifier", ipu_id=last_ipu)
-        logger.info("-----------------------------------------------------------")
-        return self
+    pass
 
 
 @register(DistilBertForQuestionAnswering)
 class PipelinedDistilBertForQuestionAnswering(DistilBertForQuestionAnswering, DistilBertPipelineMixin):
-    def parallelize(self):
-        super().parallelize()
-
-        last_ipu = self.ipu_config.ipus_per_replica - 1
-        logger.info(f"QA Outputs --> IPU {last_ipu}")
-        self.qa_outputs = poptorch.BeginBlock(self.qa_outputs, "QA Outputs", ipu_id=last_ipu)
-        logger.info("-----------------------------------------------------------")
-        return self
 
     def forward(
         self,
@@ -332,24 +375,9 @@ class PipelinedDistilBertForQuestionAnswering(DistilBertForQuestionAnswering, Di
 
 @register(DistilBertForTokenClassification)
 class PipelinedDistilBertForTokenClassification(DistilBertForTokenClassification, DistilBertPipelineMixin):
-    def parallelize(self):
-        super().parallelize()
-
-        last_ipu = self.ipu_config.ipus_per_replica - 1
-        logger.info(f"Classifier --> IPU {last_ipu}")
-        self.classifier = poptorch.BeginBlock(self.classifier, "Classifier", ipu_id=last_ipu)
-        logger.info("-----------------------------------------------------------")
-        return self
+    pass
 
 
 @register(DistilBertForMultipleChoice)
 class PipelinedDistilBertForMultipleChoice(DistilBertForMultipleChoice, DistilBertPipelineMixin):
-    def parallelize(self):
-        super().parallelize()
-
-        last_ipu = self.ipu_config.ipus_per_replica - 1
-        logger.info(f"Classifier --> IPU {last_ipu}")
-        self.pre_classifier = poptorch.BeginBlock(self.pre_classifier, "Classifier", ipu_id=last_ipu)
-        self.classifier = poptorch.BeginBlock(self.classifier, "Classifier", ipu_id=last_ipu)
-        logger.info("-----------------------------------------------------------")
-        return self
+    pass

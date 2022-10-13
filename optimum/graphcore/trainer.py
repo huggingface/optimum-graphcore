@@ -485,6 +485,7 @@ class IPUTrainer:
                 model = model.parallelize()
             if not self.args.fp32:
                 model.half()
+            import pdb; pdb.set_trace()
             if training:
                 self.model = model
             else:

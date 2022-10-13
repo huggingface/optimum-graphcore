@@ -20,6 +20,7 @@ import torch
 import torch.nn as nn
 
 import poptorch
+import transformers
 from transformers import DebertaForMaskedLM, DebertaForQuestionAnswering, DebertaForSequenceClassification, DebertaForTokenClassification
 from transformers.models.deberta.modeling_deberta import (
     DebertaEncoder,
@@ -28,6 +29,7 @@ from transformers.models.deberta.modeling_deberta import (
     build_relative_position,
 )
 from transformers.modeling_outputs import MaskedLMOutput, QuestionAnsweringModelOutput
+from transformers.utils.fx import _gen_constructor_wrapper
 
 from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, compose
 from ....utils import logging
@@ -43,7 +45,7 @@ from ...fx.transformations import (
     VocabEmbeddingToSerializedEmbedding,
 )
 from ...fx.utils import symbolic_trace_pipelined_model
-from ...modeling_utils import PipelineMixin, get_layer_ipu, register
+from ...modeling_utils import PipelineMixin, get_layer_ipu, register, OnehotGather
 
 
 logger = logging.get_logger(__name__)
@@ -264,7 +266,7 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
             p2c_pos = torch.clamp(-r_pos + att_span, 0, att_span * 2 - 1)
             index = p2c_pos.expand([query_layer.size(0), query_layer.size(1), key_layer.size(-2), key_layer.size(-2)])
             p2c_att = torch.matmul(key_layer, pos_query_layer.transpose(-1, -2))
-            p2c_att = gather_last_dim(p2c_att, index).transpose(-1, -2)
+            p2c_att = self.gather_last_dim(p2c_att, index).transpose(-1, -2)
 
             if query_layer.size(-2) != key_layer.size(-2):
                 pos_index = relative_pos[:, :, :, 0].unsqueeze(-1)
@@ -335,7 +337,9 @@ class DebertaPipelineMixin(PipelineMixin):
         """
         super().parallelize()
         self.change_modules_for_ipu(False)
+        torch.nn.functional.one_hot, orig = _gen_constructor_wrapper(torch.nn.functional.one_hot)
         traced = symbolic_trace_pipelined_model(self)
+        torch.nn.functional.one_hot = orig
         transformations = self.get_transformations()
         transformations += _OPTIMIZATION_TRANSFORMATIONS
         composition = compose(*transformations, inplace=True)
@@ -408,10 +412,10 @@ class PipelinedDebertaForMaskedLM(DebertaForMaskedLM, DebertaPipelineMixin):
         sequence_output = outputs[0]
 
         if labels is not None:
-            # Select only the masked tokens for the classifier
-            max_number_of_masked_tokens = int(labels.size(1) * 0.25)
-            masked_lm_labels, masked_lm_positions = torch.topk(labels, k=max_number_of_masked_tokens, dim=1)
-            masked_output = self.gather_indices(sequence_output, masked_lm_positions)
+            if hasattr(self.config, "max_num_masked_tokens"):
+                # Select only the masked tokens for the classifier
+                masked_lm_labels, positions = torch.topk(labels, k=self.config.max_num_masked_tokens, dim=1)
+                masked_output = self.gather_indices(sequence_output, positions)
         else:
             # This case should never happen during training
             masked_output = sequence_output
@@ -420,7 +424,7 @@ class PipelinedDebertaForMaskedLM(DebertaForMaskedLM, DebertaPipelineMixin):
 
         masked_lm_loss = None
         if labels is not None:
-            masked_lm_loss = F.cross_entropy(
+            masked_lm_loss = nn.functional.cross_entropy(
                 prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1)
             ).float()
 

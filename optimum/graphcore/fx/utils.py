@@ -24,6 +24,9 @@ from ..modeling_utils import PipelineMixin
 
 
 class PipelinedTracer(HFTracer):
+    # TODO: keep this until transformers >= 4.23.2
+    _TORCH_METHODS_TO_PATCH = list(HFTracer._TORCH_METHODS_TO_PATCH)
+    _TORCH_METHODS_TO_PATCH.append("clamp")
     """
     Tracer that enables tracing and transforming models to run them on IPUs.
     Compared to the HFTracer, this one adds the following features:
@@ -80,6 +83,17 @@ class PipelinedTracer(HFTracer):
             self.current_module_qualified_name.pop(-1)
             self.current_module_type.pop(-1)
         return proxy
+
+    def create_proxy(self, kind, target, args, kwargs, name=None, type_expr=None, proxy_factory_fn=None):
+        # TODO: how to handle the case where the model is ran in full-precision?
+        float32_dtype_in_args = any(a is torch.float32 for a in args)
+        float32_dtype_in_kwargs = kwargs.get("dtype", None) is torch.float32
+        if kind == "call_method" and target == "to":
+            if float32_dtype_in_args:
+                args = tuple(a if a is not torch.float32 else torch.float16 for a in args)
+            if float32_dtype_in_kwargs:
+                kwargs["dtype"] = torch.float16
+        return super().create_proxy(kind, target, args, kwargs, name=name, type_expr=type_expr, proxy_factory_fn=proxy_factory_fn)
 
 
 def symbolic_trace_with_pipelined_tracer(
