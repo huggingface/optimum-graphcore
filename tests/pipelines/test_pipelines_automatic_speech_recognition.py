@@ -152,66 +152,66 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
     #     output = speech_recognizer(waveform)
     #     self.assertEqual(output, {"text": "あл ش 湯 清 ه ܬ া लᆨしث ल eか u w 全 u"})
 
-    @slow
-    @require_torch
-    @require_pyctcdecode
-    def test_large_model_pt_with_lm(self):
-        dataset = load_dataset("Narsil/asr_dummy")
-        filename = dataset["test"][3]["file"]
+    # @slow
+    # @require_torch
+    # @require_pyctcdecode
+    # def test_large_model_pt_with_lm(self):
+    #     dataset = load_dataset("Narsil/asr_dummy")
+    #     filename = dataset["test"][3]["file"]
 
-        speech_recognizer = pipeline(
-            task="automatic-speech-recognition",
-            model="patrickvonplaten/wav2vec2-large-xlsr-53-spanish-with-lm",
-            framework="pt",
-        )
-        self.assertEqual(speech_recognizer.type, "ctc_with_lm")
+    #     speech_recognizer = pipeline(
+    #         task="automatic-speech-recognition",
+    #         model="patrickvonplaten/wav2vec2-large-xlsr-53-spanish-with-lm",
+    #         framework="pt",
+    #     )
+    #     self.assertEqual(speech_recognizer.type, "ctc_with_lm")
 
-        output = speech_recognizer(filename)
-        self.assertEqual(
-            output,
-            {"text": "y en las ramas medio sumergidas revoloteaban algunos pájaros de quimérico y legendario plumaje"},
-        )
+    #     output = speech_recognizer(filename)
+    #     self.assertEqual(
+    #         output,
+    #         {"text": "y en las ramas medio sumergidas revoloteaban algunos pájaros de quimérico y legendario plumaje"},
+    #     )
 
-        # Override back to pure CTC
-        speech_recognizer.type = "ctc"
-        output = speech_recognizer(filename)
-        # plumajre != plumaje
-        self.assertEqual(
-            output,
-            {
-                "text": (
-                    "y en las ramas medio sumergidas revoloteaban algunos pájaros de quimérico y legendario plumajre"
-                )
-            },
-        )
+    #     # Override back to pure CTC
+    #     speech_recognizer.type = "ctc"
+    #     output = speech_recognizer(filename)
+    #     # plumajre != plumaje
+    #     self.assertEqual(
+    #         output,
+    #         {
+    #             "text": (
+    #                 "y en las ramas medio sumergidas revoloteaban algunos pájaros de quimérico y legendario plumajre"
+    #             )
+    #         },
+    #     )
 
-        speech_recognizer.type = "ctc_with_lm"
-        # Simple test with CTC with LM, chunking + timestamps
-        output = speech_recognizer(filename, chunk_length_s=2.0, return_timestamps="word")
-        self.assertEqual(
-            output,
-            {
-                "text": (
-                    "y en las ramas medio sumergidas revoloteaban algunos pájaros de quimérico y legendario plumajcri"
-                ),
-                "chunks": [
-                    {"text": "y", "timestamp": (0.52, 0.54)},
-                    {"text": "en", "timestamp": (0.6, 0.68)},
-                    {"text": "las", "timestamp": (0.74, 0.84)},
-                    {"text": "ramas", "timestamp": (0.94, 1.24)},
-                    {"text": "medio", "timestamp": (1.32, 1.52)},
-                    {"text": "sumergidas", "timestamp": (1.56, 2.22)},
-                    {"text": "revoloteaban", "timestamp": (2.36, 3.0)},
-                    {"text": "algunos", "timestamp": (3.06, 3.38)},
-                    {"text": "pájaros", "timestamp": (3.46, 3.86)},
-                    {"text": "de", "timestamp": (3.92, 4.0)},
-                    {"text": "quimérico", "timestamp": (4.08, 4.6)},
-                    {"text": "y", "timestamp": (4.66, 4.68)},
-                    {"text": "legendario", "timestamp": (4.74, 5.26)},
-                    {"text": "plumajcri", "timestamp": (5.34, 5.74)},
-                ],
-            },
-        )
+    #     speech_recognizer.type = "ctc_with_lm"
+    #     # Simple test with CTC with LM, chunking + timestamps
+    #     output = speech_recognizer(filename, chunk_length_s=2.0, return_timestamps="word")
+    #     self.assertEqual(
+    #         output,
+    #         {
+    #             "text": (
+    #                 "y en las ramas medio sumergidas revoloteaban algunos pájaros de quimérico y legendario plumajcri"
+    #             ),
+    #             "chunks": [
+    #                 {"text": "y", "timestamp": (0.52, 0.54)},
+    #                 {"text": "en", "timestamp": (0.6, 0.68)},
+    #                 {"text": "las", "timestamp": (0.74, 0.84)},
+    #                 {"text": "ramas", "timestamp": (0.94, 1.24)},
+    #                 {"text": "medio", "timestamp": (1.32, 1.52)},
+    #                 {"text": "sumergidas", "timestamp": (1.56, 2.22)},
+    #                 {"text": "revoloteaban", "timestamp": (2.36, 3.0)},
+    #                 {"text": "algunos", "timestamp": (3.06, 3.38)},
+    #                 {"text": "pájaros", "timestamp": (3.46, 3.86)},
+    #                 {"text": "de", "timestamp": (3.92, 4.0)},
+    #                 {"text": "quimérico", "timestamp": (4.08, 4.6)},
+    #                 {"text": "y", "timestamp": (4.66, 4.68)},
+    #                 {"text": "legendario", "timestamp": (4.74, 5.26)},
+    #                 {"text": "plumajcri", "timestamp": (5.34, 5.74)},
+    #             ],
+    #         },
+    #     )
 
     @require_torch
     def test_torch_small_no_tokenizer_files(self):
@@ -242,20 +242,20 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
         output = speech_recognizer(filename)
         self.assertEqual(output, {"text": "A MAN SAID TO THE UNIVERSE SIR I EXIST"})
 
-    @require_torch
-    @slow
-    def test_torch_speech_encoder_decoder(self):
-        speech_recognizer = pipeline(
-            task="automatic-speech-recognition",
-            model="facebook/s2t-wav2vec2-large-en-de",
-            feature_extractor="facebook/s2t-wav2vec2-large-en-de",
-            framework="pt",
-        )
+    # @require_torch
+    # @slow
+    # def test_torch_speech_encoder_decoder(self):
+    #     speech_recognizer = pipeline(
+    #         task="automatic-speech-recognition",
+    #         model="facebook/s2t-wav2vec2-large-en-de",
+    #         feature_extractor="facebook/s2t-wav2vec2-large-en-de",
+    #         framework="pt",
+    #     )
 
-        ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation").sort("id")
-        filename = ds[40]["file"]
-        output = speech_recognizer(filename)
-        self.assertEqual(output, {"text": 'Ein Mann sagte zum Universum : " Sir, ich existiert! "'})
+    #     ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation").sort("id")
+    #     filename = ds[40]["file"]
+    #     output = speech_recognizer(filename)
+    #     self.assertEqual(output, {"text": 'Ein Mann sagte zum Universum : " Sir, ich existiert! "'})
 
     @slow
     @require_torch
