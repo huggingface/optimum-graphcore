@@ -19,6 +19,7 @@ import pytest
 from datasets import load_dataset
 
 from huggingface_hub import snapshot_download
+from optimum.graphcore import pipeline
 from transformers import (
     MODEL_FOR_CTC_MAPPING,
     MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING,
@@ -26,10 +27,8 @@ from transformers import (
     AutoTokenizer,
     Speech2TextForConditionalGeneration,
     Wav2Vec2ForCTC,
-    WhisperForConditionalGeneration,
-    WhisperProcessor,
 )
-from transformers.pipelines import AutomaticSpeechRecognitionPipeline, pipeline
+from transformers.pipelines import AutomaticSpeechRecognitionPipeline
 from transformers.pipelines.audio_utils import chunk_bytes_iter
 from transformers.pipelines.automatic_speech_recognition import chunk_iter
 from transformers.testing_utils import (
@@ -61,7 +60,7 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
         + (MODEL_FOR_CTC_MAPPING.items() if MODEL_FOR_CTC_MAPPING else [])
     }
 
-    def get_test_pipeline(self, model, tokenizer, feature_extractor):
+    def get_test_pipeline(self, model, ipu_config, tokenizer, feature_extractor):
         if tokenizer is None:
             # Side effect of no Fast Tokenizer class for these model, so skipping
             # But the slow tokenizer test should still run as they're quite small
@@ -69,8 +68,12 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
             return
             # return None, None
 
-        speech_recognizer = AutomaticSpeechRecognitionPipeline(
-            model=model, tokenizer=tokenizer, feature_extractor=feature_extractor
+        speech_recognizer = pipeline(
+            task="automatic-speech-recognition",
+            model=model,
+            ipu_config=ipu_config,
+            tokenizer=tokenizer,
+            feature_extractor=feature_extractor,
         )
 
         # test with a raw waveform
@@ -126,7 +129,7 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
     @require_torch
     @slow
     def test_pt_defaults(self):
-        pipeline("automatic-speech-recognition", framework="pt")
+        pipeline("automatic-speech-recognition")
 
     @require_torch
     def test_small_model_pt(self):
@@ -220,7 +223,7 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
             pipeline(
                 task="automatic-speech-recognition",
                 model="patrickvonplaten/tiny-wav2vec2-no-tokenizer",
-                framework="pt",
+                ipu_config="Graphcore/wav2vec2-ctc-base-ipu",
             )
 
     @require_torch
@@ -230,8 +233,8 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
         speech_recognizer = pipeline(
             task="automatic-speech-recognition",
             model="facebook/wav2vec2-base-960h",
+            ipu_config="Graphcore/wav2vec2-ctc-base-ipu",
             tokenizer="facebook/wav2vec2-base-960h",
-            framework="pt",
         )
         waveform = np.tile(np.arange(1000, dtype=np.float32), 34)
         output = speech_recognizer(waveform)
@@ -261,10 +264,17 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
     @require_torch
     def test_simple_wav2vec2(self):
         model = Wav2Vec2ForCTC.from_pretrained("facebook/wav2vec2-base-960h")
+        ipu_config = "Graphcore/wav2vec2-ctc-base-ipu"
         tokenizer = AutoTokenizer.from_pretrained("facebook/wav2vec2-base-960h")
         feature_extractor = AutoFeatureExtractor.from_pretrained("facebook/wav2vec2-base-960h")
 
-        asr = AutomaticSpeechRecognitionPipeline(model=model, tokenizer=tokenizer, feature_extractor=feature_extractor)
+        asr = pipeline(
+            task="automatic-speech-recognition",
+            model=model,
+            ipu_config=ipu_config,
+            tokenizer=tokenizer,
+            feature_extractor=feature_extractor,
+        )
 
         waveform = np.tile(np.arange(1000, dtype=np.float32), 34)
         output = asr(waveform)
@@ -361,8 +371,8 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
         speech_recognizer = pipeline(
             task="automatic-speech-recognition",
             model="facebook/wav2vec2-xls-r-1b-21-to-en",
+            ipu_config="Graphcore/wav2vec2-ctc-base-ipu",
             feature_extractor="facebook/wav2vec2-xls-r-1b-21-to-en",
-            framework="pt",
         )
 
         ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation").sort("id")
@@ -377,8 +387,8 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
         speech_recognizer = pipeline(
             task="automatic-speech-recognition",
             model="facebook/wav2vec2-xls-r-1b-en-to-15",
+            ipu_config="Graphcore/wav2vec2-ctc-base-ipu",
             feature_extractor="facebook/wav2vec2-xls-r-1b-en-to-15",
-            framework="pt",
         )
 
         ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation").sort("id")
@@ -393,9 +403,9 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
         speech_recognizer = pipeline(
             task="automatic-speech-recognition",
             model="patrickvonplaten/wav2vec2-2-bart-base",
+            ipu_config="Graphcore/wav2vec2-ctc-base-ipu",
             feature_extractor="patrickvonplaten/wav2vec2-2-bart-base",
             tokenizer=AutoTokenizer.from_pretrained("patrickvonplaten/wav2vec2-2-bart-base"),
-            framework="pt",
         )
 
         ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation").sort("id")
@@ -409,6 +419,7 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
         speech_recognizer = pipeline(
             task="automatic-speech-recognition",
             model="hf-internal-testing/tiny-random-wav2vec2",
+            ipu_config="Graphcore/wav2vec2-ctc-base-ipu",
             chunk_length_s=10.0,
         )
 
@@ -426,6 +437,7 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
         speech_recognizer = pipeline(
             task="automatic-speech-recognition",
             model="hf-internal-testing/tiny-random-wav2vec2",
+            ipu_config="Graphcore/wav2vec2-ctc-base-ipu",
         )
 
         ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation").sort("id")
@@ -469,6 +481,7 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
     def test_chunking_fast_with_lm(self):
         speech_recognizer = pipeline(
             model="hf-internal-testing/processor_with_lm",
+            ipu_config="Graphcore/wav2vec2-ctc-base-ipu",
             chunk_length_s=10.0,
         )
 
@@ -497,6 +510,7 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
     def test_with_lm_fast(self):
         speech_recognizer = pipeline(
             model="hf-internal-testing/processor_with_lm",
+            ipu_config="Graphcore/wav2vec2-ctc-base-ipu",
         )
         self.assertEqual(speech_recognizer.type, "ctc_with_lm")
 
@@ -525,6 +539,7 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
         speech_recognizer = pipeline(
             task="automatic-speech-recognition",
             model=local_dir,
+            ipu_config="Graphcore/wav2vec2-ctc-base-ipu",
         )
         self.assertEqual(speech_recognizer.type, "ctc_with_lm")
 
@@ -543,11 +558,13 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
     @slow
     def test_chunking_and_timestamps(self):
         model = Wav2Vec2ForCTC.from_pretrained("facebook/wav2vec2-base-960h")
+        ipu_config = "Graphcore/wav2vec2-ctc-base-ipu",
         tokenizer = AutoTokenizer.from_pretrained("facebook/wav2vec2-base-960h")
         feature_extractor = AutoFeatureExtractor.from_pretrained("facebook/wav2vec2-base-960h")
         speech_recognizer = pipeline(
             task="automatic-speech-recognition",
             model=model,
+            ipu_config=ipu_config,
             tokenizer=tokenizer,
             feature_extractor=feature_extractor,
             framework="pt",
@@ -657,6 +674,7 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
         speech_recognizer = pipeline(
             task="automatic-speech-recognition",
             model="patrickvonplaten/wav2vec2-base-100h-with-lm",
+            ipu_config="Graphcore/wav2vec2-ctc-base-ipu",
             chunk_length_s=10.0,
         )
         ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation").sort("id")
@@ -755,6 +773,7 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
         speech_recognizer = pipeline(
             task="automatic-speech-recognition",
             model="hf-internal-testing/tiny-random-wav2vec2",
+            ipu_config="Graphcore/wav2vec2-ctc-base-ipu",
         )
         waveform = np.tile(np.arange(1000, dtype=np.float32), 10)
         output = speech_recognizer({"raw": waveform, "stride": (0, 0), "sampling_rate": 16_000})
