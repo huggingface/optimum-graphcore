@@ -568,7 +568,7 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
     @slow
     def test_chunking_and_timestamps(self):
         model = Wav2Vec2ForCTC.from_pretrained("facebook/wav2vec2-base-960h")
-        ipu_config = "Graphcore/wav2vec2-ctc-base-ipu",
+        ipu_config = "Graphcore/wav2vec2-ctc-base-ipu"
         tokenizer = AutoTokenizer.from_pretrained("facebook/wav2vec2-base-960h")
         feature_extractor = AutoFeatureExtractor.from_pretrained("facebook/wav2vec2-base-960h")
         speech_recognizer = pipeline(
