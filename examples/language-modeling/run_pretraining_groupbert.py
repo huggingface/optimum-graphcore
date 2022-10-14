@@ -670,6 +670,7 @@ def get_data_collater(tokenizer, train_dataset, training_args, data_args, ipu_co
             mlm_probability=data_args.mlm_probability,
             # pad_to_multiple_of=8 if pad_to_multiple_of_8 else None,
             pad_to_multiple_of=None,
+            max_seq_length=data_args.max_seq_length,
         )
     else:
         data_collator = default_data_collator
