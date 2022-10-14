@@ -1426,7 +1426,7 @@ class IPUTrainer:
         self.store_flos()
 
         output_dir = os.path.join(run_dir, checkpoint_folder)
-        self.save_model(output_dir)
+        self.save_model(output_dir, _internal_call=True)
         if self.args.should_save:
             torch.save(self.optimizer.state_dict(), os.path.join(output_dir, OPTIMIZER_NAME))
             with warnings.catch_warnings(record=True) as caught_warnings:
@@ -1592,7 +1592,7 @@ class IPUTrainer:
         # Needed only because log_metrics use it.
         return True
 
-    def save_model(self, output_dir: Optional[str] = None):
+    def save_model(self, output_dir: Optional[str] = None, _internal_call: bool = False):
         """
         Will save the model, so you can reload it using `from_pretrained()`.
 
@@ -2270,7 +2270,7 @@ class IPUTrainer:
 
         # Needs to be executed on all processes for TPU training, but will only save on the processed determined by
         # self.args.should_save.
-        self.save_model()
+        self.save_model(_internal_call=True)
 
         # Cancel any async push in progress if blocking=True. The commits will all be pushed together.
         if blocking and self.push_in_progress is not None and not self.push_in_progress.is_done:
