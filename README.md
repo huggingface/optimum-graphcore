@@ -62,7 +62,22 @@ pip install -r requirements.txt
 
 ## How to use it?
 🤗 Optimum Graphcore was designed with one goal in mind: **make training and evaluation straightforward for any 🤗 Transformers user while leveraging the complete power of IPUs.**
-It requires minimal compared to using 🤗 Transformers:
+It requires minimal compared to using 🤗 Transformers.
+
+To immediately use a model on a given input (text, image, audio, ...), we support the `pipeline` API:
+
+```diff
+->>> from transformers import pipeline
++>>> from optimum.graphcore import pipeline
+
+# Allocate a pipeline for sentiment-analysis
+->>> classifier = pipeline('sentiment-analysis', model="distilbert-base-uncased-finetuned-sst-2-english")
++>>> classifier = pipeline('sentiment-analysis', model="distilbert-base-uncased-finetuned-sst-2-english", ipu_config = "Graphcore/distilbert-base-ipu")
+>>> classifier('We are very happy to introduce pipeline to the transformers repository.')
+[{'label': 'POSITIVE', 'score': 0.9996947050094604}]
+```
+
+It is also super easy to use the `Trainer` API:
 
 ```diff
 -from transformers import Trainer, TrainingArguments
