@@ -52,7 +52,7 @@ SUPPORTED_TASKS = {
     },
     "automatic-speech-recognition": {
         "impl": AutomaticSpeechRecognitionPipeline,
-        # "class": (AutoModelForCTC, AutoModelForSpeechSeq2Seq),
+        # TODO: support AutoModelForSpeechSeq2Seq
         "class": (AutoModelForCTC,),
         "default": {
             "model": ("facebook/wav2vec2-base-960h", "55bb623"),
@@ -212,22 +212,15 @@ def pipeline(
 
     targeted_task = "translation" if task.startswith("translation") else task
 
-    if targeted_task not in list(SUPPORTED_TASKS.keys()):
-        raise ValueError(f"Task {targeted_task} is not supported. Supported tasks are { list(SUPPORTED_TASKS.keys())}")
+    if targeted_task not in SUPPORTED_TASKS:
+        raise ValueError(f"Task {targeted_task} is not supported. Supported tasks are {list(SUPPORTED_TASKS.keys())}")
 
-    # copied from transformers.pipelines.__init__.py l.609
-    if targeted_task in NO_TOKENIZER_TASKS:
-        # These will never require a tokenizer.
-        # the model on the other hand might have a tokenizer, but
-        # the files could be missing from the hub, instead of failing
-        # on such repos, we just force to not load it.
-        load_tokenizer = False
-    else:
-        load_tokenizer = True
-    if targeted_task in NO_FEATURE_EXTRACTOR_TASKS:
-        load_feature_extractor = False
-    else:
-        load_feature_extractor = True
+    # These will never require a tokenizer.
+    # the model on the other hand might have a tokenizer, but
+    # the files could be missing from the hub, instead of failing
+    # on such repos, we just force to not load it.
+    load_tokenizer = targeted_task not in NO_TOKENIZER_TASKS
+    load_feature_extractor = targeted_task not in NO_FEATURE_EXTRACTOR_TASKS
 
     if pipeline_class is None:
         pipeline_class = SUPPORTED_TASKS[targeted_task]["impl"]
