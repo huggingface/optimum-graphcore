@@ -20,17 +20,17 @@ import torch.nn.functional as F
 import poptorch
 from optimum.utils import logging
 from scipy.stats import truncnorm
+from transformers.modeling_outputs import MaskedLMOutput, QuestionAnsweringModelOutput
 from transformers.models.bert.modeling_bert import (
     BertForMaskedLM,
     BertForMultipleChoice,
     BertForPreTraining,
+    BertForPreTrainingOutput,
     BertForQuestionAnswering,
     BertForSequenceClassification,
     BertForTokenClassification,
-    BertForPreTrainingOutput,
 )
 from transformers.utils.fx import _gen_constructor_wrapper
-from transformers.modeling_outputs import MaskedLMOutput, QuestionAnsweringModelOutput
 
 from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, compose
 from ...fx.transformations import (
@@ -61,7 +61,6 @@ _OPTIMIZATION_TRANSFORMATIONS = [
 _NON_REVERSIBLE_TRANSFORMATIONS = [
     ClipValuesSymmetric(1e4, exclude_targets=["view"]),
     ClipValues(1e-4, float("inf"), include_targets=[torch.nn.LayerNorm]),
-    TupleOutput(),
 ]
 
 

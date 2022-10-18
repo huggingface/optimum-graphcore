@@ -26,8 +26,8 @@ from transformers.models.wav2vec2.modeling_wav2vec2 import (
     Wav2Vec2Encoder,
     Wav2Vec2EncoderStableLayerNorm,
     Wav2Vec2ForCTC,
-    Wav2Vec2GumbelVectorQuantizer,
     Wav2Vec2ForPreTrainingOutput,
+    Wav2Vec2GumbelVectorQuantizer,
 )
 
 from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, compose
@@ -42,7 +42,6 @@ from ...fx.transformations import (
 )
 from ...fx.utils import symbolic_trace_pipelined_model
 from ...modeling_utils import PipelineMixin, get_layer_ipu, register
-
 from .ipu_gumbel_vector_quantizer import IPUWav2Vec2GumbelVectorQuantizer
 from .ipu_layer_drop import IPUWav2Vec2Adapter, IPUWav2Vec2Encoder, IPUWav2Vec2EncoderStableLayerNorm
 
@@ -58,7 +57,6 @@ _OPTIMIZATION_TRANSFORMATIONS = [
 _NON_REVERSIBLE_TRANSFORMATIONS = [
     ClipValuesSymmetric(1e4, exclude_targets=["view"]),
     ClipValues(1e-4, float("inf"), include_targets=[torch.nn.LayerNorm]),
-    TupleOutput(),
 ]
 
 
@@ -100,14 +98,25 @@ class Wav2Vec2PipelineMixin(PipelineMixin):
     def get_transformations(self):
         log_insertions = self.ipu_config.log_insertions
         layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
-        feature_extractor_conv_layers_ipu = layer_ipu[:self.config.num_feat_extract_layers]
+        feature_extractor_conv_layers_ipu = layer_ipu[: self.config.num_feat_extract_layers]
         transformations = [
             AddPoptorchBlocksInSeries(
-                "Conv", feature_extractor_conv_layers_ipu, r"wav2vec2.feature_extractor.conv_layers.[0-9]+", log_insertions=log_insertions
+                "Conv",
+                feature_extractor_conv_layers_ipu,
+                r"wav2vec2.feature_extractor.conv_layers.[0-9]+",
+                log_insertions=log_insertions,
             ),
-            AddPoptorchBlock("Positional Embedding", layer_ipu[self.config.num_feat_extract_layers], "wav2vec2.encoder.pos_conv_embed", log_insertions=log_insertions),
+            AddPoptorchBlock(
+                "Positional Embedding",
+                layer_ipu[self.config.num_feat_extract_layers],
+                "wav2vec2.encoder.pos_conv_embed",
+                log_insertions=log_insertions,
+            ),
             AddPoptorchBlocksInSeries(
-                "Encoder", layer_ipu[self.config.num_feat_extract_layers + 1:], r"wav2vec2.encoder.layers.[0-9]+", log_insertions=log_insertions
+                "Encoder",
+                layer_ipu[self.config.num_feat_extract_layers + 1 :],
+                r"wav2vec2.encoder.layers.[0-9]+",
+                log_insertions=log_insertions,
             ),
         ]
         if self.ipu_config.recompute_checkpoint_every_layer:
@@ -199,7 +208,9 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, Wav2Vec2PipelineMi
         transformations += [
             AddPoptorchBlock("Project Hidden", layer_ipu[start_idx], "project_hid", log_insertions=log_insertions),
             AddPoptorchBlock("Quantizer", layer_ipu[start_idx + 1], "quantizer", log_insertions=log_insertions),
-            AddPoptorchBlock("Project Quantizer", layer_ipu[start_idx + 2], "project_q", log_insertions=log_insertions),
+            AddPoptorchBlock(
+                "Project Quantizer", layer_ipu[start_idx + 2], "project_q", log_insertions=log_insertions
+            ),
         ]
         return transformations
 

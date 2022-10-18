@@ -20,9 +20,17 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 import poptorch
-
+from optimum.utils import logging
+from transformers import (
+    DistilBertForMaskedLM,
+    DistilBertForMultipleChoice,
+    DistilBertForQuestionAnswering,
+    DistilBertForSequenceClassification,
+    DistilBertForTokenClassification,
+)
 from transformers.modeling_outputs import MaskedLMOutput, QuestionAnsweringModelOutput
 from transformers.models.distilbert.modeling_distilbert import MultiHeadSelfAttention
+
 from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, compose
 from ...fx.transformations import (
     AddPoptorchBlock,
@@ -38,14 +46,6 @@ from ...fx.transformations import (
 )
 from ...fx.utils import symbolic_trace_pipelined_model
 from ...modeling_utils import OnehotGather, PipelineMixin, get_layer_ipu, register
-from optimum.utils import logging
-from transformers import (
-    DistilBertForMaskedLM,
-    DistilBertForMultipleChoice,
-    DistilBertForQuestionAnswering,
-    DistilBertForSequenceClassification,
-    DistilBertForTokenClassification,
-)
 
 
 logger = logging.get_logger(__name__)
@@ -59,7 +59,6 @@ _OPTIMIZATION_TRANSFORMATIONS = [
 _NON_REVERSIBLE_TRANSFORMATIONS = [
     ClipValuesSymmetric(1e4, exclude_targets=["view"]),
     ClipValues(1e-4, float("inf"), include_targets=[torch.nn.LayerNorm]),
-    TupleOutput(),
 ]
 
 
@@ -143,7 +142,7 @@ class DistilBertPipelineMixin(PipelineMixin):
             AddPoptorchBlock("Embedding", 0, "distilbert.embeddings", log_insertions=log_insertions),
             OutlineAttribute("distilbert.embeddings.LayerNorm", "Embedding"),
             AddPoptorchBlocksInSeries(
-                "Encoder", layer_ipu, r"distilbert.encoder.layer.[0-9]+", log_insertions=log_insertions
+                "Encoder", layer_ipu, r"distilbert.transformer.layer.[0-9]+", log_insertions=log_insertions
             ),
             # Only one of the following AddPoptorchBlock, will actually add a block.
             AddPoptorchBlock("Classifier Output", last_ipu, "classifier", log_insertions=log_insertions),
@@ -152,7 +151,8 @@ class DistilBertPipelineMixin(PipelineMixin):
         if self.ipu_config.recompute_checkpoint_every_layer:
             transformations.append(
                 RecomputationCheckpoint(
-                    "distilbert.encoder.layer.[0-9]+", to_exclude=f"distilbert.encoder.layer.{self.config.num_hidden_layers - 1}"
+                    "distilbert.transformer.layer.[0-9]+",
+                    to_exclude=f"distilbert.transformer.layer.{self.config.num_hidden_layers - 1}",
                 )
             )
         if self.ipu_config.embedding_serialization_factor > 1:
@@ -218,7 +218,8 @@ class PipelinedDistilBertForMaskedLM(DistilBertForMaskedLM, DistilBertPipelineMi
         if self.ipu_config.recompute_checkpoint_every_layer:
             transformations.append(
                 RecomputationCheckpoint(
-                    "distilbert.encoder.layer.[0-9]+", to_exclude=f"distilbert.encoder.layer.{self.config.num_hidden_layers - 1}"
+                    "distilbert.encoder.layer.[0-9]+",
+                    to_exclude=f"distilbert.encoder.layer.{self.config.num_hidden_layers - 1}",
                 )
             )
         if self.ipu_config.embedding_serialization_factor > 1:
@@ -332,7 +333,6 @@ class PipelinedDistilBertForSequenceClassification(DistilBertForSequenceClassifi
 
 @register(DistilBertForQuestionAnswering)
 class PipelinedDistilBertForQuestionAnswering(DistilBertForQuestionAnswering, DistilBertPipelineMixin):
-
     def forward(
         self,
         input_ids: Optional[torch.Tensor] = None,

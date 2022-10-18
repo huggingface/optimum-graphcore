@@ -12,15 +12,25 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import inspect
 import math
-from typing import Callable, List, Optional
+from typing import TYPE_CHECKING, Callable, Dict, List, Optional
 
 import torch
 
 import transformers
+from transformers.models.auto import get_values
+from transformers.models.auto.modeling_auto import (
+    MODEL_FOR_AUDIO_CLASSIFICATION_MAPPING_NAMES,
+    MODEL_FOR_CTC_MAPPING_NAMES,
+)
 from transformers.utils.fx import HFTracer, get_concrete_args
 
 from ..modeling_utils import PipelineMixin
+
+
+if TYPE_CHECKING:
+    from transformers import PreTrainedModel
 
 
 class PipelinedTracer(HFTracer):
@@ -88,12 +98,35 @@ class PipelinedTracer(HFTracer):
         # TODO: how to handle the case where the model is ran in full-precision?
         float32_dtype_in_args = any(a is torch.float32 for a in args)
         float32_dtype_in_kwargs = kwargs.get("dtype", None) is torch.float32
-        if kind == "call_method" and target == "to":
-            if float32_dtype_in_args:
-                args = tuple(a if a is not torch.float32 else torch.float16 for a in args)
-            if float32_dtype_in_kwargs:
-                kwargs["dtype"] = torch.float16
-        return super().create_proxy(kind, target, args, kwargs, name=name, type_expr=type_expr, proxy_factory_fn=proxy_factory_fn)
+        node_types_to_inspect = [
+            ("call_method", "to"),
+            ("call_function", torch.full),
+        ]
+        torch_methods_to_patched_version = {orig: wrapped for (orig, wrapped) in self.patched_torch_methods.values()}
+        for (k, t) in node_types_to_inspect:
+            if kind == k and target == torch_methods_to_patched_version.get(t, t):
+                if float32_dtype_in_args:
+                    args = tuple(a if a is not torch.float32 else torch.float16 for a in args)
+                if float32_dtype_in_kwargs:
+                    kwargs["dtype"] = torch.float16
+        return super().create_proxy(
+            kind, target, args, kwargs, name=name, type_expr=type_expr, proxy_factory_fn=proxy_factory_fn
+        )
+
+    # TODO: keep until transformers 4.23.2 is released.
+    def _generate_dummy_input(
+        self, model: "PreTrainedModel", input_name: str, shape: List[int]
+    ) -> Dict[str, torch.Tensor]:
+        input_dict = {}
+        model_class_name = getattr(model, "class_for_deserialization", model.__class__).__name__
+        if input_name == "labels":
+            if model_class_name in get_values(MODEL_FOR_CTC_MAPPING_NAMES):
+                input_dict["labels"] = torch.zeros(*shape, dtype=torch.float, device=model.device)
+            if model_class_name in get_values(MODEL_FOR_AUDIO_CLASSIFICATION_MAPPING_NAMES):
+                input_dict["labels"] = torch.zeros(shape[0], dtype=torch.long, device=model.device)
+        else:
+            input_dict = super()._generate_dummy_input(model, input_name, shape)
+        return input_dict
 
 
 def symbolic_trace_with_pipelined_tracer(
@@ -139,13 +172,18 @@ def symbolic_trace_with_pipelined_tracer(
     return traced
 
 
+def cast_traced_model_to_proper_class(model: torch.nn.Module, traced: torch.fx.GraphModule):
+    type_ = type(f"Traced{model.__class__.__name__}", (torch.fx.GraphModule, model.__class__), {})
+    traced.__class__ = type_
+    traced.recompile()
+
+
 def symbolic_trace_pipelined_model(pipelined_model: PipelineMixin) -> PipelineMixin:
     if isinstance(pipelined_model, torch.fx.GraphModule):
         return pipelined_model
 
     transformers_class = None
     bases = list(pipelined_model.__class__.__bases__)
-    import inspect
 
     while bases:
         base = bases.pop(0)
@@ -160,6 +198,5 @@ def symbolic_trace_pipelined_model(pipelined_model: PipelineMixin) -> PipelineMi
     traced = symbolic_trace_with_pipelined_tracer(
         pipelined_model, input_names=pipelined_model.input_names_for_symbolic_trace
     )
-    type_ = type(f"Traced{pipelined_model.__class__.__name__}", (torch.fx.GraphModule, pipelined_model.__class__), {})
-    traced.__class__ = type_
+    cast_traced_model_to_proper_class(pipelined_model, traced)
     return traced

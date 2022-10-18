@@ -19,8 +19,8 @@ from torch import nn
 import transformers
 from optimum.utils import logging
 from transformers import BartForConditionalGeneration, BartForSequenceClassification
-from transformers.models.bart.modeling_bart import BartAttention
 from transformers.modeling_outputs import Seq2SeqLMOutput, Seq2SeqSequenceClassifierOutput
+from transformers.models.bart.modeling_bart import BartAttention
 
 from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, ReversibleTransformation, compose
 from ...fx.transformations import (
@@ -51,9 +51,8 @@ _OPTIMIZATION_TRANSFORMATIONS = [
 ]
 
 _NON_REVERSIBLE_TRANSFORMATIONS = [
-    ClipValuesSymmetric(1e4, exclude_targets=["view"]),
+    ClipValuesSymmetric(10000, exclude_targets=["view"]),
     ClipValues(1e-4, float("inf"), include_targets=[torch.nn.LayerNorm]),
-    TupleOutput(),
 ]
 
 
@@ -80,9 +79,10 @@ def _expand_mask(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] 
     tgt_len = tgt_len if tgt_len is not None else src_len
 
     expanded_mask = mask[:, None, None, :]
-    inverted_mask = 1.0 - expanded_mask
+    inverted_mask = 1 - expanded_mask
 
     inverted_mask = -float("inf") * inverted_mask
+    # inverted_mask =  * inverted_mask
     return inverted_mask
 
 
@@ -435,99 +435,99 @@ class PipelinedBartForSequenceClassification(BartForSequenceClassification, Pipe
         self = composition(self, reverse=True)
         return self
 
-    # def forward(
-    #     self,
-    #     input_ids: torch.LongTensor = None,
-    #     attention_mask: Optional[torch.Tensor] = None,
-    #     decoder_input_ids: Optional[torch.LongTensor] = None,
-    #     decoder_attention_mask: Optional[torch.LongTensor] = None,
-    #     head_mask: Optional[torch.Tensor] = None,
-    #     decoder_head_mask: Optional[torch.Tensor] = None,
-    #     cross_attn_head_mask: Optional[torch.Tensor] = None,
-    #     encoder_outputs: Optional[List[torch.FloatTensor]] = None,
-    #     inputs_embeds: Optional[torch.FloatTensor] = None,
-    #     decoder_inputs_embeds: Optional[torch.FloatTensor] = None,
-    #     labels: Optional[torch.LongTensor] = None,
-    #     use_cache: Optional[bool] = None,
-    #     output_attentions: Optional[bool] = None,
-    #     output_hidden_states: Optional[bool] = None,
-    #     return_dict: Optional[bool] = None,
-    # ) -> Union[Tuple, Seq2SeqSequenceClassifierOutput]:
-    #     r"""
-    #     labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
-    #         Labels for computing the sequence classification/regression loss. Indices should be in `[0, ...,
-    #         config.num_labels - 1]`. If `config.num_labels > 1` a classification loss is computed (Cross-Entropy).
-    #     """
-    #     return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-    #     if labels is not None:
-    #         use_cache = False
+    def forward(
+        self,
+        input_ids: torch.LongTensor = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        decoder_input_ids: Optional[torch.LongTensor] = None,
+        decoder_attention_mask: Optional[torch.LongTensor] = None,
+        head_mask: Optional[torch.Tensor] = None,
+        decoder_head_mask: Optional[torch.Tensor] = None,
+        cross_attn_head_mask: Optional[torch.Tensor] = None,
+        encoder_outputs: Optional[List[torch.FloatTensor]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        decoder_inputs_embeds: Optional[torch.FloatTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[Tuple, Seq2SeqSequenceClassifierOutput]:
+        r"""
+        labels (`torch.LongTensor` of shape `(batch_size,)`, *optional*):
+            Labels for computing the sequence classification/regression loss. Indices should be in `[0, ...,
+            config.num_labels - 1]`. If `config.num_labels > 1` a classification loss is computed (Cross-Entropy).
+        """
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+        if labels is not None:
+            use_cache = False
 
-    #     outputs = self.model(
-    #         input_ids,
-    #         attention_mask=attention_mask,
-    #         decoder_input_ids=decoder_input_ids,
-    #         decoder_attention_mask=decoder_attention_mask,
-    #         head_mask=head_mask,
-    #         decoder_head_mask=decoder_head_mask,
-    #         cross_attn_head_mask=cross_attn_head_mask,
-    #         encoder_outputs=encoder_outputs,
-    #         inputs_embeds=inputs_embeds,
-    #         decoder_inputs_embeds=decoder_inputs_embeds,
-    #         use_cache=use_cache,
-    #         output_attentions=output_attentions,
-    #         output_hidden_states=output_hidden_states,
-    #         return_dict=return_dict,
-    #     )
+        outputs = self.model(
+            input_ids,
+            attention_mask=attention_mask,
+            decoder_input_ids=decoder_input_ids,
+            decoder_attention_mask=decoder_attention_mask,
+            head_mask=head_mask,
+            decoder_head_mask=decoder_head_mask,
+            cross_attn_head_mask=cross_attn_head_mask,
+            encoder_outputs=encoder_outputs,
+            inputs_embeds=inputs_embeds,
+            decoder_inputs_embeds=decoder_inputs_embeds,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
 
-    #     hidden_states = outputs[0]  # last hidden state
-    #     B, L, E = hidden_states.shape
+        hidden_states = outputs[0]  # last hidden state
+        B, L, E = hidden_states.shape
 
-    #     eos_mask = torch.eq(input_ids, self.config.eos_token_id)
-    #     # Static tensor shape version of hidden_states[eos_mask, :]
-    #     eos_indices = eos_mask * torch.arange(L).unsqueeze(0)
-    #     last_eos_index, _ = torch.max(eos_indices, dim=1)
-    #     # torch.index_select requires a 1D tensor of indices
-    #     last_eos_index += torch.arange(B) * L
-    #     hidden_states = hidden_states.view(B * L, E)
-    #     sentence_representation = torch.index_select(hidden_states, 0, last_eos_index)
+        eos_mask = torch.eq(input_ids, self.config.eos_token_id)
+        # Static tensor shape version of hidden_states[eos_mask, :]
+        eos_indices = eos_mask * torch.arange(L).unsqueeze(0)
+        last_eos_index, _ = torch.max(eos_indices, dim=1)
+        # torch.index_select requires a 1D tensor of indices
+        last_eos_index += torch.arange(B) * L
+        hidden_states = hidden_states.view(B * L, E)
+        sentence_representation = torch.index_select(hidden_states, 0, last_eos_index)
 
-    #     logits = self.classification_head(sentence_representation)
+        logits = self.classification_head(sentence_representation)
 
-    #     loss = None
-    #     if labels is not None:
-    #         if self.config.problem_type is None:
-    #             if self.config.num_labels == 1:
-    #                 self.config.problem_type = "regression"
-    #             elif self.config.num_labels > 1 and (labels.dtype == torch.long or labels.dtype == torch.int):
-    #                 self.config.problem_type = "single_label_classification"
-    #             else:
-    #                 self.config.problem_type = "multi_label_classification"
+        loss = None
+        if labels is not None:
+            if self.config.problem_type is None:
+                if self.config.num_labels == 1:
+                    self.config.problem_type = "regression"
+                elif self.config.num_labels > 1 and (labels.dtype == torch.long or labels.dtype == torch.int):
+                    self.config.problem_type = "single_label_classification"
+                else:
+                    self.config.problem_type = "multi_label_classification"
 
-    #         if self.config.problem_type == "regression":
-    #             loss_fct = nn.MSELoss()
-    #             if self.config.num_labels == 1:
-    #                 loss = loss_fct(logits.squeeze(), labels.squeeze())
-    #             else:
-    #                 loss = loss_fct(logits, labels)
-    #         elif self.config.problem_type == "single_label_classification":
-    #             loss_fct = nn.CrossEntropyLoss()
-    #             loss = loss_fct(logits.view(-1, self.config.num_labels), labels.view(-1))
-    #         elif self.config.problem_type == "multi_label_classification":
-    #             loss_fct = nn.BCEWithLogitsLoss()
-    #             loss = loss_fct(logits, labels)
+            if self.config.problem_type == "regression":
+                loss_fct = nn.MSELoss()
+                if self.config.num_labels == 1:
+                    loss = loss_fct(logits.squeeze(), labels.squeeze())
+                else:
+                    loss = loss_fct(logits, labels)
+            elif self.config.problem_type == "single_label_classification":
+                loss_fct = nn.CrossEntropyLoss()
+                loss = loss_fct(logits.view(-1, self.config.num_labels), labels.view(-1))
+            elif self.config.problem_type == "multi_label_classification":
+                loss_fct = nn.BCEWithLogitsLoss()
+                loss = loss_fct(logits, labels)
 
-    #     if not return_dict:
-    #         output = (logits,) + outputs[1:]
-    #         return ((loss,) + output) if loss is not None else output
+        if not return_dict:
+            output = (logits,) + outputs[1:]
+            return ((loss,) + output) if loss is not None else output
 
-    #     return Seq2SeqSequenceClassifierOutput(
-    #         loss=loss,
-    #         logits=logits,
-    #         past_key_values=outputs.past_key_values,
-    #         decoder_hidden_states=outputs.decoder_hidden_states,
-    #         decoder_attentions=outputs.decoder_attentions,
-    #         cross_attentions=outputs.cross_attentions,
-    #         encoder_last_hidden_state=outputs.encoder_last_hidden_state,
-    #         encoder_hidden_states=outputs.encoder_hidden_states,
-    #         encoder_attentions=outputs.encoder_attentions,
-    #     )
+        return Seq2SeqSequenceClassifierOutput(
+            loss=loss,
+            logits=logits,
+            past_key_values=outputs.past_key_values,
+            decoder_hidden_states=outputs.decoder_hidden_states,
+            decoder_attentions=outputs.decoder_attentions,
+            cross_attentions=outputs.cross_attentions,
+            encoder_last_hidden_state=outputs.encoder_last_hidden_state,
+            encoder_hidden_states=outputs.encoder_hidden_states,
+            encoder_attentions=outputs.encoder_attentions,
+        )

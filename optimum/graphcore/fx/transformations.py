@@ -47,7 +47,6 @@ def parent_module_type(node: "Node") -> Union[str, Type]:
     return getattr(node, "parent_module_type", None)
 
 
-
 class AddPoptorchBlockBase(ReversibleTransformation):
     """
     Base class that provide useful methods for inserting poptorch blocks in the model.
@@ -254,7 +253,9 @@ class RecomputationCheckpoint(ReversibleTransformation):
     Annotates the output of a module to be checkpointed instead of recomputed.
     """
 
-    def __init__(self, name_regex: str, to_exclude: Optional[str] = None, output_nodes_specs: Dict[str, List[Any]] = None):
+    def __init__(
+        self, name_regex: str, to_exclude: Optional[str] = None, output_nodes_specs: Dict[str, List[Any]] = None
+    ):
         self.name_regex = re.compile(name_regex)
         self.to_exclude = re.compile(to_exclude) if to_exclude is not None else None
         self.output_nodes_specs = None
@@ -291,7 +292,6 @@ class RecomputationCheckpoint(ReversibleTransformation):
         if self.output_nodes_specs:
             output_nodes = [n for n in output_nodes if n.target in self.output_nodes_specs[n.op]]
         return output_nodes
-
 
     def transform(self, graph_module: "GraphModule") -> "GraphModule":
         matched_module_names = collections.OrderedDict()
@@ -502,12 +502,18 @@ class TieWeights(Transformation):
 
 
 class ShareEmbeddingComputation(Transformation):
-    def _find_nodes_to_move(self, graph_module, embedding_input_node):
+    def _find_nodes_to_move(self, graph_module, embedding_input_node, shared_embedding_node):
+        nodes_before_embedding_input_node = set()
+        for node in graph_module.graph.nodes:
+            if node is shared_embedding_node:
+                break
+            nodes_before_embedding_input_node.add(node)
+
         to_visit = [embedding_input_node]
         to_move = set()
         while to_visit:
             node = to_visit.pop(0)
-            if node.op != "placeholder":
+            if node not in nodes_before_embedding_input_node:
                 to_move.add(node)
                 to_visit += node.all_input_nodes
         ordered_to_move = []
@@ -539,7 +545,7 @@ class ShareEmbeddingComputation(Transformation):
                 raise NotImplementedError("Currently support embedding computation sharing for 2.")
             new_input_nodes = []
             for input_node in reversed(embedding_input_nodes[1:]):
-                nodes_to_move = self._find_nodes_to_move(graph_module, input_node)
+                nodes_to_move = self._find_nodes_to_move(graph_module, input_node, embedding_nodes[target][0])
                 old_to_new_mapping = self._move_nodes_after_node(graph_module, nodes_to_move, embedding_input_nodes[0])
                 for old_node, new_node in old_to_new_mapping.items():
                     old_node.replace_all_uses_with(new_node)
@@ -559,5 +565,4 @@ class ShareEmbeddingComputation(Transformation):
                         getitem = graph_module.graph.call_function(operator.getitem, (shared_node, idx + 1))
                         embedding_node.replace_all_uses_with(getitem)
                         graph_module.graph.erase_node(embedding_node)
-
         return graph_module

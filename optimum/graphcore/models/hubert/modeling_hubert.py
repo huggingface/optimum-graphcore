@@ -41,7 +41,6 @@ _OPTIMIZATION_TRANSFORMATIONS = [
 _NON_REVERSIBLE_TRANSFORMATIONS = [
     ClipValuesSymmetric(1e4, exclude_targets=["view"]),
     ClipValues(1e-4, float("inf"), include_targets=[torch.nn.LayerNorm]),
-    TupleOutput(),
 ]
 
 

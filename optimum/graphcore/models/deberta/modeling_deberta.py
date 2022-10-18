@@ -14,21 +14,26 @@
 
 import math
 import operator
-from typing import Optional, Union, Tuple
+from typing import Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
 
 import poptorch
 import transformers
-from transformers import DebertaForMaskedLM, DebertaForQuestionAnswering, DebertaForSequenceClassification, DebertaForTokenClassification
+from transformers import (
+    DebertaForMaskedLM,
+    DebertaForQuestionAnswering,
+    DebertaForSequenceClassification,
+    DebertaForTokenClassification,
+)
+from transformers.modeling_outputs import MaskedLMOutput, QuestionAnsweringModelOutput
 from transformers.models.deberta.modeling_deberta import (
     DebertaEncoder,
     DisentangledSelfAttention,
     StableDropout,
     build_relative_position,
 )
-from transformers.modeling_outputs import MaskedLMOutput, QuestionAnsweringModelOutput
 from transformers.utils.fx import _gen_constructor_wrapper
 
 from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, compose
@@ -45,7 +50,7 @@ from ...fx.transformations import (
     VocabEmbeddingToSerializedEmbedding,
 )
 from ...fx.utils import symbolic_trace_pipelined_model
-from ...modeling_utils import PipelineMixin, get_layer_ipu, register, OnehotGather
+from ...modeling_utils import OnehotGather, PipelineMixin, get_layer_ipu, register
 
 
 logger = logging.get_logger(__name__)
@@ -59,7 +64,6 @@ _OPTIMIZATION_TRANSFORMATIONS = [
 _NON_REVERSIBLE_TRANSFORMATIONS = [
     ClipValuesSymmetric(1e4, exclude_targets=["view"]),
     ClipValues(1e-4, float("inf"), include_targets=[torch.nn.LayerNorm]),
-    TupleOutput(),
 ]
 
 
@@ -342,7 +346,7 @@ class DebertaPipelineMixin(PipelineMixin):
         torch.nn.functional.one_hot = orig
         transformations = self.get_transformations()
         transformations += _OPTIMIZATION_TRANSFORMATIONS
-        composition = compose(*transformations, inplace=True)
+        composition = compose(*transformations)
         non_reversible_composition = compose(*_NON_REVERSIBLE_TRANSFORMATIONS)
         traced = composition(traced)
         traced = non_reversible_composition(traced)

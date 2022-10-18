@@ -11,12 +11,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import Optional, Union, Tuple
+from typing import Optional, Tuple, Union
 
 import torch
 import torch.nn.functional as F
 
 from transformers.models.lxmert.modeling_lxmert import LxmertForQuestionAnswering, LxmertForQuestionAnsweringOutput
+
 from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, compose
 from ....utils import logging
 from ...fx.transformations import (
@@ -42,7 +43,6 @@ _OPTIMIZATION_TRANSFORMATIONS = [
 _NON_REVERSIBLE_TRANSFORMATIONS = [
     ClipValuesSymmetric(1e4, exclude_targets=["view"]),
     ClipValues(1e-4, float("inf"), include_targets=[torch.nn.LayerNorm]),
-    TupleOutput(),
 ]
 
 

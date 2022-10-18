@@ -13,7 +13,12 @@
 # limitations under the License.
 import torch
 from torch import nn
-from transformers.models.convnext.modeling_convnext import ConvNextLayer, ConvNextLayerNorm, ConvNextForImageClassification
+
+from transformers.models.convnext.modeling_convnext import (
+    ConvNextForImageClassification,
+    ConvNextLayer,
+    ConvNextLayerNorm,
+)
 
 from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, compose
 from ....utils import logging
@@ -26,7 +31,6 @@ from ...fx.transformations import (
     TupleOutput,
 )
 from ...fx.utils import symbolic_trace_pipelined_model
-
 from ...modeling_utils import PipelineMixin, get_layer_ipu, register
 from .optimized_convnextlayer import OptimizedConvNextLayer
 
@@ -42,7 +46,6 @@ _OPTIMIZATION_TRANSFORMATIONS = [
 _NON_REVERSIBLE_TRANSFORMATIONS = [
     ClipValuesSymmetric(1e4, exclude_targets=["view"]),
     ClipValues(1e-4, float("inf"), include_targets=[torch.nn.LayerNorm]),
-    TupleOutput(),
 ]
 
 
@@ -82,18 +85,12 @@ class PipelinedConvNextForImageClassification(ConvNextForImageClassification, Pi
         log_insertions = self.ipu_config.log_insertions
         layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
         transformations = [
-            AddPoptorchBlock(
-                "Embedding", 0, r"convnext.embeddings", log_insertions=log_insertions
-            ),
+            AddPoptorchBlock("Embedding", 0, r"convnext.embeddings", log_insertions=log_insertions),
             AddPoptorchBlocksInSeries(
                 "Encoder", layer_ipu, r"convnext.encoder.stages.[0-9]+.layers.[0-9]+", log_insertions=log_insertions
             ),
-            AddPoptorchBlock(
-                "LayerNorm", layer_ipu[-1], r"convnext.layernorm", log_insertions=log_insertions
-            ),
-            AddPoptorchBlock(
-                "Classifier", layer_ipu[-1], r"classifier", log_insertions=log_insertions
-            ),
+            AddPoptorchBlock("LayerNorm", layer_ipu[-1], r"convnext.layernorm", log_insertions=log_insertions),
+            AddPoptorchBlock("Classifier", layer_ipu[-1], r"classifier", log_insertions=log_insertions),
         ]
         if self.ipu_config.recompute_checkpoint_every_layer:
             transformations += [
@@ -113,10 +110,10 @@ class PipelinedConvNextForImageClassification(ConvNextForImageClassification, Pi
                 for layer in stage.layers:
                     layer.__class__ = OptimizedConvNextLayer
 
-        # Enable autocast for ConvNextLayerNorm because computation cannot happen in fp16
-        for mod in self.modules():
-            if isinstance(mod, ConvNextLayerNorm):
-                mod.__class__ = IPUConvNextLayerNorm
+            # # Enable autocast for ConvNextLayerNorm because computation cannot happen in fp16
+            # for mod in self.modules():
+            #     if isinstance(mod, ConvNextLayerNorm):
+            #         mod.__class__ = IPUConvNextLayerNorm
 
         traced = symbolic_trace_pipelined_model(self)
         transformations = self.get_transformations()
@@ -134,11 +131,6 @@ class PipelinedConvNextForImageClassification(ConvNextForImageClassification, Pi
         for mod in self.modules():
             if isinstance(mod, IPUConvNextLayerNorm):
                 mod.__class__ = ConvNextLayerNorm
-
-        # Switch back to non-optimized ConvNextLayer
-        for stage in self.convnext.encoder.stages:
-            for layer in stage.layers:
-                layer.__class__ = ConvNextLayer
 
         transformations = self.get_transformations()
         transformations += _OPTIMIZATION_TRANSFORMATIONS

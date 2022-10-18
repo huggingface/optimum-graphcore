@@ -191,7 +191,7 @@ class IPUTrainer:
             be able to choose different architectures according to hyper parameters (such as layer count, sizes of
             inner layers, dropout probabilities etc). **Note: this feature is not supported for now.**
 
-        compute_metrics (`Callable[[~transformers.trainer_utils.EvalPrediction], Dict]`, *optional*):
+        compute_metrics (`Callable[[transformers.trainer_utils.EvalPrediction], Dict]`, *optional*):
             The function that will be used to compute metrics at evaluation. Must take a
             [`~transformers.trainer_utils.EvalPrediction`] and return a dictionary string to metric values.
         callbacks (List of [`transformers.trainer_callback.TrainerCallback`], *optional*):
@@ -485,7 +485,6 @@ class IPUTrainer:
                 model = model.parallelize()
             if not self.args.fp32:
                 model.half()
-            import pdb; pdb.set_trace()
             if training:
                 self.model = model
             else:
@@ -1090,13 +1089,10 @@ class IPUTrainer:
         if DebugOption.UNDERFLOW_OVERFLOW in self.args.debug:
             debug_overflow = DebugUnderflowOverflow(self.model)  # noqa
 
-
         if trial is not None:
             raise ValueError("Hyperparameter tuning is not supported by the IPUTrainer.")
             trial = None
         self.state.is_hyper_param_search = trial is not None
-
-
 
         # self.training_model = self.wrap_model(self.model)
         self.traning_model = self.compile_model(next(iter(train_dataloader)), training=True)
