@@ -98,7 +98,6 @@ class GPT2PipelineMixin(PipelineMixin):
                 )
             )
         if self.ipu_config.embedding_serialization_factor > 1:
-            self.resize_vocab(False)
             transformations.append(VocabEmbeddingToSerializedEmbedding())
 
         return transformations
@@ -159,7 +158,6 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, GPT2PipelineMixin):
                 )
             )
         if self.ipu_config.embedding_serialization_factor > 1:
-            self.resize_vocab(False)
             transformations += [
                 LinearToSerializedLinear("lm_head"),
                 TieWeights("transformer.wte", "lm_head"),

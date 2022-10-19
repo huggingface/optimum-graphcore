@@ -167,6 +167,12 @@ class PipelinedModelsTester(TestCase):
     ):
         config = config_class.from_pretrained(model_name_or_path)
         ipu_config = IPUConfig.from_pretrained(ipu_config_name_or_path)
+        if "gpt2" in model_name_or_path:
+            if pretrained_class in MODEL_FOR_SEQUENCE_CLASSIFICATION_MAPPING.values():
+                config.pad_token_id = 2
+            if pretrained_class in MODEL_FOR_CAUSAL_LM_MAPPING.values():
+                # Disabling it because otherwise we are resizing the vocab, which makes outputs comparison impossible.
+                ipu_config.embedding_serialization_factor = 1
         pretrained_model = pretrained_class(config).eval()
         pipelined_model = pipelined_class.from_transformers(pretrained_model, ipu_config).eval()
 

@@ -110,10 +110,10 @@ class PipelinedConvNextForImageClassification(ConvNextForImageClassification, Pi
                 for layer in stage.layers:
                     layer.__class__ = OptimizedConvNextLayer
 
-            # # Enable autocast for ConvNextLayerNorm because computation cannot happen in fp16
-            # for mod in self.modules():
-            #     if isinstance(mod, ConvNextLayerNorm):
-            #         mod.__class__ = IPUConvNextLayerNorm
+            # Enable autocast for ConvNextLayerNorm because computation cannot happen in fp16
+            for mod in self.modules():
+                if isinstance(mod, ConvNextLayerNorm):
+                    mod.__class__ = IPUConvNextLayerNorm
 
         traced = symbolic_trace_pipelined_model(self)
         transformations = self.get_transformations()

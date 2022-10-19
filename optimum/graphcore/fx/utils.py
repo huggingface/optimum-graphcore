@@ -50,6 +50,7 @@ class PipelinedTracer(HFTracer):
         self.ops_to_wrap = []
         self.current_module_qualified_name = ["root"]
         self.current_module_type = ["root"]
+        self.root_is_in_half_precision = False
 
     def register_op_to_wrap(self, name, wrapper, orig_op):
         self.ops_to_wrap.append((name, wrapper, orig_op))
@@ -95,20 +96,20 @@ class PipelinedTracer(HFTracer):
         return proxy
 
     def create_proxy(self, kind, target, args, kwargs, name=None, type_expr=None, proxy_factory_fn=None):
-        # TODO: how to handle the case where the model is ran in full-precision?
-        float32_dtype_in_args = any(a is torch.float32 for a in args)
-        float32_dtype_in_kwargs = kwargs.get("dtype", None) is torch.float32
-        node_types_to_inspect = [
-            ("call_method", "to"),
-            ("call_function", torch.full),
-        ]
-        torch_methods_to_patched_version = {orig: wrapped for (orig, wrapped) in self.patched_torch_methods.values()}
-        for (k, t) in node_types_to_inspect:
-            if kind == k and target == torch_methods_to_patched_version.get(t, t):
-                if float32_dtype_in_args:
-                    args = tuple(a if a is not torch.float32 else torch.float16 for a in args)
-                if float32_dtype_in_kwargs:
-                    kwargs["dtype"] = torch.float16
+        if self.root_is_in_half_precision:
+            float32_dtype_in_args = any(a is torch.float32 for a in args)
+            float32_dtype_in_kwargs = kwargs.get("dtype", None) is torch.float32
+            node_types_to_inspect = [
+                ("call_method", "to"),
+                ("call_function", torch.full),
+            ]
+            torch_methods_to_patched_version = {orig: wrapped for (orig, wrapped) in self.patched_torch_methods.values()}
+            for (k, t) in node_types_to_inspect:
+                if kind == k and target == torch_methods_to_patched_version.get(t, t):
+                    if float32_dtype_in_args:
+                        args = tuple(a if a is not torch.float32 else torch.float16 for a in args)
+                    if float32_dtype_in_kwargs:
+                        kwargs["dtype"] = torch.float16
         return super().create_proxy(
             kind, target, args, kwargs, name=name, type_expr=type_expr, proxy_factory_fn=proxy_factory_fn
         )
@@ -127,6 +128,17 @@ class PipelinedTracer(HFTracer):
         else:
             input_dict = super()._generate_dummy_input(model, input_name, shape)
         return input_dict
+
+    def trace(self, *args, **kwargs) -> torch.fx.Graph:
+        root = args[0]
+        if not isinstance(root, torch.nn.Module):
+            # Cannot infer easily.
+            self.root_is_in_half_precision = False
+        else:
+            self.root_is_in_half_precision = any(p.dtype is torch.float16 for p in root.parameters())
+        graph = super().trace(*args, **kwargs)
+        self.root_is_in_half_precision = False
+        return graph
 
 
 def symbolic_trace_with_pipelined_tracer(

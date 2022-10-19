@@ -36,7 +36,8 @@ logger = logging.get_logger(__name__)
 
 _OPTIMIZATION_TRANSFORMATIONS = [
     ChangeTrueDivToMulByInverse(),
-    MergeLinears(),
+    # TODO: Not working for now.
+    # MergeLinears(),
     #    FuseBiasInLinear(),
 ]
 
@@ -51,9 +52,11 @@ class PipelinedLxmertForQuestionAnswering(LxmertForQuestionAnswering, PipelineMi
     def get_transformations(self):
         log_insertions = self.ipu_config.log_insertions
         layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+		# TODO: remove this line after testing.
+        layer_ipu = get_layer_ipu([0, 7, 7, 5])
         language_layers_ipus = layer_ipu[: self.config.l_layers]
-        visual_layers_ipus = layer_ipu[self.config.l_layers : self.config.l_layers + self.r_layers]
-        cross_modality_layers_ipus = layer_ipu[self.config.l_layers + self.r_layers :]
+        visual_layers_ipus = layer_ipu[self.config.l_layers : self.config.l_layers + self.config.r_layers]
+        cross_modality_layers_ipus = layer_ipu[self.config.l_layers + self.config.r_layers :]
 
         transformations = [
             AddPoptorchBlock("Embedding", 0, "lxmert.embeddings", log_insertions=log_insertions),
