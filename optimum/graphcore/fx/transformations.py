@@ -160,13 +160,13 @@ class ClipValues(Transformation):
         self,
         min_value: float,
         max_value: float,
-        include_targets: Optional[List[Union[str, Callable]]] = None,
-        exclude_targets: Optional[List[Union[str, Callable]]] = None,
+        include_targets: Optional[Tuple[Union[str, Callable]]] = None,
+        exclude_targets: Optional[Tuple[Union[str, Callable]]] = None,
     ):
         self.min_value = min_value
         self.max_value = max_value
-        self.include_targets = include_targets if include_targets is not None else []
-        self.exclude_targets = exclude_targets if exclude_targets is not None else []
+        self.include_targets = include_targets if include_targets is not None else ()
+        self.exclude_targets = exclude_targets if exclude_targets is not None else ()
 
     def _clip_node_args(self, args):
         if isinstance(args, (tuple, list, set)):
@@ -197,8 +197,8 @@ class ClipValuesSymmetric(ClipValues):
     def __init__(
         self,
         clip_value: float,
-        include_targets: Optional[List[Union[str, Callable]]] = None,
-        exclude_targets: Optional[List[Union[str, Callable]]] = None,
+        include_targets: Optional[Tuple[Union[str, Callable]]] = None,
+        exclude_targets: Optional[Tuple[Union[str, Callable]]] = None,
     ):
         if clip_value < 0:
             raise ValueError(f"The provided clip value must be equal or greater than 0, but here {clip_value}.")

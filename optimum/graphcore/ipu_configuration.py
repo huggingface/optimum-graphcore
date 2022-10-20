@@ -49,6 +49,11 @@ class IPUConfig(BaseConfig):
             **Note: This is an experimental feature and may not behave as expected.**
         executable_cache_dir (`str`, *optional*, defaults to `""`):
             Enables caching the compile executables to a directory.
+        optimization_level (`int`, *optional*, defaults to 1):
+            The optimization level to apply to the model before compilation. Three values are allowed:
+                - 0: No optimization is performed on the graph.
+                - 1: Optimizations that preserve the computation (same result as no optimization) are performed on the graph.
+                - 2: All the available optimizations are applied to the graph, potentially including approximations.
 
         > Parameters for controlling the batch size
 
@@ -160,6 +165,8 @@ class IPUConfig(BaseConfig):
         self.execute_encoder_on_cpu_for_generation = kwargs.pop("execute_encoder_on_cpu_for_generation", False)
 
         self.log_insertions = kwargs.pop("log_insertions", False)
+
+        self.optimization_level = kwargs.pop("optimization_level", 1)
 
     def _prepare_config_attribute_for_pod_type(
         self, config_attribute_name: str, config_attribute: Union[Any, Dict[str, Any]], pod_type: Optional[str]

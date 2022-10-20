@@ -32,8 +32,8 @@ from transformers.models.bert.modeling_bert import (
 )
 from transformers.utils.fx import _gen_constructor_wrapper
 
-from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, compose
-from ...fx.transformations import (
+from ....fx.optimization import compose
+from ...fx import (
     AddPoptorchBlock,
     AddPoptorchBlocksInSeries,
     ClipValues,
@@ -42,30 +42,76 @@ from ...fx.transformations import (
     OutlineAttribute,
     RecomputationCheckpoint,
     TieWeights,
-    TupleOutput,
     VocabEmbeddingToSerializedEmbedding,
+    symbolic_trace_pipelined_model,
+    DEFAULT_TRANSFORMATION_MANAGER,
 )
-from ...fx.utils import symbolic_trace_pipelined_model
 from ...modeling_utils import OnehotGather, PipelineMixin, get_layer_ipu, register
 
 
 logger = logging.get_logger(__name__)
 
 
-_OPTIMIZATION_TRANSFORMATIONS = [
-    ChangeTrueDivToMulByInverse(),
-    MergeLinears(),
-    #    FuseBiasInLinear(),
-]
+class BertPipelineMixin(PipelineMixin):
 
-_NON_REVERSIBLE_TRANSFORMATIONS = [
-    ClipValuesSymmetric(1e4, exclude_targets=["view"]),
-    ClipValues(1e-4, float("inf"), include_targets=[torch.nn.LayerNorm]),
-]
+    def get_transformations(self):
+        log_insertions = self.ipu_config.log_insertions
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        last_ipu = len(self.ipu_config.layers_per_ipu) - 1
+        transformations = [
+            AddPoptorchBlock("Embedding", 0, "bert.embeddings", log_insertions=log_insertions),
+            OutlineAttribute("bert.embeddings.LayerNorm", "Embedding"),
+            AddPoptorchBlocksInSeries(
+                "Encoder", layer_ipu, r"bert.encoder.layer.[0-9]+", log_insertions=log_insertions
+            ),
+            # Only one of the following AddPoptorchBlock, will actually add a block.
+            AddPoptorchBlock("Classifier Output", last_ipu, "classifier", log_insertions=log_insertions),
+            AddPoptorchBlock("QA Outputs", last_ipu, "qa_outputs", log_insertions=log_insertions),
+        ]
+        if self.ipu_config.recompute_checkpoint_every_layer:
+            transformations.append(
+                RecomputationCheckpoint(
+                    "bert.encoder.layer.[0-9]+", to_exclude=f"bert.encoder.layer.{self.config.num_hidden_layers - 1}"
+                )
+            )
+        if self.ipu_config.embedding_serialization_factor > 1:
+            transformations.append(VocabEmbeddingToSerializedEmbedding())
+        return transformations
+
+    def parallelize(self):
+        """
+        Transform the model to run in an IPU pipeline.
+        - Adds pipeline stages to the model
+        - Replaces self-attention layers with fused-qkv self-attention layers
+        - (If enabled) Replaces the word embedding with a SerializedEmbedding
+        - Adds recomputation checkpoints
+        """
+        super().parallelize()
+        traced = symbolic_trace_pipelined_model(self)
+        transformations = self.get_transformations()
+        transformations += DEFAULT_TRANSFORMATION_MANAGER.get_reversible_transformations(self.ipu_config.optimization_level)
+        composition = compose(*transformations)
+        non_reversible_composition = DEFAULT_TRANSFORMATION_MANAGER.compose_non_reversible_transformations(self.ipu_config.optimization_level)
+        traced = composition(traced)
+        traced = non_reversible_composition(traced)
+        return traced
+
+    def deparallelize(self):
+        """
+        Undo the changes to the model done by `parallelize`.
+        You should call this before doing `save_pretrained` so that the `model.state_dict` is
+        compatible with the original model.
+        """
+        super().deparallelize()
+        transformations = self.get_transformations()
+        transformations += DEFAULT_TRANSFORMATION_MANAGER.get_reversible_transformations(self.ipu_config.optimization_level)
+        composition = compose(*transformations)
+        self = composition(self, reverse=True)
+        return self
 
 
 @register(BertForPreTraining)
-class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
+class PipelinedBertForPreTraining(BertForPreTraining, BertPipelineMixin):
     """
     BertForPretraining transformed to run in an IPU pipeline.
 
@@ -109,37 +155,6 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
                 TieWeights("bert.embeddings.word_embeddings", "cls.predictions.decoder"),
             ]
         return transformations
-
-    def parallelize(self):
-        """
-        Transform the model to run in an IPU pipeline.
-        - Adds pipeline stages to the model
-        - Replaces self-attention layers with fused-qkv self-attention layers
-        - (If enabled) Replaces the word embedding projection with a SerializedLinear layer
-        - Adds recomputation checkpoints
-        """
-        super().parallelize()
-        traced = symbolic_trace_pipelined_model(self)
-        transformations = self.get_transformations()
-        transformations += _OPTIMIZATION_TRANSFORMATIONS
-        composition = compose(*transformations)
-        non_reversible_composition = compose(*_NON_REVERSIBLE_TRANSFORMATIONS)
-        traced = composition(traced)
-        traced = non_reversible_composition(traced)
-        return traced
-
-    def deparallelize(self):
-        """
-        Undo the changes to the model done by `parallelize`.
-        You should call this before doing `save_pretrained` so that the `model.state_dict` is
-        compatible with the original model.
-        """
-        super().deparallelize()
-        transformations = self.get_transformations()
-        transformations += _OPTIMIZATION_TRANSFORMATIONS
-        composition = compose(*transformations)
-        self = composition(self, reverse=True)
-        return self
 
     def _init_weights(self, module):
         """Initialize the weights"""
@@ -227,7 +242,7 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
 
 
 @register(BertForMaskedLM)
-class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
+class PipelinedBertForMaskedLM(BertForMaskedLM, BertPipelineMixin):
     """
     BertForMaskedLM transformed to run in an IPU pipeline.
 
@@ -270,37 +285,6 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
                 TieWeights("bert.embeddings.word_embeddings", "cls.predictions.decoder"),
             ]
         return transformations
-
-    def parallelize(self):
-        """
-        Transform the model to run in an IPU pipeline.
-        - Adds pipeline stages to the model
-        - Replaces self-attention layers with fused-qkv self-attention layers
-        - (If enabled) Replaces the word embedding projection with a SerializedLinear layer
-        - Adds recomputation checkpoints
-        """
-        super().parallelize()
-        traced = symbolic_trace_pipelined_model(self)
-        transformations = self.get_transformations()
-        transformations += _OPTIMIZATION_TRANSFORMATIONS
-        composition = compose(*transformations)
-        non_reversible_composition = compose(*_NON_REVERSIBLE_TRANSFORMATIONS)
-        traced = composition(traced)
-        traced = non_reversible_composition(traced)
-        return traced
-
-    def deparallelize(self):
-        """
-        Undo the changes to the model done by `parallelize`.
-        You should call this before doing `save_pretrained` so that the `model.state_dict` is
-        compatible with the original model.
-        """
-        super().deparallelize()
-        transformations = self.get_transformations()
-        transformations += _OPTIMIZATION_TRANSFORMATIONS
-        composition = compose(*transformations)
-        self = composition(self, reverse=True)
-        return self
 
     def forward(
         self,
@@ -374,63 +358,6 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
                 labels=labels,
                 return_dict=return_dict,
             )
-
-
-class BertPipelineMixin(PipelineMixin):
-    def get_transformations(self):
-        log_insertions = self.ipu_config.log_insertions
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
-        last_ipu = len(self.ipu_config.layers_per_ipu) - 1
-        transformations = [
-            AddPoptorchBlock("Embedding", 0, "bert.embeddings", log_insertions=log_insertions),
-            OutlineAttribute("bert.embeddings.LayerNorm", "Embedding"),
-            AddPoptorchBlocksInSeries(
-                "Encoder", layer_ipu, r"bert.encoder.layer.[0-9]+", log_insertions=log_insertions
-            ),
-            # Only one of the following AddPoptorchBlock, will actually add a block.
-            AddPoptorchBlock("Classifier Output", last_ipu, "classifier", log_insertions=log_insertions),
-            AddPoptorchBlock("QA Outputs", last_ipu, "qa_outputs", log_insertions=log_insertions),
-        ]
-        if self.ipu_config.recompute_checkpoint_every_layer:
-            transformations.append(
-                RecomputationCheckpoint(
-                    "bert.encoder.layer.[0-9]+", to_exclude=f"bert.encoder.layer.{self.config.num_hidden_layers - 1}"
-                )
-            )
-        if self.ipu_config.embedding_serialization_factor > 1:
-            transformations.append(VocabEmbeddingToSerializedEmbedding())
-        return transformations
-
-    def parallelize(self):
-        """
-        Transform the model to run in an IPU pipeline.
-        - Adds pipeline stages to the model
-        - Replaces self-attention layers with fused-qkv self-attention layers
-        - (If enabled) Replaces the word embedding with a SerializedEmbedding
-        - Adds recomputation checkpoints
-        """
-        super().parallelize()
-        traced = symbolic_trace_pipelined_model(self)
-        transformations = self.get_transformations()
-        transformations += _OPTIMIZATION_TRANSFORMATIONS
-        composition = compose(*transformations)
-        non_reversible_composition = compose(*_NON_REVERSIBLE_TRANSFORMATIONS)
-        traced = composition(traced)
-        traced = non_reversible_composition(traced)
-        return traced
-
-    def deparallelize(self):
-        """
-        Undo the changes to the model done by `parallelize`.
-        You should call this before doing `save_pretrained` so that the `model.state_dict` is
-        compatible with the original model.
-        """
-        super().deparallelize()
-        transformations = self.get_transformations()
-        transformations += _OPTIMIZATION_TRANSFORMATIONS
-        composition = compose(*transformations)
-        self = composition(self, reverse=True)
-        return self
 
 
 @register(BertForSequenceClassification)

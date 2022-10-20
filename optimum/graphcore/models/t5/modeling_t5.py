@@ -16,43 +16,28 @@ import warnings
 from typing import Optional, Tuple, Union
 
 import torch
-import torch.nn as nn
 
-import poptorch
 from optimum.utils import logging
 from transformers import T5ForConditionalGeneration
 from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
-from transformers.models.t5.modeling_t5 import __HEAD_MASK_WARNING_MSG, T5LayerNorm
+from transformers.models.t5.modeling_t5 import __HEAD_MASK_WARNING_MSG
 
-from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, ReversibleTransformation, compose
-from ...fx.transformations import (
+from ....fx.optimization import ReversibleTransformation, compose
+from ...fx import (
     AddPoptorchBlock,
     AddPoptorchBlocksInSeries,
-    ClipValues,
-    ClipValuesSymmetric,
     LinearToSerializedLinear,
     RecomputationCheckpoint,
     ShareEmbeddingComputation,
     TieWeights,
-    TupleOutput,
+    symbolic_trace_pipelined_model,
+    DEFAULT_TRANSFORMATION_MANAGER,
 )
-from ...fx.utils import symbolic_trace_pipelined_model
 from ...generation_utils import IPUGenerationMixin
-from ...modeling_utils import GenerationMethodsMixin, PipelineMixin, SharedEmbedding, get_layer_ipu, register
+from ...modeling_utils import GenerationMethodsMixin, PipelineMixin, get_layer_ipu, register
 
 
 logger = logging.get_logger(__name__)
-
-_OPTIMIZATION_TRANSFORMATIONS = [
-    ChangeTrueDivToMulByInverse(),
-    MergeLinears(),
-    #    FuseBiasInLinear(),
-]
-
-_NON_REVERSIBLE_TRANSFORMATIONS = [
-    ClipValuesSymmetric(1e4, exclude_targets=["view"]),
-    ClipValues(1e-4, float("inf"), include_targets=[torch.nn.LayerNorm]),
-]
 
 
 @register(T5ForConditionalGeneration)
@@ -151,9 +136,9 @@ class PipelinedT5ForConditionalGeneration(
         #         mod.forward = poptorch.autocast(enabled=True)(mod.forward)
         traced = symbolic_trace_pipelined_model(self)
         transformations = self.get_transformations()
-        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        transformations += DEFAULT_TRANSFORMATION_MANAGER.get_reversible_transformations(self.ipu_config.optimization_level)
         composition = compose(*transformations)
-        non_reversible_composition = compose(*_NON_REVERSIBLE_TRANSFORMATIONS)
+        non_reversible_composition = DEFAULT_TRANSFORMATION_MANAGER.compose_non_reversible_transformations(self.ipu_config.optimization_level)
         traced = composition(traced)
         traced = non_reversible_composition(traced)
         return traced
@@ -167,8 +152,8 @@ class PipelinedT5ForConditionalGeneration(
         # T5ForConditionalGeneration has a deparallelize method, so make sure that the PipelineMixin one is used here.
         PipelineMixin.deparallelize(self)
         transformations = self.get_transformations()
-        transformations += _OPTIMIZATION_TRANSFORMATIONS
         transformations = [t for t in transformations if isinstance(t, ReversibleTransformation)]
+        transformations += DEFAULT_TRANSFORMATION_MANAGER.get_reversible_transformations(self.ipu_config.optimization_level)
         composition = compose(*transformations)
         self = composition(self, reverse=True)
         return self

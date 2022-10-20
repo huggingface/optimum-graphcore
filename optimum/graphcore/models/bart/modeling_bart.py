@@ -22,8 +22,8 @@ from transformers import BartForConditionalGeneration, BartForSequenceClassifica
 from transformers.modeling_outputs import Seq2SeqLMOutput, Seq2SeqSequenceClassifierOutput
 from transformers.models.bart.modeling_bart import BartAttention
 
-from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, ReversibleTransformation, compose
-from ...fx.transformations import (
+from ....fx.optimization import ReversibleTransformation, compose
+from ...fx import (
     AddPoptorchBlock,
     AddPoptorchBlocksInSeries,
     ClipValues,
@@ -32,10 +32,10 @@ from ...fx.transformations import (
     RecomputationCheckpoint,
     ShareEmbeddingComputation,
     TieWeights,
-    TupleOutput,
     VocabEmbeddingToSerializedEmbedding,
+    symbolic_trace_pipelined_model,
+    DEFAULT_TRANSFORMATION_MANAGER,
 )
-from ...fx.utils import symbolic_trace_pipelined_model
 from ...generation_utils import IPUGenerationMixin
 from ...modeling_utils import GenerationMethodsMixin, PipelineMixin, get_layer_ipu, register
 
@@ -44,16 +44,8 @@ logger = logging.get_logger(__name__)
 
 FLOAT16_LIMIT = 1e4
 
-_OPTIMIZATION_TRANSFORMATIONS = [
-    ChangeTrueDivToMulByInverse(),
-    MergeLinears(),
-    #    FuseBiasInLinear(),
-]
-
-_NON_REVERSIBLE_TRANSFORMATIONS = [
-    ClipValuesSymmetric(10000, exclude_targets=["view"]),
-    ClipValues(1e-4, float("inf"), include_targets=[torch.nn.LayerNorm]),
-]
+TRANSFORMATION_MANAGER = DEFAULT_TRANSFORMATION_MANAGER.without(ClipValuesSymmetric(1e4, exclude_targets=("view",)))
+TRANSFORMATION_MANAGER.register(1, ClipValuesSymmetric(10000, exclude_targets=("view",))
 
 
 def _make_causal_mask(input_ids_shape: torch.Size, dtype: torch.dtype, past_key_values_length: int = 0):
@@ -201,6 +193,53 @@ class _BartAttentionWithoutException(BartAttention):
         return attn_output, attn_weights_reshaped, past_key_value
 
 
+class BartPipelineMixin(PipelineMixin):
+    def parallelize(self):
+        """
+        Transform the model to run in an IPU pipeline.
+        - Adds pipeline stages to the model
+        - (If enabled) Replaces the shared embedding with a SerializedEmbedding
+        - Adds recomputation checkpoints
+
+        Recommended usage:
+        ```
+        model = PipelinedBartForConditionalGeneration(config).parallelize().half()
+        ```
+        """
+        super().parallelize()
+        orig_make_causal_mask = transformers.models.bart.modeling_bart._make_causal_mask
+        orig_expand_mask = transformers.models.bart.modeling_bart._expand_mask
+        transformers.models.bart.modeling_bart._make_causal_mask = _make_causal_mask
+        transformers.models.bart.modeling_bart._expand_mask = _expand_mask
+        for mod in self.modules():
+            if isinstance(mod, BartAttention):
+                mod.__class__ = _BartAttentionWithoutException
+        traced = symbolic_trace_pipelined_model(self)
+        transformers.models.bart.modeling_bart._make_causal_mask = orig_make_causal_mask
+        transformers.models.bart.modeling_bart._expand_mask = orig_expand_mask
+        transformations = self.get_transformations()
+        transformations += TRANSFORMATION_MANAGER.get_reversible_transformations(self.ipu_config.optimization_level)
+        composition = compose(*transformations)
+        non_reversible_composition = TRANSFORMATION_MANAGER.compose_non_reversible_transformations(self.ipu_config.optimization_level)
+        traced = composition(traced)
+        traced = non_reversible_composition(traced)
+        return traced
+
+    def deparallelize(self):
+        """
+        Undo the changes to the model done by `parallelize`.
+        You should call this before doing `save_pretrained` so that the `model.state_dict` is
+        fully compatible with `transformers.BartForConditionalGeneration`.
+        """
+        super().deparallelize()
+        transformations = self.get_transformations()
+        transformations = [t for t in transformations if isinstance(t, ReversibleTransformation)]
+        transformations += TRANSFORMATION_MANAGER.get_reversible_transformations(self.ipu_config.optimization_level)
+        composition = compose(*transformations)
+        self = composition(self, reverse=True)
+        return self
+
+
 @register(BartForConditionalGeneration)
 class PipelinedBartForConditionalGeneration(
     GenerationMethodsMixin, BartForConditionalGeneration, PipelineMixin, IPUGenerationMixin
@@ -246,51 +285,6 @@ class PipelinedBartForConditionalGeneration(
                 ]
             transformations += [ShareEmbeddingComputation()]
         return transformations
-
-    def parallelize(self):
-        """
-        Transform the model to run in an IPU pipeline.
-        - Adds pipeline stages to the model
-        - (If enabled) Replaces the shared embedding with a SerializedEmbedding
-        - Adds recomputation checkpoints
-
-        Recommended usage:
-        ```
-        model = PipelinedBartForConditionalGeneration(config).parallelize().half()
-        ```
-        """
-        super().parallelize()
-        orig_make_causal_mask = transformers.models.bart.modeling_bart._make_causal_mask
-        orig_expand_mask = transformers.models.bart.modeling_bart._expand_mask
-        transformers.models.bart.modeling_bart._make_causal_mask = _make_causal_mask
-        transformers.models.bart.modeling_bart._expand_mask = _expand_mask
-        for mod in self.modules():
-            if isinstance(mod, BartAttention):
-                mod.__class__ = _BartAttentionWithoutException
-        traced = symbolic_trace_pipelined_model(self)
-        transformers.models.bart.modeling_bart._make_causal_mask = orig_make_causal_mask
-        transformers.models.bart.modeling_bart._expand_mask = orig_expand_mask
-        transformations = self.get_transformations()
-        transformations += _OPTIMIZATION_TRANSFORMATIONS
-        composition = compose(*transformations)
-        non_reversible_composition = compose(*_NON_REVERSIBLE_TRANSFORMATIONS)
-        traced = composition(traced)
-        traced = non_reversible_composition(traced)
-        return traced
-
-    def deparallelize(self):
-        """
-        Undo the changes to the model done by `parallelize`.
-        You should call this before doing `save_pretrained` so that the `model.state_dict` is
-        fully compatible with `transformers.BartForConditionalGeneration`.
-        """
-        super().deparallelize()
-        transformations = self.get_transformations()
-        transformations += _OPTIMIZATION_TRANSFORMATIONS
-        transformations = [t for t in transformations if isinstance(t, ReversibleTransformation)]
-        composition = compose(*transformations)
-        self = composition(self, reverse=True)
-        return self
 
     def forward(
         self,
@@ -389,51 +383,6 @@ class PipelinedBartForSequenceClassification(BartForSequenceClassification, Pipe
                 transformations.append(VocabEmbeddingToSerializedEmbedding())
             transformations += [ShareEmbeddingComputation()]
         return transformations
-
-    def parallelize(self):
-        """
-        Transform the model to run in an IPU pipeline.
-        - Adds pipeline stages to the model
-        - (If enabled) Replaces the shared embedding with a SerializedEmbedding
-        - Adds recomputation checkpoints
-
-        Recommended usage:
-        ```
-        model = PipelinedBartForConditionalGeneration(config).parallelize().half()
-        ```
-        """
-        super().parallelize()
-        orig_make_causal_mask = transformers.models.bart.modeling_bart._make_causal_mask
-        orig_expand_mask = transformers.models.bart.modeling_bart._expand_mask
-        transformers.models.bart.modeling_bart._make_causal_mask = _make_causal_mask
-        transformers.models.bart.modeling_bart._expand_mask = _expand_mask
-        for mod in self.modules():
-            if isinstance(mod, BartAttention):
-                mod.__class__ = _BartAttentionWithoutException
-        traced = symbolic_trace_pipelined_model(self)
-        transformers.models.bart.modeling_bart._make_causal_mask = orig_make_causal_mask
-        transformers.models.bart.modeling_bart._expand_mask = orig_expand_mask
-        transformations = self.get_transformations()
-        transformations += _OPTIMIZATION_TRANSFORMATIONS
-        composition = compose(*transformations)
-        non_reversible_composition = compose(*_NON_REVERSIBLE_TRANSFORMATIONS)
-        traced = composition(traced)
-        traced = non_reversible_composition(traced)
-        return traced
-
-    def deparallelize(self):
-        """
-        Undo the changes to the model done by `parallelize`.
-        You should call this before doing `save_pretrained` so that the `model.state_dict` is
-        fully compatible with `transformers.BartForConditionalGeneration`.
-        """
-        super().deparallelize()
-        transformations = self.get_transformations()
-        transformations += _OPTIMIZATION_TRANSFORMATIONS
-        transformations = [t for t in transformations if isinstance(t, ReversibleTransformation)]
-        composition = compose(*transformations)
-        self = composition(self, reverse=True)
-        return self
 
     def forward(
         self,

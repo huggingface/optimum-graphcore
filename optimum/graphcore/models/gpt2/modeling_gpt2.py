@@ -18,42 +18,26 @@ from typing import Optional, Tuple, Union
 import torch
 import torch.nn as nn
 
-import poptorch
 from transformers import GPT2ForSequenceClassification, GPT2ForTokenClassification, GPT2LMHeadModel
 from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions, SequenceClassifierOutputWithPast
-from transformers.models.gpt2.modeling_gpt2 import GPT2Attention
 
-from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, ReversibleTransformation, compose
+from ....fx.optimization import ReversibleTransformation, compose
 from ....utils import logging
-from ...fx.transformations import (
+from ...fx import (
     AddPoptorchBlock,
     AddPoptorchBlocksInSeries,
-    ClipValues,
-    ClipValuesSymmetric,
     LinearToSerializedLinear,
     OutlineAttribute,
     RecomputationCheckpoint,
     TieWeights,
-    TupleOutput,
     VocabEmbeddingToSerializedEmbedding,
+    symbolic_trace_pipelined_model,
+    DEFAULT_TRANSFORMATION_MANAGER,
 )
-from ...fx.utils import symbolic_trace_pipelined_model
 from ...modeling_utils import PipelineMixin, get_layer_ipu, register
-from .optimized_gpt2_attn import OptimizedGPT2Attention
 
 
 logger = logging.get_logger(__name__)
-
-_OPTIMIZATION_TRANSFORMATIONS = [
-    ChangeTrueDivToMulByInverse(),
-    MergeLinears(),
-    #    FuseBiasInLinear(),
-]
-
-_NON_REVERSIBLE_TRANSFORMATIONS = [
-    ClipValuesSymmetric(1e4, exclude_targets=["view"]),
-    ClipValues(1e-4, float("inf"), include_targets=[torch.nn.LayerNorm]),
-]
 
 
 class GPT2PipelineMixin(PipelineMixin):
@@ -114,9 +98,9 @@ class GPT2PipelineMixin(PipelineMixin):
             self.resize_vocab(False)
         traced = symbolic_trace_pipelined_model(self)
         transformations = self.get_transformations()
-        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        transformations += DEFAULT_TRANSFORMATION_MANAGER.get_reversible_transformations(self.ipu_config.optimization_level)
         composition = compose(*transformations)
-        non_reversible_composition = compose(*_NON_REVERSIBLE_TRANSFORMATIONS)
+        non_reversible_composition = DEFAULT_TRANSFORMATION_MANAGER.compose_non_reversible_transformations(self.ipu_config.optimization_level)
         traced = composition(traced)
         traced = non_reversible_composition(traced)
         return traced
@@ -129,8 +113,8 @@ class GPT2PipelineMixin(PipelineMixin):
         """
         super().deparallelize()
         transformations = self.get_transformations()
-        transformations += _OPTIMIZATION_TRANSFORMATIONS
         transformations = [t for t in transformations if isinstance(t, ReversibleTransformation)]
+        transformations += DEFAULT_TRANSFORMATION_MANAGER.get_reversible_transformations(self.ipu_config.optimization_level)
         composition = compose(*transformations)
         self = composition(self, reverse=True)
         if self.ipu_config.embedding_serialization_factor > 1:
@@ -164,41 +148,6 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, GPT2PipelineMixin):
             ]
 
         return transformations
-
-    def parallelize(self):
-        """
-        Transform the Roberta model body to run in an IPU pipeline.
-        - Adds pipeline stages to the model
-        - (If enabled) Replaces the word embedding with a SerializedEmbedding
-        - Adds recomputation checkpoints
-        """
-        PipelineMixin.parallelize(self)
-        if self.ipu_config.embedding_serialization_factor > 1:
-            self.resize_vocab(False)
-        traced = symbolic_trace_pipelined_model(self)
-        transformations = self.get_transformations()
-        transformations += _OPTIMIZATION_TRANSFORMATIONS
-        composition = compose(*transformations)
-        non_reversible_composition = compose(*_NON_REVERSIBLE_TRANSFORMATIONS)
-        traced = composition(traced)
-        traced = non_reversible_composition(traced)
-        return traced
-
-    def deparallelize(self):
-        """
-        Undo the changes to the model done by `parallelize`.
-        You should call this before doing `save_pretrained` so that the `model.state_dict` is
-        fully compatible with the original model.
-        """
-        PipelineMixin.deparallelize(self)
-        transformations = self.get_transformations()
-        transformations += _OPTIMIZATION_TRANSFORMATIONS
-        transformations = [t for t in transformations if isinstance(t, ReversibleTransformation)]
-        composition = compose(*transformations)
-        self = composition(self, reverse=True)
-        if self.ipu_config.embedding_serialization_factor > 1:
-            self.resize_vocab(True)
-        return self
 
     def forward(
         self,

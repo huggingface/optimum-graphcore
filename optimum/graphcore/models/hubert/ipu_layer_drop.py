@@ -62,7 +62,7 @@ class IPUHubertEncoder(HubertEncoder):
             # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
             # Modify LayerDrop so it can be statically compiled without eager mode
             if self.config.layerdrop > 0.0:
-                dropout_probability = torch.rand(tuple(), device=hidden_states.device)
+                dropout_probability = torch.rand((), device=hidden_states.device)
                 skip_the_layer = (
                     torch.tensor(self.training, device=hidden_states.device)
                     & (dropout_probability < self.config.layerdrop)
@@ -125,7 +125,7 @@ class IPUHubertEncoderStableLayerNorm(HubertEncoderStableLayerNorm):
             # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
             # Modify LayerDrop so it can be statically compiled without eager mode
             if self.config.layerdrop > 0.0:
-                dropout_probability = torch.rand(tuple(), device=hidden_states.device)
+                dropout_probability = torch.rand((), device=hidden_states.device)
                 skip_the_layer = (
                     torch.tensor(self.training, device=hidden_states.device)
                     & (dropout_probability < self.config.layerdrop)

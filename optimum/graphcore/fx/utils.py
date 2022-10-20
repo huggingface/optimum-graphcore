@@ -37,6 +37,7 @@ class PipelinedTracer(HFTracer):
     # TODO: keep this until transformers >= 4.23.2
     _TORCH_METHODS_TO_PATCH = list(HFTracer._TORCH_METHODS_TO_PATCH)
     _TORCH_METHODS_TO_PATCH.append("clamp")
+    _TORCH_METHODS_TO_PATCH.append("rand")
     """
     Tracer that enables tracing and transforming models to run them on IPUs.
     Compared to the HFTracer, this one adds the following features:
@@ -125,7 +126,7 @@ class PipelinedTracer(HFTracer):
                 input_dict["labels"] = torch.zeros(*shape, dtype=torch.float, device=model.device)
             if model_class_name in get_values(MODEL_FOR_AUDIO_CLASSIFICATION_MAPPING_NAMES):
                 input_dict["labels"] = torch.zeros(shape[0], dtype=torch.long, device=model.device)
-        else:
+        if "labels" not in input_dict:
             input_dict = super()._generate_dummy_input(model, input_name, shape)
         return input_dict
 

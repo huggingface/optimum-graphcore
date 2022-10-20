@@ -118,6 +118,9 @@ def _get_rel_embedding(self):
     return self.rel_embeddings.weight + 0.0 if self.relative_attention else None
 
 
+gather_last_dim = FastGatherLastDim()
+
+
 class IPUDisentangledSelfAttention(DisentangledSelfAttention):
     """
     Disentangled self-attention module
@@ -132,7 +135,8 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
     def __init__(self, config):
         super().__init__(config)
         self.xsoftmax = XSoftmax(-1)
-        self.gather_last_dim = FastGatherLastDim()
+        # self.gather_last_dim = FastGatherLastDim()
+        self.gather_last_dim = gather_last_dim
 
     def forward(
         self,

@@ -11,41 +11,41 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-import torch
-
-import poptorch
 from transformers import HubertForSequenceClassification
 
-from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, compose
+from ....fx.optimization import MergeLinears, compose
 from ....utils import logging
-from ...fx.transformations import (
+from ...fx import (
     AddPoptorchBlock,
     AddPoptorchBlocksInSeries,
-    ClipValues,
-    ClipValuesSymmetric,
     RecomputationCheckpoint,
-    TupleOutput,
+    symbolic_trace_pipelined_model,
+    DEFAULT_TRANSFORMATION_MANAGER,
 )
-from ...fx.utils import symbolic_trace_pipelined_model
 from ...modeling_utils import PipelineMixin, get_layer_ipu, register
 
 
 logger = logging.get_logger(__name__)
 
-_OPTIMIZATION_TRANSFORMATIONS = [
-    ChangeTrueDivToMulByInverse(),
-    MergeLinears(),
-    #    FuseBiasInLinear(),
-]
-
-_NON_REVERSIBLE_TRANSFORMATIONS = [
-    ClipValuesSymmetric(1e4, exclude_targets=["view"]),
-    ClipValues(1e-4, float("inf"), include_targets=[torch.nn.LayerNorm]),
-]
+TRANSFORMATION_MANAGER = DEFAULT_TRANSFORMATION_MANAGER.without(MergeLinears())
 
 
 @register(HubertForSequenceClassification)
 class PipelinedHubertForSequenceClassification(HubertForSequenceClassification, PipelineMixin):
+    def change_hubert_encoder_class(self, restore: bool):
+        """Changes the encoder class to update its forward pass so that it uses our custom version.
+        Args:
+            restore: whether to restore the encoder to its original version or not.
+        """
+        from .ipu_layer_drop import IPUHubertEncoder, IPUHubertEncoderStableLayerNorm
+        from transformers.models.hubert.modeling_hubert import HubertEncoder, HubertEncoderStableLayerNorm
+
+        if self.config.do_stable_layer_norm:
+            new_cls = HubertEncoderStableLayerNorm if restore else IPUHubertEncoderStableLayerNorm
+        else:
+            new_cls = HubertEncoder if restore else IPUHubertEncoder
+        self.hubert.encoder.__class__ = new_cls
+
     def get_transformations(self):
         log_insertions = self.ipu_config.log_insertions
         layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
@@ -70,11 +70,12 @@ class PipelinedHubertForSequenceClassification(HubertForSequenceClassification, 
 
     def parallelize(self):
         super().parallelize()
+        self.change_hubert_encoder_class(False)
         traced = symbolic_trace_pipelined_model(self)
         transformations = self.get_transformations()
-        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        transformations += TRANSFORMATION_MANAGER.get_reversible_transformations(self.ipu_config.optimization_level)
         composition = compose(*transformations)
-        non_reversible_composition = compose(*_NON_REVERSIBLE_TRANSFORMATIONS)
+        non_reversible_composition = TRANSFORMATION_MANAGER.compose_non_reversible_transformations(self.ipu_config.optimization_level)
         traced = composition(traced)
         traced = non_reversible_composition(traced)
         return traced
@@ -82,7 +83,7 @@ class PipelinedHubertForSequenceClassification(HubertForSequenceClassification, 
     def deparallelize(self):
         super().deparallelize()
         transformations = self.get_transformations()
-        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        transformations += TRANSFORMATION_MANAGER.get_reversible_transformations(self.ipu_config.optimization_level)
         composition = compose(*transformations)
         self = composition(self, reverse=True)
         return self
