@@ -21,7 +21,7 @@ class OptimizedGPT2Attention(GPT2Attention):
             causal_mask = self.bias[:, :, key_length - query_length : key_length, :key_length].to(
                 dtype=attn_weights.dtype
             )
-            attn_weights = attn_weights * causal_mask + -1e4 * (1 - causal_mask)
+            attn_weights = attn_weights + (1.0 - causal_mask) * torch.finfo(attn_weights.dtype).min
 
         if attention_mask is not None:
             # Apply the attention mask
