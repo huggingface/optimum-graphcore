@@ -554,7 +554,6 @@ def main():
             {k: -100 if k in ["labels", "next_sentence_label"] else 0 for k in train_dataset.column_names},
         )
         data_collator = data_collator_wrapper(data_collator)
-
     # Initialize our Trainer
     trainer = IPUTrainer(
         model=model,
