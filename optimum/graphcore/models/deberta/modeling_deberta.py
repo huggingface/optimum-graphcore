@@ -50,6 +50,8 @@ from ...fx import (
 from ...modeling_utils import OnehotGather, PipelineMixin, get_layer_ipu, register
 
 
+TRANSFORMATION_MANAGER = DEFAULT_TRANSFORMATION_MANAGER.without(MergeLinears())
+
 logger = logging.get_logger(__name__)
 
 
@@ -335,11 +337,9 @@ class DebertaPipelineMixin(PipelineMixin):
         traced = symbolic_trace_pipelined_model(self)
         torch.nn.functional.one_hot = orig
         transformations = self.get_transformations()
-        transformations += DEFAULT_TRANSFORMATION_MANAGER.get_reversible_transformations(
-            self.ipu_config.optimization_level
-        )
+        transformations += TRANSFORMATION_MANAGER.get_reversible_transformations(self.ipu_config.optimization_level)
         composition = compose(*transformations)
-        non_reversible_composition = DEFAULT_TRANSFORMATION_MANAGER.compose_non_reversible_transformations(
+        non_reversible_composition = TRANSFORMATION_MANAGER.compose_non_reversible_transformations(
             self.ipu_config.optimization_level
         )
         traced = composition(traced)
@@ -355,9 +355,7 @@ class DebertaPipelineMixin(PipelineMixin):
         super().deparallelize()
         self.change_modules_for_ipu(True)
         transformations = self.get_transformations()
-        transformations += DEFAULT_TRANSFORMATION_MANAGER.get_reversible_transformations(
-            self.ipu_config.optimization_level
-        )
+        transformations += TRANSFORMATION_MANAGER.get_reversible_transformations(self.ipu_config.optimization_level)
         composition = compose(*transformations)
         self = composition(self, reverse=True)
         return self

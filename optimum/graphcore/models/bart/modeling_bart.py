@@ -44,7 +44,7 @@ logger = logging.get_logger(__name__)
 FLOAT16_LIMIT = 1e4
 
 TRANSFORMATION_MANAGER = DEFAULT_TRANSFORMATION_MANAGER.without(ClipValuesSymmetric(1e4, exclude_targets=("view",)))
-TRANSFORMATION_MANAGER.register(1, ClipValuesSymmetric(10000, exclude_targets=("view",)))
+TRANSFORMATION_MANAGER.register((1, ClipValuesSymmetric(10000, exclude_targets=("view",))))
 
 
 def _make_causal_mask(input_ids_shape: torch.Size, dtype: torch.dtype, past_key_values_length: int = 0):
