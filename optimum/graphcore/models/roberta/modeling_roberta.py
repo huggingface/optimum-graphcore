@@ -15,7 +15,6 @@
 from typing import Optional, Tuple, Union
 
 import torch
-import torch.nn as nn
 from torch.nn import CrossEntropyLoss
 
 import poptorch
@@ -28,36 +27,23 @@ from transformers import (
 )
 from transformers.modeling_outputs import MaskedLMOutput, QuestionAnsweringModelOutput
 
-from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, compose
+from ....fx.optimization import compose
 from ....utils import logging
-from ...fx.transformations import (
+from ...fx import (
+    DEFAULT_TRANSFORMATION_MANAGER,
     AddPoptorchBlock,
     AddPoptorchBlocksInSeries,
-    ClipValues,
-    ClipValuesSymmetric,
     LinearToSerializedLinear,
     OutlineAttribute,
     RecomputationCheckpoint,
     TieWeights,
-    TupleOutput,
     VocabEmbeddingToSerializedEmbedding,
+    symbolic_trace_pipelined_model,
 )
-from ...fx.utils import symbolic_trace_pipelined_model
 from ...modeling_utils import OnehotGather, PipelineMixin, get_layer_ipu, register
 
 
 logger = logging.get_logger(__name__)
-
-_OPTIMIZATION_TRANSFORMATIONS = [
-    ChangeTrueDivToMulByInverse(),
-    MergeLinears(),
-    #    FuseBiasInLinear(),
-]
-
-_NON_REVERSIBLE_TRANSFORMATIONS = [
-    ClipValuesSymmetric(1e4, exclude_targets=["view"]),
-    ClipValues(1e-4, float("inf"), include_targets=[torch.nn.LayerNorm]),
-]
 
 
 class RobertaPipelineMixin(PipelineMixin):
@@ -96,9 +82,13 @@ class RobertaPipelineMixin(PipelineMixin):
         super().parallelize()
         traced = symbolic_trace_pipelined_model(self)
         transformations = self.get_transformations()
-        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        transformations += DEFAULT_TRANSFORMATION_MANAGER.get_reversible_transformations(
+            self.ipu_config.optimization_level
+        )
         composition = compose(*transformations)
-        non_reversible_composition = compose(*_NON_REVERSIBLE_TRANSFORMATIONS)
+        non_reversible_composition = DEFAULT_TRANSFORMATION_MANAGER.compose_non_reversible_transformations(
+            self.ipu_config.optimization_level
+        )
         traced = composition(traced)
         traced = non_reversible_composition(traced)
         return traced
@@ -111,14 +101,16 @@ class RobertaPipelineMixin(PipelineMixin):
         """
         super().deparallelize()
         transformations = self.get_transformations()
-        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        transformations += DEFAULT_TRANSFORMATION_MANAGER.get_reversible_transformations(
+            self.ipu_config.optimization_level
+        )
         composition = compose(*transformations)
         self = composition(self, reverse=True)
         return self
 
 
 @register(RobertaForMaskedLM)
-class PipelinedRobertaForMaskedLM(RobertaForMaskedLM, PipelineMixin):
+class PipelinedRobertaForMaskedLM(RobertaForMaskedLM, RobertaPipelineMixin):
     """
     RobertaForMaskedLM transformed to run in an IPU pipeline.
 
@@ -156,36 +148,6 @@ class PipelinedRobertaForMaskedLM(RobertaForMaskedLM, PipelineMixin):
                 TieWeights("roberta.embeddings.word_embeddings", "lm_head.decoder"),
             ]
         return transformations
-
-    def parallelize(self):
-        """
-        Transform the model to run in an IPU pipeline.
-        - Adds pipeline stages to the model
-        - (If enabled) Replaces the word embedding projection with a SerializedLinear layer
-        - Adds recomputation checkpoints
-        """
-        super().parallelize()
-        traced = symbolic_trace_pipelined_model(self)
-        transformations = self.get_transformations()
-        transformations += _OPTIMIZATION_TRANSFORMATIONS
-        composition = compose(*transformations)
-        non_reversible_composition = compose(*_NON_REVERSIBLE_TRANSFORMATIONS)
-        traced = composition(traced)
-        traced = non_reversible_composition(traced)
-        return traced
-
-    def deparallelize(self):
-        """
-        Undo the changes to the model done by `parallelize`.
-        You should call this before doing `save_pretrained` so that the `model.state_dict` is
-        compatible with the original model.
-        """
-        super().deparallelize()
-        transformations = self.get_transformations()
-        transformations += _OPTIMIZATION_TRANSFORMATIONS
-        composition = compose(*transformations)
-        self = composition(self, reverse=True)
-        return self
 
     def forward(
         self,

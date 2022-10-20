@@ -104,7 +104,9 @@ class PipelinedTracer(HFTracer):
                 ("call_method", "to"),
                 ("call_function", torch.full),
             ]
-            torch_methods_to_patched_version = {orig: wrapped for (orig, wrapped) in self.patched_torch_methods.values()}
+            torch_methods_to_patched_version = {
+                orig: wrapped for (orig, wrapped) in self.patched_torch_methods.values()
+            }
             for (k, t) in node_types_to_inspect:
                 if kind == k and target == torch_methods_to_patched_version.get(t, t):
                     if float32_dtype_in_args:

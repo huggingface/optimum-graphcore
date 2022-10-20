@@ -16,11 +16,11 @@ from transformers import HubertForSequenceClassification
 from ....fx.optimization import MergeLinears, compose
 from ....utils import logging
 from ...fx import (
+    DEFAULT_TRANSFORMATION_MANAGER,
     AddPoptorchBlock,
     AddPoptorchBlocksInSeries,
     RecomputationCheckpoint,
     symbolic_trace_pipelined_model,
-    DEFAULT_TRANSFORMATION_MANAGER,
 )
 from ...modeling_utils import PipelineMixin, get_layer_ipu, register
 
@@ -37,8 +37,9 @@ class PipelinedHubertForSequenceClassification(HubertForSequenceClassification, 
         Args:
             restore: whether to restore the encoder to its original version or not.
         """
-        from .ipu_layer_drop import IPUHubertEncoder, IPUHubertEncoderStableLayerNorm
         from transformers.models.hubert.modeling_hubert import HubertEncoder, HubertEncoderStableLayerNorm
+
+        from .ipu_layer_drop import IPUHubertEncoder, IPUHubertEncoderStableLayerNorm
 
         if self.config.do_stable_layer_norm:
             new_cls = HubertEncoderStableLayerNorm if restore else IPUHubertEncoderStableLayerNorm
@@ -75,7 +76,9 @@ class PipelinedHubertForSequenceClassification(HubertForSequenceClassification, 
         transformations = self.get_transformations()
         transformations += TRANSFORMATION_MANAGER.get_reversible_transformations(self.ipu_config.optimization_level)
         composition = compose(*transformations)
-        non_reversible_composition = TRANSFORMATION_MANAGER.compose_non_reversible_transformations(self.ipu_config.optimization_level)
+        non_reversible_composition = TRANSFORMATION_MANAGER.compose_non_reversible_transformations(
+            self.ipu_config.optimization_level
+        )
         traced = composition(traced)
         traced = non_reversible_composition(traced)
         return traced

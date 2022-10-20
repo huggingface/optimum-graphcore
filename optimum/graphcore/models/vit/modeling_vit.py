@@ -16,11 +16,11 @@ import transformers
 from ....fx.optimization import compose
 from ....utils import logging
 from ...fx import (
+    DEFAULT_TRANSFORMATION_MANAGER,
     AddPoptorchBlock,
     AddPoptorchBlocksInSeries,
     RecomputationCheckpoint,
     symbolic_trace_pipelined_model,
-    DEFAULT_TRANSFORMATION_MANAGER,
 )
 from ...modeling_utils import PipelineMixin, get_layer_ipu, register
 
@@ -52,9 +52,13 @@ class PipelinedViTForImageClassification(transformers.ViTForImageClassification,
         super().parallelize()
         traced = symbolic_trace_pipelined_model(self)
         transformations = self.get_transformations()
-        transformations += DEFAULT_TRANSFORMATION_MANAGER.get_reversible_transformations(self.ipu_config.optimization_level)
+        transformations += DEFAULT_TRANSFORMATION_MANAGER.get_reversible_transformations(
+            self.ipu_config.optimization_level
+        )
         composition = compose(*transformations)
-        non_reversible_composition = DEFAULT_TRANSFORMATION_MANAGER.compose_non_reversible_transformations(self.ipu_config.optimization_level)
+        non_reversible_composition = DEFAULT_TRANSFORMATION_MANAGER.compose_non_reversible_transformations(
+            self.ipu_config.optimization_level
+        )
         traced = composition(traced)
         traced = non_reversible_composition(traced)
         return traced
@@ -62,7 +66,9 @@ class PipelinedViTForImageClassification(transformers.ViTForImageClassification,
     def deparallelize(self):
         super().deparallelize()
         transformations = self.get_transformations()
-        transformations += DEFAULT_TRANSFORMATION_MANAGER.get_reversible_transformations(self.ipu_config.optimization_level)
+        transformations += DEFAULT_TRANSFORMATION_MANAGER.get_reversible_transformations(
+            self.ipu_config.optimization_level
+        )
         composition = compose(*transformations)
         self = composition(self, reverse=True)
         return self

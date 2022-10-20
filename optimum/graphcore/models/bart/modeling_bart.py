@@ -24,9 +24,9 @@ from transformers.models.bart.modeling_bart import BartAttention
 
 from ....fx.optimization import ReversibleTransformation, compose
 from ...fx import (
+    DEFAULT_TRANSFORMATION_MANAGER,
     AddPoptorchBlock,
     AddPoptorchBlocksInSeries,
-    ClipValues,
     ClipValuesSymmetric,
     LinearToSerializedLinear,
     RecomputationCheckpoint,
@@ -34,7 +34,6 @@ from ...fx import (
     TieWeights,
     VocabEmbeddingToSerializedEmbedding,
     symbolic_trace_pipelined_model,
-    DEFAULT_TRANSFORMATION_MANAGER,
 )
 from ...generation_utils import IPUGenerationMixin
 from ...modeling_utils import GenerationMethodsMixin, PipelineMixin, get_layer_ipu, register
@@ -45,7 +44,7 @@ logger = logging.get_logger(__name__)
 FLOAT16_LIMIT = 1e4
 
 TRANSFORMATION_MANAGER = DEFAULT_TRANSFORMATION_MANAGER.without(ClipValuesSymmetric(1e4, exclude_targets=("view",)))
-TRANSFORMATION_MANAGER.register(1, ClipValuesSymmetric(10000, exclude_targets=("view",))
+TRANSFORMATION_MANAGER.register(1, ClipValuesSymmetric(10000, exclude_targets=("view",)))
 
 
 def _make_causal_mask(input_ids_shape: torch.Size, dtype: torch.dtype, past_key_values_length: int = 0):
@@ -220,7 +219,9 @@ class BartPipelineMixin(PipelineMixin):
         transformations = self.get_transformations()
         transformations += TRANSFORMATION_MANAGER.get_reversible_transformations(self.ipu_config.optimization_level)
         composition = compose(*transformations)
-        non_reversible_composition = TRANSFORMATION_MANAGER.compose_non_reversible_transformations(self.ipu_config.optimization_level)
+        non_reversible_composition = TRANSFORMATION_MANAGER.compose_non_reversible_transformations(
+            self.ipu_config.optimization_level
+        )
         traced = composition(traced)
         traced = non_reversible_composition(traced)
         return traced

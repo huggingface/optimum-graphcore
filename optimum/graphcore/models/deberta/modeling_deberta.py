@@ -20,7 +20,6 @@ import torch
 import torch.nn as nn
 
 import poptorch
-import transformers
 from transformers import (
     DebertaForMaskedLM,
     DebertaForQuestionAnswering,
@@ -36,35 +35,22 @@ from transformers.models.deberta.modeling_deberta import (
 )
 from transformers.utils.fx import _gen_constructor_wrapper
 
-from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, compose
+from ....fx.optimization import MergeLinears, compose
 from ....utils import logging
-from ...fx.transformations import (
+from ...fx import (
+    DEFAULT_TRANSFORMATION_MANAGER,
     AddPoptorchBlock,
     AddPoptorchBlocksInSeries,
     AutoCast,
-    ClipValues,
-    ClipValuesSymmetric,
     OutlineAttribute,
     RecomputationCheckpoint,
-    TupleOutput,
     VocabEmbeddingToSerializedEmbedding,
+    symbolic_trace_pipelined_model,
 )
-from ...fx.utils import symbolic_trace_pipelined_model
 from ...modeling_utils import OnehotGather, PipelineMixin, get_layer_ipu, register
 
 
 logger = logging.get_logger(__name__)
-
-_OPTIMIZATION_TRANSFORMATIONS = [
-    ChangeTrueDivToMulByInverse(),
-    MergeLinears(),
-    #    FuseBiasInLinear(),
-]
-
-_NON_REVERSIBLE_TRANSFORMATIONS = [
-    ClipValuesSymmetric(1e4, exclude_targets=["view"]),
-    ClipValues(1e-4, float("inf"), include_targets=[torch.nn.LayerNorm]),
-]
 
 
 class FastGatherLastDim(nn.Module):
@@ -349,9 +335,13 @@ class DebertaPipelineMixin(PipelineMixin):
         traced = symbolic_trace_pipelined_model(self)
         torch.nn.functional.one_hot = orig
         transformations = self.get_transformations()
-        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        transformations += DEFAULT_TRANSFORMATION_MANAGER.get_reversible_transformations(
+            self.ipu_config.optimization_level
+        )
         composition = compose(*transformations)
-        non_reversible_composition = compose(*_NON_REVERSIBLE_TRANSFORMATIONS)
+        non_reversible_composition = DEFAULT_TRANSFORMATION_MANAGER.compose_non_reversible_transformations(
+            self.ipu_config.optimization_level
+        )
         traced = composition(traced)
         traced = non_reversible_composition(traced)
         return traced
@@ -365,7 +355,9 @@ class DebertaPipelineMixin(PipelineMixin):
         super().deparallelize()
         self.change_modules_for_ipu(True)
         transformations = self.get_transformations()
-        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        transformations += DEFAULT_TRANSFORMATION_MANAGER.get_reversible_transformations(
+            self.ipu_config.optimization_level
+        )
         composition = compose(*transformations)
         self = composition(self, reverse=True)
         return self

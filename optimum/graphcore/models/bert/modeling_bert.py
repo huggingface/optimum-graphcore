@@ -34,17 +34,15 @@ from transformers.utils.fx import _gen_constructor_wrapper
 
 from ....fx.optimization import compose
 from ...fx import (
+    DEFAULT_TRANSFORMATION_MANAGER,
     AddPoptorchBlock,
     AddPoptorchBlocksInSeries,
-    ClipValues,
-    ClipValuesSymmetric,
     LinearToSerializedLinear,
     OutlineAttribute,
     RecomputationCheckpoint,
     TieWeights,
     VocabEmbeddingToSerializedEmbedding,
     symbolic_trace_pipelined_model,
-    DEFAULT_TRANSFORMATION_MANAGER,
 )
 from ...modeling_utils import OnehotGather, PipelineMixin, get_layer_ipu, register
 
@@ -53,7 +51,6 @@ logger = logging.get_logger(__name__)
 
 
 class BertPipelineMixin(PipelineMixin):
-
     def get_transformations(self):
         log_insertions = self.ipu_config.log_insertions
         layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
@@ -89,9 +86,13 @@ class BertPipelineMixin(PipelineMixin):
         super().parallelize()
         traced = symbolic_trace_pipelined_model(self)
         transformations = self.get_transformations()
-        transformations += DEFAULT_TRANSFORMATION_MANAGER.get_reversible_transformations(self.ipu_config.optimization_level)
+        transformations += DEFAULT_TRANSFORMATION_MANAGER.get_reversible_transformations(
+            self.ipu_config.optimization_level
+        )
         composition = compose(*transformations)
-        non_reversible_composition = DEFAULT_TRANSFORMATION_MANAGER.compose_non_reversible_transformations(self.ipu_config.optimization_level)
+        non_reversible_composition = DEFAULT_TRANSFORMATION_MANAGER.compose_non_reversible_transformations(
+            self.ipu_config.optimization_level
+        )
         traced = composition(traced)
         traced = non_reversible_composition(traced)
         return traced
@@ -104,7 +105,9 @@ class BertPipelineMixin(PipelineMixin):
         """
         super().deparallelize()
         transformations = self.get_transformations()
-        transformations += DEFAULT_TRANSFORMATION_MANAGER.get_reversible_transformations(self.ipu_config.optimization_level)
+        transformations += DEFAULT_TRANSFORMATION_MANAGER.get_reversible_transformations(
+            self.ipu_config.optimization_level
+        )
         composition = compose(*transformations)
         self = composition(self, reverse=True)
         return self

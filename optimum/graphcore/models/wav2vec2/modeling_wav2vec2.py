@@ -30,34 +30,21 @@ from transformers.models.wav2vec2.modeling_wav2vec2 import (
     Wav2Vec2GumbelVectorQuantizer,
 )
 
-from ....fx.optimization import ChangeTrueDivToMulByInverse, MergeLinears, compose
+from ....fx.optimization import compose
 from ....utils import logging
-from ...fx.transformations import (
+from ...fx import (
+    DEFAULT_TRANSFORMATION_MANAGER,
     AddPoptorchBlock,
     AddPoptorchBlocksInSeries,
-    ClipValues,
-    ClipValuesSymmetric,
     RecomputationCheckpoint,
-    TupleOutput,
+    symbolic_trace_pipelined_model,
 )
-from ...fx.utils import symbolic_trace_pipelined_model
 from ...modeling_utils import PipelineMixin, get_layer_ipu, register
 from .ipu_gumbel_vector_quantizer import IPUWav2Vec2GumbelVectorQuantizer
 from .ipu_layer_drop import IPUWav2Vec2Adapter, IPUWav2Vec2Encoder, IPUWav2Vec2EncoderStableLayerNorm
 
 
 logger = logging.get_logger(__name__)
-
-_OPTIMIZATION_TRANSFORMATIONS = [
-    ChangeTrueDivToMulByInverse(),
-    MergeLinears(),
-    #    FuseBiasInLinear(),
-]
-
-_NON_REVERSIBLE_TRANSFORMATIONS = [
-    ClipValuesSymmetric(1e4, exclude_targets=["view"]),
-    ClipValues(1e-4, float("inf"), include_targets=[torch.nn.LayerNorm]),
-]
 
 
 class IPUWav2Vec2Model(Wav2Vec2Model):
@@ -132,9 +119,13 @@ class Wav2Vec2PipelineMixin(PipelineMixin):
         super().parallelize()
         traced = symbolic_trace_pipelined_model(self)
         transformations = self.get_transformations()
-        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        transformations += DEFAULT_TRANSFORMATION_MANAGER.get_reversible_transformations(
+            self.ipu_config.optimization_level
+        )
         composition = compose(*transformations)
-        non_reversible_composition = compose(*_NON_REVERSIBLE_TRANSFORMATIONS)
+        non_reversible_composition = DEFAULT_TRANSFORMATION_MANAGER.compose_non_reversible_transformations(
+            self.ipu_config.optimization_level
+        )
         traced = composition(traced)
         traced = non_reversible_composition(traced)
         return traced
@@ -142,7 +133,9 @@ class Wav2Vec2PipelineMixin(PipelineMixin):
     def deparallelize(self):
         super().deparallelize()
         transformations = self.get_transformations()
-        transformations += _OPTIMIZATION_TRANSFORMATIONS
+        transformations += DEFAULT_TRANSFORMATION_MANAGER.get_reversible_transformations(
+            self.ipu_config.optimization_level
+        )
         composition = compose(*transformations)
         self = composition(self, reverse=True)
         return self
