@@ -60,6 +60,7 @@ python examples/language-modeling/run_pretraining.py \
   --loss_scaling 16384 \
   --weight_decay 0.01 \
   --warmup_ratio 0.14 \
+  --groupbert_schedule \
   --config_overrides "hidden_dropout_prob=0.0,attention_probs_dropout_prob=0.0,layer_norm_eps=0.001" \
   --ipu_config_overrides "device_iterations=1,matmul_proportion=0.22,layers_per_ipu=[1 3 4 4]" \
   --output_dir output-pretrain-groupbert-base-phase1
@@ -88,6 +89,7 @@ examples/language-modeling/run_pretraining.py \
   --loss_scaling 128.0 \
   --weight_decay 0.01 \
   --warmup_ratio 0.13 \
+  --groupbert_schedule \
   --config_overrides "hidden_dropout_prob=0.0,attention_probs_dropout_prob=0.0,layer_norm_eps=0.001" \
   --ipu_config_overrides device_iterations=1,embedding_serialization_factor=2,matmul_proportion=0.22 \
   --output_dir output-pretrain-groupbert-base-phase2
