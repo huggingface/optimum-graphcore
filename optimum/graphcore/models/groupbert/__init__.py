@@ -28,6 +28,7 @@ from transformers import (
 )
 
 from .modeling_groupbert import (
+    GroupBertModel,
     GroupBertConfig,
     GroupBertForMaskedLM,
     GroupBertForMultipleChoice,

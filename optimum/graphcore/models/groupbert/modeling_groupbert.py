@@ -63,10 +63,6 @@ class GroupBertConfig(BertConfig):
 
 
     Args:
-        hidden_dropout_prob (`float`, *optional*, defaults to 0.1):
-            The dropout probability for all fully connected layers in the embeddings, encoder, and pooler.
-        attention_probs_dropout_prob (`float`, *optional*, defaults to 0.1):
-            The dropout ratio for the attention probabilities.
         ffn_groups (`int`, *optional*, defaults to 4):
             Number of groups on the down projection of FFN
         conv_group_size (`int`, *optional*, defaults to 16):
@@ -89,20 +85,8 @@ class GroupBertConfig(BertConfig):
     ```"""
     model_type = "groupbert"
 
-    def __init__(
-        self,
-        hidden_dropout_prob=0.0,
-        attention_probs_dropout_prob=0.0,
-        ffn_groups=4,
-        conv_group_size=16,
-        conv_kernel_size=7,
-        **kwargs
-    ):
-        super().__init__(
-            hidden_dropout_prob=hidden_dropout_prob,
-            attention_probs_dropout_prob=attention_probs_dropout_prob,
-            **kwargs,
-        )
+    def __init__(self, ffn_groups=4, conv_group_size=16, conv_kernel_size=7, **kwargs):
+        super().__init__(**kwargs)
         self.ffn_groups = ffn_groups
         self.conv_group_size = conv_group_size
         self.conv_kernel_size = conv_kernel_size
@@ -309,6 +293,8 @@ class GroupBertEncoder(nn.Module):
 
 
 class GroupBertModel(BertModel):
+    config_class = GroupBertConfig
+
     def __init__(self, config, add_pooling_layer=True):
         super().__init__(config)
 
@@ -341,6 +327,8 @@ class GroupBertModel(BertModel):
 
 
 class GroupBertForPreTraining(BertForPreTraining):
+    config_class = GroupBertConfig
+
     def __init__(self, config):
         super().__init__(config)
 
@@ -351,6 +339,8 @@ class GroupBertForPreTraining(BertForPreTraining):
 
 
 class GroupBertForMaskedLM(BertForMaskedLM):
+    config_class = GroupBertConfig
+
     def __init__(self, config):
         super().__init__(config)
 
@@ -361,6 +351,8 @@ class GroupBertForMaskedLM(BertForMaskedLM):
 
 
 class GroupBertForSequenceClassification(BertForSequenceClassification):
+    config_class = GroupBertConfig
+
     def __init__(self, config):
         super().__init__(config)
 
@@ -371,6 +363,8 @@ class GroupBertForSequenceClassification(BertForSequenceClassification):
 
 
 class GroupBertForMultipleChoice(BertForMultipleChoice):
+    config_class = GroupBertConfig
+
     def __init__(self, config):
         super().__init__(config)
 
@@ -381,6 +375,8 @@ class GroupBertForMultipleChoice(BertForMultipleChoice):
 
 
 class GroupBertForTokenClassification(BertForTokenClassification):
+    config_class = GroupBertConfig
+
     def __init__(self, config):
         super().__init__(config)
 
@@ -391,6 +387,8 @@ class GroupBertForTokenClassification(BertForTokenClassification):
 
 
 class GroupBertForQuestionAnswering(BertForQuestionAnswering):
+    config_class = GroupBertConfig
+
     def __init__(self, config):
         super().__init__(config)
 

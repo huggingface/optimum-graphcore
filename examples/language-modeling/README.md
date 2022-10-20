@@ -40,8 +40,8 @@ BERT Pre-training is done in two phases - the first is with sequence length 128 
 
 Phase 1:
 ```bash
-python examples/language-modeling/run_pretraining_groupbert.py \
-  --config_name bert-base-uncased \
+python examples/language-modeling/run_pretraining.py \
+  --model_type groupbert \
   --tokenizer_name bert-base-uncased \
   --ipu_config_name Graphcore/bert-base-ipu \
   --dataset_name Graphcore/wikipedia-bert-128 \
@@ -60,14 +60,14 @@ python examples/language-modeling/run_pretraining_groupbert.py \
   --loss_scaling 16384 \
   --weight_decay 0.01 \
   --warmup_ratio 0.14 \
-  --ipu_config_overrides "device_iterations=1,matmul_proportion=0.22,layers_per_ipu=[1 3 4 4]" \
+  --ipu_config_overrides "hidden_dropout_prob=0.0,attention_probs_dropout_prob=0.0,device_iterations=1,matmul_proportion=0.22,layers_per_ipu=[1 3 4 4]" \
   --output_dir output-pretrain-groupbert-base-phase1
 ```
 
 Phase 2:
 ```bash
-examples/language-modeling/run_pretraining_groupbert.py \
-  --config_name bert-base-uncased \
+examples/language-modeling/run_pretraining.py \
+  --model_type groupbert \
   --tokenizer_name bert-base-uncased \
   --model_name_or_path ./output-pretrain-groupbert-base-phase1 \
   --ipu_config_name Graphcore/bert-base-ipu \
@@ -87,7 +87,7 @@ examples/language-modeling/run_pretraining_groupbert.py \
   --loss_scaling 128.0 \
   --weight_decay 0.01 \
   --warmup_ratio 0.13 \
-  --config_overrides "layer_norm_eps=0.001" \
+  --config_overrides "hidden_dropout_prob=0.0,attention_probs_dropout_prob=0.0,matmul_proportion=0.22,layer_norm_eps=0.001" \
   --ipu_config_overrides device_iterations=1,embedding_serialization_factor=2,matmul_proportion=0.22 \
   --output_dir output-pretrain-groupbert-base-phase2
 ```
