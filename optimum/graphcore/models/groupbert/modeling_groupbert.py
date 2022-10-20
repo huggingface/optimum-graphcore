@@ -23,6 +23,7 @@ import poptorch
 from optimum.utils import logging
 from scipy.stats import truncnorm
 from transformers import (
+    BertConfig,
     BertForMaskedLM,
     BertForMultipleChoice,
     BertForPreTraining,
@@ -50,6 +51,61 @@ from .groupbert_ffn import GroupBertIntermediate, GroupBertOutput
 
 
 logger = logging.get_logger(__name__)
+
+
+class GroupBertConfig(BertConfig):
+    r"""
+    This is the configuration class to store the configuration of a [`GroupBertModel`]. It is used to
+    instantiate a GroupBERT model according to the specified arguments, defining the model architecture.
+
+    Configuration objects inherit from [`BertConfig`] and can be used to control the model outputs. Read the
+    documentation from [`BertConfig`] for more information.
+
+
+    Args:
+        hidden_dropout_prob (`float`, *optional*, defaults to 0.1):
+            The dropout probability for all fully connected layers in the embeddings, encoder, and pooler.
+        attention_probs_dropout_prob (`float`, *optional*, defaults to 0.1):
+            The dropout ratio for the attention probabilities.
+        ffn_groups (`int`, *optional*, defaults to 4):
+            Number of groups on the down projection of FFN
+        conv_group_size (`int`, *optional*, defaults to 16):
+            Group size for the convolution operation in the dedicated convolution modele in GroupBERT
+        conv_kernel_size (`int`, *optional*, defaults to 7):
+            Kernel size for the convolution operation in the dedicated convolution modele in GroupBERT
+    Examples:
+
+    ```python
+    >>> from optimum.graphcore import GroupBertModel, GroupBertConfig
+
+    >>> # Initializing a GroupBERT configuration
+    >>> configuration = GroupBertConfig()
+
+    >>> # Initializing a model
+    >>> model = GroupBertModel(configuration)
+
+    >>> # Accessing the model configuration
+    >>> configuration = model.config
+    ```"""
+    model_type = "groupbert"
+
+    def __init__(
+        self,
+        hidden_dropout_prob=0.0,
+        attention_probs_dropout_prob=0.0,
+        ffn_groups=4,
+        conv_group_size=16,
+        conv_kernel_size=7,
+        **kwargs
+    ):
+        super().__init__(
+            hidden_dropout_prob=hidden_dropout_prob,
+            attention_probs_dropout_prob=attention_probs_dropout_prob,
+            **kwargs,
+        )
+        self.ffn_groups = ffn_groups
+        self.conv_group_size = conv_group_size
+        self.conv_kernel_size = conv_kernel_size
 
 
 class GroupBertLayer(nn.Module):

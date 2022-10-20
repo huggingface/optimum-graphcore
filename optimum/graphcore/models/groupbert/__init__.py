@@ -16,7 +16,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from transformers import (
+    AutoConfig,
+    AutoModel,
+    AutoModelForMaskedLM,
+    AutoModelForMultipleChoice,
+    AutoModelForPreTraining,
+    AutoModelForQuestionAnswering,
+    AutoModelForSequenceClassification,
+    AutoModelForTokenClassification,
+)
+
 from .modeling_groupbert import (
+    GroupBertConfig,
     GroupBertForMaskedLM,
     GroupBertForMultipleChoice,
     GroupBertForPreTraining,
@@ -24,3 +36,13 @@ from .modeling_groupbert import (
     GroupBertForSequenceClassification,
     GroupBertForTokenClassification,
 )
+
+
+AutoConfig.register("groupbert", GroupBertConfig)
+AutoModel.register(GroupBertConfig, GroupBertModel)
+AutoModelForPreTraining.register(GroupBertConfig, GroupBertForPreTraining)
+AutoModelForMaskedLM.register(GroupBertConfig, GroupBertForMaskedLM)
+AutoModelForMultipleChoice.register(GroupBertConfig, GroupBertForMultipleChoice)
+AutoModelForQuestionAnswering.register(GroupBertConfig, GroupBertForQuestionAnswering)
+AutoModelForTokenClassification.register(GroupBertConfig, GroupBertForTokenClassification)
+AutoModelForSequenceClassification.register(GroupBertConfig, GroupBertForSequenceClassification)
