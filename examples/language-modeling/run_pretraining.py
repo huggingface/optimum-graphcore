@@ -21,17 +21,17 @@ https://huggingface.co/models?filter=masked-lm
 """
 # You can also adapt this script on your own masked language modeling task. Pointers for this are left as comments.
 
+import functools
 import logging
 import math
 import os
 import sys
-import functools
 from dataclasses import dataclass, field
 from typing import Optional
 
 import datasets
-from torch.optim.lr_scheduler import LambdaLR
 from datasets import load_dataset, load_from_disk
+from torch.optim.lr_scheduler import LambdaLR
 
 import transformers
 from optimum.graphcore import IPUConfig, IPUTrainer
