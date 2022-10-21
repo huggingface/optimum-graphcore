@@ -243,7 +243,7 @@ class BartPipelineMixin(PipelineMixin):
 
 @register(BartForConditionalGeneration)
 class PipelinedBartForConditionalGeneration(
-    GenerationMethodsMixin, BartForConditionalGeneration, PipelineMixin, IPUGenerationMixin
+    GenerationMethodsMixin, BartForConditionalGeneration, BartPipelineMixin, IPUGenerationMixin
 ):
     def get_transformations(self):
         log_insertions = self.ipu_config.log_insertions
@@ -343,7 +343,7 @@ class PipelinedBartForConditionalGeneration(
 
 
 @register(BartForSequenceClassification)
-class PipelinedBartForSequenceClassification(BartForSequenceClassification, PipelineMixin):
+class PipelinedBartForSequenceClassification(BartForSequenceClassification, BartPipelineMixin):
     def get_transformations(self):
         log_insertions = self.ipu_config.log_insertions
         layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)

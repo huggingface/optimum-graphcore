@@ -466,7 +466,6 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, Wav2Vec2PipelineMixin):
     def get_transformations(self):
         log_insertions = self.ipu_config.log_insertions
         layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
-        print(layer_ipu)
         transformations = super().get_transformations()
         start_idx = self.config.num_feat_extract_layers + 2
         transformations.append(
@@ -492,7 +491,8 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, Wav2Vec2PipelineMixin):
             self.change_wav2vec2_encoder_class(False)
             self.change_wav2vec2_adapter_class(False)
             self.change_conv_eps(False)
-        return super().parallelize()
+        traced = super().parallelize()
+        return traced
 
     def deparallelize(self):
         """

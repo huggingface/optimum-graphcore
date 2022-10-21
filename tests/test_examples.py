@@ -263,6 +263,10 @@ class ExampleTesterBase(TestCase):
                 "device_iterations=1",
                 f"inference_device_iterations={inference_device_iterations}",
                 f"gradient_accumulation_steps={gradient_accumulation_steps}",
+                # TODO: only testing examples without any optimization, since it can make training harder (from what was
+                # observed with previous testing). This will need investigation, so only validating the "vanilla"
+                # pipelined models for now.
+                "optimization_level=0",
             ]
         )
 
@@ -563,7 +567,7 @@ class SpeechRecognitionExampleTester(
     TASK_NAME = "common_voice"
     DATASET_CONFIG_NAME = "tr"
     TRAIN_BATCH_SIZE = 1
-    GRADIENT_ACCUMULATION_STEPS = 8
+    GRADIENT_ACCUMULATION_STEPS = 16
     EVAL_BATCH_SIZE = 1
     NUM_EPOCHS = 15
     # Here we are evaluating against the loss because it can take a long time to have wer < 1.0
