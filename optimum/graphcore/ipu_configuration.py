@@ -168,7 +168,8 @@ class IPUConfig(BaseConfig):
         self.execute_encoder_on_cpu_for_generation = kwargs.pop("execute_encoder_on_cpu_for_generation", False)
 
         self.log_insertions = kwargs.pop("log_insertions", False)
-        self.optimization_level = kwargs.pop("optimization_level", 1)
+        # TODO: set that to one, once everything is working.
+        self.optimization_level = kwargs.pop("optimization_level", 0)
 
     def _prepare_config_attribute_for_pod_type(
         self, config_attribute_name: str, config_attribute: Union[Any, Dict[str, Any]], pod_type: Optional[str]

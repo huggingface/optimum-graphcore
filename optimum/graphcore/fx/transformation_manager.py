@@ -122,6 +122,7 @@ DEFAULT_TRANSFORMATION_MANAGER = TransformationManager(
     (1, ChangeTrueDivToMulByInverse()),
     (1, MergeLinears()),
     # (1, FuseBiasInLinear()),
-    (1, ClipValuesSymmetric(1e4, exclude_targets=("view",))),
-    (1, ClipValues(1e-4, float("inf"), include_targets=(torch.nn.LayerNorm,))),
+    # Those change the computation, but are actually needed for fp16 stability.
+    (0, ClipValuesSymmetric(1e4, exclude_targets=("view",))),
+    (0, ClipValues(1e-4, float("inf"), include_targets=(torch.nn.LayerNorm,))),
 )
