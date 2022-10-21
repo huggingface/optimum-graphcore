@@ -12,7 +12,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Defines the class that manages which transformations to apply to which model, according to some optimization level."""
+"""Defines the class that manages which transformations to apply according to some optimization level."""
+
 import copy
 import functools
 from typing import Iterator, List, Tuple, Union
@@ -82,7 +83,6 @@ class TransformationManager:
         self, optimization_level: int, as_list: bool = False
     ) -> Union[Iterator[Transformation], List[Transformation]]:
         self._check_optimization_level(optimization_level)
-        # iterator = itertools.chain(self._transformations[i] for i in range(optimization_level + 1) if self._transformations[i])
         iterator = functools.reduce(
             lambda x, y: x + y, (self._transformations[i] for i in range(optimization_level + 1)), []
         )
@@ -99,14 +99,23 @@ class TransformationManager:
     def get_reversible_transformations(self, optimization_level: int) -> List[ReversibleTransformation]:
         return [t for t in self._get_transformations(optimization_level) if isinstance(t, ReversibleTransformation)]
 
+    def _compose_transformations(
+        self, optimization_level: int, transformations: List[Transformation]
+    ) -> Transformation:
+        return compose(*transformations) if transformations else lambda x: x
+
     def compose_transformations(self, optimization_level: int) -> Transformation:
-        return compose(self._get_transformations(optimization_level))
+        return self._compose_transformations(optimization_level, self.get_transformations(optimization_level))
 
     def compose_non_reversible_transformations(self, optimization_level: int) -> Transformation:
-        return compose(*self.get_non_reversible_transformations(optimization_level))
+        return self._compose_transformations(
+            optimization_level, self.get_non_reversible_transformations(optimization_level)
+        )
 
     def compose_reversible_transformations(self, optimization_level: int) -> ReversibleTransformation:
-        return compose(*self.get_reversible_transformations(optimization_level))
+        return self._compose_transformations(
+            optimization_level, self.get_reversible_transformations(optimization_level)
+        )
 
 
 DEFAULT_TRANSFORMATION_MANAGER = TransformationManager(

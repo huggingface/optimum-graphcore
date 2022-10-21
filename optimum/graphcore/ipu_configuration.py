@@ -1,17 +1,18 @@
 # coding=utf-8
-#  Copyright 2021 The HuggingFace Team. All rights reserved.
+# Copyright 2021 The HuggingFace Team. All rights reserved.
 #
-#  Licensed under the Apache License, Version 2.0 (the "License");
-#  you may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
-#      http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""Defines the class handling the configuration of the IPUs."""
 
 import copy
 import json
@@ -49,6 +50,8 @@ class IPUConfig(BaseConfig):
             **Note: This is an experimental feature and may not behave as expected.**
         executable_cache_dir (`str`, *optional*, defaults to `""`):
             Enables caching the compile executables to a directory.
+        log_insertions (`bool`, *optional*, defaults to `False`):
+            Whether the block insertion should be logged during model parallelization.
         optimization_level (`int`, *optional*, defaults to 1):
             The optimization level to apply to the model before compilation. Three values are allowed:
                 - 0: No optimization is performed on the graph.
@@ -165,7 +168,6 @@ class IPUConfig(BaseConfig):
         self.execute_encoder_on_cpu_for_generation = kwargs.pop("execute_encoder_on_cpu_for_generation", False)
 
         self.log_insertions = kwargs.pop("log_insertions", False)
-
         self.optimization_level = kwargs.pop("optimization_level", 1)
 
     def _prepare_config_attribute_for_pod_type(

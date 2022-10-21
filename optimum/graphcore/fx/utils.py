@@ -12,6 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""Utilties related to FX."""
 import inspect
 import math
 from typing import TYPE_CHECKING, Callable, Dict, List, Optional
@@ -188,12 +189,23 @@ def symbolic_trace_with_pipelined_tracer(
 
 
 def cast_traced_model_to_proper_class(model: torch.nn.Module, traced: torch.fx.GraphModule):
+    """Casts the traced `torch.fx.GraphModule` to the original class of the traced model."""
     type_ = type(f"Traced{model.__class__.__name__}", (torch.fx.GraphModule, model.__class__), {})
     traced.__class__ = type_
     traced.recompile()
 
 
 def symbolic_trace_pipelined_model(pipelined_model: PipelineMixin) -> PipelineMixin:
+    """
+    Traces a pipelined model and casts the traced model to the original class of the model.
+
+    Args:
+        pipelined_model ([`~PipelineMixin`]):
+            The pipelined model.
+
+    Returns:
+        [`~PipelineMixin`]: The traced model.
+    """
     if isinstance(pipelined_model, torch.fx.GraphModule):
         return pipelined_model
 

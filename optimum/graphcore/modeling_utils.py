@@ -1,20 +1,22 @@
-#  Copyright 2021 The HuggingFace Team. All rights reserved.
+# coding=utf-8
+# Copyright 2021 The HuggingFace Team. All rights reserved.
 #
-#  Licensed under the Apache License, Version 2.0 (the "License");
-#  you may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
-#      http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""Utilty modules, functions and classes for pipelined models."""
 
 import copy
 import inspect
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -22,10 +24,12 @@ from torch import nn
 
 import poptorch
 from optimum.utils import logging
-from transformers import AutoConfig, PreTrainedModel
-from transformers.modeling_outputs import ModelOutput
 
 from .ipu_configuration import IPUConfig
+
+
+if TYPE_CHECKING:
+    from transformers import PreTrainedModel
 
 
 logger = logging.get_logger(__name__)
@@ -75,7 +79,7 @@ def to_pipelined(model: nn.Module, ipu_config: IPUConfig, force: bool = False):
 
 class PipelineMixin:
     @classmethod
-    def from_transformers(cls, model: PreTrainedModel, ipu_config: IPUConfig):
+    def from_transformers(cls, model: "PreTrainedModel", ipu_config: IPUConfig):
         """
         Creates a pipeline model from a [`~transformers.PreTrainedModel`].
 

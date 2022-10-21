@@ -1,3 +1,4 @@
+# coding=utf-8
 # Copyright (c) 2021 Graphcore Ltd. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,7 +12,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""HuBERT model."""
+
 from transformers import HubertForSequenceClassification
+from transformers.models.hubert.modeling_hubert import HubertEncoder, HubertEncoderStableLayerNorm
 
 from ....fx.optimization import MergeLinears, compose
 from ....utils import logging
@@ -23,6 +27,7 @@ from ...fx import (
     symbolic_trace_pipelined_model,
 )
 from ...modeling_utils import PipelineMixin, get_layer_ipu, register
+from .ipu_layer_drop import IPUHubertEncoder, IPUHubertEncoderStableLayerNorm
 
 
 logger = logging.get_logger(__name__)
@@ -37,10 +42,6 @@ class PipelinedHubertForSequenceClassification(HubertForSequenceClassification, 
         Args:
             restore: whether to restore the encoder to its original version or not.
         """
-        from transformers.models.hubert.modeling_hubert import HubertEncoder, HubertEncoderStableLayerNorm
-
-        from .ipu_layer_drop import IPUHubertEncoder, IPUHubertEncoderStableLayerNorm
-
         if self.config.do_stable_layer_norm:
             new_cls = HubertEncoderStableLayerNorm if restore else IPUHubertEncoderStableLayerNorm
         else:

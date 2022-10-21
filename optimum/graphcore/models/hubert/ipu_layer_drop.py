@@ -12,14 +12,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """
 These are the same blocks as in the original implementation in transformers,
 but with a traceable implementation of LayerDrop.
 """
 
 import torch
-from torch.nn import functional as F
 
 from transformers.modeling_outputs import BaseModelOutput
 from transformers.models.hubert.modeling_hubert import HubertEncoder, HubertEncoderStableLayerNorm
