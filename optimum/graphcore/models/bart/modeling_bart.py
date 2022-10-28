@@ -252,10 +252,6 @@ class PipelinedBartForConditionalGeneration(
         layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
         transformations = [
             AddPoptorchBlock("Embedding", 0, "model.shared", log_insertions=log_insertions),
-            # AddPoptorchBlock("Embedding", 0, "model.encoder.embed_positions"),
-            # AddPoptorchBlock("Embedding", 0, "model.encoder.layernorm_embedding"),
-            # AddPoptorchBlock("Embedding", 0, "model.decoder.embed_positions"),
-            # AddPoptorchBlock("Embedding", 0, "model.decoder.layernorm_embedding"),
             AddPoptorchBlocksInSeries(
                 "Encoder",
                 layer_ipu[: self.config.encoder_layers],
@@ -351,10 +347,6 @@ class PipelinedBartForSequenceClassification(BartForSequenceClassification, Bart
         layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
         transformations = [
             AddPoptorchBlock("Embedding", 0, "model.shared", log_insertions=log_insertions),
-            # AddPoptorchBlock("Embedding", 0, "model.encoder.embed_positions"),
-            # AddPoptorchBlock("Embedding", 0, "model.encoder.layernorm_embedding"),
-            # AddPoptorchBlock("Embedding", 0, "model.decoder.embed_positions"),
-            # AddPoptorchBlock("Embedding", 0, "model.decoder.layernorm_embedding"),
             AddPoptorchBlocksInSeries(
                 "Encoder",
                 layer_ipu[: self.config.encoder_layers],
@@ -383,8 +375,8 @@ class PipelinedBartForSequenceClassification(BartForSequenceClassification, Bart
 
         if not isinstance(self, torch.fx.GraphModule):
             if self.ipu_config.embedding_serialization_factor > 1:
-                transformations.append(VocabEmbeddingToSerializedEmbedding())
-            transformations += [ShareEmbeddingComputation()]
+                transformations.append(VocabEmbeddingToSerializedEmbedding("model.shared"))
+            transformations += [ShareEmbeddingComputation("model.shared")]
         return transformations
 
     def forward(

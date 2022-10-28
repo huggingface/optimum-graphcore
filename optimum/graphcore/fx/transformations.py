@@ -376,22 +376,38 @@ class VocabEmbeddingToSerializedEmbedding(ReversibleTransformation):
     """
 
     def __init__(self, name_regex: Optional[str] = None):
-        self.name_regex = re.compile(name_regex) if name_regex else None
+        self.name_regex_for_module = re.compile(name_regex) if name_regex else None
+        self.name_regex_for_function = re.compile(name_regex.replace(".", "_")) if name_regex else None
 
     def transform(self, graph_module: "GraphModule") -> "GraphModule":
         embedding_nodes = []
         for node in graph_module.graph.nodes:
-            if node.op != "call_module":
-                continue
-            match = re.match(self.name_regex, node.target) if self.name_regex is not None else True
-            if match and isinstance(graph_module.get_submodule(node.target), torch.nn.Embedding):
+            if node.op == "call_module":
+                if self.name_regex_for_module is not None and not re.match(self.name_regex_for_module, node.target):
+                    continue
+                elif not isinstance(graph_module.get_submodule(node.target), torch.nn.Embedding):
+                    continue
+                embedding_nodes.append(node)
+            elif node.op == "call_function":
+                if self.name_regex_for_function is not None and not re.match(self.name_regex_for_function, node.name):
+                    continue
+                elif node.target is not torch.nn.functional.embedding:
+                    continue
                 embedding_nodes.append(node)
 
         # We assume the vocab embedding to be the embedding with the maximum number of embeddings.
         if not embedding_nodes:
             raise RuntimeError("Could not find any embedding node")
 
-        embedding_node = max(embedding_nodes, key=lambda node: graph_module.get_submodule(node.target).num_embeddings)
+        def sort_nodes_function(node):
+            if node.op == "call_module":
+                return graph_module.get_submodule(node.target).num_embeddings
+            return node.args[1].shape[1]
+
+        embedding_node = max(embedding_nodes, key=sort_nodes_function)
+        if embedding_node.op == "call_function":
+            raise NotImplementedError("VocabEmbeddingToSerializedEmbedding does not support torch.nn.functional.embedding yet.")
+
         split = embedding_node.target.rsplit(".", maxsplit=1)
         if len(split) == 1:
             split = [None] + split
@@ -504,6 +520,12 @@ class TieWeights(Transformation):
 
 
 class ShareEmbeddingComputation(Transformation):
+    def __init__(self, name_regex: Optional[str] = None, allowed_embedding_classes: Union[Tuple[Type], Type] = (torch.nn.Embedding, SerializedEmbedding)):
+        self.name_regex = re.compile(name_regex) if name_regex else None
+        self.allowed_embedding_classes = allowed_embedding_classes
+        if not isinstance(self.allowed_embedding_classes, tuple):
+            self.allowed_embedding_classes = (self.allowed_embedding_classes,)
+
     def _find_nodes_to_move(self, graph_module, embedding_input_node, shared_embedding_node):
         nodes_before_embedding_input_node = set()
         for node in graph_module.graph.nodes:
@@ -535,7 +557,11 @@ class ShareEmbeddingComputation(Transformation):
         candidates = collections.defaultdict(list)
         embedding_nodes = collections.defaultdict(list)
         for node in graph_module.graph.nodes:
-            if node.op == "call_module" and isinstance(graph_module.get_submodule(node.target), torch.nn.Embedding):
+            if node.op == "call_module":
+                if self.name_regex is not None and not re.match(self.name_regex, node.target):
+                    continue
+                elif not isinstance(graph_module.get_submodule(node.target), self.allowed_embedding_classes):
+                    continue
                 candidates[node.target].append(node.args[0])
                 embedding_nodes[node.target].append(node)
 
