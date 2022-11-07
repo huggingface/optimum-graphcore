@@ -750,8 +750,6 @@ class IPUTrainingArguments:
         override_str = []
         if self.gradient_accumulation_steps is not None:
             override_str.append(f"gradient_accumulation_steps={self.gradient_accumulation_steps}")
-        else:
-            self.gradient_accumulation_steps = 1
 
         if self.auto_loss_scaling:
             override_str.append(f"auto_loss_scaling={self.auto_loss_scaling}")

@@ -37,7 +37,7 @@ from transformers.models.deberta.modeling_deberta import (
 )
 from transformers.utils.fx import _gen_constructor_wrapper
 
-from ....fx.optimization import MergeLinears, compose
+from ....fx.optimization import MergeLinears, ReversibleTransformation, compose
 from ....utils import logging
 from ...fx import (
     DEFAULT_TRANSFORMATION_MANAGER,
@@ -46,6 +46,8 @@ from ...fx import (
     OutlineAttribute,
     RecomputationCheckpoint,
     VocabEmbeddingToSerializedEmbedding,
+    LinearToSerializedLinear,
+    TieWeights,
     symbolic_trace_pipelined_model,
 )
 from ...modeling_utils import OnehotGather, PipelineMixin, get_layer_ipu, register
@@ -107,7 +109,32 @@ def _get_rel_embedding(self):
     return self.rel_embeddings.weight + 0.0 if self.relative_attention else None
 
 
-gather_last_dim = FastGatherLastDim()
+def faster_gather_last_dim(input, dim, index, *args, **kwargs):
+    target = torch.zeros_like(index).to(input.dtype)
+    target.requires_grad_()
+    o = poptorch.custom_op(
+        [input, index],
+        "FastGatherLastDim",
+        "poptorch.custom_ops",
+        1,
+        example_outputs=[target],
+        attributes={"axis": -1},
+    )
+    return o[0]
+
+
+class ChangeTorchGather(ReversibleTransformation):
+    def transform(self, graph_module):
+        for node in graph_module.graph.nodes:
+            if node.op == "call_function" and node.target is torch.gather:
+                node.target = faster_gather_last_dim
+        return graph_module
+
+    def reverse(self, graph_module):
+        for node in graph_module.graph.nodes:
+            if node.op == "call_function" and node.target is faster_gather_last_dim:
+                node.target = torch.gather
+        return graph_module
 
 
 class IPUDisentangledSelfAttention(DisentangledSelfAttention):
@@ -124,8 +151,6 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
     def __init__(self, config):
         super().__init__(config)
         self.xsoftmax = XSoftmax(-1)
-        # self.gather_last_dim = FastGatherLastDim()
-        self.gather_last_dim = gather_last_dim
 
     def forward(
         self,
@@ -248,7 +273,8 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
             index = c2p_pos.expand(
                 [query_layer.size(0), query_layer.size(1), query_layer.size(2), relative_pos.size(-1)]
             )
-            c2p_att = self.gather_last_dim(c2p_att, index)
+            # c2p_att = gather_last_dim(c2p_att, index)
+            c2p_att = torch.gather(c2p_att, -1, index)
             score += c2p_att
 
         # position->content
@@ -263,12 +289,12 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
             p2c_pos = torch.clamp(-r_pos + att_span, 0, att_span * 2 - 1)
             index = p2c_pos.expand([query_layer.size(0), query_layer.size(1), key_layer.size(-2), key_layer.size(-2)])
             p2c_att = torch.matmul(key_layer, pos_query_layer.transpose(-1, -2))
-            p2c_att = self.gather_last_dim(p2c_att, index).transpose(-1, -2)
+            p2c_att = torch.gather(p2c_att, -1, index).transpose(-1, -2)
 
             if query_layer.size(-2) != key_layer.size(-2):
                 pos_index = relative_pos[:, :, :, 0].unsqueeze(-1)
                 index = pos_index.expand(pos_index, p2c_att, key_layer)
-                p2c_att = self.gather_last_dim(p2c_att, index)
+                p2c_att = torch.gather(p2c_att, -1, index)
             score += p2c_att
 
         return score
@@ -283,7 +309,6 @@ class DebertaPipelineMixin(PipelineMixin):
                     del mod.xsoftmax
                 else:
                     mod.add_module("xsoftmax", XSoftmax(-1))
-                    mod.add_module("gather_last_dim", FastGatherLastDim())
             if restore:
                 if isinstance(mod, nn.Dropout):
                     mod.__class__ = StableDropout
@@ -302,10 +327,10 @@ class DebertaPipelineMixin(PipelineMixin):
     def get_transformations(self):
         log_insertions = self.ipu_config.log_insertions
         layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        # TODO: handle DebertaForMaskedLM
         transformations = [
             AddPoptorchBlock("Embedding", 0, "deberta.embeddings", log_insertions=log_insertions),
             OutlineAttribute("deberta.embeddings.LayerNorm", "Embedding"),
-            AddPoptorchBlock("Before Encoder", 0, "deberta.encoder", log_insertions=log_insertions),
             AddPoptorchBlocksInSeries(
                 "Encoder", layer_ipu, r"deberta.encoder.layer.[0-9]+", log_insertions=log_insertions
             ),
@@ -322,7 +347,13 @@ class DebertaPipelineMixin(PipelineMixin):
                 )
             )
         if self.ipu_config.embedding_serialization_factor > 1:
-            transformations.append(VocabEmbeddingToSerializedEmbedding())
+            if isinstance(self, DebertaForMaskedLM):
+                transformations += [
+                    LinearToSerializedLinear("cls.predictions.decoder"),
+                    TieWeights("deberta.embeddings.word_embeddings", "cls.predictions.decoder"),
+                ]
+            else:
+                transformations.append(VocabEmbeddingToSerializedEmbedding())
         return transformations
 
     def parallelize(self):
@@ -339,6 +370,7 @@ class DebertaPipelineMixin(PipelineMixin):
         torch.nn.functional.one_hot = orig
         transformations = self.get_transformations()
         transformations += TRANSFORMATION_MANAGER.get_reversible_transformations(self.ipu_config.optimization_level)
+        transformations.append(ChangeTorchGather())
         composition = compose(*transformations)
         non_reversible_composition = TRANSFORMATION_MANAGER.compose_non_reversible_transformations(
             self.ipu_config.optimization_level

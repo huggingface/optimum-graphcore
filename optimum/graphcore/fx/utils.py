@@ -25,7 +25,7 @@ from transformers.models.auto.modeling_auto import (
     MODEL_FOR_AUDIO_CLASSIFICATION_MAPPING_NAMES,
     MODEL_FOR_CTC_MAPPING_NAMES,
 )
-from transformers.utils.fx import HFTracer, get_concrete_args
+from transformers.utils.fx import HFAttribute, HFProxy, HFTracer, get_concrete_args
 
 from ..modeling_utils import PipelineMixin
 
@@ -34,11 +34,30 @@ if TYPE_CHECKING:
     from transformers import PreTrainedModel
 
 
+# TODO: keep this until transformers >= 4.23.2
+class GCProxy(HFProxy):
+
+    @property
+    def dtype(self):
+        return self.__getattr__("dtype")
+
+    def __getattr__(self, k):
+        if k == "_metadata":
+            return self.__getattribute__(k)
+        # note: not added to the graph yet, if this is a method call
+        # we peephole optimize to the method invocation
+        hf_attribute = HFAttribute(self, k)
+        if hasattr(self, "_metadata"):
+            hf_attribute.install_metadata(getattr(self._metadata, k))
+        return hf_attribute
+
+
 class PipelinedTracer(HFTracer):
     # TODO: keep this until transformers >= 4.23.2
     _TORCH_METHODS_TO_PATCH = list(HFTracer._TORCH_METHODS_TO_PATCH)
     _TORCH_METHODS_TO_PATCH.append("clamp")
     _TORCH_METHODS_TO_PATCH.append("rand")
+    _TORCH_METHODS_TO_PATCH.append("finfo")
     """
     Tracer that enables tracing and transforming models to run them on IPUs.
     Compared to the HFTracer, this one adds the following features:
@@ -79,8 +98,9 @@ class PipelinedTracer(HFTracer):
         # it is easier to use this one, and equivalent.
         node.parent_module_qualified_name = self.current_module_qualified_name[-1]
         node.parent_module_type = self.current_module_type[-1]
-        proxy = super().proxy(node)
-        return proxy
+        return GCProxy(node, self)
+        # return gc_proxy
+        return super().proxy(node)
 
     def call_module(self, m, forward, args, kwargs):
         # Could be done in a "cleaner" fashion by inlining the content of Tracer.call_module.
@@ -98,22 +118,22 @@ class PipelinedTracer(HFTracer):
         return proxy
 
     def create_proxy(self, kind, target, args, kwargs, name=None, type_expr=None, proxy_factory_fn=None):
-        if self.root_is_in_half_precision:
-            float32_dtype_in_args = any(a is torch.float32 for a in args)
-            float32_dtype_in_kwargs = kwargs.get("dtype", None) is torch.float32
-            node_types_to_inspect = [
-                ("call_method", "to"),
-                ("call_function", torch.full),
-            ]
-            torch_methods_to_patched_version = {
-                orig: wrapped for (orig, wrapped) in self.patched_torch_methods.values()
-            }
-            for (k, t) in node_types_to_inspect:
-                if kind == k and target == torch_methods_to_patched_version.get(t, t):
-                    if float32_dtype_in_args:
-                        args = tuple(a if a is not torch.float32 else torch.float16 for a in args)
-                    if float32_dtype_in_kwargs:
-                        kwargs["dtype"] = torch.float16
+        # if self.root_is_in_half_precision:
+        #     float32_dtype_in_args = any(a is torch.float32 for a in args)
+        #     float32_dtype_in_kwargs = kwargs.get("dtype", None) is torch.float32
+        #     node_types_to_inspect = [
+        #         ("call_method", "to"),
+        #         ("call_function", torch.full),
+        #     ]
+        #     torch_methods_to_patched_version = {
+        #         orig: wrapped for (orig, wrapped) in self.patched_torch_methods.values()
+        #     }
+        #     for (k, t) in node_types_to_inspect:
+        #         if kind == k and target == torch_methods_to_patched_version.get(t, t):
+        #             if float32_dtype_in_args:
+        #                 args = tuple(a if a is not torch.float32 else torch.float16 for a in args)
+        #             if float32_dtype_in_kwargs:
+        #                 kwargs["dtype"] = torch.float16
         return super().create_proxy(
             kind, target, args, kwargs, name=name, type_expr=type_expr, proxy_factory_fn=proxy_factory_fn
         )
@@ -149,7 +169,6 @@ def symbolic_trace_with_pipelined_tracer(
     model: PipelineMixin,
     input_names: Optional[List[str]] = None,
 ) -> torch.fx.GraphModule:
-
     """
     Performs symbolic tracing on the model.
 

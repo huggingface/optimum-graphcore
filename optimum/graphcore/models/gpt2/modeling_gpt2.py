@@ -131,7 +131,7 @@ class GPT2PipelineMixin(PipelineMixin):
 
 
 @register(GPT2LMHeadModel)
-class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, GPT2PipelineMixin):
+class PipelinedGPT2LMHeadModel(GPT2PipelineMixin, GPT2LMHeadModel):
     def get_transformations(self):
         log_insertions = self.ipu_config.log_insertions
         layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
@@ -241,7 +241,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, GPT2PipelineMixin):
 
 
 @register(GPT2ForSequenceClassification)
-class PipelinedGPT2ForSequenceClassification(GPT2ForSequenceClassification, GPT2PipelineMixin):
+class PipelinedGPT2ForSequenceClassification(GPT2PipelineMixin, GPT2ForSequenceClassification):
     def forward(
         self,
         input_ids: Optional[torch.LongTensor] = None,
@@ -290,5 +290,5 @@ class PipelinedGPT2ForSequenceClassification(GPT2ForSequenceClassification, GPT2
 
 
 @register(GPT2ForTokenClassification)
-class PipelinedGPT2ForTokenClassification(GPT2ForTokenClassification, GPT2PipelineMixin):
+class PipelinedGPT2ForTokenClassification(GPT2PipelineMixin, GPT2ForTokenClassification):
     pass
