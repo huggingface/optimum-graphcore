@@ -43,11 +43,11 @@ from ...fx import (
     DEFAULT_TRANSFORMATION_MANAGER,
     AddPoptorchBlock,
     AddPoptorchBlocksInSeries,
+    LinearToSerializedLinear,
     OutlineAttribute,
     RecomputationCheckpoint,
-    VocabEmbeddingToSerializedEmbedding,
-    LinearToSerializedLinear,
     TieWeights,
+    VocabEmbeddingToSerializedEmbedding,
     symbolic_trace_pipelined_model,
 )
 from ...modeling_utils import OnehotGather, PipelineMixin, get_layer_ipu, register

@@ -204,7 +204,9 @@ class ClipValuesSymmetric(ClipValues):
     ):
         if clip_value < 0:
             raise ValueError(f"The provided clip value must be equal or greater than 0, but here {clip_value}.")
-        return super().__init__(-clip_value, clip_value, exclude_targets=exclude_targets)
+        return super().__init__(
+            -clip_value, clip_value, include_targets=include_targets, exclude_targets=exclude_targets
+        )
 
 
 class OutlineAttribute(ReversibleTransformation):
@@ -406,7 +408,9 @@ class VocabEmbeddingToSerializedEmbedding(ReversibleTransformation):
 
         embedding_node = max(embedding_nodes, key=sort_nodes_function)
         if embedding_node.op == "call_function":
-            raise NotImplementedError("VocabEmbeddingToSerializedEmbedding does not support torch.nn.functional.embedding yet.")
+            raise NotImplementedError(
+                "VocabEmbeddingToSerializedEmbedding does not support torch.nn.functional.embedding yet."
+            )
 
         split = embedding_node.target.rsplit(".", maxsplit=1)
         if len(split) == 1:
@@ -520,7 +524,11 @@ class TieWeights(Transformation):
 
 
 class ShareEmbeddingComputation(Transformation):
-    def __init__(self, name_regex: Optional[str] = None, allowed_embedding_classes: Union[Tuple[Type], Type] = (torch.nn.Embedding, SerializedEmbedding)):
+    def __init__(
+        self,
+        name_regex: Optional[str] = None,
+        allowed_embedding_classes: Union[Tuple[Type], Type] = (torch.nn.Embedding, SerializedEmbedding),
+    ):
         self.name_regex = re.compile(name_regex) if name_regex else None
         self.allowed_embedding_classes = allowed_embedding_classes
         if not isinstance(self.allowed_embedding_classes, tuple):

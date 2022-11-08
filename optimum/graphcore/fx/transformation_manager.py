@@ -16,6 +16,7 @@
 
 import copy
 import functools
+import operator
 from typing import Iterator, List, Tuple, Union
 
 import torch
@@ -123,6 +124,6 @@ DEFAULT_TRANSFORMATION_MANAGER = TransformationManager(
     (1, MergeLinears()),
     # (1, FuseBiasInLinear()),
     # Those change the computation, but are actually needed for fp16 stability.
-    (0, ClipValuesSymmetric(1e4, exclude_targets=("view",))),
+    (0, ClipValuesSymmetric(1e4, include_targets=(torch.add, torch.mul, operator.add, operator.mul))),
     (0, ClipValues(1e-4, float("inf"), include_targets=(torch.nn.LayerNorm,))),
 )

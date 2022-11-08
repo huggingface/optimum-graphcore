@@ -37,6 +37,7 @@ from ...fx import (
     symbolic_trace_pipelined_model,
 )
 from ...modeling_utils import PipelineMixin, get_layer_ipu, register
+from .optimized_gpt2_attn import OptimizedGPT2Attention
 
 
 logger = logging.get_logger(__name__)
@@ -69,7 +70,7 @@ class GPT2PipelineMixin(PipelineMixin):
         layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
         transformations = [
             AddPoptorchBlock("Token Embedding", 0, "transformer.wte", log_insertions=log_insertions),
-            AddPoptorchBlock("Position Embedding", 1, "transformer.wtp", log_insertions=log_insertions),
+            AddPoptorchBlock("Position Embedding", 0, "transformer.wpe", log_insertions=log_insertions),
             OutlineAttribute("transformer.ln_f", "LayerNorm"),
             AddPoptorchBlocksInSeries("Layer", layer_ipu, r"transformer.h.[0-9]+", log_insertions=log_insertions),
             # Only one of the following AddPoptorchBlock, will actually add a block.
@@ -84,7 +85,7 @@ class GPT2PipelineMixin(PipelineMixin):
                 )
             )
         if self.ipu_config.embedding_serialization_factor > 1:
-            transformations.append(VocabEmbeddingToSerializedEmbedding())
+            transformations.append(VocabEmbeddingToSerializedEmbedding("transformer.wte"))
 
         return transformations
 
@@ -96,6 +97,9 @@ class GPT2PipelineMixin(PipelineMixin):
         - Adds recomputation checkpoints
         """
         PipelineMixin.parallelize(self)
+        if not isinstance(self, torch.fx.GraphModule):
+            for layer in self.transformer.h:
+                layer.attn.__class__ = OptimizedGPT2Attention
         if self.ipu_config.embedding_serialization_factor > 1:
             self.resize_vocab(False)
         traced = symbolic_trace_pipelined_model(self)
@@ -137,7 +141,7 @@ class PipelinedGPT2LMHeadModel(GPT2PipelineMixin, GPT2LMHeadModel):
         layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
         transformations = [
             AddPoptorchBlock("Token Embedding", 0, "transformer.wte", log_insertions=log_insertions),
-            AddPoptorchBlock("Position Embedding", 1, "transformer.wtp", log_insertions=log_insertions),
+            AddPoptorchBlock("Position Embedding", 0, "transformer.wpe", log_insertions=log_insertions),
             OutlineAttribute("transformer.ln_f", "LayerNorm"),
             AddPoptorchBlocksInSeries("Layer", layer_ipu, r"transformer.h.[0-9]+", log_insertions=log_insertions),
             AddPoptorchBlock("LM Head", 0, "lm_head", log_insertions=log_insertions),

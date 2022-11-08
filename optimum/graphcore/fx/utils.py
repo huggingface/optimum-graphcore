@@ -36,7 +36,6 @@ if TYPE_CHECKING:
 
 # TODO: keep this until transformers >= 4.23.2
 class GCProxy(HFProxy):
-
     @property
     def dtype(self):
         return self.__getattr__("dtype")
