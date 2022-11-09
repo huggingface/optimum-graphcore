@@ -1,6 +1,19 @@
+# Copyright (c) 2022 Graphcore Ltd. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import copy
 from functools import partial
-import inspect
 
 from diffusers import StableDiffusionPipeline, UNet2DConditionModel
 from optimum.graphcore import IPUConfig
@@ -11,26 +24,16 @@ import poptorch
 
 
 def _sliced_attention(self, query, key, value, sequence_length, dim):
+    """Changes the implementation to use concatenation instead of slice assignment."""
     batch_size_attention = query.shape[0]
     hidden_states = []
     slice_size = self._slice_size if self._slice_size is not None else batch_size_attention
     for i in range(batch_size_attention // slice_size):
         start_idx = i * slice_size
         end_idx = (i + 1) * slice_size
-        if query.device.type == "mps":
-            # Better performance on mps (~20-25%)
-            attn_slice = (
-                torch.einsum("b i d, b j d -> b i j", query[start_idx:end_idx], key[start_idx:end_idx]) * self.scale
-            )
-        else:
-            attn_slice = (
-                torch.matmul(query[start_idx:end_idx], key[start_idx:end_idx].transpose(1, 2)) * self.scale
-            )  # TODO: use baddbmm for better performance
+        attn_slice = torch.matmul(query[start_idx:end_idx], key[start_idx:end_idx].transpose(1, 2)) * self.scale
         attn_slice = attn_slice.softmax(dim=-1)
-        if query.device.type == "mps":
-            attn_slice = torch.einsum("b i j, b j d -> b i d", attn_slice, value[start_idx:end_idx])
-        else:
-            attn_slice = torch.matmul(attn_slice, value[start_idx:end_idx])
+        attn_slice = torch.matmul(attn_slice, value[start_idx:end_idx])
 
         hidden_states.append(attn_slice)
 
@@ -42,9 +45,10 @@ def _sliced_attention(self, query, key, value, sequence_length, dim):
 
 
 def override_sliced_attention(unet):
+    """The CrossAttention module is not exposed by the diffusers library,
+    hence the indirect referencing."""
     for module in unet.modules():
         if module.__class__.__name__ == "CrossAttention":
-            assert hasattr(module, "_sliced_attention")
             setattr(module, "_sliced_attention", partial(_sliced_attention, module))
 
 
@@ -91,47 +95,51 @@ class IPUUNet2DConditionModel(UNet2DConditionModel, PipelineMixin):
         return self
 
 
-def copy_signature(base):
-    def decorator(func):
-        func.__signature__ = inspect.signature(base)
-        return func
-
-    return decorator
+def maybe_cast_module_to_float(module):
+    if module is not None:
+        module = module.float()
+    return module
 
 
 class IPUStableDiffusionPipeline(StableDiffusionPipeline):
-    @copy_signature(StableDiffusionPipeline.__init__)
-    def __init__(self, **kwargs):
-        for module_name in ["text_encoder", "vae", "safety_checker"]:
-            module = kwargs.get(module_name, None)
-            if module is not None:
-                module = module.float()
-                kwargs[module_name] = module
+    def __init__(self, ipu_config, vae, text_encoder, tokenizer, unet, scheduler, safety_checker, feature_extractor):
 
-        unet = kwargs.get("unet", None)
+        text_encoder = maybe_cast_module_to_float(text_encoder)
+        vae = maybe_cast_module_to_float(vae)
+        safety_checker = maybe_cast_module_to_float(safety_checker)
+
         if unet is not None:
-            IPU_CONFIG_DICT = {
-                "inference_device_iterations": 1,
-                "inference_replication_factor": {"default": 1},
-                "executable_cache_dir": "./exe_cache",
-                "ipus_per_replica": 4,
-                "matmul_proportion": [0.09, 0.1, 0.1, 0.08],
-                "enable_half_partials": True,
-            }
-            ipu_config = IPUConfig.from_dict(IPU_CONFIG_DICT)
             unet_ipu = copy.deepcopy(unet)
             unet_ipu.__class__ = IPUUNet2DConditionModel
-            override_sliced_attention(unet_ipu)
             unet_ipu.ipu_config = ipu_config
             unet_ipu.parallelize()
+            override_sliced_attention(unet_ipu)
+
             opts = ipu_config.to_options(for_inference=True)
-            opts.setExecutionStrategy(poptorch.ShardedExecution())
             opts._Popart.set("saveInitializersToFile", "weights.onnx")
             opts._Popart.set("enableExplicitIR", True)
             unet_ipu = poptorch.inferenceModel(unet_ipu.eval(), opts)
 
             unet = UNetCastingWrapper(unet_ipu)
 
-            kwargs["unet"] = unet
+        super().__init__(
+            vae=vae,
+            text_encoder=text_encoder,
+            tokenizer=tokenizer,
+            unet=unet,
+            scheduler=scheduler,
+            safety_checker=safety_checker,
+            feature_extractor=feature_extractor,
+        )
 
-        super().__init__(**kwargs)
+
+ipu_stable_diffusion_config = IPUConfig.from_dict(
+    {
+        "enable_half_partials": True,
+        "executable_cache_dir": "./exe_cache",
+        "inference_device_iterations": 1,
+        "inference_replication_factor": {"default": 1},
+        "ipus_per_replica": 4,
+        "matmul_proportion": [0.09, 0.1, 0.1, 0.08],
+    }
+)
