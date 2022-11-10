@@ -268,12 +268,10 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
             pos_key_layer = self.pos_proj(rel_embeddings)
             pos_key_layer = self.transpose_for_scores(pos_key_layer)
             c2p_att = torch.matmul(query_layer, pos_key_layer.transpose(-1, -2))
-            # c2p_pos = torch.clamp(relative_pos + att_span, 0, att_span * 2 - 1)
-            c2p_pos = (relative_pos + att_span).clamp(0, att_span * 2 - 1)
+            c2p_pos = torch.clamp(relative_pos + att_span, 0, att_span * 2 - 1)
             index = c2p_pos.expand(
                 [query_layer.size(0), query_layer.size(1), query_layer.size(2), relative_pos.size(-1)]
             )
-            # c2p_att = gather_last_dim(c2p_att, index)
             c2p_att = torch.gather(c2p_att, -1, index)
             score += c2p_att
 
