@@ -13,9 +13,9 @@
 # limitations under the License.
 
 import copy
-from functools import partial
 
 from diffusers import StableDiffusionPipeline, UNet2DConditionModel
+from diffusers.models.attention import CrossAttention
 from optimum.graphcore import IPUConfig
 from optimum.graphcore.modeling_utils import PipelineMixin
 import torch
@@ -45,11 +45,9 @@ def _sliced_attention(self, query, key, value, sequence_length, dim):
 
 
 def override_sliced_attention(unet):
-    """The CrossAttention module is not exposed by the diffusers library,
-    hence the indirect referencing."""
     for module in unet.modules():
-        if module.__class__.__name__ == "CrossAttention":
-            setattr(module, "_sliced_attention", partial(_sliced_attention, module))
+        if isinstance(module, CrossAttention):
+            module._sliced_attention = _sliced_attention.__get__(module, CrossAttention)
 
 
 class UNetCastingWrapper(torch.nn.Module):
