@@ -24,7 +24,7 @@ import poptorch
 
 
 def _sliced_attention(self, query, key, value, sequence_length, dim):
-    """Changes the implementation to use concatenation instead of slice assignment."""
+    """Overriding this implementation to use concatenation as slice assignment is not yet supported."""
     batch_size_attention = query.shape[0]
     hidden_states = []
     slice_size = self._slice_size if self._slice_size is not None else batch_size_attention
@@ -100,20 +100,34 @@ def maybe_cast_module_to_float(module):
 
 
 class IPUStableDiffusionPipeline(StableDiffusionPipeline):
-    def __init__(self, ipu_config, vae, text_encoder, tokenizer, unet, scheduler, safety_checker, feature_extractor):
+    def __init__(
+        self, vae, text_encoder, tokenizer, unet, scheduler, safety_checker, feature_extractor, ipu_config=None
+    ):
 
         text_encoder = maybe_cast_module_to_float(text_encoder)
         vae = maybe_cast_module_to_float(vae)
         safety_checker = maybe_cast_module_to_float(safety_checker)
 
         if unet is not None:
+            default_ipu_config_dict = {
+                "enable_half_partials": True,
+                "executable_cache_dir": "./exe_cache",
+                "inference_device_iterations": 1,
+                "inference_replication_factor": {"default": 1},
+                "ipus_per_replica": 4,
+                "matmul_proportion": [0.09, 0.1, 0.1, 0.08],
+            }
+            if ipu_config is not None:
+                default_ipu_config_dict.update(ipu_config)
+            unet_ipu_config = IPUConfig.from_dict(default_ipu_config_dict)
+
             unet_ipu = copy.deepcopy(unet)
             unet_ipu.__class__ = IPUUNet2DConditionModel
-            unet_ipu.ipu_config = ipu_config
+            unet_ipu.ipu_config = unet_ipu_config
             unet_ipu.parallelize()
             override_sliced_attention(unet_ipu)
 
-            opts = ipu_config.to_options(for_inference=True)
+            opts = unet_ipu_config.to_options(for_inference=True)
             opts._Popart.set("saveInitializersToFile", "weights.onnx")
             opts._Popart.set("enableExplicitIR", True)
             unet_ipu = poptorch.inferenceModel(unet_ipu.eval(), opts)
@@ -130,14 +144,6 @@ class IPUStableDiffusionPipeline(StableDiffusionPipeline):
             feature_extractor=feature_extractor,
         )
 
-
-ipu_stable_diffusion_config = IPUConfig.from_dict(
-    {
-        "enable_half_partials": True,
-        "executable_cache_dir": "./exe_cache",
-        "inference_device_iterations": 1,
-        "inference_replication_factor": {"default": 1},
-        "ipus_per_replica": 4,
-        "matmul_proportion": [0.09, 0.1, 0.1, 0.08],
-    }
-)
+    @classmethod
+    def from_pretrained(cls, pretrained_model_name_or_path, ipu_config=None, **kwargs):
+        return super().from_pretrained(pretrained_model_name_or_path, ipu_config=ipu_config, **kwargs)
