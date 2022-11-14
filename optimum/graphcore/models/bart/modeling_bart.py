@@ -14,6 +14,7 @@
 # limitations under the License.
 """BART model."""
 
+import operator
 from typing import List, Optional, Tuple, Union
 
 import torch
@@ -46,8 +47,17 @@ logger = logging.get_logger(__name__)
 
 FLOAT16_LIMIT = 1e4
 
-TRANSFORMATION_MANAGER = DEFAULT_TRANSFORMATION_MANAGER.without(ClipValuesSymmetric(1e4, exclude_targets=("view",)))
-TRANSFORMATION_MANAGER.register((0, ClipValuesSymmetric(10000, exclude_targets=("view",))))
+TRANSFORMATION_MANAGER = DEFAULT_TRANSFORMATION_MANAGER.without(
+    ClipValuesSymmetric(1e4, include_targets=(torch.add, torch.mul, operator.add, operator.mul))
+)
+TRANSFORMATION_MANAGER.register(
+    (
+        0,
+        ClipValuesSymmetric(
+            10000, include_targets=(torch.add, torch.mul, operator.add, operator.mul), cast_to_type=int
+        ),
+    )
+)
 
 
 def _make_causal_mask(input_ids_shape: torch.Size, dtype: torch.dtype, past_key_values_length: int = 0):

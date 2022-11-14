@@ -164,11 +164,13 @@ class ClipValues(Transformation):
         max_value: float,
         include_targets: Optional[Tuple[Union[str, Callable]]] = None,
         exclude_targets: Optional[Tuple[Union[str, Callable]]] = None,
+        cast_to_type: Optional[Union[Type, Callable[[Type], Type]]] = None,
     ):
         self.min_value = min_value
         self.max_value = max_value
         self.include_targets = include_targets if include_targets is not None else ()
         self.exclude_targets = exclude_targets if exclude_targets is not None else ()
+        self.cast_to_type = cast_to_type
 
     def _clip_node_args(self, args):
         if isinstance(args, (tuple, list, set)):
@@ -176,7 +178,11 @@ class ClipValues(Transformation):
         elif isinstance(args, dict):
             return {name: self._clip_node_args(arg) for name, arg in args.items()}
         elif isinstance(args, (float, int)):
-            return type(args)(min(max(args, self.min_value), self.max_value))
+            if self.cast_to_type is None:
+                cast_to_type = type(args)
+            else:
+                cast_to_type = self.cast_to_type
+            return cast_to_type(min(max(args, self.min_value), self.max_value))
         else:
             return args
 
@@ -201,11 +207,16 @@ class ClipValuesSymmetric(ClipValues):
         clip_value: float,
         include_targets: Optional[Tuple[Union[str, Callable]]] = None,
         exclude_targets: Optional[Tuple[Union[str, Callable]]] = None,
+        cast_to_type: Optional[Union[Type, Callable[[Type], Type]]] = None,
     ):
         if clip_value < 0:
             raise ValueError(f"The provided clip value must be equal or greater than 0, but here {clip_value}.")
         return super().__init__(
-            -clip_value, clip_value, include_targets=include_targets, exclude_targets=exclude_targets
+            -clip_value,
+            clip_value,
+            include_targets=include_targets,
+            exclude_targets=exclude_targets,
+            cast_to_type=cast_to_type,
         )
 
 
