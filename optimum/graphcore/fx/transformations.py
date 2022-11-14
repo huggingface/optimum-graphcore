@@ -176,7 +176,7 @@ class ClipValues(Transformation):
         elif isinstance(args, dict):
             return {name: self._clip_node_args(arg) for name, arg in args.items()}
         elif isinstance(args, (float, int)):
-            return min(max(args, self.min_value), self.max_value)
+            return type(args)(min(max(args, self.min_value), self.max_value))
         else:
             return args
 
