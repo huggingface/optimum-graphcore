@@ -921,6 +921,7 @@ class IPUTrainer:
             # TODO: Remove this when bug fixed
             self.optimizer_state = self.optimizer.state_dict()
             self.training_model.destroy()
+            self.model = poptorch._impl.unwrapIfWrapped(self.model)
             for obj in self.model.buffers():
                 if "PoptorchBuffer" in str(obj.__class__):
                     obj.__class__ = obj.__class__.__bases__[0]
@@ -937,6 +938,7 @@ class IPUTrainer:
             # TODO: Remove this when bug fixed
             self.inference_model.destroy()
             self.inference_model = None
+            self.model = poptorch._impl.unwrapIfWrapped(self.model)
             for obj in self.model.buffers():
                 if "PoptorchBuffer" in str(obj.__class__):
                     obj.__class__ = obj.__class__.__bases__[0]
