@@ -140,7 +140,8 @@ class IPUStableDiffusionPipeline(StableDiffusionPipeline):
             tokenizer=tokenizer,
             unet=unet,
             scheduler=scheduler,
-            safety_checker=safety_checker,
+            # safety_checker=safety_checker,
+            safety_checker=None,
             feature_extractor=feature_extractor,
         )
 
