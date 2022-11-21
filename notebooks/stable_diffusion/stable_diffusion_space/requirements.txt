@@ -1,5 +1,6 @@
 diffusers==0.7.1
 accelerate
 optimum-graphcore
+spacy
 fastapi
 pip install "uvicorn[standard]"

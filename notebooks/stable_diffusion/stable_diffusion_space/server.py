@@ -1,27 +1,52 @@
+import base64
 import io
+import os
+import time
+
 import torch
-from ipu_models import IPUStableDiffusionPipeline
 
 from fastapi import FastAPI
-from fastapi.responses import Response
+from ipu_models import IPUStableDiffusionPipeline
+from pydantic import BaseModel
 
-pipe = IPUStableDiffusionPipeline.from_pretrained(
-    "runwayml/stable-diffusion-v1-5",
-    revision="fp16",
-    torch_dtype=torch.float16,
-)
-pipe.enable_attention_slicing()
+
+_IS_DEBUG = os.getenv("DEBUG", False)
+
+if _IS_DEBUG:
+    from PIL import Image
+else:
+    pipe = IPUStableDiffusionPipeline.from_pretrained(
+        "runwayml/stable-diffusion-v1-5",
+        revision="fp16",
+        torch_dtype=torch.float16,
+    )
+    pipe.enable_attention_slicing()
+    pipe("Pipeline warmup...")
 
 app = FastAPI()
 
-# TODO: make prompt a query parameter instead of a path parameter, here this is for convinience during testing.
-@app.get("/inference/{prompt}")
-def stable_diffusion(prompt: str, guidance_scale: float = 7.5):
-    image = pipe(prompt, guidance_scale=guidance_scale).images[0]
-    image_byte_arr = io.BytesIO()
-    image.save(image_byte_arr, format="PNG")
-    image_byte_arr = image_byte_arr.getvalue()
-    return Response(content=image_byte_arr, media_type="image/png")
+
+class StableDiffusionInputs(BaseModel):
+    prompt: str
+    guidance_scale: float = 7.5
+
+
+@app.post("/inference/")
+async def stable_diffusion(inputs: StableDiffusionInputs):
+    start = time.time()
+    if _IS_DEBUG:
+        image = Image.new("RGB", (512, 512), "blue")
+    else:
+        images = pipe(inputs.prompt, guidance_scale=inputs.guidance_scale).images
+    latency = time.time() - start
+    images_b64 = []
+    for image in images:
+        image_byte_arr = io.BytesIO()
+        image.save(image_byte_arr, format="PNG")
+        image_byte_arr = image_byte_arr.getvalue()
+        images_b64.append(base64.b64encode(image_byte_arr))
+    content = {"images": images_b64, "latency": latency}
+    return content
 
 
 @app.get("/")
