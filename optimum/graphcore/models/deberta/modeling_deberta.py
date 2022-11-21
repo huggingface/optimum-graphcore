@@ -1,3 +1,4 @@
+# coding=utf-8
 # Copyright (c) 2021 Graphcore Ltd. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,16 +12,16 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""DeBERTa model."""
 
 import math
+import operator
 from typing import Optional, Tuple, Union
 
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 import poptorch
-from optimum.utils import logging
 from transformers import (
     DebertaForMaskedLM,
     DebertaForQuestionAnswering,
@@ -34,18 +35,25 @@ from transformers.models.deberta.modeling_deberta import (
     StableDropout,
     build_relative_position,
 )
+from transformers.utils.fx import _gen_constructor_wrapper
 
-from ...modeling_utils import (
-    OnehotGather,
-    PipelineMixin,
-    SerializedEmbedding,
-    SerializedLinear,
-    get_layer_ipu,
-    outline_attribute,
-    recomputation_checkpoint,
-    register,
+from ....fx.optimization import MergeLinears, ReversibleTransformation, compose
+from ....utils import logging
+from ...fx import (
+    DEFAULT_TRANSFORMATION_MANAGER,
+    AddPoptorchBlock,
+    AddPoptorchBlocksInSeries,
+    LinearToSerializedLinear,
+    OutlineAttribute,
+    RecomputationCheckpoint,
+    TieWeights,
+    VocabEmbeddingToSerializedEmbedding,
+    symbolic_trace_pipelined_model,
 )
+from ...modeling_utils import OnehotGather, PipelineMixin, get_layer_ipu, register
 
+
+TRANSFORMATION_MANAGER = DEFAULT_TRANSFORMATION_MANAGER.without(MergeLinears())
 
 logger = logging.get_logger(__name__)
 
@@ -55,9 +63,6 @@ class FastGatherLastDim(nn.Module):
     Custom Op that does a faster specialised version of `gather`
     on the last dimension of a tensor.
     """
-
-    def __init__(self):
-        super().__init__()
 
     def forward(self, data, idx, target=None):
         if poptorch.isRunningOnIpu():
@@ -78,9 +83,6 @@ class FastGatherLastDim(nn.Module):
             return o[0]
         else:
             return torch.gather(data, -1, idx)
-
-
-gather_last_dim = FastGatherLastDim()
 
 
 class XSoftmax(torch.nn.Module):
@@ -105,6 +107,34 @@ class XSoftmax(torch.nn.Module):
 
 def _get_rel_embedding(self):
     return self.rel_embeddings.weight + 0.0 if self.relative_attention else None
+
+
+def faster_gather_last_dim(input, dim, index, *args, **kwargs):
+    target = torch.zeros_like(index).to(input.dtype)
+    target.requires_grad_()
+    o = poptorch.custom_op(
+        [input, index],
+        "FastGatherLastDim",
+        "poptorch.custom_ops",
+        1,
+        example_outputs=[target],
+        attributes={"axis": -1},
+    )
+    return o[0]
+
+
+class ChangeTorchGather(ReversibleTransformation):
+    def transform(self, graph_module):
+        for node in graph_module.graph.nodes:
+            if node.op == "call_function" and node.target is torch.gather:
+                node.target = faster_gather_last_dim
+        return graph_module
+
+    def reverse(self, graph_module):
+        for node in graph_module.graph.nodes:
+            if node.op == "call_function" and node.target is faster_gather_last_dim:
+                node.target = torch.gather
+        return graph_module
 
 
 class IPUDisentangledSelfAttention(DisentangledSelfAttention):
@@ -207,7 +237,7 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
         context_layer = torch.matmul(attention_probs, value_layer)
         context_layer = context_layer.permute(0, 2, 1, 3).contiguous()
         new_context_layer_shape = context_layer.size()[:-2] + (-1,)
-        context_layer = context_layer.view(*new_context_layer_shape)
+        context_layer = context_layer.view(new_context_layer_shape)
         if output_attentions:
             return (context_layer, attention_probs)
         else:
@@ -242,7 +272,7 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
             index = c2p_pos.expand(
                 [query_layer.size(0), query_layer.size(1), query_layer.size(2), relative_pos.size(-1)]
             )
-            c2p_att = gather_last_dim(c2p_att, index)
+            c2p_att = torch.gather(c2p_att, -1, index)
             score += c2p_att
 
         # position->content
@@ -257,12 +287,12 @@ class IPUDisentangledSelfAttention(DisentangledSelfAttention):
             p2c_pos = torch.clamp(-r_pos + att_span, 0, att_span * 2 - 1)
             index = p2c_pos.expand([query_layer.size(0), query_layer.size(1), key_layer.size(-2), key_layer.size(-2)])
             p2c_att = torch.matmul(key_layer, pos_query_layer.transpose(-1, -2))
-            p2c_att = gather_last_dim(p2c_att, index).transpose(-1, -2)
+            p2c_att = torch.gather(p2c_att, -1, index).transpose(-1, -2)
 
             if query_layer.size(-2) != key_layer.size(-2):
                 pos_index = relative_pos[:, :, :, 0].unsqueeze(-1)
                 index = pos_index.expand(pos_index, p2c_att, key_layer)
-                p2c_att = gather_last_dim(p2c_att, index)
+                p2c_att = torch.gather(p2c_att, -1, index)
             score += p2c_att
 
         return score
@@ -276,7 +306,7 @@ class DebertaPipelineMixin(PipelineMixin):
                 if restore:
                     del mod.xsoftmax
                 else:
-                    mod.xsoftmax = XSoftmax(-1)
+                    mod.add_module("xsoftmax", XSoftmax(-1))
             if restore:
                 if isinstance(mod, nn.Dropout):
                     mod.__class__ = StableDropout
@@ -292,58 +322,60 @@ class DebertaPipelineMixin(PipelineMixin):
                 func = DebertaEncoder.get_rel_embedding if restore else _get_rel_embedding
                 mod.get_rel_embedding = func.__get__(mod, DebertaEncoder)
 
+    def get_transformations(self):
+        log_insertions = self.ipu_config.log_insertions
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        # TODO: handle DebertaForMaskedLM
+        transformations = [
+            AddPoptorchBlock("Embedding", 0, "deberta.embeddings", log_insertions=log_insertions),
+            OutlineAttribute("deberta.embeddings.LayerNorm", "Embedding"),
+            AddPoptorchBlocksInSeries(
+                "Encoder", layer_ipu, r"deberta.encoder.layer.[0-9]+", log_insertions=log_insertions
+            ),
+            # Only one of the following AddPoptorchBlock, will actually add a block.
+            AddPoptorchBlock("Classifier Output", layer_ipu[-1], "classifier", log_insertions=log_insertions),
+            AddPoptorchBlock("QA Outputs", layer_ipu[-1], "qa_outputs", log_insertions=log_insertions),
+        ]
+        if self.ipu_config.recompute_checkpoint_every_layer:
+            transformations.append(
+                RecomputationCheckpoint(
+                    "deberta.encoder.layer.[0-9]+",
+                    to_exclude=f"deberta.encoder.layer.{self.config.num_hidden_layers - 1}",
+                    output_nodes_specs={"call_function": [operator.add]},
+                )
+            )
+        if self.ipu_config.embedding_serialization_factor > 1:
+            if isinstance(self, DebertaForMaskedLM):
+                transformations += [
+                    LinearToSerializedLinear("cls.predictions.decoder"),
+                    TieWeights("deberta.embeddings.word_embeddings", "cls.predictions.decoder"),
+                ]
+            else:
+                transformations.append(VocabEmbeddingToSerializedEmbedding())
+        return transformations
+
     def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model
-        - (If enabled) Replaces the word embedding with a SerializedEmbedding
-        - Replaces several modules with IPU compatible counterparts
+        - (If enabled) Replaces the word embedding projection with a SerializedLinear layer
         - Adds recomputation checkpoints
         """
-        self._hooks = []
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
-
-        logger.info("-------------------- Device Allocation --------------------")
-        logger.info("Embedding  --> IPU 0")
-        if self.ipu_config.embedding_serialization_factor > 1:
-            if isinstance(self, PipelinedDebertaForMaskedLM):
-                serialized_decoder = SerializedLinear(
-                    self.config.hidden_size,
-                    self.config.vocab_size,
-                    self.ipu_config.embedding_serialization_factor,
-                    bias=True,
-                    mode=poptorch.MatMulSerializationMode.OutputChannels,
-                )
-                serialized_decoder.load_state_dict(self.cls.predictions.decoder.state_dict())
-                self.cls.predictions.decoder = serialized_decoder
-                self.tie_weights()
-            else:
-                self.deberta.embeddings.word_embeddings = SerializedEmbedding(
-                    self.deberta.embeddings.word_embeddings, self.ipu_config.embedding_serialization_factor
-                )
-
+        super().parallelize()
         self.change_modules_for_ipu(False)
-
-        self.deberta.embeddings = poptorch.BeginBlock(self.deberta.embeddings, "Embedding", ipu_id=0)
-        hs = outline_attribute(self.deberta.embeddings.LayerNorm, "embedding")
-        self._hooks.extend(hs)
-
-        self.deberta.encoder = poptorch.BeginBlock(self.deberta.encoder, ipu_id=0)
-        if self.deberta.encoder.relative_attention:
-            self.deberta.encoder.rel_embeddings = poptorch.BeginBlock(self.deberta.encoder.rel_embeddings, ipu_id=0)
-
-        for index, layer in enumerate(self.deberta.encoder.layer):
-            ipu = layer_ipu[index]
-            if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
-                h = recomputation_checkpoint(layer)
-                self._hooks.append(h)
-            self.deberta.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
-            logger.info(f"Encoder {index:<2} --> IPU {ipu}")
-
-        if isinstance(self, PipelinedDebertaForMaskedLM):
-            logger.info(f"Projection {index:<2} --> IPU {0}")
-            self.cls.predictions.decoder = poptorch.BeginBlock(self.cls.predictions.decoder, "Projection", ipu_id=0)
-        return self
+        torch.nn.functional.one_hot, orig = _gen_constructor_wrapper(torch.nn.functional.one_hot)
+        traced = symbolic_trace_pipelined_model(self)
+        torch.nn.functional.one_hot = orig
+        transformations = self.get_transformations()
+        transformations += TRANSFORMATION_MANAGER.get_reversible_transformations(self.ipu_config.optimization_level)
+        transformations.append(ChangeTorchGather())
+        composition = compose(*transformations)
+        non_reversible_composition = TRANSFORMATION_MANAGER.compose_non_reversible_transformations(
+            self.ipu_config.optimization_level
+        )
+        traced = composition(traced)
+        traced = non_reversible_composition(traced)
+        return traced
 
     def deparallelize(self):
         """
@@ -353,19 +385,10 @@ class DebertaPipelineMixin(PipelineMixin):
         """
         super().deparallelize()
         self.change_modules_for_ipu(True)
-        if self.ipu_config.embedding_serialization_factor > 1:
-            if isinstance(self, PipelinedDebertaForMaskedLM):
-                decoder = nn.Linear(
-                    self.config.hidden_size,
-                    self.config.vocab_size,
-                    bias=True,
-                )
-                decoder.load_state_dict(self.cls.predictions.decoder.state_dict())
-                self.cls.predictions.decoder = decoder
-                self.tie_weights()
-            else:
-                # Deserialize the serialized word embedding
-                self.deberta.embeddings.word_embeddings = self.deberta.embeddings.word_embeddings.deserialize()
+        transformations = self.get_transformations()
+        transformations += TRANSFORMATION_MANAGER.get_reversible_transformations(self.ipu_config.optimization_level)
+        composition = compose(*transformations)
+        self = composition(self, reverse=True)
         return self
 
 
@@ -418,10 +441,10 @@ class PipelinedDebertaForMaskedLM(DebertaForMaskedLM, DebertaPipelineMixin):
         sequence_output = outputs[0]
 
         if labels is not None:
-            # Select only the masked tokens for the classifier
-            max_number_of_masked_tokens = int(labels.size(1) * 0.25)
-            masked_lm_labels, masked_lm_positions = torch.topk(labels, k=max_number_of_masked_tokens, dim=1)
-            masked_output = self.gather_indices(sequence_output, masked_lm_positions)
+            if hasattr(self.config, "max_num_masked_tokens"):
+                # Select only the masked tokens for the classifier
+                masked_lm_labels, positions = torch.topk(labels, k=self.config.max_num_masked_tokens, dim=1)
+                masked_output = self.gather_indices(sequence_output, positions)
         else:
             # This case should never happen during training
             masked_output = sequence_output
@@ -430,7 +453,7 @@ class PipelinedDebertaForMaskedLM(DebertaForMaskedLM, DebertaPipelineMixin):
 
         masked_lm_loss = None
         if labels is not None:
-            masked_lm_loss = F.cross_entropy(
+            masked_lm_loss = nn.functional.cross_entropy(
                 prediction_scores.view(-1, self.config.vocab_size), masked_lm_labels.view(-1)
             ).float()
 
@@ -457,14 +480,6 @@ class PipelinedDebertaForSequenceClassification(DebertaForSequenceClassification
     ```
     """
 
-    def parallelize(self):
-        super().parallelize()
-        last_ipu = self.ipu_config.ipus_per_replica - 1
-        logger.info(f"Classifier Output --> IPU {last_ipu}")
-        self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=last_ipu)
-        logger.info("-----------------------------------------------------------")
-        return self
-
 
 @register(DebertaForTokenClassification)
 class PipelinedDebertaForTokenClassification(DebertaForTokenClassification, DebertaPipelineMixin):
@@ -477,24 +492,6 @@ class PipelinedDebertaForTokenClassification(DebertaForTokenClassification, Debe
     ```
     """
 
-    def parallelize(self):
-        super().parallelize()
-        last_ipu = self.ipu_config.ipus_per_replica - 1
-        logger.info(f"Classifier Output --> IPU {last_ipu}")
-        self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=last_ipu)
-        logger.info("-----------------------------------------------------------")
-        return self
-
-    def deparallelize(self):
-        super().deparallelize()
-        # Last dropout isn't a StableDropout so undo its replacement
-        # made by change_modules_for_ipu
-        mod = self.dropout
-        if isinstance(mod, StableDropout):
-            mod.__class__ = nn.Dropout
-            mod.p = mod.drop_prob
-            mod.inplace = False
-
 
 @register(DebertaForQuestionAnswering)
 class PipelinedDebertaForQuestionAnswering(DebertaForQuestionAnswering, DebertaPipelineMixin):
@@ -506,14 +503,6 @@ class PipelinedDebertaForQuestionAnswering(DebertaForQuestionAnswering, DebertaP
     model = PipelinedDebertaForQuestionAnswering(config).parallelize().half()
     ```
     """
-
-    def parallelize(self):
-        super().parallelize()
-        last_ipu = self.ipu_config.ipus_per_replica - 1
-        logger.info(f"QA Outputs --> IPU {last_ipu}")
-        self.qa_outputs = poptorch.BeginBlock(self.qa_outputs, "QA Outputs", ipu_id=last_ipu)
-        logger.info("-----------------------------------------------------------")
-        return self
 
     def forward(
         self,
@@ -539,7 +528,6 @@ class PipelinedDebertaForQuestionAnswering(DebertaForQuestionAnswering, DebertaP
             are not taken into account for computing the loss.
         """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-        # return_dict = False
 
         output = super().forward(
             input_ids,

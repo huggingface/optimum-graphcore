@@ -1,5 +1,5 @@
 {
-  "embedding_serialization_factor": 1,
+  "embedding_serialization_factor": 2,
   "recompute_checkpoint_every_layer": true,
   "optimizer_state_offchip": true,
   "replicated_tensor_sharding": true,

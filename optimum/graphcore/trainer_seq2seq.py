@@ -1,3 +1,4 @@
+# coding=utf-8
 # Copyright 2022 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -11,9 +12,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+"""IPUTrainer that can handle seq2seq models."""
 
-import inspect
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 from torch import nn
@@ -28,12 +29,6 @@ logger = logging.get_logger(__name__)
 
 
 class IPUSeq2SeqTrainer(IPUTrainer):
-    def _wrap_and_compile_model_for_evaluation(self, dataloader, prediction_loss_only):
-        if prediction_loss_only:
-            return super()._wrap_and_compile_model_for_evaluation(dataloader, prediction_loss_only)
-        self.model.compile_for_generate(next(iter(dataloader)), self.args.generation_num_beams)
-        return self.model
-
     def evaluate(
         self,
         eval_dataset: Optional[Dataset] = None,

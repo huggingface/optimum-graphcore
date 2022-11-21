@@ -1,20 +1,22 @@
-#  Copyright 2021 The HuggingFace Team. All rights reserved.
+# coding=utf-8
+# Copyright 2021 The HuggingFace Team. All rights reserved.
 #
-#  Licensed under the Apache License, Version 2.0 (the "License");
-#  you may not use this file except in compliance with the License.
-#  You may obtain a copy of the License at
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
-#      http://www.apache.org/licenses/LICENSE-2.0
+#     http://www.apache.org/licenses/LICENSE-2.0
 #
-#  Unless required by applicable law or agreed to in writing, software
-#  distributed under the License is distributed on an "AS IS" BASIS,
-#  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#  See the License for the specific language governing permissions and
-#  limitations under the License.
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""Utilty modules, functions and classes for pipelined models."""
 
 import copy
-from inspect import signature
-from typing import Any, Dict, Optional, Tuple
+import inspect
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple
 
 import torch
 import torch.nn.functional as F
@@ -22,10 +24,12 @@ from torch import nn
 
 import poptorch
 from optimum.utils import logging
-from transformers import AutoConfig, PreTrainedModel
-from transformers.modeling_outputs import ModelOutput
 
 from .ipu_configuration import IPUConfig
+
+
+if TYPE_CHECKING:
+    from transformers import PreTrainedModel
 
 
 logger = logging.get_logger(__name__)
@@ -75,7 +79,7 @@ def to_pipelined(model: nn.Module, ipu_config: IPUConfig, force: bool = False):
 
 class PipelineMixin:
     @classmethod
-    def from_transformers(cls, model: PreTrainedModel, ipu_config: IPUConfig):
+    def from_transformers(cls, model: "PreTrainedModel", ipu_config: IPUConfig):
         """
         Creates a pipeline model from a [`~transformers.PreTrainedModel`].
 
@@ -140,6 +144,26 @@ class PipelineMixin:
         if not isinstance(value, IPUConfig):
             raise TypeError(f"ipu_config must be an instance of IPUConfig, but {type(value)} was provided")
         self._ipu_config = value
+
+    def get_ops_to_wrap_for_tracing(self) -> List[Tuple[str, Callable, Callable]]:
+        return []
+
+    def get_transformations(self):
+        raise NotImplementedError("You need to implement get_transformations.")
+
+    @property
+    def input_names_for_symbolic_trace(self):
+        # input_names_attribute = "_input_names_for_symbolic_trace" if self.training else "_eval_input_names_for_symbolic_trace"
+        input_names_attribute = "_input_names_for_symbolic_trace"
+        if not hasattr(self, input_names_attribute):
+            setattr(self, input_names_attribute, list(inspect.signature(self.forward).parameters.keys()))
+        return getattr(self, input_names_attribute)
+
+    @input_names_for_symbolic_trace.setter
+    def input_names_for_symbolic_trace(self, input_names: List[str]):
+        # input_names_attribute = "_input_names_for_symbolic_trace" if self.training else "_eval_input_names_for_symbolic_trace"
+        input_names_attribute = "_input_names_for_symbolic_trace"
+        setattr(self, input_names_attribute, input_names)
 
     def parallelize(self):
         """Transforms the model to run in an IPU pipeline."""
@@ -211,7 +235,7 @@ class GenerationMethodsMixin:
 
     def prepare_inputs_for_generation(self, input_ids: torch.LongTensor, **kwargs) -> Dict[str, Any]:
         inputs = super().prepare_inputs_for_generation(input_ids, **kwargs)
-        return {k: v for k, v in inputs.items() if k in signature(self._forward_for_generate).parameters}
+        return {k: v for k, v in inputs.items() if k in inspect.signature(self._forward_for_generate).parameters}
 
 
 def get_layer_ipu(layers_per_ipu):
@@ -426,6 +450,6 @@ class OnehotGather(nn.Module):
         """
         Gather the vectors at the specific positions over a batch.
         """
-        num_classes = int(sequence.shape[1])
+        num_classes = sequence.shape[1]
         one_hot_positions = F.one_hot(positions, num_classes).to(dtype=sequence.dtype)
         return torch.matmul(one_hot_positions.detach(), sequence)

@@ -12,14 +12,12 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """
 These are the same blocks as in the original implementation in transformers,
 but with a traceable implementation of LayerDrop.
 """
 
 import torch
-from torch.nn import functional as F
 
 from transformers.modeling_outputs import BaseModelOutput
 from transformers.models.hubert.modeling_hubert import HubertEncoder, HubertEncoderStableLayerNorm
@@ -62,7 +60,7 @@ class IPUHubertEncoder(HubertEncoder):
             # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
             # Modify LayerDrop so it can be statically compiled without eager mode
             if self.config.layerdrop > 0.0:
-                dropout_probability = torch.rand(tuple(), device=hidden_states.device)
+                dropout_probability = torch.rand((), device=hidden_states.device)
                 skip_the_layer = (
                     torch.tensor(self.training, device=hidden_states.device)
                     & (dropout_probability < self.config.layerdrop)
@@ -125,7 +123,7 @@ class IPUHubertEncoderStableLayerNorm(HubertEncoderStableLayerNorm):
             # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
             # Modify LayerDrop so it can be statically compiled without eager mode
             if self.config.layerdrop > 0.0:
-                dropout_probability = torch.rand(tuple(), device=hidden_states.device)
+                dropout_probability = torch.rand((), device=hidden_states.device)
                 skip_the_layer = (
                     torch.tensor(self.training, device=hidden_states.device)
                     & (dropout_probability < self.config.layerdrop)

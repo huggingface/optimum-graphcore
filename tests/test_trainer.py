@@ -14,7 +14,6 @@
 # limitations under the License.
 
 import dataclasses
-import gc
 import math
 import os
 import random
@@ -29,9 +28,10 @@ import numpy as np
 
 from huggingface_hub import HfFolder, Repository, delete_repo, set_access_token
 from optimum.graphcore import IPUConfig, IPUTrainingArguments
+from optimum.graphcore.fx.utils import cast_traced_model_to_proper_class
 from optimum.utils import logging
 from requests.exceptions import HTTPError
-from transformers import AutoTokenizer, IntervalStrategy, PretrainedConfig, is_torch_available
+from transformers import IntervalStrategy, PretrainedConfig, is_torch_available
 from transformers.file_utils import WEIGHTS_NAME
 from transformers.testing_utils import (
     ENDPOINT_STAGING,
@@ -42,25 +42,17 @@ from transformers.testing_utils import (
     get_gpu_count,
     get_tests_dir,
     is_staging_test,
-    require_optuna,
-    require_ray,
     require_sentencepiece,
-    require_sigopt,
     require_tokenizers,
     require_torch,
-    require_torch_gpu,
-    require_torch_multi_gpu,
-    require_torch_non_multi_gpu,
-    require_torch_up_to_2_gpus,
-    slow,
 )
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
-from transformers.utils.hp_naming import TrialShortNamer
 
 
 if is_torch_available():
     import torch
     from torch import nn
+    from torch.fx import symbolic_trace
     from torch.utils.data import IterableDataset
 
     import poptorch
@@ -170,6 +162,15 @@ if is_torch_available():
             for i in range(len(self.dataset)):
                 yield self.dataset[i]
 
+    def symbolic_trace_and_cast(model: torch.nn.Module):
+        if isinstance(model, torch.fx.GraphModule):
+            return model
+        traced = symbolic_trace(model)
+        for name, value in model.__dict__.items():
+            setattr(traced, name, value)
+        cast_traced_model_to_proper_class(model, traced)
+        return traced
+
     class RegressionModel(nn.Module):
         def __init__(self, a=0, b=0, double_output=False):
             super().__init__()
@@ -185,6 +186,9 @@ if is_torch_available():
             loss = nn.functional.mse_loss(y, labels)
             return (loss, y, y) if self.double_output else (loss, y)
 
+        def parallelize(self):
+            return symbolic_trace_and_cast(self)
+
     class RegressionDictModel(nn.Module):
         def __init__(self, a=0, b=0):
             super().__init__()
@@ -198,6 +202,9 @@ if is_torch_available():
             if labels is not None:
                 result["loss"] = nn.functional.mse_loss(y, labels)
             return result
+
+        def parallelize(self):
+            return symbolic_trace_and_cast(self)
 
     class RegressionPreTrainedModel(PreTrainedModel):
         config_class = RegressionModelConfig
@@ -215,6 +222,9 @@ if is_torch_available():
                 return (y, y) if self.double_output else (y,)
             loss = nn.functional.mse_loss(y, labels)
             return (loss, y, y) if self.double_output else (loss, y)
+
+        def parallelize(self):
+            return symbolic_trace_and_cast(self)
 
     class RegressionRandomPreTrainedModel(PreTrainedModel):
         config_class = RegressionModelConfig
@@ -238,6 +248,9 @@ if is_torch_available():
                 return (y,)
             loss = nn.functional.mse_loss(y, labels)
             return (loss, y)
+
+        def parallelize(self):
+            return symbolic_trace_and_cast(self)
 
     class TstLayer(nn.Module):
         def __init__(self, hidden_size):
