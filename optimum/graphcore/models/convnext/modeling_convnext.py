@@ -70,7 +70,7 @@ class PipelinedConvNextForImageClassification(ConvNextForImageClassification, Pi
             for layer in stage.layers:
                 layer.__class__ = OptimizedConvNextLayer
 
-        # ConvNextLayerNorm does not correctly handle fp16. 
+        # ConvNextLayerNorm does not correctly handle fp16.
         # TODO remove this in newer version of transformers that has https://github.com/huggingface/transformers/pull/18746
         for mod in self.modules():
             if isinstance(mod, ConvNextLayerNorm):
