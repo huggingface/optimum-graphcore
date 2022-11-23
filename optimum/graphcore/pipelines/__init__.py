@@ -319,13 +319,13 @@ def pipeline(
     if kwargs.get("padding", "max_length") == "max_length":
         if "max_length" in SUPPORTED_TASKS[targeted_task]["default"]:
             kwargs["padding"] = "max_length"
-            max_length = SUPPORTED_TASKS[targeted_task]["default"]["max_length"]
+            default_max_length = SUPPORTED_TASKS[targeted_task]["default"]["max_length"]
             if kwargs.get("max_length") is None:
                 logger.warning(
-                    f"No padding arguments specified, so pad to {max_length} by default. "
-                    f"Inputs longer than {max_length} will be truncated."
+                    f"No padding arguments specified, so pad to {default_max_length} by default. "
+                    f"Inputs longer than {default_max_length} will be truncated."
                 )
-            kwargs["max_length"] = kwargs.get("max_length", max_length)
+            kwargs["max_length"] = kwargs.get("max_length", default_max_length)
 
         # question-answering already has its own default padding length `max_seq_len` defined, so we just enable padding to max length.
         if targeted_task in {"question-answering"}:
