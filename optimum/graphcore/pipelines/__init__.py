@@ -316,23 +316,22 @@ def pipeline(
     pipeline_class._forward = new_forward
 
     # Auto padding for some tasks
-    if kwargs.get("padding", "max_length") == "max_length":
-        if "max_length" in SUPPORTED_TASKS[targeted_task]["default"]:
-            kwargs["padding"] = "max_length"
-            default_max_length = SUPPORTED_TASKS[targeted_task]["default"]["max_length"]
-            if kwargs.get("max_length") is None:
-                logger.warning(
-                    f"No padding arguments specified, so pad to {default_max_length} by default. "
-                    f"Inputs longer than {default_max_length} will be truncated."
-                )
-            kwargs["max_length"] = kwargs.get("max_length", default_max_length)
-
-        # question-answering already has its own default padding length `max_seq_len` defined, so we just enable padding to max length.
-        if targeted_task in {"question-answering"}:
-            kwargs["padding"] = "max_length"
+    if "max_length" in SUPPORTED_TASKS[targeted_task]["default"]:
+        kwargs["padding"] = kwargs.get("padding", "max_length")
+        default_max_length = SUPPORTED_TASKS[targeted_task]["default"]["max_length"]
+        if kwargs.get("max_length") is None:
             logger.warning(
-                "No padding arguments specified, so pad to 384 by default. Inputs longer than 384 will be truncated."
+                f"No padding arguments specified, so pad to {default_max_length} by default. "
+                f"Inputs longer than {default_max_length} will be truncated."
             )
+        kwargs["max_length"] = kwargs.get("max_length", default_max_length)
+
+    # question-answering already has its own default padding length `max_seq_len` defined, so we just enable padding to max length.
+    if targeted_task in {"question-answering"}:
+        kwargs["padding"] = kwargs.get("padding", "max_length")
+        logger.warning(
+            "No padding arguments specified, so pad to 384 by default. Inputs longer than 384 will be truncated."
+        )
 
     # Set pad_token for models that do not have pad_token
     if model.config.model_type in {"gpt2"}:
