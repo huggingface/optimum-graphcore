@@ -147,7 +147,7 @@ class IPUConfig(BaseConfig):
         if "enable_half_first_order_momentum" in kwargs:
             warnings.warn('The "enable_half_first_order_momentum" parameter is deprecated')
 
-        self.enable_half_partials = kwargs.pop("enable_half_partials", False)
+        self.enable_half_partials = kwargs.pop("enable_half_partials", True)
 
         self.executable_cache_dir = kwargs.pop("executable_cache_dir", "")
 
