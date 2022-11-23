@@ -35,7 +35,7 @@ class StableDiffusionInputs(BaseModel):
 async def stable_diffusion(inputs: StableDiffusionInputs):
     start = time.time()
     if _IS_DEBUG:
-        image = Image.new("RGB", (512, 512), "blue")
+        images = [Image.new("RGB", (512, 512), "blue")]
     else:
         images = pipe(inputs.prompt, guidance_scale=inputs.guidance_scale).images
     latency = time.time() - start
