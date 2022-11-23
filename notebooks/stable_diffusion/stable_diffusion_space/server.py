@@ -3,10 +3,8 @@ import io
 import os
 import time
 
-import torch
 
 from fastapi import FastAPI
-from ipu_models import IPUStableDiffusionPipeline
 from pydantic import BaseModel
 
 
@@ -15,6 +13,8 @@ _IS_DEBUG = os.getenv("DEBUG", False)
 if _IS_DEBUG:
     from PIL import Image
 else:
+    import torch
+    from ipu_models import IPUStableDiffusionPipeline
     pipe = IPUStableDiffusionPipeline.from_pretrained(
         "runwayml/stable-diffusion-v1-5",
         revision="fp16",
