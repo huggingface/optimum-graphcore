@@ -14,13 +14,13 @@
 
 import copy
 
+import torch
+
+import poptorch
 from diffusers import StableDiffusionPipeline, UNet2DConditionModel
 from diffusers.models.attention import CrossAttention
 from optimum.graphcore import IPUConfig
 from optimum.graphcore.modeling_utils import PipelineMixin
-import torch
-
-import poptorch
 
 
 def _sliced_attention(self, query, key, value, sequence_length, dim):
