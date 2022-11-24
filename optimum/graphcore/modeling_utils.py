@@ -224,10 +224,10 @@ def get_layer_ipu(layers_per_ipu: List[int], target_number_of_layers: Optional[U
             target_number_of_layers = len(target_number_of_layers)
         if len(layer_ipu) < target_number_of_layers:
             raise ValueError(
-                "layers_per_ipu does not support enough layers for the current model."
+                "layers_per_ipu does not define enough layers for the current model."
                 " The current IPU Config specifies IPU assignments for "
-                f"{len(layer_ipu)} layers but there are {target_number_of_layers}. "
-                f"layers_per_ipu={layers_per_ipu}"
+                f"{len(layer_ipu)} layers but there are {target_number_of_layers} layers "
+                f"in the model. layers_per_ipu={layers_per_ipu}"
             )
     return layer_ipu
 
