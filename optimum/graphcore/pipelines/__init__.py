@@ -365,6 +365,8 @@ def pipeline(
             logger.warning(
                 f"No padding arguments specified, so pad to {kwargs['max_length']} by default. "
                 f"Inputs longer than {kwargs['max_length']} will be truncated."
+                " To change this behaviour, pass the `padding='max_length'` and"
+                "`max_length=<your desired input length>` arguments to the pipeline function"
             )
         # question-answering already has its own default padding length `max_seq_len` defined, so we just enable padding to max length.
         if targeted_task in {"question-answering"}:
@@ -383,7 +385,6 @@ def pipeline(
         model=model,
         tokenizer=tokenizer,
         feature_extractor=feature_extractor,
-        use_fast=use_fast,
         use_auth_token=use_auth_token,
         pipeline_class=pipeline_class,
         **kwargs,
