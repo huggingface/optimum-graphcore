@@ -699,7 +699,6 @@ class PipelinedBartForConditionalGeneration(
         """
         super().parallelize()
 
-
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding  --> IPU 0")
 
