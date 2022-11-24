@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, List, Optional, Union
+from typing import Any, List, Optional, Union, Dict, Optional
 
 import torch
 
@@ -36,7 +36,7 @@ from transformers import (
     QuestionAnsweringPipeline,
     TextClassificationPipeline,
 )
-from transformers import pipeline as transformers_pipeline
+import transformers.pipelines
 from transformers.feature_extraction_utils import PreTrainedFeatureExtractor
 from transformers.modeling_utils import PreTrainedModel
 from transformers.onnx.utils import get_preprocessor
@@ -152,13 +152,18 @@ for task, values in SUPPORTED_TASKS.items():
 
 
 def get_poplar_executor(
-    model: PreTrainedModel, ipu_config: Union[str, dict] = None, fp16: bool = True
+    model: PreTrainedModel,
+    ipu_config: Union[str, dict] = None,
+    fp16: bool = True,
+    ipu_config_kwargs: Optional[Dict[str, Any]] = None,
 ) -> PreTrainedModel:
     ipu_config_arg = ipu_config
+    if ipu_config_kwargs is None:
+        ipu_config_kwargs = {}
     if isinstance(ipu_config, str):
-        ipu_config = IPUConfig.from_pretrained(ipu_config)
+        ipu_config = IPUConfig.from_pretrained(ipu_config, **ipu_config_kwargs)
     elif isinstance(ipu_config, dict):
-        ipu_config = IPUConfig.from_dict(ipu_config)
+        ipu_config = IPUConfig.from_dict(ipu_config, **ipu_config_kwargs)
     else:
         raise ValueError("ipu_config must be a string or a dictionary.")
     ipu_config.inference_device_iterations = 1
@@ -217,12 +222,32 @@ def pipeline(
     tokenizer: Optional[Union[str, PreTrainedTokenizer]] = None,
     feature_extractor: Optional[Union[str, PreTrainedFeatureExtractor]] = None,
     revision: Optional[str] = None,
-    use_fast: bool = True,
     use_auth_token: Optional[Union[str, bool]] = None,
     pipeline_class: Optional[Any] = None,
     fp16: bool = True,
+    ipu_config_kwargs: Optional[Dict[str, Any]] = None,
     **kwargs,
 ) -> Pipeline:
+    """Utility factory method to build a [ Pipeline ] for IPU models.
+
+    Arguments:
+        task : The task, see docs for ``transformers.pipeline`` for supported options.
+        model : A pre-trained model, see docs for ``transformers.pipeline`` for supported options.
+        ipu_config : An IPU config, can either be the path to a model from the HuggingFace Hub
+            which defines a ``ipu_config.json`` or a dictionary with the same options.
+        tokenizer : The tokenizer, see docs for ``transformers.pipeline`` for supported options.
+        feature_extractor : The feature extractor, see docs for ``transformers.pipeline`` for supported options.
+        revision : Revision of the model.
+        use_auth_token : An authorization token to use for these calls to the hub.
+        pipeline_class : Override the Pipeline class defined by the task.
+        fp16 : Whether to use Float 16 or not.
+        ipu_config_kwargs : Dictionary which will be used to set or override values in the IPU
+            config.
+        **kwargs: Additional keyword arguments that are passed to the ``transformers.pipeline`` function
+
+    Returns:
+        The pipeline object for the specified task.
+    """
 
     if task is None and model is None:
         raise RuntimeError(
@@ -267,13 +292,13 @@ def pipeline(
             "Using a pipeline without specifying a model name and revision in production is not recommended."
         )
         model = SUPPORTED_TASKS[targeted_task]["class"][0].from_pretrained(model_id, revision=revision)
-        model = get_poplar_executor(model, ipu_config, fp16)
+        model = get_poplar_executor(model, ipu_config, fp16, ipu_config_kwargs)
     elif isinstance(model, str):
         model_id = model
         model = SUPPORTED_TASKS[targeted_task]["class"][0].from_pretrained(model_id, revision=revision)
-        model = get_poplar_executor(model, ipu_config, fp16)
+        model = get_poplar_executor(model, ipu_config, fp16, ipu_config_kwargs)
     elif isinstance(model, PreTrainedModel):
-        model = get_poplar_executor(model, ipu_config, fp16)
+        model = get_poplar_executor(model, ipu_config, fp16, ipu_config_kwargs)
         if tokenizer is None and load_tokenizer:
             raise ValueError("If you pass a model as a PreTrainedModel, you must pass a tokenizer as well")
         if feature_extractor is None and load_feature_extractor:
@@ -353,7 +378,7 @@ def pipeline(
         tokenizer.pad_token = tokenizer.eos_token
         model.config.pad_token_id = model.config.eos_token_id
 
-    return transformers_pipeline(
+    return transformers.pipelines.pipeline(
         task,
         model=model,
         tokenizer=tokenizer,
