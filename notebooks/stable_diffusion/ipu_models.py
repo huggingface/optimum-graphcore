@@ -17,7 +17,12 @@ import copy
 import torch
 
 import poptorch
-from diffusers import StableDiffusionPipeline, StableDiffusionImg2ImgPipeline, UNet2DConditionModel
+from diffusers import (
+    StableDiffusionImg2ImgPipeline,
+    StableDiffusionInpaintPipeline,
+    StableDiffusionPipeline,
+    UNet2DConditionModel,
+)
 from diffusers.models.attention import CrossAttention
 from optimum.graphcore import IPUConfig
 from optimum.graphcore.modeling_utils import PipelineMixin
@@ -158,4 +163,8 @@ class IPUStableDiffusionPipeline(IPUStableDiffusionPipelineMixin, StableDiffusio
 
 
 class IPUStableDiffusionImg2ImgPipeline(IPUStableDiffusionPipelineMixin, StableDiffusionImg2ImgPipeline):
+    pass
+
+
+class IPUStableDiffusionInpaintPipeline(IPUStableDiffusionPipelineMixin, StableDiffusionInpaintPipeline):
     pass
