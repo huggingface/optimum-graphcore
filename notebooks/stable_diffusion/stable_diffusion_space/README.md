@@ -33,7 +33,7 @@ DEBUG=true API_KEY=<secret> uvicorn server:app --host <server hostname> --port <
 ## Install dependencies
 
 ```
-pip install --uopgrade pip
+pip install --upgrade pip
 pip install wheel
 pip install -r requirements_app.txt
 ```
