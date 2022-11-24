@@ -17,7 +17,7 @@ pip install <poptorch>.whl (not required in debug mode)
 ## Run
 
 ```
-uvicorn server:app --host <server hostname> --port <port>
+API_KEY=<secret> uvicorn server:app --host <server hostname> --port <port>
 ```
 
 ## Debug mode
@@ -25,7 +25,7 @@ uvicorn server:app --host <server hostname> --port <port>
 poptorch, Poplar, torch, IPUs not needed
 
 ```
-DEBUG=true uvicorn server:app --host <server hostname> --port <port>
+DEBUG=true API_KEY=<secret> uvicorn server:app --host <server hostname> --port <port>
 ```
 
 # App:
@@ -41,7 +41,7 @@ pip install -r requirements_app.txt
 ## Run
 
 ```
-IPU_BACKEND=<server hostname>:<port> python app.py
+IPU_BACKEND=http://<server hostname>:<port>/inference/ API_KEY=<secret> python app.py
 ```
 
 Access the app via http://localhost:7860/.
