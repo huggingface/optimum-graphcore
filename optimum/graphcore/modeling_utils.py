@@ -14,7 +14,7 @@
 
 import copy
 from inspect import signature
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
 import torch.nn.functional as F
@@ -214,11 +214,21 @@ class GenerationMethodsMixin:
         return {k: v for k, v in inputs.items() if k in signature(self._forward_for_generate).parameters}
 
 
-def get_layer_ipu(layers_per_ipu):
+def get_layer_ipu(layers_per_ipu: List[int], target_number_of_layers: Optional[Union[int, List]] = None):
     # List of the IPU Id for each encoder layer
-    layer_ipu = []
+    layer_ipu: List[int] = []
     for ipu, n_layers in enumerate(layers_per_ipu):
         layer_ipu += [ipu] * n_layers
+    if target_number_of_layers is not None:
+        if not isinstance(target_number_of_layers, (int, float)):
+            target_number_of_layers = len(target_number_of_layers)
+        if len(layer_ipu) < target_number_of_layers:
+            raise ValueError(
+                "layers_per_ipu does not support enough layers for the current model."
+                " The current IPU Config specifies IPU assignments for "
+                f"{len(layer_ipu)} but there are {target_number_of_layers}. "
+                f"layers_per_ipu={layers_per_ipu}"
+            )
     return layer_ipu
 
 
