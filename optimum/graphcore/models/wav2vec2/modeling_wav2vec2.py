@@ -149,7 +149,6 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
         self.change_conv_eps(False)
 
         logger.info("---------- Device Allocation -----------")
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
         layers = []
         # Conv layers
         for index, layer in enumerate(self.wav2vec2.feature_extractor.conv_layers):
@@ -167,8 +166,7 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
         # Project Quantizer
         layers.append(("Project Quantizer", self.project_q))
 
-        if len(layer_ipu) != len(layers):
-            raise ValueError(f"Layers per IPU total ({len(layer_ipu)}) must be equal to layers ({len(layers)}).")
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, layers)
 
         for i, (name, layer) in enumerate(layers):
             logger.info(f"{name} --> IPU {layer_ipu[i]}")
@@ -436,7 +434,6 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
 
         if self.ipu_config.ipus_per_replica != 1:
             logger.info("---------- Device Allocation -----------")
-            layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
             layers = []
             # Conv layers
             for index, layer in enumerate(self.wav2vec2.feature_extractor.conv_layers):
@@ -450,8 +447,7 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
             # Project Hidden
             layers.append(("Project Hidden", self.lm_head))
 
-            if len(layer_ipu) != len(layers):
-                raise ValueError(f"Layers per IPU total ({len(layer_ipu)}) must be equal to layers ({len(layers)}).")
+            layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, layers)
 
             for i, (name, layer) in enumerate(layers):
                 logger.info(f"{name} --> IPU {layer_ipu[i]}")

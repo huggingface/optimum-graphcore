@@ -48,6 +48,12 @@ from .token_classification import IPUTokenClassificationPipeline
 from .zero_shot_classification import IPUZeroShotClassificationPipeline
 
 
+class IncompatibleIPUConfigError(Exception):
+    """An exception used when an IPU Config is incompatible with a model"""
+
+    pass
+
+
 logger = logging.get_logger(__name__)
 
 TASK_ALIASES = {
@@ -145,7 +151,10 @@ for task, values in SUPPORTED_TASKS.items():
         raise ValueError(f"SUPPORTED_TASK {task} contains invalid type {values['type']}")
 
 
-def get_poplar_executor(model: PreTrainedModel, ipu_config: Union[str, dict] = None, fp16: bool = True):
+def get_poplar_executor(
+    model: PreTrainedModel, ipu_config: Union[str, dict] = None, fp16: bool = True
+) -> PreTrainedModel:
+    ipu_config_arg = ipu_config
     if isinstance(ipu_config, str):
         ipu_config = IPUConfig.from_pretrained(ipu_config)
     elif isinstance(ipu_config, dict):
@@ -155,8 +164,16 @@ def get_poplar_executor(model: PreTrainedModel, ipu_config: Union[str, dict] = N
     ipu_config.inference_device_iterations = 1
     # TODO: inference_replication_factor should be adaptive, especially for batching.
     ipu_config.inference_replication_factor = 1
-    model = to_pipelined(model, ipu_config, force=False)
-    model.parallelize()
+    try:
+        model = to_pipelined(model, ipu_config, force=False)
+        model.parallelize()
+    except Exception as error:
+        new_message = (
+            "The model and ipu_config seem to be incompatible,"
+            " please try a different IPU config or customizing it for the model."
+            f" The config provided is '{ipu_config_arg}'"
+        )
+        raise IncompatibleIPUConfigError(new_message) from error
     if fp16:
         model.half()
     opts = ipu_config.to_options(for_inference=True)

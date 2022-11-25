@@ -20,7 +20,7 @@ To contribute and add support for a model architecture that is not currently sup
 
 1. Make sure the original model implementation inherhints from `transformers.PreTrainedModel`. This is not 100% needed, but it is highly recommended to have access to all the features.
 2. Create a "pipelined" version of the original class, to do that:
-  - Inherint from both the original class and [`modeling_utils.PieplineMixin`]
+  - Inherit from both the original class and [`modeling_utils.PieplineMixin`]
   - Implement the [`~modeling_utils.PipelineMixin.parallelize`] method, which specifies how each part of the model should be placed on the hardware.
   - Implement the [`~modeling_utils.PipelineMixin.deparallize`] method, which takes a parallelized instance of the model back to its original version. This is needed to make sure both the original and pipelined versions can share the same state dict.
 3. Register the pipelined version. This will enable the [`IPUTrainer`] to automatically convert an original instance of the model to its pipelined counterpart.
@@ -44,7 +44,7 @@ class PipelinedViTForImageClassification(transformers.ViTForImageClassification,
         logger.info("Embedding  --> IPU 0")
         self.vit.embeddings = poptorch.BeginBlock(self.vit.embeddings, "Embedding", ipu_id=0)
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, self.vit.encoder.layer)
         for index, layer in enumerate(self.vit.encoder.layer):
             if self.ipu_config.recompute_checkpoint_every_layer:
                 # Put checkpoints on every encoder layer
