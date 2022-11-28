@@ -48,6 +48,12 @@ from .token_classification import IPUTokenClassificationPipeline
 from .zero_shot_classification import IPUZeroShotClassificationPipeline
 
 
+class IncompatibleIPUConfigError(Exception):
+    """An exception used when an IPU Config is incompatible with a model"""
+
+    pass
+
+
 logger = logging.get_logger(__name__)
 
 TASK_ALIASES = {
@@ -80,7 +86,7 @@ SUPPORTED_TASKS = {
         "default": {
             "model": ("distilroberta-base", "ec58a5b"),
             "ipu_config": "Graphcore/roberta-base-ipu",
-            "padding_length": 128,
+            "max_length": 128,
         },
         "type": "text",
     },
@@ -108,7 +114,7 @@ SUPPORTED_TASKS = {
         "default": {
             "model": ("distilbert-base-uncased-finetuned-sst-2-english", "af0f99b"),
             "ipu_config": "Graphcore/distilbert-base-ipu",
-            "padding_length": 128,
+            "max_length": 128,
         },
         "type": "text",
     },
@@ -118,7 +124,7 @@ SUPPORTED_TASKS = {
         "default": {
             "model": ("dbmdz/bert-large-cased-finetuned-conll03-english", "f2482bf"),
             "ipu_config": "Graphcore/bert-large-ipu",
-            "padding_length": 128,
+            "max_length": 128,
         },
         "type": "text",
     },
@@ -128,7 +134,7 @@ SUPPORTED_TASKS = {
         "default": {
             "model": ("roberta-large-mnli", "130fb28"),
             "ipu_config": "Graphcore/roberta-large-ipu",
-            "padding_length": 128,
+            "max_length": 128,
         },
         "type": "text",
     },
@@ -145,7 +151,10 @@ for task, values in SUPPORTED_TASKS.items():
         raise ValueError(f"SUPPORTED_TASK {task} contains invalid type {values['type']}")
 
 
-def get_poplar_executor(model: PreTrainedModel, ipu_config: Union[str, dict] = None, fp16: bool = True):
+def get_poplar_executor(
+    model: PreTrainedModel, ipu_config: Union[str, dict] = None, fp16: bool = True
+) -> PreTrainedModel:
+    ipu_config_arg = ipu_config
     if isinstance(ipu_config, str):
         ipu_config = IPUConfig.from_pretrained(ipu_config)
     elif isinstance(ipu_config, dict):
@@ -155,8 +164,16 @@ def get_poplar_executor(model: PreTrainedModel, ipu_config: Union[str, dict] = N
     ipu_config.inference_device_iterations = 1
     # TODO: inference_replication_factor should be adaptive, especially for batching.
     ipu_config.inference_replication_factor = 1
-    model = to_pipelined(model, ipu_config, force=False)
-    model.parallelize()
+    try:
+        model = to_pipelined(model, ipu_config, force=False)
+        model.parallelize()
+    except Exception as error:
+        new_message = (
+            "The model and ipu_config seem to be incompatible,"
+            " please try a different IPU config or customizing it for the model."
+            f" The config provided is '{ipu_config_arg}'"
+        )
+        raise IncompatibleIPUConfigError(new_message) from error
     if fp16:
         model.half()
     opts = ipu_config.to_options(for_inference=True)
@@ -316,20 +333,22 @@ def pipeline(
     pipeline_class._forward = new_forward
 
     # Auto padding for some tasks
-    if "padding" not in kwargs:
-        if "padding_length" in SUPPORTED_TASKS[targeted_task]["default"]:
-            kwargs["padding"] = "max_length"
-            kwargs["max_length"] = SUPPORTED_TASKS[targeted_task]["default"]["padding_length"]
+    if "max_length" in SUPPORTED_TASKS[targeted_task]["default"]:
+        kwargs["padding"] = kwargs.get("padding", "max_length")
+        default_max_length = SUPPORTED_TASKS[targeted_task]["default"]["max_length"]
+        if kwargs.get("max_length") is None:
             logger.warning(
-                f"No padding arguments specified, so pad to {kwargs['max_length']} by default. "
-                f"Inputs longer than {kwargs['max_length']} will be truncated."
+                f"No padding arguments specified, so pad to {default_max_length} by default. "
+                f"Inputs longer than {default_max_length} will be truncated."
             )
-        # question-answering already has its own default padding length `max_seq_len` defined, so we just enable padding to max length.
-        if targeted_task in {"question-answering"}:
-            kwargs["padding"] = "max_length"
-            logger.warning(
-                "No padding arguments specified, so pad to 384 by default. Inputs longer than 384 will be truncated."
-            )
+        kwargs["max_length"] = kwargs.get("max_length", default_max_length)
+
+    # question-answering already has its own default padding length `max_seq_len` defined, so we just enable padding to max length.
+    if targeted_task in {"question-answering"}:
+        kwargs["padding"] = kwargs.get("padding", "max_length")
+        logger.warning(
+            "No padding arguments specified, so pad to 384 by default. Inputs longer than 384 will be truncated."
+        )
 
     # Set pad_token for models that do not have pad_token
     if model.config.model_type in {"gpt2"}:

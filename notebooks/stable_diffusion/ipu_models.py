@@ -17,7 +17,13 @@ import copy
 import torch
 
 import poptorch
-from diffusers import StableDiffusionPipeline, UNet2DConditionModel
+
+from diffusers import (
+    StableDiffusionImg2ImgPipeline,
+    StableDiffusionInpaintPipeline,
+    StableDiffusionPipeline,
+    UNet2DConditionModel,
+)
 from diffusers.models.attention import CrossAttention
 from optimum.graphcore import IPUConfig
 from optimum.graphcore.modeling_utils import PipelineMixin
@@ -25,6 +31,10 @@ from optimum.graphcore.modeling_utils import PipelineMixin
 
 def _sliced_attention(self, query, key, value, sequence_length, dim):
     """Overriding this implementation to use concatenation as slice assignment is not yet supported."""
+    if not query.shape[1] > 1024:
+        # For shorter sequence lengths, slicing attention is unnecessary due to lower memory pressure.
+        return self._attention(query, key, value)
+
     batch_size_attention = query.shape[0]
     hidden_states = []
     slice_size = self._slice_size if self._slice_size is not None else batch_size_attention
@@ -99,7 +109,7 @@ def maybe_cast_module_to_float(module):
     return module
 
 
-class IPUStableDiffusionPipeline(StableDiffusionPipeline):
+class IPUStableDiffusionPipelineMixin:
     def __init__(
         self, vae, text_encoder, tokenizer, unet, scheduler, safety_checker, feature_extractor, ipu_config=None
     ):
@@ -115,7 +125,7 @@ class IPUStableDiffusionPipeline(StableDiffusionPipeline):
                 "inference_device_iterations": 1,
                 "inference_replication_factor": {"default": 1},
                 "ipus_per_replica": 4,
-                "matmul_proportion": [0.09, 0.1, 0.1, 0.08],
+                "matmul_proportion": 0.1,
             }
             if ipu_config is not None:
                 default_ipu_config_dict.update(ipu_config)
@@ -147,3 +157,15 @@ class IPUStableDiffusionPipeline(StableDiffusionPipeline):
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path, ipu_config=None, **kwargs):
         return super().from_pretrained(pretrained_model_name_or_path, ipu_config=ipu_config, **kwargs)
+
+
+class IPUStableDiffusionPipeline(IPUStableDiffusionPipelineMixin, StableDiffusionPipeline):
+    pass
+
+
+class IPUStableDiffusionImg2ImgPipeline(IPUStableDiffusionPipelineMixin, StableDiffusionImg2ImgPipeline):
+    pass
+
+
+class IPUStableDiffusionInpaintPipeline(IPUStableDiffusionPipelineMixin, StableDiffusionInpaintPipeline):
+    pass

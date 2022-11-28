@@ -89,8 +89,6 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
             self.cls.predictions.decoder = serialized_decoder
             self.tie_weights()
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
-
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding --> IPU 0")
         self.bert.embeddings = poptorch.BeginBlock(self.bert.embeddings, "Embedding", ipu_id=0)
@@ -99,6 +97,7 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
         hs = outline_attribute(self.bert.embeddings.LayerNorm, "embeddings")
         self._hooks.extend(hs)
 
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, self.bert.encoder.layer)
         for index, layer in enumerate(self.bert.encoder.layer):
             ipu = layer_ipu[index]
             if self.ipu_config.recompute_checkpoint_every_layer:
@@ -263,8 +262,6 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
             self.cls.predictions.decoder = serialized_decoder
             self.tie_weights()
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
-
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding  --> IPU 0")
         self.bert.embeddings = poptorch.BeginBlock(self.bert.embeddings, "Embedding", ipu_id=0)
@@ -273,6 +270,7 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
         hs = outline_attribute(self.bert.embeddings.LayerNorm, "embeddings")
         self._hooks.extend(hs)
 
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, self.bert.encoder.layer)
         for index, layer in enumerate(self.bert.encoder.layer):
             ipu = layer_ipu[index]
             if self.ipu_config.recompute_checkpoint_every_layer:
@@ -397,8 +395,6 @@ class BertPipelineMixin(PipelineMixin):
         for layer in self.bert.encoder.layer:
             layer.attention.self.__class__ = BertFusedSelfAttention
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
-
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding --> IPU 0")
         if self.ipu_config.embedding_serialization_factor > 1:
@@ -409,6 +405,7 @@ class BertPipelineMixin(PipelineMixin):
         hs = outline_attribute(self.bert.embeddings.LayerNorm, "embedding")
         self._hooks.extend(hs)
 
+        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, self.bert.encoder.layer)
         for index, layer in enumerate(self.bert.encoder.layer):
             ipu = layer_ipu[index]
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:

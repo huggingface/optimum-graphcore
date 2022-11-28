@@ -147,7 +147,7 @@ class IPUConfig(BaseConfig):
         if "enable_half_first_order_momentum" in kwargs:
             warnings.warn('The "enable_half_first_order_momentum" parameter is deprecated')
 
-        self.enable_half_partials = kwargs.pop("enable_half_partials", False)
+        self.enable_half_partials = kwargs.pop("enable_half_partials", True)
 
         self.executable_cache_dir = kwargs.pop("executable_cache_dir", "")
 
@@ -220,15 +220,8 @@ class IPUConfig(BaseConfig):
             raise NotImplementedError("execute_encoder_on_cpu_for_generation is not supported yet.")
 
         opts = Options()
-
-        # Define a policy to make sure LayerNorm related ops are computed in fp32
-        fp32 = [torch.mean, torch.rsqrt, torch.pow, torch.add]
-        policy = poptorch.autocasting.Policy([], fp32, [], [])
-        opts.Precision.autocastPolicy(policy)
-
-        opts.replicationFactor(self.inference_replication_factor if for_inference else self.replication_factor)
-
         opts.autoRoundNumIPUs(True)
+        opts.replicationFactor(self.inference_replication_factor if for_inference else self.replication_factor)
         opts.deviceIterations(self.inference_device_iterations if for_inference else self.device_iterations)
 
         if not for_inference:
