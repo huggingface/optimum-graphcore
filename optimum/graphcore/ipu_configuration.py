@@ -234,7 +234,7 @@ class IPUConfig(BaseConfig):
         # accumulationAndReplicationReductionType to be set to Mean as above,
         # and for accumulation by the optimizer to be done in half precision
         # using accum_type=torch.float16 during optimizer instantiation.
-        if self.auto_loss_scaling:
+        if self.auto_loss_scaling and not for_inference:
             opts.Training.setAutomaticLossScaling(True)
 
         # Return all results from IPU to host
