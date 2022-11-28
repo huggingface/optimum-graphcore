@@ -28,8 +28,22 @@ from optimum.graphcore import IPUConfig
 from optimum.graphcore.modeling_utils import PipelineMixin
 
 
+def _attention(self, query, key, value):
+    """Overriding this implementation as the `torch.baddbmm` op is not registered."""
+    attention_scores = torch.matmul(query, key.transpose(1, 2)) * self.scale
+
+    attention_probs = attention_scores.softmax(dim=-1)
+
+    hidden_states = torch.bmm(attention_probs, value)
+
+    # reshape hidden_states
+    hidden_states = self.reshape_batch_dim_to_heads(hidden_states)
+    return hidden_states
+
+
 def _sliced_attention(self, query, key, value, sequence_length, dim):
-    """Overriding this implementation to use concatenation as slice assignment is not yet supported."""
+    """Overriding this implementation to use concatenation as slice assignment is not yet supported,
+    and the `torch.baddbmm` op is not registered."""
     if not query.shape[1] > 1024:
         # For shorter sequence lengths, slicing attention is unnecessary due to lower memory pressure.
         return self._attention(query, key, value)
@@ -53,9 +67,10 @@ def _sliced_attention(self, query, key, value, sequence_length, dim):
     return hidden_states
 
 
-def override_sliced_attention(unet):
+def override_attention(unet):
     for module in unet.modules():
         if isinstance(module, CrossAttention):
+            module._attention = _attention.__get__(module, CrossAttention)
             module._sliced_attention = _sliced_attention.__get__(module, CrossAttention)
 
 
@@ -134,7 +149,7 @@ class IPUStableDiffusionPipelineMixin:
             unet_ipu.__class__ = IPUUNet2DConditionModel
             unet_ipu.ipu_config = unet_ipu_config
             unet_ipu.parallelize()
-            override_sliced_attention(unet_ipu)
+            override_attention(unet_ipu)
 
             opts = unet_ipu_config.to_options(for_inference=True)
             opts._Popart.set("saveInitializersToFile", "weights.onnx")
