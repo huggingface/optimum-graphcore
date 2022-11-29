@@ -147,7 +147,7 @@ class IPUConfig(BaseConfig):
         if "enable_half_first_order_momentum" in kwargs:
             warnings.warn('The "enable_half_first_order_momentum" parameter is deprecated')
 
-        self.enable_half_partials = kwargs.pop("enable_half_partials", False)
+        self.enable_half_partials = kwargs.pop("enable_half_partials", True)
 
         self.executable_cache_dir = kwargs.pop("executable_cache_dir", "")
 
@@ -234,7 +234,7 @@ class IPUConfig(BaseConfig):
         # accumulationAndReplicationReductionType to be set to Mean as above,
         # and for accumulation by the optimizer to be done in half precision
         # using accum_type=torch.float16 during optimizer instantiation.
-        if self.auto_loss_scaling:
+        if self.auto_loss_scaling and not for_inference:
             opts.Training.setAutomaticLossScaling(True)
 
         # Return all results from IPU to host
