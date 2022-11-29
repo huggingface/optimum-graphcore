@@ -16,8 +16,10 @@ device = "cuda"
 
 def infer(prompt: str, guidance_scale: float = 7.5):
     url = os.getenv("IPU_BACKEND")
+    api_key = os.getenv("API_KEY")
     payload = {"prompt": prompt, "guidance_scale": guidance_scale}
-    response = requests.post(url, json=payload)
+    headers = {"access_token": api_key}
+    response = requests.post(url, json=payload, headers=headers)
     response_content = response.json()
     images = []
     for image in response_content["images"]:

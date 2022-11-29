@@ -3,4 +3,3 @@ accelerate
 optimum-graphcore
 spacy
 fastapi
-pip install "uvicorn[standard]"

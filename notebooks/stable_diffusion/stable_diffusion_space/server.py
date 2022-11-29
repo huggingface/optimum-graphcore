@@ -3,18 +3,22 @@ import io
 import os
 import time
 
-import torch
-
-from fastapi import FastAPI
-from ipu_models import IPUStableDiffusionPipeline
+from fastapi import FastAPI, Security, Depends, HTTPException
 from pydantic import BaseModel
+from fastapi.security.api_key import APIKey, APIKeyHeader
+from starlette.status import HTTP_403_FORBIDDEN
 
 
 _IS_DEBUG = os.getenv("DEBUG", False)
 
+API_KEY = os.getenv("API_KEY", None)
+API_KEY_NAME = "access_token"
+
 if _IS_DEBUG:
     from PIL import Image
 else:
+    import torch
+    from ipu_models import IPUStableDiffusionPipeline
     pipe = IPUStableDiffusionPipeline.from_pretrained(
         "runwayml/stable-diffusion-v1-5",
         revision="fp16",
@@ -23,8 +27,16 @@ else:
     pipe.enable_attention_slicing()
     pipe("Pipeline warmup...")
 
+api_key = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
+
 app = FastAPI()
 
+
+async def get_api_key(api_key: str=Security(api_key)):
+    if api_key == API_KEY:
+        return api_key
+    else:
+        raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Could not validate credentials")
 
 class StableDiffusionInputs(BaseModel):
     prompt: str
@@ -32,10 +44,10 @@ class StableDiffusionInputs(BaseModel):
 
 
 @app.post("/inference/")
-async def stable_diffusion(inputs: StableDiffusionInputs):
+async def stable_diffusion(inputs: StableDiffusionInputs, _: APIKey = Depends(get_api_key)):
     start = time.time()
     if _IS_DEBUG:
-        image = Image.new("RGB", (512, 512), "blue")
+        images = [Image.new("RGB", (512, 512), "blue")]
     else:
         images = pipe(inputs.prompt, guidance_scale=inputs.guidance_scale).images
     latency = time.time() - start
