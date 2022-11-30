@@ -86,7 +86,7 @@ SUPPORTED_TASKS = {
         "default": {
             "model": ("distilroberta-base", "ec58a5b"),
             "ipu_config": "Graphcore/roberta-base-ipu",
-            "padding_length": 128,
+            "max_length": 128,
         },
         "type": "text",
     },
@@ -114,7 +114,7 @@ SUPPORTED_TASKS = {
         "default": {
             "model": ("distilbert-base-uncased-finetuned-sst-2-english", "af0f99b"),
             "ipu_config": "Graphcore/distilbert-base-ipu",
-            "padding_length": 128,
+            "max_length": 128,
         },
         "type": "text",
     },
@@ -124,7 +124,7 @@ SUPPORTED_TASKS = {
         "default": {
             "model": ("dbmdz/bert-large-cased-finetuned-conll03-english", "f2482bf"),
             "ipu_config": "Graphcore/bert-large-ipu",
-            "padding_length": 128,
+            "max_length": 128,
         },
         "type": "text",
     },
@@ -134,7 +134,7 @@ SUPPORTED_TASKS = {
         "default": {
             "model": ("roberta-large-mnli", "130fb28"),
             "ipu_config": "Graphcore/roberta-large-ipu",
-            "padding_length": 128,
+            "max_length": 128,
         },
         "type": "text",
     },
@@ -358,13 +358,13 @@ def pipeline(
     pipeline_class._forward = new_forward
 
     # Auto padding for some tasks
-    if "padding" not in kwargs:
-        if "padding_length" in SUPPORTED_TASKS[targeted_task]["default"]:
-            kwargs["padding"] = "max_length"
-            kwargs["max_length"] = SUPPORTED_TASKS[targeted_task]["default"]["padding_length"]
+    if "max_length" in SUPPORTED_TASKS[targeted_task]["default"]:
+        kwargs["padding"] = kwargs.get("padding", "max_length")
+        default_max_length = SUPPORTED_TASKS[targeted_task]["default"]["max_length"]
+        if kwargs.get("max_length") is None:
             logger.warning(
-                f"No padding arguments specified, so pad to {kwargs['max_length']} by default. "
-                f"Inputs longer than {kwargs['max_length']} will be truncated."
+                f"No padding arguments specified, so pad to {default_max_length} by default. "
+                f"Inputs longer than {default_max_length} will be truncated."
                 " To change this behaviour, pass the `padding='max_length'` and"
                 "`max_length=<your desired input length>` arguments to the pipeline function"
             )
@@ -374,6 +374,14 @@ def pipeline(
             logger.warning(
                 "No padding arguments specified, so pad to 384 by default. Inputs longer than 384 will be truncated."
             )
+        kwargs["max_length"] = kwargs.get("max_length", default_max_length)
+
+    # question-answering already has its own default padding length `max_seq_len` defined, so we just enable padding to max length.
+    if targeted_task in {"question-answering"}:
+        kwargs["padding"] = kwargs.get("padding", "max_length")
+        logger.warning(
+            "No padding arguments specified, so pad to 384 by default. Inputs longer than 384 will be truncated."
+        )
 
     # Set pad_token for models that do not have pad_token
     if model.config.model_type in {"gpt2"}:
