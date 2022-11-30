@@ -144,7 +144,16 @@ def maybe_cast_module_to_float(module):
 
 class IPUStableDiffusionPipelineMixin:
     def __init__(
-        self, vae, text_encoder, tokenizer, unet, scheduler, safety_checker, feature_extractor, ipu_config=None, requires_safety_checker=True
+        self,
+        vae,
+        text_encoder,
+        tokenizer,
+        unet,
+        scheduler,
+        safety_checker,
+        feature_extractor,
+        ipu_config=None,
+        requires_safety_checker=True,
     ):
 
         text_encoder = maybe_cast_module_to_float(text_encoder)
