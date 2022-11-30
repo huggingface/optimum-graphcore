@@ -151,6 +151,11 @@ for task, values in SUPPORTED_TASKS.items():
         raise ValueError(f"SUPPORTED_TASK {task} contains invalid type {values['type']}")
 
 
+def list_tasks() -> List[str]:
+    """Lists the supported tasks and their aliases"""
+    return sorted([*{*SUPPORTED_TASKS, *TASK_ALIASES}])
+
+
 def get_poplar_executor(
     model: PreTrainedModel,
     ipu_config: Union[str, dict] = None,
