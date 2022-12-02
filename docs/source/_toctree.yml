@@ -10,3 +10,4 @@
   - local: add_support_for_new_model
     title: Add support for an architecutre
   title: Optimum Graphcore
+  isExpanded: false
