@@ -1,2 +1,2 @@
-diffusers==0.7.1
+diffusers[torch]==0.9
 optimum-graphcore

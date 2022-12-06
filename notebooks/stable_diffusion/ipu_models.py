@@ -28,34 +28,68 @@ from optimum.graphcore import IPUConfig
 from optimum.graphcore.modeling_utils import PipelineMixin
 
 
-def _sliced_attention(self, query, key, value, sequence_length, dim):
-    """Overriding this implementation to use concatenation as slice assignment is not yet supported."""
-    if not query.shape[1] > 1024:
-        # For shorter sequence lengths, slicing attention is unnecessary due to lower memory pressure.
-        return self._attention(query, key, value)
+# Empirical target trading off memory for throughput.
+ATTN_MATRIX_TARGET_MEM = 50 * 1024 * 1024
 
-    batch_size_attention = query.shape[0]
-    hidden_states = []
-    slice_size = self._slice_size if self._slice_size is not None else batch_size_attention
-    for i in range(batch_size_attention // slice_size):
-        start_idx = i * slice_size
-        end_idx = (i + 1) * slice_size
-        attn_slice = torch.matmul(query[start_idx:end_idx], key[start_idx:end_idx].transpose(1, 2)) * self.scale
-        attn_slice = attn_slice.softmax(dim=-1)
-        attn_slice = torch.matmul(attn_slice, value[start_idx:end_idx])
 
-        hidden_states.append(attn_slice)
+def _attention(self, query, key, value):
+    """Overriding this implementation as the `torch.baddbmm` op is not registered."""
+    attention_scores = torch.matmul(query, key.transpose(1, 2)) * self.scale
 
-    hidden_states = torch.cat(hidden_states)
+    attention_probs = attention_scores.softmax(dim=-1)
+
+    hidden_states = torch.bmm(attention_probs, value)
 
     # reshape hidden_states
     hidden_states = self.reshape_batch_dim_to_heads(hidden_states)
     return hidden_states
 
 
-def override_sliced_attention(unet):
+def nearest_divisor(target, start, end):
+    for divisor in range(start, end + 1):
+        if target % divisor == 0:
+            return divisor
+    raise ValueError(f"No divisor found in range [{start}, {end}].")
+
+
+def _sliced_attention(self, query, key, value, sequence_length, dim):
+    """
+    Overriding this implementation to slice across the query sequence length instead of across heads.
+    NB: this ignores the `slice_size` factor since we interpret it differently and use a value that is
+    derived from the sequence length based on an empirical attention matrix memory target.
+    """
+    attn_matrix_mem = query.element_size() * query.shape[0] * query.shape[1] * key.shape[1]
+    num_slices = attn_matrix_mem // ATTN_MATRIX_TARGET_MEM
+    if num_slices < 2:
+        return self._attention(query, key, value)
+
+    num_slices = nearest_divisor(query.shape[1], num_slices, 2 * num_slices)
+    slice_size = query.shape[1] // num_slices
+
+    hidden_states = []
+
+    key = key.transpose(1, 2)
+    for i in range(num_slices):
+        start_idx = i * slice_size
+        end_idx = (i + 1) * slice_size
+
+        attn_slice = torch.matmul(query[:, start_idx:end_idx], key) * self.scale
+        attn_slice = attn_slice.softmax(dim=-1)
+        attn_slice = torch.matmul(attn_slice, value)
+
+        hidden_states.append(attn_slice)
+
+    hidden_states = torch.cat(hidden_states, dim=1)
+
+    # reshape hidden_states
+    hidden_states = self.reshape_batch_dim_to_heads(hidden_states)
+    return hidden_states
+
+
+def override_attention(unet):
     for module in unet.modules():
         if isinstance(module, CrossAttention):
+            module._attention = _attention.__get__(module, CrossAttention)
             module._sliced_attention = _sliced_attention.__get__(module, CrossAttention)
 
 
@@ -110,7 +144,16 @@ def maybe_cast_module_to_float(module):
 
 class IPUStableDiffusionPipelineMixin:
     def __init__(
-        self, vae, text_encoder, tokenizer, unet, scheduler, safety_checker, feature_extractor, ipu_config=None
+        self,
+        vae,
+        text_encoder,
+        tokenizer,
+        unet,
+        scheduler,
+        safety_checker,
+        feature_extractor,
+        ipu_config=None,
+        requires_safety_checker=True,
     ):
 
         text_encoder = maybe_cast_module_to_float(text_encoder)
@@ -134,7 +177,7 @@ class IPUStableDiffusionPipelineMixin:
             unet_ipu.__class__ = IPUUNet2DConditionModel
             unet_ipu.ipu_config = unet_ipu_config
             unet_ipu.parallelize()
-            override_sliced_attention(unet_ipu)
+            override_attention(unet_ipu)
 
             opts = unet_ipu_config.to_options(for_inference=True)
             opts._Popart.set("saveInitializersToFile", "weights.onnx")
@@ -151,6 +194,7 @@ class IPUStableDiffusionPipelineMixin:
             scheduler=scheduler,
             safety_checker=safety_checker,
             feature_extractor=feature_extractor,
+            requires_safety_checker=requires_safety_checker,
         )
 
     @classmethod
