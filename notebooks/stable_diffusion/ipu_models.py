@@ -17,7 +17,6 @@ import copy
 import torch
 
 import poptorch
-
 from diffusers import (
     StableDiffusionImg2ImgPipeline,
     StableDiffusionInpaintPipeline,

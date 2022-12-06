@@ -3,9 +3,9 @@ import io
 import os
 import time
 
-from fastapi import FastAPI, Security, Depends, HTTPException
-from pydantic import BaseModel
+from fastapi import Depends, FastAPI, HTTPException, Security
 from fastapi.security.api_key import APIKey, APIKeyHeader
+from pydantic import BaseModel
 from starlette.status import HTTP_403_FORBIDDEN
 
 
@@ -18,7 +18,9 @@ if _IS_DEBUG:
     from PIL import Image
 else:
     import torch
+
     from ipu_models import IPUStableDiffusionPipeline
+
     pipe = IPUStableDiffusionPipeline.from_pretrained(
         "runwayml/stable-diffusion-v1-5",
         revision="fp16",
@@ -32,11 +34,12 @@ api_key = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 app = FastAPI()
 
 
-async def get_api_key(api_key: str=Security(api_key)):
+async def get_api_key(api_key: str = Security(api_key)):
     if api_key == API_KEY:
         return api_key
     else:
         raise HTTPException(status_code=HTTP_403_FORBIDDEN, detail="Could not validate credentials")
+
 
 class StableDiffusionInputs(BaseModel):
     prompt: str

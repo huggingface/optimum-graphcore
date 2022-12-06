@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, List, Optional, Union, Dict, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import torch
 
 import poptorch
+import transformers.pipelines
 from optimum.graphcore import IPUConfig
 from optimum.graphcore.modeling_utils import to_pipelined
 from transformers import (
@@ -36,7 +37,6 @@ from transformers import (
     QuestionAnsweringPipeline,
     TextClassificationPipeline,
 )
-import transformers.pipelines
 from transformers.feature_extraction_utils import PreTrainedFeatureExtractor
 from transformers.modeling_utils import PreTrainedModel
 from transformers.onnx.utils import get_preprocessor
