@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import torch
 
 import poptorch
+import transformers.pipelines
 from optimum.graphcore import IPUConfig
 from optimum.graphcore.modeling_utils import to_pipelined
 from transformers import (
@@ -36,7 +37,6 @@ from transformers import (
     QuestionAnsweringPipeline,
     TextClassificationPipeline,
 )
-from transformers import pipeline as transformers_pipeline
 from transformers.feature_extraction_utils import PreTrainedFeatureExtractor
 from transformers.modeling_utils import PreTrainedModel
 from transformers.onnx.utils import get_preprocessor
@@ -151,10 +151,18 @@ for task, values in SUPPORTED_TASKS.items():
         raise ValueError(f"SUPPORTED_TASK {task} contains invalid type {values['type']}")
 
 
+def list_tasks() -> List[str]:
+    """Lists the supported tasks and their aliases"""
+    return sorted([*{*SUPPORTED_TASKS, *TASK_ALIASES}])
+
+
 def get_poplar_executor(
-    model: PreTrainedModel, ipu_config: Union[str, dict] = None, fp16: bool = True
+    model: PreTrainedModel,
+    ipu_config: Union[str, dict] = None,
+    fp16: bool = True,
 ) -> PreTrainedModel:
     ipu_config_arg = ipu_config
+
     if isinstance(ipu_config, str):
         ipu_config = IPUConfig.from_pretrained(ipu_config)
     elif isinstance(ipu_config, dict):
@@ -217,12 +225,30 @@ def pipeline(
     tokenizer: Optional[Union[str, PreTrainedTokenizer]] = None,
     feature_extractor: Optional[Union[str, PreTrainedFeatureExtractor]] = None,
     revision: Optional[str] = None,
-    use_fast: bool = True,
     use_auth_token: Optional[Union[str, bool]] = None,
     pipeline_class: Optional[Any] = None,
     fp16: bool = True,
     **kwargs,
 ) -> Pipeline:
+    """Utility factory method to build a [ Pipeline ] for IPU models.
+
+    Arguments:
+        task : The task, see docs for ``transformers.pipeline`` for supported options.
+        model : A pre-trained model, see docs for ``transformers.pipeline`` for supported options.
+        ipu_config : An IPU config, can either be the path to a model from the HuggingFace Hub
+            which defines a ``ipu_config.json`` or a dictionary with the same options.
+        tokenizer : The tokenizer, see docs for ``transformers.pipeline`` for supported options.
+        feature_extractor : The feature extractor, see docs for ``transformers.pipeline`` for supported options.
+        revision : Revision of the model.
+        use_auth_token : An authorization token to use for these calls to the hub.
+        pipeline_class : Override the Pipeline class defined by the task.
+        fp16 : Whether to use Float 16 or not.
+
+        **kwargs: Additional keyword arguments that are passed to the ``transformers.pipeline`` function
+
+    Returns:
+        The pipeline object for the specified task.
+    """
 
     if task is None and model is None:
         raise RuntimeError(
@@ -340,6 +366,14 @@ def pipeline(
             logger.warning(
                 f"No padding arguments specified, so pad to {default_max_length} by default. "
                 f"Inputs longer than {default_max_length} will be truncated."
+                " To change this behaviour, pass the `padding='max_length'` and"
+                "`max_length=<your desired input length>` arguments to the pipeline function"
+            )
+        # question-answering already has its own default padding length `max_seq_len` defined, so we just enable padding to max length.
+        if targeted_task in {"question-answering"}:
+            kwargs["padding"] = "max_length"
+            logger.warning(
+                "No padding arguments specified, so pad to 384 by default. Inputs longer than 384 will be truncated."
             )
         kwargs["max_length"] = kwargs.get("max_length", default_max_length)
 
@@ -355,12 +389,11 @@ def pipeline(
         tokenizer.pad_token = tokenizer.eos_token
         model.config.pad_token_id = model.config.eos_token_id
 
-    return transformers_pipeline(
+    return transformers.pipelines.pipeline(
         task,
         model=model,
         tokenizer=tokenizer,
         feature_extractor=feature_extractor,
-        use_fast=use_fast,
         use_auth_token=use_auth_token,
         pipeline_class=pipeline_class,
         **kwargs,
