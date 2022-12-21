@@ -408,7 +408,7 @@ class MultipleChoiceExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, 
     # Using a small gradient accumulation steps value because input data is repated for the multiple choice task.
     TRAIN_BATCH_SIZE = 1
     EVAL_BATCH_SIZE = 1
-    EVAL_SCORE_THRESHOLD_OVERRIDES = {"distilbert-base-uncased": 0.65}
+    EVAL_SCORE_THRESHOLD_OVERRIDES = {"distilbert-base-uncased": 0.645}
 
 
 class QuestionAnsweringExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_qa"):
