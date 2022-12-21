@@ -1,5 +1,5 @@
 --extra-index-url https://download.pytorch.org/whl/cpu
-torchaudio
+torchaudio==0.13.0+cpu
 librosa
 jiwer
 soundfile
