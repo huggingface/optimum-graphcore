@@ -21,7 +21,7 @@ A Poplar SDK environment needs to be enabled to use this library. Please refer t
 ## Install
 To install the latest release of this package:
 
-`pip install optimum[graphcore]`
+`pip install optimum-graphcore`
 
 Optimum Graphcore is a fast-moving project, and you may want to install from source.
 

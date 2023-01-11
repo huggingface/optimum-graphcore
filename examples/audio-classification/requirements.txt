@@ -1,5 +1,5 @@
---find-links https://download.pytorch.org/whl/torch_stable.html
+--extra-index-url https://download.pytorch.org/whl/cpu
 datasets>=1.14.0
 librosa
-torchaudio==0.10.0+cpu
-sklearn
+torchaudio==0.13.0+cpu
+scikit-learn

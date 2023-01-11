@@ -12,11 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import torch
 
 import poptorch
+import transformers.pipelines
 from optimum.graphcore import IPUConfig
 from optimum.graphcore.modeling_utils import to_pipelined
 from transformers import (
@@ -36,7 +37,6 @@ from transformers import (
     QuestionAnsweringPipeline,
     TextClassificationPipeline,
 )
-from transformers import pipeline as transformers_pipeline
 from transformers.feature_extraction_utils import PreTrainedFeatureExtractor
 from transformers.modeling_utils import PreTrainedModel
 from transformers.onnx.utils import get_preprocessor
@@ -46,6 +46,12 @@ from transformers.utils import HUGGINGFACE_CO_RESOLVE_ENDPOINT, logging
 from .fill_mask import IPUFillMaskPipeline
 from .token_classification import IPUTokenClassificationPipeline
 from .zero_shot_classification import IPUZeroShotClassificationPipeline
+
+
+class IncompatibleIPUConfigError(Exception):
+    """An exception used when an IPU Config is incompatible with a model"""
+
+    pass
 
 
 logger = logging.get_logger(__name__)
@@ -80,7 +86,7 @@ SUPPORTED_TASKS = {
         "default": {
             "model": ("distilroberta-base", "ec58a5b"),
             "ipu_config": "Graphcore/roberta-base-ipu",
-            "padding_length": 128,
+            "max_length": 128,
         },
         "type": "text",
     },
@@ -108,7 +114,7 @@ SUPPORTED_TASKS = {
         "default": {
             "model": ("distilbert-base-uncased-finetuned-sst-2-english", "af0f99b"),
             "ipu_config": "Graphcore/distilbert-base-ipu",
-            "padding_length": 128,
+            "max_length": 128,
         },
         "type": "text",
     },
@@ -118,7 +124,7 @@ SUPPORTED_TASKS = {
         "default": {
             "model": ("dbmdz/bert-large-cased-finetuned-conll03-english", "f2482bf"),
             "ipu_config": "Graphcore/bert-large-ipu",
-            "padding_length": 128,
+            "max_length": 128,
         },
         "type": "text",
     },
@@ -128,7 +134,7 @@ SUPPORTED_TASKS = {
         "default": {
             "model": ("roberta-large-mnli", "130fb28"),
             "ipu_config": "Graphcore/roberta-large-ipu",
-            "padding_length": 128,
+            "max_length": 128,
         },
         "type": "text",
     },
@@ -145,7 +151,18 @@ for task, values in SUPPORTED_TASKS.items():
         raise ValueError(f"SUPPORTED_TASK {task} contains invalid type {values['type']}")
 
 
-def get_poplar_executor(model: PreTrainedModel, ipu_config: Union[str, dict] = None, fp16: bool = True):
+def list_tasks() -> List[str]:
+    """Lists the supported tasks and their aliases"""
+    return sorted([*{*SUPPORTED_TASKS, *TASK_ALIASES}])
+
+
+def get_poplar_executor(
+    model: PreTrainedModel,
+    ipu_config: Union[str, dict] = None,
+    fp16: bool = True,
+) -> PreTrainedModel:
+    ipu_config_arg = ipu_config
+
     if isinstance(ipu_config, str):
         ipu_config = IPUConfig.from_pretrained(ipu_config)
     elif isinstance(ipu_config, dict):
@@ -155,8 +172,16 @@ def get_poplar_executor(model: PreTrainedModel, ipu_config: Union[str, dict] = N
     ipu_config.inference_device_iterations = 1
     # TODO: inference_replication_factor should be adaptive, especially for batching.
     ipu_config.inference_replication_factor = 1
-    model = to_pipelined(model, ipu_config, force=False)
-    model.parallelize()
+    try:
+        model = to_pipelined(model, ipu_config, force=False)
+        model.parallelize()
+    except Exception as error:
+        new_message = (
+            "The model and ipu_config seem to be incompatible,"
+            " please try a different IPU config or customizing it for the model."
+            f" The config provided is '{ipu_config_arg}'"
+        )
+        raise IncompatibleIPUConfigError(new_message) from error
     if fp16:
         model.half()
     opts = ipu_config.to_options(for_inference=True)
@@ -200,12 +225,30 @@ def pipeline(
     tokenizer: Optional[Union[str, PreTrainedTokenizer]] = None,
     feature_extractor: Optional[Union[str, PreTrainedFeatureExtractor]] = None,
     revision: Optional[str] = None,
-    use_fast: bool = True,
     use_auth_token: Optional[Union[str, bool]] = None,
     pipeline_class: Optional[Any] = None,
     fp16: bool = True,
     **kwargs,
 ) -> Pipeline:
+    """Utility factory method to build a [ Pipeline ] for IPU models.
+
+    Arguments:
+        task : The task, see docs for ``transformers.pipeline`` for supported options.
+        model : A pre-trained model, see docs for ``transformers.pipeline`` for supported options.
+        ipu_config : An IPU config, can either be the path to a model from the HuggingFace Hub
+            which defines a ``ipu_config.json`` or a dictionary with the same options.
+        tokenizer : The tokenizer, see docs for ``transformers.pipeline`` for supported options.
+        feature_extractor : The feature extractor, see docs for ``transformers.pipeline`` for supported options.
+        revision : Revision of the model.
+        use_auth_token : An authorization token to use for these calls to the hub.
+        pipeline_class : Override the Pipeline class defined by the task.
+        fp16 : Whether to use Float 16 or not.
+
+        **kwargs: Additional keyword arguments that are passed to the ``transformers.pipeline`` function
+
+    Returns:
+        The pipeline object for the specified task.
+    """
 
     if task is None and model is None:
         raise RuntimeError(
@@ -316,13 +359,15 @@ def pipeline(
     pipeline_class._forward = new_forward
 
     # Auto padding for some tasks
-    if "padding" not in kwargs:
-        if "padding_length" in SUPPORTED_TASKS[targeted_task]["default"]:
-            kwargs["padding"] = "max_length"
-            kwargs["max_length"] = SUPPORTED_TASKS[targeted_task]["default"]["padding_length"]
+    if "max_length" in SUPPORTED_TASKS[targeted_task]["default"]:
+        kwargs["padding"] = kwargs.get("padding", "max_length")
+        default_max_length = SUPPORTED_TASKS[targeted_task]["default"]["max_length"]
+        if kwargs.get("max_length") is None:
             logger.warning(
-                f"No padding arguments specified, so pad to {kwargs['max_length']} by default. "
-                f"Inputs longer than {kwargs['max_length']} will be truncated."
+                f"No padding arguments specified, so pad to {default_max_length} by default. "
+                f"Inputs longer than {default_max_length} will be truncated."
+                " To change this behaviour, pass the `padding='max_length'` and"
+                "`max_length=<your desired input length>` arguments to the pipeline function"
             )
         # question-answering already has its own default padding length `max_seq_len` defined, so we just enable padding to max length.
         if targeted_task in {"question-answering"}:
@@ -330,18 +375,25 @@ def pipeline(
             logger.warning(
                 "No padding arguments specified, so pad to 384 by default. Inputs longer than 384 will be truncated."
             )
+        kwargs["max_length"] = kwargs.get("max_length", default_max_length)
+
+    # question-answering already has its own default padding length `max_seq_len` defined, so we just enable padding to max length.
+    if targeted_task in {"question-answering"}:
+        kwargs["padding"] = kwargs.get("padding", "max_length")
+        logger.warning(
+            "No padding arguments specified, so pad to 384 by default. Inputs longer than 384 will be truncated."
+        )
 
     # Set pad_token for models that do not have pad_token
     if model.config.model_type in {"gpt2"}:
         tokenizer.pad_token = tokenizer.eos_token
         model.config.pad_token_id = model.config.eos_token_id
 
-    return transformers_pipeline(
+    return transformers.pipelines.pipeline(
         task,
         model=model,
         tokenizer=tokenizer,
         feature_extractor=feature_extractor,
-        use_fast=use_fast,
         use_auth_token=use_auth_token,
         pipeline_class=pipeline_class,
         **kwargs,
