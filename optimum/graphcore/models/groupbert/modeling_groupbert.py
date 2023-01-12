@@ -532,7 +532,7 @@ class PipelinedGroupBertForPreTraining(GroupBertForPreTraining, PipelineMixin):
             output_hidden_states=output_hidden_states,
             return_dict=return_dict,
         )
-        sequence_output, pooled_output = output[:2]
+        sequence_output, pooled_output = outputs[:2]
 
         if labels is not None:
             if hasattr(self.config, "max_num_masked_tokens"):
