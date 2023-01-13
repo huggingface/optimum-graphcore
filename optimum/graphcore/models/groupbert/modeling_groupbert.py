@@ -33,7 +33,7 @@ from transformers import (
 )
 from transformers.modeling_outputs import (
     BaseModelOutputWithPastAndCrossAttentions,
-    MaskedLMOutput, 
+    MaskedLMOutput,
     QuestionAnsweringModelOutput,
 )
 from transformers.modeling_utils import apply_chunking_to_forward
@@ -565,8 +565,6 @@ class PipelinedGroupBertForPreTraining(GroupBertForPreTraining, PipelineMixin):
             hidden_states=outputs.hidden_states if total_loss is None else None,
             attentions=outputs.attentions if total_loss is None else None,
         )
-
-
 
 
 @register(GroupBertForMaskedLM)
