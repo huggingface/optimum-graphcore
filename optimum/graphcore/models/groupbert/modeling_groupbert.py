@@ -15,13 +15,13 @@
 
 from typing import List, Optional, Tuple, Union
 
-import poptorch
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from scipy.stats import truncnorm
 
+import poptorch
 from optimum.utils import logging
+from scipy.stats import truncnorm
 from transformers import (
     BertConfig,
     BertForMaskedLM,
