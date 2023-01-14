@@ -14,6 +14,7 @@
 
 import collections
 import copy
+import functools
 import inspect
 import math
 import os
@@ -869,7 +870,8 @@ class IPUTrainer:
                 num_training_steps=num_training_steps,
             )
             optimizer._step_count = 1
-
+        elif isinstance(self.lr_scheduler, functools.partial):
+            self.lr_scheduler = self.lr_scheduler(optimizer)
         return self.lr_scheduler
 
     def num_examples(self, dataloader: poptorch.DataLoader) -> int:

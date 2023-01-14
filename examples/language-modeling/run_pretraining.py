@@ -21,6 +21,7 @@ https://huggingface.co/models?filter=masked-lm
 """
 # You can also adapt this script on your own masked language modeling task. Pointers for this are left as comments.
 
+import functools
 import logging
 import math
 import os
@@ -30,6 +31,7 @@ from typing import Optional
 
 import datasets
 from datasets import load_dataset, load_from_disk
+from torch.optim.lr_scheduler import LambdaLR
 
 import transformers
 from optimum.graphcore import IPUConfig, IPUTrainer
@@ -62,6 +64,52 @@ require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/lang
 logger = logging.getLogger(__name__)
 MODEL_CONFIG_CLASSES = list(MODEL_FOR_MASKED_LM_MAPPING.keys())
 MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
+
+
+def get_polynomial_decay_schedule_with_polynomial_warmup(
+    optimizer, warmup_ratio, num_training_steps, lr_end=1e-7, power=1.0, warmup_power=1.0, last_epoch=-1
+):
+    """
+    Create a schedule with a learning rate that decreases as a polynomial decay from the initial lr set in the
+    optimizer to end lr defined by *lr_end*, after a warmup period during which it increases linearly from 0 to the
+    initial lr set in the optimizer. Here, warmup is also behaving as a polynomial function.
+    Args:
+        optimizer ([`~torch.optim.Optimizer`]):
+            The optimizer for which to schedule the learning rate.
+        warmup_ratio (`float`):
+            Percentage of steps to be dedicated to warmup phase.
+        num_training_steps (`int`):
+            The total number of training steps.
+        lr_end (`float`, *optional*, defaults to 1e-7):
+            The end LR.
+        power (`float`, *optional*, defaults to 1.0):
+            Power factor.
+        last_epoch (`int`, *optional*, defaults to -1):
+            The index of the last epoch when resuming training.
+    Note: *power* defaults to 1.0 as in the fairseq implementation, which in turn is based on the original BERT
+    implementation at
+    https://github.com/google-research/bert/blob/f39e881b169b9d53bea03d2d341b31707a6c052b/optimization.py#L37
+    Return:
+        `torch.optim.lr_scheduler.LambdaLR` with the appropriate schedule.
+    """
+    num_warmup_steps = math.ceil(num_training_steps * warmup_ratio)
+    lr_init = optimizer.defaults["lr"]
+    if not (lr_init > lr_end):
+        raise ValueError(f"lr_end ({lr_end}) must be be smaller than initial lr ({lr_init})")
+
+    def lr_lambda(current_step: int):
+        if current_step < num_warmup_steps:
+            return (current_step**warmup_power) / (num_warmup_steps**warmup_power)
+        elif current_step > num_training_steps:
+            return lr_end / lr_init  # as LambdaLR multiplies by lr_init
+        else:
+            lr_range = lr_init - lr_end
+            decay_steps = num_training_steps - num_warmup_steps
+            pct_remaining = 1 - (current_step - num_warmup_steps) / decay_steps
+            decay = lr_range * pct_remaining**power + lr_end
+            return decay / lr_init  # as LambdaLR multiplies by lr_init
+
+    return LambdaLR(optimizer, lr_lambda, last_epoch)
 
 
 @dataclass
@@ -111,6 +159,12 @@ class ModelArguments:
         metadata={
             "help": "Will use the token generated when running `transformers-cli login` (necessary to use this script "
             "with private models)."
+        },
+    )
+    groupbert_schedule: bool = field(
+        default=False,
+        metadata={
+            "help": "Use to prevent using a prebuilt lr schedule that uses a polynomial warmup and pass it to the Trainer.)."
         },
     )
 
@@ -555,6 +609,15 @@ def main():
         )
         data_collator = data_collator_wrapper(data_collator)
 
+    optimizer, lr_schedule = (None, None)
+    if model_args.groupbert_schedule:
+        lr_schedule = functools.partial(
+            get_polynomial_decay_schedule_with_polynomial_warmup,
+            warmup_ratio=training_args.warmup_ratio,
+            num_training_steps=training_args.max_steps,
+            warmup_power=0.5,
+        )
+
     # Initialize our Trainer
     trainer = IPUTrainer(
         model=model,
@@ -564,6 +627,7 @@ def main():
         eval_dataset=eval_dataset if training_args.do_eval else None,
         tokenizer=tokenizer,
         data_collator=data_collator,
+        optimizers=(optimizer, lr_schedule),
     )
 
     # Training

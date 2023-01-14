@@ -36,6 +36,64 @@ You can train BERT on any dataset with `run_pretraining` as long as the dataset 
 
 BERT Pre-training is done in two phases - the first is with sequence length 128 for 10500 steps, and the second is with sequence length 512 for 2038 steps.
 
+### GroupBERT-base
+
+Phase 1:
+```bash
+python examples/language-modeling/run_pretraining.py \
+  --model_type groupbert \
+  --tokenizer_name bert-base-uncased \
+  --ipu_config_name Graphcore/bert-base-ipu \
+  --dataset_name Graphcore/wikipedia-bert-128 \
+  --do_train \
+  --logging_steps 5 \
+  --max_seq_length 128 \
+  --max_steps 10500 \
+  --is_already_preprocessed \
+  --dataloader_num_workers 64 \
+  --dataloader_mode async_rebatched \
+  --lamb \
+  --per_device_train_batch_size 10 \
+  --gradient_accumulation_steps 1640 \
+  --pod_type pod16 \
+  --learning_rate 0.012 \
+  --loss_scaling 16384 \
+  --weight_decay 0.01 \
+  --warmup_ratio 0.14 \
+  --groupbert_schedule \
+  --config_overrides "hidden_dropout_prob=0.0,attention_probs_dropout_prob=0.0,layer_norm_eps=0.001" \
+  --ipu_config_overrides "device_iterations=1,matmul_proportion=0.22,layers_per_ipu=[1 3 4 4]" \
+  --output_dir output-pretrain-groupbert-base-phase1
+```
+
+Phase 2:
+```bash
+examples/language-modeling/run_pretraining.py \
+  --model_type groupbert \
+  --tokenizer_name bert-base-uncased \
+  --model_name_or_path ./output-pretrain-groupbert-base-phase1 \
+  --ipu_config_name Graphcore/bert-base-ipu \
+  --dataset_name Graphcore/wikipedia-bert-512 \
+  --do_train \
+  --logging_steps 5 \
+  --max_seq_length 512 \
+  --max_steps 2038 \
+  --is_already_preprocessed \
+  --dataloader_num_workers 64 \
+  --dataloader_mode async_rebatched \
+  --lamb \
+  --per_device_train_batch_size 2 \
+  --gradient_accumulation_steps 2048 \
+  --pod_type pod16 \
+  --learning_rate 0.01 \
+  --loss_scaling 128.0 \
+  --weight_decay 0.01 \
+  --warmup_ratio 0.13 \
+  --groupbert_schedule \
+  --config_overrides "hidden_dropout_prob=0.0,attention_probs_dropout_prob=0.0,layer_norm_eps=0.001" \
+  --ipu_config_overrides device_iterations=1,embedding_serialization_factor=2,matmul_proportion=0.22 \
+  --output_dir output-pretrain-groupbert-base-phase2
+```
 ### BERT-base
 
 Phase 1:
