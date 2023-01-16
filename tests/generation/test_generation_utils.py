@@ -46,9 +46,9 @@ if is_torch_available():
         VisionEncoderDecoderModel,
         top_k_top_p_filtering,
     )
-    from transformers.generation_beam_constraints import DisjunctiveConstraint, PhrasalConstraint
-    from transformers.generation_beam_search import BeamSearchScorer, ConstrainedBeamSearchScorer
-    from transformers.generation_logits_process import (
+    from transformers.generation.beam_constraints import DisjunctiveConstraint, PhrasalConstraint
+    from transformers.generation.beam_search import BeamSearchScorer, ConstrainedBeamSearchScorer
+    from transformers.generation.logits_process import (
         ForcedBOSTokenLogitsProcessor,
         ForcedEOSTokenLogitsProcessor,
         HammingDiversityLogitsProcessor,
@@ -62,8 +62,8 @@ if is_torch_available():
         TopKLogitsWarper,
         TopPLogitsWarper,
     )
-    from transformers.generation_stopping_criteria import MaxLengthCriteria, StoppingCriteria, StoppingCriteriaList
-    from transformers.generation_utils import (
+    from transformers.generation.stopping_criteria import MaxLengthCriteria, StoppingCriteria, StoppingCriteriaList
+    from transformers.generation.utils import (
         BeamSampleDecoderOnlyOutput,
         BeamSampleEncoderDecoderOutput,
         BeamSearchDecoderOnlyOutput,
