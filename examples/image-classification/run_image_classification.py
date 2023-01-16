@@ -19,7 +19,6 @@ import sys
 from dataclasses import dataclass, field
 from typing import Optional
 
-import datasets
 import numpy as np
 import torch
 from datasets import load_dataset
@@ -34,6 +33,7 @@ from torchvision.transforms import (
     ToTensor,
 )
 
+import evaluate
 import transformers
 from optimum.graphcore import IPUConfig, IPUTrainer
 from optimum.graphcore import IPUTrainingArguments as TrainingArguments
@@ -272,7 +272,7 @@ def main():
         id2label[str(i)] = label
 
     # Load the accuracy metric from the datasets package
-    metric = datasets.load_metric("accuracy")
+    metric = evaluate.load("accuracy")
 
     # Define our compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a
     # predictions and label_ids field) and has to return a dictionary string to float.

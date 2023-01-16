@@ -27,8 +27,9 @@ from unittest import result
 
 import datasets
 import numpy as np
-from datasets import load_dataset, load_metric
+from datasets import load_dataset
 
+import evaluate
 import transformers
 from optimum.graphcore import IPUConfig, IPUTrainer
 from optimum.graphcore import IPUTrainingArguments as TrainingArguments
@@ -426,7 +427,7 @@ def main():
     )
 
     # Get the metric function
-    metric = load_metric("accuracy")
+    metric = evaluate.load("accuracy")
 
     def compute_metrics(p: EvalPrediction):
         if use_soft_label:

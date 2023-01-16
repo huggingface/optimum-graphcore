@@ -26,8 +26,9 @@ from typing import Optional
 
 import datasets
 import numpy as np
-from datasets import load_dataset, load_metric
+from datasets import load_dataset
 
+import evaluate
 import transformers
 from optimum.graphcore import IPUConfig, IPUSeq2SeqTrainer
 from optimum.graphcore import IPUSeq2SeqTrainingArguments as Seq2SeqTrainingArguments
@@ -528,7 +529,7 @@ def main():
     )
 
     # Metric
-    metric = load_metric("sacrebleu")
+    metric = evaluate.load("sacrebleu")
 
     def postprocess_text(preds, labels):
         preds = [pred.strip() for pred in preds]

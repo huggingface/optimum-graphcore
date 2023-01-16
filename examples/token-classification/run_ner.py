@@ -27,8 +27,9 @@ from typing import Optional
 
 import datasets
 import numpy as np
-from datasets import ClassLabel, load_dataset, load_metric
+from datasets import ClassLabel, load_dataset
 
+import evaluate
 import transformers
 from optimum.graphcore import IPUConfig, IPUTrainer
 from optimum.graphcore import IPUTrainingArguments as TrainingArguments
@@ -520,7 +521,7 @@ def main():
     data_collator = DataCollatorForTokenClassification(tokenizer, pad_to_multiple_of=None)
 
     # Metrics
-    metric = load_metric("seqeval")
+    metric = evaluate.load("seqeval")
 
     def compute_metrics(p):
         predictions, labels = p
