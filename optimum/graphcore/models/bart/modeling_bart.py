@@ -648,11 +648,15 @@ class _BartModelWithSharedEmbedding(BartModel):
             )
         # If the user passed a tuple for encoder_outputs, we wrap it in a BaseModelOutput when return_dict=True
         elif return_dict and not isinstance(encoder_outputs, BaseModelOutput):
-            encoder_outputs = BaseModelOutput(
-                last_hidden_state=encoder_outputs[0],
-                hidden_states=encoder_outputs[1] if len(encoder_outputs) > 1 else None,
-                attentions=encoder_outputs[2] if len(encoder_outputs) > 2 else None,
-            )
+            # BUG: BaseModelOutput type being lost by poptorch?
+            if isinstance(encoder_outputs, dict):
+                encoder_outputs = BaseModelOutput(encoder_outputs)
+            else:
+                encoder_outputs = BaseModelOutput(
+                    last_hidden_state=encoder_outputs[0],
+                    hidden_states=encoder_outputs[1] if len(encoder_outputs) > 1 else None,
+                    attentions=encoder_outputs[2] if len(encoder_outputs) > 2 else None,
+                )
 
         # decoder outputs consists of (dec_features, past_key_value, dec_hidden, dec_attn)
         decoder_outputs = self.decoder(
@@ -686,9 +690,7 @@ class _BartModelWithSharedEmbedding(BartModel):
 
 
 @register(BartForConditionalGeneration)
-class PipelinedBartForConditionalGeneration(
-    GenerationMethodsMixin, BartForConditionalGeneration, PipelineMixin, IPUGenerationMixin
-):
+class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, PipelineMixin, IPUGenerationMixin):
     def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.
