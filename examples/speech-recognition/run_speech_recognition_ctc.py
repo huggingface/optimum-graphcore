@@ -306,17 +306,12 @@ class DataCollatorCTCWithPadding:
             return_tensors="pt",
         )
 
-        # lengths = torch.sum(batch["input_values"] != 0.0, 1)
-        # attention_mask = torch.arange(batch["input_values"].shape[-1]).unsqueeze(0) < lengths.unsqueeze(1)
-        # batch["attention_mask"] = attention_mask.type(torch.int32)
-
-        with self.processor.as_target_processor():
-            labels_batch = self.processor.pad(
-                label_features,
-                padding=self.padding,
-                pad_to_multiple_of=self.pad_to_multiple_of_labels,
-                return_tensors="pt",
-            )
+        labels_batch = self.processor.pad(
+            label_features,
+            padding=self.padding,
+            pad_to_multiple_of=self.pad_to_multiple_of_labels,
+            return_tensors="pt",
+        )
 
         # replace padding with -100 to ignore loss correctly
         batch["labels"] = labels_batch["input_ids"].masked_fill(labels_batch.attention_mask.ne(1), -100)
