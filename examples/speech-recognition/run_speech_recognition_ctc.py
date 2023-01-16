@@ -307,7 +307,7 @@ class DataCollatorCTCWithPadding:
         )
 
         labels_batch = self.processor.pad(
-            label_features,
+            labels=label_features,
             padding=self.padding,
             pad_to_multiple_of=self.pad_to_multiple_of_labels,
             return_tensors="pt",
