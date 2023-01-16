@@ -1,4 +1,4 @@
-30,38c30,32
+31,39c31,33
 < from transformers import (
 <     AutoConfig,
 <     AutoFeatureExtractor,
@@ -12,12 +12,12 @@
 > from optimum.graphcore import IPUConfig, IPUTrainer
 > from optimum.graphcore import IPUTrainingArguments as TrainingArguments
 > from transformers import AutoConfig, AutoFeatureExtractor, AutoModelForAudioClassification, HfArgumentParser, set_seed
-218,221d211
+219,222d212
 <     logger.warning(
 <         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu} "
 <         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
 <     )
-287,308d276
+288,309d277
 <     def train_transforms(batch):
 <         """Apply train_transforms across a batch."""
 <         output_batch = {"input_values": []}
@@ -40,7 +40,7 @@
 < 
 <         return output_batch
 < 
-336a305,315
+337a306,316
 > 
 >     # Disable the feature that can't run on IPU yet
 >     # TODO handle this properly
@@ -52,7 +52,7 @@
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
-350a330,348
+351a331,349
 >     def preprocess_function(examples):
 >         audio = examples[data_args.audio_column_name]
 >         subsampled_audio = random_subsample(
@@ -72,21 +72,21 @@
 >         examples["labels"] = examples[data_args.label_column_name]
 >         return examples
 > 
-357c355,357
+358c356,358
 <         raw_datasets["train"].set_transform(train_transforms, output_all_columns=False)
 ---
 >         raw_datasets["train"] = raw_datasets["train"].map(
 >             preprocess_function, remove_columns=raw_datasets["train"].column_names
 >         )
-365c365,367
+366c366,368
 <         raw_datasets["eval"].set_transform(val_transforms, output_all_columns=False)
 ---
 >         raw_datasets["eval"] = raw_datasets["eval"].map(
 >             preprocess_function, remove_columns=raw_datasets["eval"].column_names
 >         )
-368c370
+369c371
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-369a372
+370a373
 >         ipu_config=ipu_config,

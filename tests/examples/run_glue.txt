@@ -1,44 +1,44 @@
 27a28
 > import torch
-30a32,34
+31a33,35
 > from optimum.graphcore import IPUConfig, IPUTrainer
 > from optimum.graphcore import IPUTrainingArguments as TrainingArguments
 > from optimum.graphcore.utils import check_min_version
-39,40d42
+40,41d43
 <     Trainer,
 <     TrainingArguments,
-45c47,48
+46c48,49
 < from transformers.utils import check_min_version, send_example_telemetry
 ---
 > from transformers.utils import check_min_version as tf_check_min_version
 > from transformers.utils import send_example_telemetry
-50c53,56
-< check_min_version("4.20.0")
+51c54,57
+< check_min_version("4.25.0")
 ---
-> tf_check_min_version("4.20.0")
+> tf_check_min_version("4.25.0")
 > 
 > # Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
 > check_min_version("0.2.4.dev0")
-236,240d241
+237,241d242
 <     # Log on each process the small summary:
 <     logger.warning(
 <         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
 <         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
 <     )
-360a362,367
+361a363,368
 >     ipu_config = IPUConfig.from_pretrained(
 >         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
 >         cache_dir=model_args.cache_dir,
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
-377a385,389
+378a386,390
 >     # Customize tokenization for GPT2. We reuse the EOS token as the PAD token.
 >     if config.model_type == "gpt2":
 >         tokenizer.pad_token = tokenizer.eos_token
 >         model.config.pad_token_id = model.config.eos_token_id
 > 
-459a472,480
+460a473,481
 >         labels = torch.tensor(train_dataset[0]["label"])
 >         if model.config.problem_type is None:
 >             if model.config.num_labels == 1:
@@ -48,12 +48,12 @@
 >             else:
 >                 model.config.problem_type = "multi_label_classification"
 > 
-506,507d526
+507,508d527
 <     elif training_args.fp16:
 <         data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8)
-512c531
+513c532
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-513a533
+514a534
 >         ipu_config=ipu_config,

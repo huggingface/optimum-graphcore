@@ -1,39 +1,37 @@
-33c33
-< from datasets import load_dataset, load_metric
----
-> from datasets import load_dataset
-35a36,38
+35d34
+< import evaluate
+36a36,38
 > from optimum.graphcore import IPUConfig, IPUTrainer
 > from optimum.graphcore import IPUTrainingArguments as TrainingArguments
 > from optimum.graphcore.data import pad_on_batch_axis
-43,44d45
+44,45d45
 <     Trainer,
 <     TrainingArguments,
-46d46
+47d46
 <     is_torch_tpu_available,
-51c51,52
+52c51,52
 < from transformers.utils import check_min_version, send_example_telemetry
 ---
 > from transformers.utils import check_min_version as tf_check_min_version
 > from transformers.utils import send_example_telemetry
-56c57
-< check_min_version("4.20.0")
+57c57
+< check_min_version("4.25.0")
 ---
-> tf_check_min_version("4.20.0")
-122,127d122
+> tf_check_min_version("4.25.0")
+123,128d122
 <     def __post_init__(self):
 <         if self.config_overrides is not None and (self.config_name is not None or self.model_name_or_path is not None):
 <             raise ValueError(
 <                 "--config_overrides can't be used in combination with --config_name or --model_name_or_path"
 <             )
 < 
-235,239d229
+236,240d229
 <     # Log on each process the small summary:
 <     logger.warning(
 <         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
 <         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
 <     )
-354,357c344,357
+355,358c344,357
 <         if model_args.config_overrides is not None:
 <             logger.info(f"Overriding config: {model_args.config_overrides}")
 <             config.update_from_string(model_args.config_overrides)
@@ -53,7 +51,7 @@
 >         raise RuntimeError(
 >             "You must provide an IPUConfig. If the pretrained model does not contain an IPUConfig, you can load an IPUConfig using --ipu_config_name."
 >         )
-488,504d487
+493,509d491
 <         def preprocess_logits_for_metrics(logits, labels):
 <             if isinstance(logits, tuple):
 <                 # Depending on the model and config, logits may contain extra tensors,
@@ -61,7 +59,7 @@
 <                 logits = logits[0]
 <             return logits.argmax(dim=-1)
 < 
-<         metric = load_metric("accuracy")
+<         metric = evaluate.load("accuracy")
 < 
 <         def compute_metrics(eval_preds):
 <             preds, labels = eval_preds
@@ -71,15 +69,15 @@
 <             preds = preds[:, :-1].reshape(-1)
 <             return metric.compute(predictions=preds, references=labels)
 < 
-506c489
+511c493
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-507a491
+512a495
 >         ipu_config=ipu_config,
-512d495
+517d499
 <         # Data collator will default to DataCollatorWithPadding, so we change it.
-514,517d496
+519,522d500
 <         compute_metrics=compute_metrics if training_args.do_eval and not is_torch_tpu_available() else None,
 <         preprocess_logits_for_metrics=preprocess_logits_for_metrics
 <         if training_args.do_eval and not is_torch_tpu_available()
