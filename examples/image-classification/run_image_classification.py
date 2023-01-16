@@ -44,6 +44,7 @@ from transformers import (
     AutoFeatureExtractor,
     AutoModelForImageClassification,
     HfArgumentParser,
+    set_seed
 )
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version as tf_check_min_version
@@ -234,6 +235,9 @@ def main():
                 "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
             )
 
+    # Set seed before initializing model.
+    set_seed(training_args.seed)
+
     # Initialize our dataset and prepare it for the 'image-classification' task.
     if data_args.dataset_name is not None:
         dataset = load_dataset(
@@ -313,16 +317,20 @@ def main():
     )
 
     # Define torchvision transforms to be applied to each image.
+    if "shortest_edge" in feature_extractor.size:
+        size = feature_extractor.size["shortest_edge"]
+    else:
+        size = (feature_extractor.size["height"], feature_extractor.size["width"])
     normalize = Normalize(mean=feature_extractor.image_mean, std=feature_extractor.image_std)
     _train_transforms = [
-        RandomResizedCrop(feature_extractor.size),
+        RandomResizedCrop(size),
         RandomHorizontalFlip(),
         ToTensor(),
         normalize,
     ]
     _val_transforms = [
-        Resize(feature_extractor.size),
-        CenterCrop(feature_extractor.size),
+        Resize(size),
+        CenterCrop(size),
         ToTensor(),
         normalize,
     ]
