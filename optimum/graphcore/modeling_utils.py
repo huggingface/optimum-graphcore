@@ -125,6 +125,7 @@ class PipelineMixin:
         pipelined_model = cls(config)
         pipelined_model.load_state_dict(model.state_dict())
         pipelined_model.ipu_config = copy.deepcopy(ipu_config)
+        pipelined_model.training = model.training
         return pipelined_model
 
     @classmethod
