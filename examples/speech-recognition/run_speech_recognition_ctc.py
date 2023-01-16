@@ -314,7 +314,11 @@ class DataCollatorCTCWithPadding:
         )
 
         # replace padding with -100 to ignore loss correctly
-        batch["labels"] = labels_batch["input_ids"].masked_fill(labels_batch.attention_mask.ne(1), -100)
+        labels = labels_batch["input_ids"].masked_fill(labels_batch.attention_mask.ne(1), -100)
+
+        batch["labels"] = labels
+        if "attention_mask" in batch:
+            batch["attention_mask"] = batch["attention_mask"].to(torch.long)
 
         return batch.data
 
@@ -759,7 +763,7 @@ def main():
     config_name = data_args.dataset_config_name if data_args.dataset_config_name is not None else "na"
     kwargs = {
         "finetuned_from": model_args.model_name_or_path,
-        "tasks": "speech-recognition",
+        "tasks": "automatic-speech-recognition",
         "tags": ["automatic-speech-recognition", data_args.dataset_name],
         "dataset_args": (
             f"Config: {config_name}, Training split: {data_args.train_split_name}, Eval split:"
