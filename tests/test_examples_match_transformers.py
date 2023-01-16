@@ -26,7 +26,7 @@ from .create_diff_file_for_example import DIFF_DIRECTORY, diff
 
 TRANSFORMERS_REPO_URL = "https://github.com/huggingface/transformers.git"
 TRANSFORMERS_REPO_PATH = Path("transformers")
-TRANSFORMERS_REPO_BRANCH = "v4.20-release"
+TRANSFORMERS_REPO_BRANCH = "v4.25-release"
 
 
 def get_examples(
