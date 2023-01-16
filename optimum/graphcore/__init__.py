@@ -57,3 +57,9 @@ from .trainer_seq2seq import IPUSeq2SeqTrainer
 from .training_args import IPUTrainingArguments
 from .training_args_seq2seq import IPUSeq2SeqTrainingArguments
 from .version import __version__
+
+import poptorch
+
+
+# Disable poptorch compiler warnings by default
+poptorch.setLogLevel("ERR")
