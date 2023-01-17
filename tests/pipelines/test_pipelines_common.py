@@ -51,7 +51,6 @@ from transformers.testing_utils import (
     CaptureLogger,
     is_staging_test,
     nested_simplify,
-    require_scatter,
     require_torch,
     slow,
 )
@@ -713,7 +712,6 @@ class PipelineUtilsTest(unittest.TestCase):
 
     # @slow
     # @require_torch
-    # @require_scatter
     # def test_load_default_pipelines_pt_table_qa(self):
     #     import torch
 
