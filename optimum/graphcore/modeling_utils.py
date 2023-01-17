@@ -450,8 +450,18 @@ class SharedEmbedding(nn.Module):
         #     decoder_inputs_embeds = self.shared(decoder_input_ids) * decoder_embed_scale
         # combined, n1, n2 = self._combine_inputs(input_ids, decoder_input_ids)
         # encoder_inputs_embeds, decoder_inputs_embeds = self._separate_inputs(self.shared(combined), n1, n2)
-        idx, combined = self._combine_inputs(input_ids, decoder_input_ids)
-        encoder_inputs_embeds, decoder_inputs_embeds = self._separate_inputs(idx, self.shared(combined))
+        encoder_inputs_embeds, decoder_inputs_embeds = None, None
+        if input_ids is None:
+            # call on decoder_input_ids only
+            decoder_inputs_embeds = self.shared(decoder_input_ids)
+        elif decoder_input_ids is None:
+            # call on input_ids only
+            encoder_inputs_embeds = self.shared(input_ids)
+        else:
+            # Call on the combined case
+            # This case is assuming input_ids and decoder_input_ids are not None
+            idx, combined = self._combine_inputs(input_ids, decoder_input_ids)
+            encoder_inputs_embeds, decoder_inputs_embeds = self._separate_inputs(idx, self.shared(combined))
 
         if encoder_embed_scale:
             encoder_inputs_embeds = encoder_inputs_embeds * encoder_embed_scale
