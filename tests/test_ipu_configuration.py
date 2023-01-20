@@ -70,6 +70,14 @@ def create_ipu_config(with_default_values: bool = False, remove_pod_types: Optio
         initial_dict["output_mode"] = random.choice(allowed_output_modes)
     # Setting this setting to False as it is currently not supported and will throw an error.
     initial_dict["execute_encoder_on_cpu_for_generation"] = False
+    # Edge case where replication_factor=1 and replicated_tensor_sharding=True which will get overriden to
+    # replicated_tensor_sharding=False.
+    if isinstance(initial_dict["replication_factor"], dict) and isinstance(
+        initial_dict["replicated_tensor_sharding"], dict
+    ):
+        for pod_type in initial_dict["replication_factor"].keys():
+            if initial_dict["replication_factor"][pod_type] == 1:
+                initial_dict["replicated_tensor_sharding"][pod_type] = False
     return IPUConfig.from_dict(initial_dict)
 
 
