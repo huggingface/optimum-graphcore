@@ -3,3 +3,4 @@ datasets>=1.14.0
 librosa
 torchaudio==0.13.0+cpu
 scikit-learn
+evaluate

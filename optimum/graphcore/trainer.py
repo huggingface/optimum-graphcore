@@ -53,12 +53,6 @@ from transformers.configuration_utils import PretrainedConfig
 from transformers.data.data_collator import DataCollator, DataCollatorWithPadding, default_data_collator
 from transformers.debug_utils import DebugOption, DebugUnderflowOverflow
 from transformers.modeling_utils import PreTrainedModel
-from transformers.models.auto.modeling_auto import (
-    MODEL_FOR_CAUSAL_LM_MAPPING,
-    MODEL_FOR_MASKED_LM_MAPPING,
-    MODEL_FOR_PRETRAINING_MAPPING,
-    MODEL_FOR_QUESTION_ANSWERING_MAPPING_NAMES,
-)
 from transformers.optimization import get_scheduler
 from transformers.pytorch_utils import is_torch_less_than_1_11
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
@@ -112,7 +106,7 @@ from transformers.utils import (
 from .data.data_collator import pad_on_batch_axis
 from .ipu_configuration import IPU_CONFIG_NAME, IPUConfig
 from .modelcard import IPUTrainingSummary
-from .modeling_utils import to_pipelined
+from .modeling_utils import TIED_WEIGHT_MODELS, to_pipelined
 from .trainer_utils import _WorkerInit
 from .training_args import IPUTrainingArguments
 
@@ -130,12 +124,6 @@ _is_torch_generator_available = False
 
 DEFAULT_CALLBACKS = [DefaultFlowCallback]
 DEFAULT_PROGRESS_CALLBACK = ProgressCallback
-
-TIED_WEIGHT_MODELS = set(
-    MODEL_FOR_PRETRAINING_MAPPING.values()
-    + MODEL_FOR_MASKED_LM_MAPPING.values()
-    + MODEL_FOR_CAUSAL_LM_MAPPING.values()
-)
 
 
 @dataclass

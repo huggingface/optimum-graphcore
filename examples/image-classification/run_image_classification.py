@@ -19,7 +19,6 @@ import sys
 from dataclasses import dataclass, field
 from typing import Optional
 
-import datasets
 import numpy as np
 import torch
 from datasets import load_dataset
@@ -34,6 +33,7 @@ from torchvision.transforms import (
     ToTensor,
 )
 
+import evaluate
 import transformers
 from optimum.graphcore import IPUConfig, IPUTrainer
 from optimum.graphcore import IPUTrainingArguments as TrainingArguments
@@ -44,6 +44,7 @@ from transformers import (
     AutoFeatureExtractor,
     AutoModelForImageClassification,
     HfArgumentParser,
+    set_seed,
 )
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version as tf_check_min_version
@@ -56,7 +57,7 @@ from transformers.utils.versions import require_version
 logger = logging.getLogger(__name__)
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-tf_check_min_version("4.20.0")
+tf_check_min_version("4.25.0")
 
 # Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
 check_min_version("0.2.4.dev0")
@@ -150,7 +151,7 @@ class ModelArguments:
         default=False,
         metadata={
             "help": (
-                "Will use the token generated when running `transformers-cli login` (necessary to use this script "
+                "Will use the token generated when running `huggingface-cli login` (necessary to use this script "
                 "with private models)."
             )
         },
@@ -234,6 +235,9 @@ def main():
                 "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
             )
 
+    # Set seed before initializing model.
+    set_seed(training_args.seed)
+
     # Initialize our dataset and prepare it for the 'image-classification' task.
     if data_args.dataset_name is not None:
         dataset = load_dataset(
@@ -272,7 +276,7 @@ def main():
         id2label[str(i)] = label
 
     # Load the accuracy metric from the datasets package
-    metric = datasets.load_metric("accuracy")
+    metric = evaluate.load("accuracy")
 
     # Define our compute_metrics function. It takes an `EvalPrediction` object (a namedtuple with a
     # predictions and label_ids field) and has to return a dictionary string to float.
@@ -313,16 +317,20 @@ def main():
     )
 
     # Define torchvision transforms to be applied to each image.
+    if "shortest_edge" in feature_extractor.size:
+        size = feature_extractor.size["shortest_edge"]
+    else:
+        size = (feature_extractor.size["height"], feature_extractor.size["width"])
     normalize = Normalize(mean=feature_extractor.image_mean, std=feature_extractor.image_std)
     _train_transforms = [
-        RandomResizedCrop(feature_extractor.size),
+        RandomResizedCrop(size),
         RandomHorizontalFlip(),
         ToTensor(),
         normalize,
     ]
     _val_transforms = [
-        Resize(feature_extractor.size),
-        CenterCrop(feature_extractor.size),
+        Resize(size),
+        CenterCrop(size),
         ToTensor(),
         normalize,
     ]

@@ -24,11 +24,44 @@ import poptorch
 from optimum.utils import logging
 from transformers import AutoConfig, PreTrainedModel
 from transformers.modeling_outputs import ModelOutput
+from transformers.models.auto.modeling_auto import (
+    MODEL_FOR_CAUSAL_LM_MAPPING,
+    MODEL_FOR_MASKED_LM_MAPPING,
+    MODEL_FOR_PRETRAINING_MAPPING,
+    MODEL_FOR_QUESTION_ANSWERING_MAPPING_NAMES,
+)
 
 from .ipu_configuration import IPUConfig
 
 
 logger = logging.get_logger(__name__)
+
+
+TIED_WEIGHT_MODELS = set(
+    MODEL_FOR_PRETRAINING_MAPPING.values()
+    + MODEL_FOR_MASKED_LM_MAPPING.values()
+    + MODEL_FOR_CAUSAL_LM_MAPPING.values()
+)
+
+
+def tied_weight_model(transformers_cls=None):
+    """Certain models may either have tied weights, or similar weight aliasing.
+    We track these as they currently need additional unwrapping when used in the IPUTrainer.
+    This should be removed when the associated parameter copying bug is fixed."""
+
+    def wrapper(cls):
+        tied_weight_cls = transformers_cls
+        if tied_weight_cls is None:
+            if not issubclass(cls, PipelineMixin):
+                raise ValueError(
+                    f"If original transformers class is not provided, the model must already be pipelined."
+                )
+            tied_weight_cls = cls
+        TIED_WEIGHT_MODELS.add(tied_weight_cls)
+        return cls
+
+    return wrapper
+
 
 _PRETRAINED_TO_PIPELINED_REGISTRY = {}
 

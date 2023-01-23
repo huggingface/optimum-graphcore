@@ -50,7 +50,7 @@ from transformers.utils import send_example_telemetry
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-tf_check_min_version("4.20.0")
+tf_check_min_version("4.25.0")
 
 # Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
 check_min_version("0.2.4.dev0")
@@ -89,7 +89,7 @@ class ModelArguments:
         default=False,
         metadata={
             "help": (
-                "Will use the token generated when running `transformers-cli login` (necessary to use this script "
+                "Will use the token generated when running `huggingface-cli login` (necessary to use this script "
                 "with private models)."
             )
         },

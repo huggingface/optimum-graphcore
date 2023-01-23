@@ -27,8 +27,9 @@ from unittest import result
 
 import datasets
 import numpy as np
-from datasets import load_dataset, load_metric
+from datasets import load_dataset
 
+import evaluate
 import transformers
 from optimum.graphcore import IPUConfig, IPUTrainer
 from optimum.graphcore import IPUTrainingArguments as TrainingArguments
@@ -97,7 +98,7 @@ class ModelArguments:
     use_auth_token: bool = field(
         default=False,
         metadata={
-            "help": "Will use the token generated when running `transformers-cli login` (necessary to use this script "
+            "help": "Will use the token generated when running `huggingface-cli login` (necessary to use this script "
             "with private models)."
         },
     )
@@ -426,7 +427,7 @@ def main():
     )
 
     # Get the metric function
-    metric = load_metric("accuracy")
+    metric = evaluate.load("accuracy")
 
     def compute_metrics(p: EvalPrediction):
         if use_soft_label:
