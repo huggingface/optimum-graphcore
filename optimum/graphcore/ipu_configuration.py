@@ -68,9 +68,6 @@ class IPUConfig(BaseConfig):
             Specifies the number of layers that will be put on each IPU for pipelined execution.
             For instance: `[2, 3, 4, 2]` specifies a 4-IPU pipeline, where the first two layers will be put on IPU0,
             the following three on IPU1, the next four on IPU2 and the last two on IPU3.
-        sharded_execution_for_inference (`bool`, *optional*, defaults to `False`):
-            Whether to use a shared execution strategy for inference instead of pipelined.
-            To learn more, read the [PopTorch documentation](https://docs.graphcore.ai/projects/poptorch-user-guide/en/latest/reference.html?highlight=device%20iterations#poptorch.Options.setExecutionStrategy).
 
         > Parameters for memory management
 
@@ -140,7 +137,6 @@ class IPUConfig(BaseConfig):
             warnings.warn(
                 'The "sharded_execution_for_inference" parameter is deprecated, sharded execution is always used during inference'
             )
-        self.sharded_execution_for_inference = kwargs.pop("sharded_execution_for_inference", False)
 
         self.matmul_proportion = kwargs.pop("matmul_proportion", 0.6)
 
