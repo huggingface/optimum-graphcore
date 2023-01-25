@@ -7,7 +7,6 @@
   "recompute_checkpoint_every_layer": true,
   "replicated_tensor_sharding": false,
   "optimizer_state_offchip": true,
-  "enable_half_first_order_momentum": false,
   "enable_half_partials": true,
   "layer_norm_eps": 0.001,
   "attention_probs_dropout_prob": 0.0,
