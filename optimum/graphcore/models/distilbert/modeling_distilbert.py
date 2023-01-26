@@ -225,7 +225,7 @@ class PipelinedDistilBertForMaskedLM(DistilBertForMaskedLM, DistilBertPipelineMi
         """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
-        if labels is not None:
+        if self.training:
             dlbrt_output = self.distilbert(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
