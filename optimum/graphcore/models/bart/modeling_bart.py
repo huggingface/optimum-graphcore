@@ -413,7 +413,7 @@ class _BartDecoderWithCustomMakeCausalAndExpandMask(BartDecoder):
             raise ValueError("You cannot specify both decoder_input_ids and decoder_inputs_embeds at the same time")
         elif input_ids is not None:
             input = input_ids
-            input_shape = input.shape()
+            input_shape = input.shape
             input_ids = input_ids.view(-1, input_shape[-1])
         elif inputs_embeds is not None:
             input_shape = inputs_embeds.size()[:-1]
