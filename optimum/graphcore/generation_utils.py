@@ -21,21 +21,33 @@ from torch import nn
 
 import poptorch
 from optimum.utils import logging
-
-from transformers.generation.utils import GenerationMixin
-from transformers.generation.utils import LogitsProcessorList, StoppingCriteriaList
-from transformers.generation.utils import GreedySearchOutput, GreedySearchDecoderOnlyOutput, GreedySearchEncoderDecoderOutput
-from transformers.generation.utils import BeamSearchOutput, BeamSearchDecoderOnlyOutput, BeamSearchEncoderDecoderOutput, BeamScorer
-from transformers.generation.utils import SampleOutput, SampleDecoderOnlyOutput, SampleEncoderDecoderOutput
-from transformers.generation.utils import BeamSampleOutput, BeamSampleDecoderOnlyOutput, BeamSampleEncoderDecoderOutput
 from transformers.generation.stopping_criteria import validate_stopping_criteria
-from transformers.pytorch_utils import torch_int_div
+from transformers.generation.utils import (
+    BeamSampleDecoderOnlyOutput,
+    BeamSampleEncoderDecoderOutput,
+    BeamSampleOutput,
+    BeamScorer,
+    BeamSearchDecoderOnlyOutput,
+    BeamSearchEncoderDecoderOutput,
+    BeamSearchOutput,
+    GenerationMixin,
+    GreedySearchDecoderOnlyOutput,
+    GreedySearchEncoderDecoderOutput,
+    GreedySearchOutput,
+    LogitsProcessorList,
+    SampleDecoderOnlyOutput,
+    SampleEncoderDecoderOutput,
+    SampleOutput,
+    StoppingCriteriaList,
+)
 from transformers.modeling_outputs import ModelOutput
+from transformers.pytorch_utils import torch_int_div
 
 
 logger = logging.get_logger(__name__)
 
 import copy
+
 
 class IPUGenerationMixin(GenerationMixin):
     def _pad_tensors_to_max_len(self, tensor: torch.Tensor, max_length: int, pad_token_id: int) -> torch.Tensor:
@@ -55,6 +67,7 @@ class IPUGenerationMixin(GenerationMixin):
                 elif dict1[key] != dict2[key]:
                     return False
             return True
+
         # if not hasattr(self, "cached_kwargs"):
         #     self.cached_kwargs = copy.deepcopy(kwargs)
         # else:
@@ -64,9 +77,8 @@ class IPUGenerationMixin(GenerationMixin):
         #         delattr(self, "poptorch_model")
 
         if not hasattr(self, "poptorch_model"):
-            self.poptorch_model = poptorch.inferenceModel(self.eval(),
-                                                          self.ipu_config.to_options(for_inference=True))
-        
+            self.poptorch_model = poptorch.inferenceModel(self.eval(), self.ipu_config.to_options(for_inference=True))
+
         # This will trigger a compile first time it's ran
         return self.poptorch_model(*args, **kwargs)
 
@@ -76,7 +88,7 @@ class IPUGenerationMixin(GenerationMixin):
         # 1. get encoder
         encoder = self.get_encoder()
 
-        # 2. get the model dtype and cast encoder to fp32 for cpu 
+        # 2. get the model dtype and cast encoder to fp32 for cpu
         dtype = next(encoder.parameters()).dtype
         if dtype is torch.float16:
             encoder.to(torch.float32)
@@ -103,7 +115,6 @@ class IPUGenerationMixin(GenerationMixin):
                     model_kwargs["encoder_outputs"][key] = output.to(torch.float16)
 
         return model_kwargs
-
 
     # Modified from https://github.com/huggingface/transformers/blob/v4.20.1/src/transformers/generation_utils.py#L1532
     def greedy_search(
@@ -351,7 +362,7 @@ class IPUGenerationMixin(GenerationMixin):
                 )
         else:
             return input_ids
-    
+
     def beam_search(
         self,
         input_ids: torch.LongTensor,
@@ -1260,6 +1271,7 @@ class IPUGenerationMixin(GenerationMixin):
                 )
         else:
             return sequence_outputs["sequences"]
+
 
 # from transformers.generation_beam_constraints import Constraint, DisjunctiveConstraint, PhrasalConstraint
 # from transformers.generation_beam_search import BeamScorer, BeamSearchScorer, ConstrainedBeamSearchScorer

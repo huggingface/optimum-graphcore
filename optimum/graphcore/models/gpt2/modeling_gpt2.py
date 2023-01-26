@@ -25,7 +25,6 @@ from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions, Seq
 from transformers.models.gpt2.modeling_gpt2 import GPT2Attention
 
 from ...generation_utils import IPUGenerationMixin
-
 from ...modeling_utils import (
     PipelineMixin,
     SerializedEmbedding,
