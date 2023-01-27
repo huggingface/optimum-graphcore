@@ -906,34 +906,36 @@ class IPUTrainer:
         """
         Detach training model from IPUs
         """
-        if type(self.original_model) in TIED_WEIGHT_MODELS:
-            # Work-around bug with models with tied-weights
-            # TODO: Remove this when bug fixed
-            self.optimizer_state = self.optimizer.state_dict()
-            self.training_model.destroy()
-            self.model = poptorch._impl.unwrapIfWrapped(self.model)
-            for obj in self.model.buffers():
-                if "PoptorchBuffer" in str(obj.__class__):
-                    obj.__class__ = obj.__class__.__bases__[0]
-            self.training_model = None
-        else:
-            self.training_model.detachFromDevice()
+        # if type(self.original_model) in TIED_WEIGHT_MODELS:
+        #     # Work-around bug with models with tied-weights
+        #     # TODO: Remove this when bug fixed
+        #     self.optimizer_state = self.optimizer.state_dict()
+        #     self.training_model.destroy()
+        #     self.model = poptorch._impl.unwrapIfWrapped(self.model)
+        #     for obj in self.model.buffers():
+        #         if "PoptorchBuffer" in str(obj.__class__):
+        #             obj.__class__ = obj.__class__.__bases__[0]
+        #     self.training_model = None
+        # else:
+        #     self.training_model.detachFromDevice()
+        self.training_model.detachFromDevice()
 
     def _detach_inference_model(self):
         """
         Detach inference model from IPUs
         """
-        if type(self.original_model) in TIED_WEIGHT_MODELS:
-            # Work-around bug with models with tied-weights
-            # TODO: Remove this when bug fixed
-            self.inference_model.destroy()
-            self.inference_model = None
-            self.model = poptorch._impl.unwrapIfWrapped(self.model)
-            for obj in self.model.buffers():
-                if "PoptorchBuffer" in str(obj.__class__):
-                    obj.__class__ = obj.__class__.__bases__[0]
-        else:
-            self.inference_model.detachFromDevice()
+        # if type(self.original_model) in TIED_WEIGHT_MODELS:
+        #     # Work-around bug with models with tied-weights
+        #     # TODO: Remove this when bug fixed
+        #     self.inference_model.destroy()
+        #     self.inference_model = None
+        #     self.model = poptorch._impl.unwrapIfWrapped(self.model)
+        #     for obj in self.model.buffers():
+        #         if "PoptorchBuffer" in str(obj.__class__):
+        #             obj.__class__ = obj.__class__.__bases__[0]
+        # else:
+        #     self.inference_model.detachFromDevice()
+        self.inference_model.detachFromDevice()
 
     def _reattach_training_model(self):
         """
