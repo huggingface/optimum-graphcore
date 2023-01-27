@@ -50,8 +50,6 @@ python examples/summarization/run_summarization.py \
     --max_grad_norm 0.5 \
     --pad_to_max_length \
     --dataloader_drop_last \
-    --predict_with_generate \
-    --generation_num_beams 2 \
     --output_dir /tmp/t5-summarization \
     --overwrite_output_dir
 ```
@@ -85,8 +83,6 @@ python examples/summarization/run_summarization.py \
     --max_grad_norm 0.5 \
     --pad_to_max_length \
     --dataloader_drop_last \
-    --predict_with_generate \
-    --generation_num_beams 2 \
     --output_dir /tmp/t5-summarization \
 ```
 
@@ -113,8 +109,6 @@ python examples/summarization/run_summarization.py \
     --max_grad_norm 0.5 \
     --pad_to_max_length \
     --dataloader_drop_last \
-    --predict_with_generate \
-    --generation_num_beams 2 \
     --output_dir /tmp/bart-summarization \
     --overwrite_output_dir
 ```
