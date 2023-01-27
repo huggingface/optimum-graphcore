@@ -288,6 +288,7 @@ if is_torch_available():
         data_collator = kwargs.pop("data_collator", None)
         optimizers = kwargs.pop("optimizers", (None, None))
         output_dir = kwargs.pop("output_dir", "./regression")
+        preprocess_logits_for_metrics = kwargs.pop("preprocess_logits_for_metrics", None)
 
         if "fp32" not in kwargs:
             kwargs["fp32"] = not half_precision
@@ -304,6 +305,7 @@ if is_torch_available():
             optimizers=optimizers,
             model_init=model_init,
             force_to_pipelined=True,
+            preprocess_logits_for_metrics=preprocess_logits_for_metrics,
         )
 
 
@@ -537,39 +539,37 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         self.n_epochs = args.num_train_epochs
         self.batch_size = args.train_batch_size
 
-    # TODO: not supported by poptorch for now.
-    # def test_trainer_works_with_dict(self):
-    #     # Edge case because Apex with mode O2 will change our models to return dicts. This test checks it doesn't break
-    #     # anything.
-    #     train_dataset = RegressionDataset(length=TRAIN_LEN)
-    #     eval_dataset = RegressionDataset(length=EVAL_LEN)
-    #     model = RegressionDictModel()
-    #     args = IPUTrainingArguments("./regression")
-    #     ipu_config = get_ipu_config()
-    #     trainer = IPUTrainer(
-    #         model, ipu_config, args, train_dataset=train_dataset, eval_dataset=eval_dataset, force_to_pipelined=True
-    #     )
-    #     trainer.train()
-    #     _ = trainer.evaluate()
-    #     _ = trainer.predict(eval_dataset)
+    def test_trainer_works_with_dict(self):
+        # Edge case because Apex with mode O2 will change our models to return dicts. This test checks it doesn't break
+        # anything.
+        train_dataset = RegressionDataset(length=TRAIN_LEN)
+        eval_dataset = RegressionDataset(length=EVAL_LEN)
+        model = RegressionDictModel()
+        args = IPUTrainingArguments("./regression")
+        ipu_config = get_ipu_config()
+        trainer = IPUTrainer(
+            model, ipu_config, args, train_dataset=train_dataset, eval_dataset=eval_dataset, force_to_pipelined=True
+        )
+        trainer.train()
+        _ = trainer.evaluate()
+        _ = trainer.predict(eval_dataset)
 
-    # TODO: Supported once models can return dictionaries.
-    # def test_evaluation_with_keys_to_drop(self):
-    #     config = GPT2Config(vocab_size=100, n_positions=128, n_embd=32, n_layer=3, n_head=4)
-    #     tiny_gpt2 = GPT2LMHeadModel(config)
-    #     x = torch.randint(0, 100, (128,))
-    #     eval_dataset = RepeatDataset(x)
-    #     args = IPUTrainingArguments("./test")
-    #     ipu_config = get_ipu_config()
-    #     ipu_config.layers_per_ipu = [3, 0, 0, 0]
-    #     trainer = IPUTrainer(tiny_gpt2, ipu_config, args, eval_dataset=eval_dataset)
-    #     # By default the past_key_values are removed
-    #     result = trainer.predict(eval_dataset)
-    #     self.assertTrue(isinstance(result.predictions, np.ndarray))
-    #     # We can still get them by setting ignore_keys to []
-    #     result = trainer.predict(eval_dataset, ignore_keys=[])
-    #     self.assertTrue(isinstance(result.predictions, tuple))
-    #     self.assertEqual(len(result.predictions), 2)
+    def test_evaluation_with_keys_to_drop(self):
+        config = GPT2Config(vocab_size=100, n_positions=128, n_embd=32, n_layer=3, n_head=4)
+        tiny_gpt2 = GPT2LMHeadModel(config)
+        x = torch.randint(0, 100, (128,))
+        eval_dataset = RepeatDataset(x)
+        args = IPUTrainingArguments("./test")
+        ipu_config = get_ipu_config()
+        ipu_config.layers_per_ipu = [3, 0, 0, 0]
+        trainer = IPUTrainer(tiny_gpt2, ipu_config, args, eval_dataset=eval_dataset)
+        # By default the past_key_values are removed
+        result = trainer.predict(eval_dataset)
+        self.assertTrue(isinstance(result.predictions, np.ndarray))
+        # We can still get them by setting ignore_keys to []
+        result = trainer.predict(eval_dataset, ignore_keys=[])
+        self.assertTrue(isinstance(result.predictions, tuple))
+        self.assertEqual(len(result.predictions), 2)
 
     def test_training_arguments_are_left_untouched(self):
         trainer = get_regression_trainer()
@@ -693,23 +693,22 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         expected_acc = AlmostAccuracy()((pred, y))["accuracy"]
         self.assertAlmostEqual(results["eval_accuracy"], expected_acc)
 
-        # TODO: not supported for now.
         # With logits preprocess
-        # trainer = get_regression_trainer(
-        #     a=1.5,
-        #     b=2.5,
-        #     compute_metrics=AlmostAccuracy(),
-        #     label_names=["labels"],
-        #     preprocess_logits_for_metrics=lambda logits, labels: logits + 1,
-        # )
-        # results = trainer.evaluate()
+        trainer = get_regression_trainer(
+            a=1.5,
+            b=2.5,
+            compute_metrics=AlmostAccuracy(),
+            label_names=["labels"],
+            preprocess_logits_for_metrics=lambda logits, labels: logits + 1,
+        )
+        results = trainer.evaluate()
 
-        # x, y = trainer.eval_dataset.x, trainer.eval_dataset.ys[0]
-        # pred = 1.5 * x + 2.5
-        # expected_loss = ((pred - y) ** 2).mean()
-        # self.assertAlmostEqual(results["eval_loss"], expected_loss)
-        # expected_acc = AlmostAccuracy()((pred + 1, y))["accuracy"]
-        # self.assertAlmostEqual(results["eval_accuracy"], expected_acc)
+        x, y = trainer.eval_dataset.x, trainer.eval_dataset.ys[0]
+        pred = 1.5 * x + 2.5
+        expected_loss = ((pred - y) ** 2).mean()
+        self.assertAlmostEqual(results["eval_loss"], expected_loss)
+        expected_acc = AlmostAccuracy()((pred + 1, y))["accuracy"]
+        self.assertAlmostEqual(results["eval_accuracy"], expected_acc)
 
     def test_predict(self):
         trainer = get_regression_trainer(a=1.5, b=2.5, label_names=["labels"])

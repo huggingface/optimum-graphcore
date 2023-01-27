@@ -263,16 +263,19 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
 
         if not return_dict:
             output = (lm_logits,) + transformer_outputs[1:]
-            if loss is not None:
-                return (loss,) if self.training else (loss,) + output
+            if self.training:
+                # Only returning the loss to make the communication between the host and the device faster.
+                return (loss,)
+            else:
+                return ((loss,) + output) if loss is not None else output
 
         return CausalLMOutputWithCrossAttentions(
             loss=loss,
-            logits=lm_logits if loss is None else None,
-            past_key_values=transformer_outputs.past_key_values if loss is None else None,
-            hidden_states=transformer_outputs.hidden_states if loss is None else None,
-            attentions=transformer_outputs.attentions if loss is None else None,
-            cross_attentions=transformer_outputs.cross_attentions if loss is None else None,
+            logits=lm_logits if not self.training else None,
+            past_key_values=transformer_outputs.past_key_values if not self.training else None,
+            hidden_states=transformer_outputs.hidden_states if not self.training else None,
+            attentions=transformer_outputs.attentions if not self.training else None,
+            cross_attentions=transformer_outputs.cross_attentions if not self.training else None,
         )
 
 
