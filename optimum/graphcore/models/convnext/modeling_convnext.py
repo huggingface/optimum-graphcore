@@ -14,10 +14,7 @@
 
 import poptorch
 from optimum.utils import logging
-from transformers.models.convnext.modeling_convnext import (
-    ConvNextForImageClassification,
-    ConvNextLayer,
-)
+from transformers.models.convnext.modeling_convnext import ConvNextForImageClassification, ConvNextLayer
 
 from ...modeling_utils import PipelineMixin, get_layer_ipu, register
 from .optimized_convnextlayer import OptimizedConvNextLayer
