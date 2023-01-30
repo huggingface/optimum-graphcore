@@ -250,8 +250,8 @@ class IPUGenerationMixin(GenerationMixin):
             )
 
         # Change: disable use_cache because it can't be statically compiled
-        # if "use_cache" in model_kwargs:
-        #     model_kwargs["use_cache"] = False
+        if "use_cache" in model_kwargs:
+            model_kwargs["use_cache"] = False
 
         # keep track of which sequences are already finished
         unfinished_sequences = input_ids.new(input_ids.shape[0]).fill_(1)
@@ -526,6 +526,10 @@ class IPUGenerationMixin(GenerationMixin):
             encoder_hidden_states = (
                 model_kwargs["encoder_outputs"].get("hidden_states") if output_hidden_states else None
             )
+
+        # Change: disable use_cache because it can't be statically compiled
+        if "use_cache" in model_kwargs:
+            model_kwargs["use_cache"] = False
 
         beam_scores = torch.zeros((batch_size, num_beams), dtype=torch.float, device=input_ids.device)
         beam_scores[:, 1:] = -1e9
@@ -830,6 +834,10 @@ class IPUGenerationMixin(GenerationMixin):
                 model_kwargs["encoder_outputs"].get("hidden_states") if output_hidden_states else None
             )
 
+        # Change: disable use_cache because it can't be statically compiled
+        if "use_cache" in model_kwargs:
+            model_kwargs["use_cache"] = False
+
         # keep track of which sequences are already finished
         unfinished_sequences = input_ids.new(input_ids.shape[0]).fill_(1)
         cur_len = input_ids.shape[-1]
@@ -1112,6 +1120,10 @@ class IPUGenerationMixin(GenerationMixin):
             encoder_hidden_states = (
                 model_kwargs["encoder_outputs"].get("hidden_states") if output_hidden_states else None
             )
+
+        # Change: disable use_cache because it can't be statically compiled
+        if "use_cache" in model_kwargs:
+            model_kwargs["use_cache"] = False
 
         beam_scores = torch.zeros((batch_size, num_beams), dtype=torch.float, device=input_ids.device)
         beam_scores = beam_scores.view((batch_size * num_beams,))

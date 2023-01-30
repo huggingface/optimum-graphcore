@@ -30,12 +30,14 @@ from transformers import (
     AutoModelForQuestionAnswering,
     AutoModelForSequenceClassification,
     AutoModelForTokenClassification,
+    AutoModelForCausalLM,
     ImageClassificationPipeline,
     Pipeline,
     PreTrainedTokenizer,
     ProcessorMixin,
     QuestionAnsweringPipeline,
     TextClassificationPipeline,
+    TextGenerationPipeline,
 )
 from transformers.feature_extraction_utils import PreTrainedFeatureExtractor
 from transformers.modeling_utils import PreTrainedModel
@@ -128,6 +130,16 @@ SUPPORTED_TASKS = {
         },
         "type": "text",
     },
+    "text-generation": {
+        "impl": TextGenerationPipeline,
+        "class": (AutoModelForCausalLM,),
+        "default": {
+            "model": ("gpt2", "e7da7f2"),
+            "ipu_config": "Graphcore/gpt2-small-ipu",
+            "max_length": 50,
+        },
+        "type": "text",
+    },
     "zero-shot-classification": {
         "impl": IPUZeroShotClassificationPipeline,
         "class": (AutoModelForSequenceClassification,),
@@ -188,10 +200,6 @@ def get_poplar_executor(
     opts.setExecutionStrategy(poptorch.ShardedExecution())
     model = poptorch.inferenceModel(model.eval(), opts)
     return model
-
-
-def get_inference_context(self):
-    return torch.no_grad
 
 
 def check_model_type(self, supported_models: Union[List[str], dict]):
@@ -333,7 +341,6 @@ def pipeline(
                 feature_extractor = preprocessor
 
     # Override Pipeline methods
-    Pipeline.get_inference_context = get_inference_context
     Pipeline.check_model_type = check_model_type
 
     # Override pipelines' _forward
@@ -360,15 +367,16 @@ def pipeline(
 
     # Auto padding for some tasks
     if "max_length" in SUPPORTED_TASKS[targeted_task]["default"]:
-        kwargs["padding"] = kwargs.get("padding", "max_length")
         default_max_length = SUPPORTED_TASKS[targeted_task]["default"]["max_length"]
-        if kwargs.get("max_length") is None:
-            logger.warning(
-                f"No padding arguments specified, so pad to {default_max_length} by default. "
-                f"Inputs longer than {default_max_length} will be truncated."
-                " To change this behaviour, pass the `padding='max_length'` and"
-                "`max_length=<your desired input length>` arguments to the pipeline function"
-            )
+        if targeted_task not in {"text-generation"}:
+            kwargs["padding"] = kwargs.get("padding", "max_length")
+            if kwargs.get("max_length") is None:
+                logger.warning(
+                    f"No padding arguments specified, so pad to {default_max_length} by default. "
+                    f"Inputs longer than {default_max_length} will be truncated."
+                    " To change this behaviour, pass the `padding='max_length'` and"
+                    "`max_length=<your desired input length>` arguments to the pipeline function"
+                )
         # question-answering already has its own default padding length `max_seq_len` defined, so we just enable padding to max length.
         if targeted_task in {"question-answering"}:
             kwargs["padding"] = "max_length"
