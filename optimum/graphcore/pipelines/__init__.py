@@ -219,7 +219,13 @@ def check_model_type(self, supported_models: Union[List[str], dict]):
             else:
                 supported_models_names.append(model.__name__)
         supported_models = supported_models_names
-    if self.model._user_model.__class__.__bases__[0].__name__ not in supported_models:
+    
+    if isinstance(self.model, poptorch.PoplarExecutor):
+        model_class_name = self.model._user_model.__class__.__bases__[0].__name__
+    else:
+        model_class_name = self.model.__class__.__name__
+
+    if model_class_name not in supported_models:
         logger.error(
             f"The model '{self.model._user_model.__class__.__bases__[0].__name__}' is not supported for {self.task}. Supported models are"
             f" {supported_models}."
@@ -347,20 +353,21 @@ def pipeline(
     old_forward = pipeline_class._forward
 
     def new_forward(self, model_inputs, *args, **kwargs):
-        # Support change in batch size
-        if self.model._executable_inputs:
-            compiled_bs = self.model._executable_inputs.args[0].shape[0]
-            for input in model_inputs.values():
-                if isinstance(input, torch.Tensor):
-                    input_bs = input.shape[0]
-                    break
-            if compiled_bs != input_bs:
-                self.model.destroy()
-        if fp16:
-            # Support fp16
-            for key, input in model_inputs.items():
-                if isinstance(input, torch.Tensor) and input.dtype == torch.float32:
-                    model_inputs[key] = input.half()
+        if isinstance(self.model, poptorch.PoplarExecutor):
+            # Support change in batch size
+            if self.model._executable_inputs:
+                compiled_bs = self.model._executable_inputs.args[0].shape[0]
+                for input in model_inputs.values():
+                    if isinstance(input, torch.Tensor):
+                        input_bs = input.shape[0]
+                        break
+                if compiled_bs != input_bs:
+                    self.model.destroy()
+            if fp16:
+                # Support fp16
+                for key, input in model_inputs.items():
+                    if isinstance(input, torch.Tensor) and input.dtype == torch.float32:
+                        model_inputs[key] = input.half()
         return old_forward(self, model_inputs, *args, **kwargs)
 
     pipeline_class._forward = new_forward
