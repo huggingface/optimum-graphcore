@@ -23,6 +23,7 @@ from optimum.graphcore.generation_utils import IPUGenerationMixin
 from optimum.graphcore.modeling_utils import IncompatibleIPUConfigError, to_pipelined
 from transformers import (
     AudioClassificationPipeline,
+    AutoFeatureExtractor,
     AutomaticSpeechRecognitionPipeline,
     AutoModelForAudioClassification,
     AutoModelForCausalLM,
@@ -33,17 +34,16 @@ from transformers import (
     AutoModelForSeq2SeqLM,
     AutoModelForSequenceClassification,
     AutoModelForTokenClassification,
+    AutoTokenizer,
     ImageClassificationPipeline,
     Pipeline,
     PreTrainedTokenizer,
-    ProcessorMixin,
     QuestionAnsweringPipeline,
     TextClassificationPipeline,
     TextGenerationPipeline,
 )
 from transformers.feature_extraction_utils import PreTrainedFeatureExtractor
 from transformers.modeling_utils import PreTrainedModel
-from transformers.onnx.utils import get_preprocessor
 from transformers.pipelines import get_task
 from transformers.utils import HUGGINGFACE_CO_RESOLVE_ENDPOINT, logging
 
@@ -376,19 +376,14 @@ def pipeline(
             poptorch._poplar_executor.PoplarExecutor. You can also provide non model then a default one will be used"""
         )
 
-    if (tokenizer is None and load_tokenizer) or (feature_extractor is None and load_feature_extractor):
-        preprocessor = get_preprocessor(model_id)
-        if tokenizer is None and load_tokenizer:
-            if isinstance(preprocessor, ProcessorMixin):
-                tokenizer = preprocessor.tokenizer
-            else:
-                tokenizer = preprocessor
-        if feature_extractor is None and load_feature_extractor:
-            if isinstance(preprocessor, ProcessorMixin):
-                feature_extractor = preprocessor.feature_extractor
-            else:
-                feature_extractor = preprocessor
+    # Upstream pipeline creation does not easily support loading these when an actual model
+    # is provided, so we load them here.
+    if tokenizer is None and load_tokenizer:
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
 
+    if feature_extractor is None and load_feature_extractor:
+        feature_extractor = AutoFeatureExtractor.from_pretrained(model_id)
+        
     # Override Pipeline methods
     Pipeline.check_model_type = check_model_type
 
