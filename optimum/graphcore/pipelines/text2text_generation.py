@@ -62,7 +62,13 @@ class IPUText2TextGenerationPipeline(Text2TextGenerationPipeline):
                 f" `args[0]`: {args[0]} have the wrong format. The should be either of type `str` or type `list`"
             )
         padding = "max_length"
-        inputs = self.tokenizer(*args, padding=padding, max_length=kwargs.get("input_max_length"), truncation=truncation, return_tensors=self.framework)
+        inputs = self.tokenizer(
+            *args,
+            padding=padding,
+            max_length=kwargs.get("input_max_length"),
+            truncation=truncation,
+            return_tensors=self.framework,
+        )
         # This is produced by tokenizers but is an invalid generate kwargs
         if "token_type_ids" in inputs:
             del inputs["token_type_ids"]

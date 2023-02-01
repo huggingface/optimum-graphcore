@@ -24,24 +24,24 @@ from transformers import (
     AudioClassificationPipeline,
     AutomaticSpeechRecognitionPipeline,
     AutoModelForAudioClassification,
+    AutoModelForCausalLM,
     AutoModelForCTC,
     AutoModelForImageClassification,
     AutoModelForMaskedLM,
     AutoModelForQuestionAnswering,
+    AutoModelForSeq2SeqLM,
     AutoModelForSequenceClassification,
     AutoModelForTokenClassification,
-    AutoModelForCausalLM,
-    AutoModelForSeq2SeqLM,
     ImageClassificationPipeline,
     Pipeline,
     PreTrainedTokenizer,
     ProcessorMixin,
     QuestionAnsweringPipeline,
+    SummarizationPipeline,
+    Text2TextGenerationPipeline,
     TextClassificationPipeline,
     TextGenerationPipeline,
-    Text2TextGenerationPipeline,
     TranslationPipeline,
-    SummarizationPipeline,
 )
 from transformers.feature_extraction_utils import PreTrainedFeatureExtractor
 from transformers.modeling_utils import PreTrainedModel
@@ -50,8 +50,8 @@ from transformers.pipelines import get_task
 from transformers.utils import HUGGINGFACE_CO_RESOLVE_ENDPOINT, logging
 
 from .fill_mask import IPUFillMaskPipeline
+from .text2text_generation import IPUSummarizationPipeline, IPUText2TextGenerationPipeline, IPUTranslationPipeline
 from .token_classification import IPUTokenClassificationPipeline
-from .text2text_generation import IPUText2TextGenerationPipeline, IPUSummarizationPipeline, IPUTranslationPipeline
 from .zero_shot_classification import IPUZeroShotClassificationPipeline
 
 
@@ -258,7 +258,7 @@ def check_model_type(self, supported_models: Union[List[str], dict]):
             else:
                 supported_models_names.append(model.__name__)
         supported_models = supported_models_names
-    
+
     if isinstance(self.model, poptorch.PoplarExecutor):
         model_class_name = self.model._user_model.__class__.__bases__[0].__name__
     else:
