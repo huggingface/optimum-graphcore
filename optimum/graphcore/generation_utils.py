@@ -259,7 +259,6 @@ class IPUGenerationMixin(GenerationMixin):
         print("optimum greedy_search")
 
         while True:
-
             # Change: remove synced_gpu code
             # Change: add input max_length padding
             input_ids = self._pad_tensors_to_max_len(input_ids, stopping_criteria.max_length, pad_token_id)
@@ -538,7 +537,6 @@ class IPUGenerationMixin(GenerationMixin):
         this_peer_finished = False  # used by synced_gpus only
         print("optimum beam search")
         while True:
-
             # Change: remove synced_gpu code
             # Change: add input max_length padding
             input_ids = self._pad_tensors_to_max_len(input_ids, stopping_criteria.max_length, pad_token_id)
@@ -845,7 +843,6 @@ class IPUGenerationMixin(GenerationMixin):
         print("optimum sample")
         # auto-regressive generation
         while True:
-
             # Change: remove synced_gpu code
             # Change: add input max_length padding
             input_ids = self._pad_tensors_to_max_len(input_ids, stopping_criteria.max_length, pad_token_id)
@@ -1130,7 +1127,6 @@ class IPUGenerationMixin(GenerationMixin):
 
         print("optimum beam sample")
         while True:
-
             # Change: remove synced_gpu code
             # Change: add input max_length padding
             input_ids = self._pad_tensors_to_max_len(input_ids, stopping_criteria.max_length, pad_token_id)
