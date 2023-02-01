@@ -155,7 +155,6 @@ class IPUStableDiffusionPipelineMixin:
         ipu_config=None,
         requires_safety_checker=True,
     ):
-
         text_encoder = maybe_cast_module_to_float(text_encoder)
         vae = maybe_cast_module_to_float(vae)
         safety_checker = maybe_cast_module_to_float(safety_checker)

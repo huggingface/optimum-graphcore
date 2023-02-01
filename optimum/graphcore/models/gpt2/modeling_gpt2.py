@@ -304,7 +304,6 @@ class PipelinedGPT2ForSequenceClassification(GPT2ForSequenceClassification, GPT2
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple, SequenceClassifierOutputWithPast]:
-
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         outputs = super().forward(

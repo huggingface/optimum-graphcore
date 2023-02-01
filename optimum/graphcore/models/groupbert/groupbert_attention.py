@@ -200,7 +200,6 @@ class GroupBertAttention(nn.Module):
         past_key_value: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
         output_attentions: Optional[bool] = False,
     ) -> Tuple[torch.Tensor]:
-
         # Prenorm
         normalised_hidden_states = self.LayerNorm(hidden_states)
 

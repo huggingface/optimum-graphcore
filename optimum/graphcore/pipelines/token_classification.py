@@ -15,7 +15,6 @@ class IPUTokenClassificationPipeline(TokenClassificationPipeline):
         offset_mapping: Optional[List[Tuple[int, int]]] = None,
         **tokenizer_kwargs,
     ):
-
         preprocess_params = tokenizer_kwargs
         if offset_mapping is not None:
             preprocess_params["offset_mapping"] = offset_mapping

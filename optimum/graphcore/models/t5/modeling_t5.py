@@ -56,7 +56,6 @@ class CustomT5Block(T5Block):
         output_attentions=False,
         return_dict=True,
     ):
-
         if past_key_value is not None:
             if not self.is_decoder:
                 logger.warning("`past_key_values` is passed to the encoder. Please make sure this is intended.")

@@ -286,7 +286,6 @@ class IPUGenerationMixin(GenerationMixin):
         bos_token_id: int = None,
         model_kwargs: Optional[Dict[str, torch.Tensor]] = None,
     ) -> torch.LongTensor:
-
         if model_kwargs is not None and "decoder_input_ids" in model_kwargs:
             return model_kwargs.pop("decoder_input_ids")
         else:
@@ -1388,7 +1387,6 @@ class IPUGenerationMixin(GenerationMixin):
         cur_len = input_ids.shape[-1]
 
         while True:
-
             input_ids = self._pad_tensors_to_max_len(input_ids, max_length, pad_token_id)
             # For a seq2seq model such as BART, the "attention_mask" is the encoder/cross attention mask and it does not require padding.
             if not self.config.is_encoder_decoder:
@@ -1643,7 +1641,6 @@ class IPUGenerationMixin(GenerationMixin):
 
         # auto-regressive generation
         while True:
-
             input_ids = self._pad_tensors_to_max_len(input_ids, max_length, pad_token_id)
             # For a seq2seq model such as BART, the "attention_mask" is the encoder/cross attention mask and it does not require padding.
             if not self.config.is_encoder_decoder:
@@ -1912,7 +1909,6 @@ class IPUGenerationMixin(GenerationMixin):
         beam_scores = beam_scores.view((batch_size * num_beams,))
 
         while True:
-
             input_ids = self._pad_tensors_to_max_len(input_ids, max_length, pad_token_id)
             # For a seq2seq model such as BART, the "attention_mask" is the encoder/cross attention mask and it does not require padding.
             if not self.config.is_encoder_decoder:
@@ -2231,7 +2227,6 @@ class IPUGenerationMixin(GenerationMixin):
         beam_scores = beam_scores.view((batch_size * num_beams,))
 
         while True:
-
             input_ids = self._pad_tensors_to_max_len(input_ids, max_length, pad_token_id)
             # For a seq2seq model such as BART, the "attention_mask" is the encoder/cross attention mask and it does not require padding.
             if not self.config.is_encoder_decoder:
@@ -2560,7 +2555,6 @@ class IPUGenerationMixin(GenerationMixin):
         beam_scores = beam_scores.view((batch_size * num_beams,))
 
         while True:
-
             input_ids = self._pad_tensors_to_max_len(input_ids, max_length, pad_token_id)
             # For a seq2seq model such as BART, the "attention_mask" is the encoder/cross attention mask and it does not require padding.
             if not self.config.is_encoder_decoder:
@@ -2762,7 +2756,6 @@ class IPUGenerationMixin(GenerationMixin):
         synced_gpus: Optional[bool] = None,
         **model_kwargs,
     ) -> Union[BeamSearchOutput, torch.LongTensor]:
-
         r"""
         Generates sequences of token ids for models with a language modeling head using **constrained beam search
         decoding** and can be used for text-decoder, text-to-text, speech-to-text, and vision-to-text models.
@@ -2924,7 +2917,6 @@ class IPUGenerationMixin(GenerationMixin):
         beam_scores = beam_scores.view((batch_size * num_beams,))
 
         while True:
-
             input_ids = self._pad_tensors_to_max_len(input_ids, max_length, pad_token_id)
             # For a seq2seq model such as BART, the "attention_mask" is the encoder/cross attention mask and it does not require padding.
             if not self.config.is_encoder_decoder:

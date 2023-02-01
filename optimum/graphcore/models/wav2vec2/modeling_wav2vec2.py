@@ -200,7 +200,6 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
         reduce_selector: Optional[torch.Tensor] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple, Wav2Vec2ForPreTrainingOutput]:
-
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         if mask_time_indices is not None:

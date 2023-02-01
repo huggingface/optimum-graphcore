@@ -239,7 +239,6 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
     @require_torch
     @slow
     def test_torch_large(self):
-
         speech_recognizer = pipeline(
             task="automatic-speech-recognition",
             model="facebook/wav2vec2-base-960h",

@@ -553,7 +553,6 @@ def main():
     # 6. Finally, we can start training
     # Training
     if training_args.do_train:
-
         # use last checkpoint if exist
         if last_checkpoint is not None:
             checkpoint = last_checkpoint

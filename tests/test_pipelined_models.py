@@ -100,7 +100,6 @@ MODELS_TO_TEST = _get_models_to_test(MODELS_TO_TEST_MAPPING)
 
 
 class PipelinedModelsTester(TestCase):
-
     # Copied from transformers hubert tests.
     def _load_superb(self, task, num_samples):
         from datasets import load_dataset

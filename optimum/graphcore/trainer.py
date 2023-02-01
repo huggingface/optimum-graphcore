@@ -1183,7 +1183,6 @@ class IPUTrainer:
 
             step = -1
             for step, inputs in enumerate(epoch_iterator):
-
                 # Skip past any already trained steps if resuming training
                 if steps_trained_in_current_epoch > 0:
                     steps_trained_in_current_epoch -= 1
@@ -1270,7 +1269,6 @@ class IPUTrainer:
         return TrainOutput(self.state.global_step, train_loss, metrics)
 
     def _load_from_checkpoint(self, resume_from_checkpoint, model=None):
-
         if model is None:
             model = self.model
 
@@ -1330,7 +1328,6 @@ class IPUTrainer:
             logger.warn(f"There were unexpected keys in the checkpoint model loaded: {load_result.unexpected_keys}.")
 
     def _issue_warnings_after_load(self, load_result):
-
         if len(load_result.missing_keys) != 0:
             if self.model._keys_to_ignore_on_save is not None and set(load_result.missing_keys) == set(
                 self.model._keys_to_ignore_on_save

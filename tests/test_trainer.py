@@ -1244,7 +1244,6 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         check_func("test_mem_cpu_alloc_delta", metrics)
 
     def test_mem_metrics(self):
-
         # with mem metrics enabled
         trainer = get_regression_trainer(skip_memory_metrics=False, label_names=["labels"])
         self.check_mem_metrics(trainer, self.assertIn)

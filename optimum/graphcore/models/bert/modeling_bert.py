@@ -172,7 +172,6 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple[torch.Tensor], BertForPreTrainingOutput]:
-
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         outputs = self.bert(
