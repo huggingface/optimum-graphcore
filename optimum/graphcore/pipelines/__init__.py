@@ -411,7 +411,7 @@ def pipeline(
     # Auto padding for some tasks
     if "max_length" in SUPPORTED_TASKS[targeted_task]["default"]:
         default_max_length = SUPPORTED_TASKS[targeted_task]["default"]["max_length"]
-        if targeted_task not in {"text-generation", "text2text-generation"}:
+        if targeted_task not in {"summarization", "text2text-generation", "translation"}:
             kwargs["padding"] = kwargs.get("padding", "max_length")
             if kwargs.get("max_length") is None:
                 logger.warning(
