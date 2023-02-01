@@ -103,6 +103,7 @@ class FillMaskPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
             ipu_config="Graphcore/roberta-base-ipu",
             top_k=2,
             framework="pt",
+            fp16=False,
         )
         self.run_large_test(unmasker)
 
@@ -127,7 +128,7 @@ class FillMaskPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
                 },
                 {
                     "sequence": "The largest city in France is Lyon",
-                    "score": 0.214,
+                    "score": 0.215,  # changed from upstream value of 0.214
                     "token": 12790,
                     "token_str": " Lyon",
                 },

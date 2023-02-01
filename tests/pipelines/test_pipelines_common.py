@@ -782,7 +782,7 @@ class PipelineUtilsTest(unittest.TestCase):
         models_are_equal = True
         for model1_p, model2_p in zip(model1.parameters(), model2.parameters()):
             # cast default model's parameters to fp16 since pipeline model's parameters are by default in fp16
-            if model1_p.data.ne(model2_p.data.half()).sum() > 0:
+            if model1_p.data.ne(model2_p.data.to(model1_p.dtype)).sum() > 0:
                 models_are_equal = False
 
         return models_are_equal

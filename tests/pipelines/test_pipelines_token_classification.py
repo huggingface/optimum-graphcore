@@ -231,13 +231,14 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
             model=model,
             ipu_config=ipu_config,
             tokenizer=tokenizer,
+            fp16=False,
         )
         output = token_classifier(sentence)
         self.assertEqual(
             nested_simplify(output[:3]),
             [
                 {"entity": "B-PER", "score": 0.999, "word": "Cons", "start": 0, "end": 4, "index": 1},
-                {"entity": "B-PER", "score": 0.803, "word": "##uelo", "start": 4, "end": 8, "index": 2},
+                {"entity": "B-PER", "score": 0.800, "word": "##uelo", "start": 4, "end": 8, "index": 2},  # changed from upstream value of 0.803
                 {"entity": "I-PER", "score": 0.999, "word": "Ara", "start": 9, "end": 12, "index": 3},
             ],
         )
@@ -248,6 +249,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
             ipu_config=ipu_config,
             tokenizer=tokenizer,
             aggregation_strategy="simple",
+            fp16=False
         )
         output = token_classifier(sentence)
         self.assertEqual(
@@ -299,6 +301,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
             ipu_config=ipu_config,
             tokenizer=tokenizer,
             aggregation_strategy="average",
+            fp16=False,
         )
         output = token_classifier(sentence)
         self.assertEqual(
@@ -846,6 +849,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
             model="dslim/bert-base-NER",
             ipu_config="Graphcore/bert-base-ipu",
             grouped_entities=True,
+            fp16=False,
         )
         sentence = "Hello Sarah Jessica Parker who Jessica lives in New York"
         sentence2 = "This is a simple test"
