@@ -1,5 +1,4 @@
 import warnings
-from typing import List, Optional, Tuple
 
 from transformers import SummarizationPipeline, Text2TextGenerationPipeline, TranslationPipeline
 from transformers.pipelines.text2text_generation import ReturnType

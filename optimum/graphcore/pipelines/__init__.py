@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, List, Optional, Union
 
 import torch
 
@@ -37,11 +37,8 @@ from transformers import (
     PreTrainedTokenizer,
     ProcessorMixin,
     QuestionAnsweringPipeline,
-    SummarizationPipeline,
-    Text2TextGenerationPipeline,
     TextClassificationPipeline,
     TextGenerationPipeline,
-    TranslationPipeline,
 )
 from transformers.feature_extraction_utils import PreTrainedFeatureExtractor
 from transformers.modeling_utils import PreTrainedModel
