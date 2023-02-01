@@ -31,6 +31,7 @@ from transformers import (
     AutoModelForSequenceClassification,
     AutoModelForTokenClassification,
     AutoModelForCausalLM,
+    AutoModelForSeq2SeqLM,
     ImageClassificationPipeline,
     Pipeline,
     PreTrainedTokenizer,
@@ -38,6 +39,9 @@ from transformers import (
     QuestionAnsweringPipeline,
     TextClassificationPipeline,
     TextGenerationPipeline,
+    Text2TextGenerationPipeline,
+    TranslationPipeline,
+    SummarizationPipeline,
 )
 from transformers.feature_extraction_utils import PreTrainedFeatureExtractor
 from transformers.modeling_utils import PreTrainedModel
@@ -47,6 +51,7 @@ from transformers.utils import HUGGINGFACE_CO_RESOLVE_ENDPOINT, logging
 
 from .fill_mask import IPUFillMaskPipeline
 from .token_classification import IPUTokenClassificationPipeline
+from .text2text_generation import IPUText2TextGenerationPipeline, IPUSummarizationPipeline, IPUTranslationPipeline
 from .zero_shot_classification import IPUZeroShotClassificationPipeline
 
 
@@ -137,6 +142,40 @@ SUPPORTED_TASKS = {
             "model": ("gpt2", "e7da7f2"),
             "ipu_config": "Graphcore/gpt2-small-ipu",
             "max_length": 50,
+        },
+        "type": "text",
+    },
+    "summarization": {
+        "impl": IPUSummarizationPipeline,
+        "class": (AutoModelForSeq2SeqLM,),
+        "default": {
+            "model": ("ainize/bart-base-cnn", "b90bc9a"),
+            "ipu_config": "Graphcore/bart-base-ipu",
+            "max_input_length": 50,
+            "max_length": 20,
+        },
+        "type": "text",
+    },
+    # This task is a special case as it's parametrized by SRC, TGT languages.
+    "translation": {
+        "impl": IPUTranslationPipeline,
+        "class": (AutoModelForSeq2SeqLM,),
+        "default": {
+            "model": ("t5-small", "9507060"),
+            "ipu_config": "Graphcore/t5-small-ipu",
+            "max_length": 50,
+            "max_input_length": 50,
+        },
+        "type": "text",
+    },
+    "text2text-generation": {
+        "impl": IPUText2TextGenerationPipeline,
+        "class": (AutoModelForSeq2SeqLM,),
+        "default": {
+            "model": ("t5-small", "9507060"),
+            "ipu_config": "Graphcore/t5-small-ipu",
+            "max_length": 50,
+            "max_input_length": 50,
         },
         "type": "text",
     },
@@ -375,7 +414,7 @@ def pipeline(
     # Auto padding for some tasks
     if "max_length" in SUPPORTED_TASKS[targeted_task]["default"]:
         default_max_length = SUPPORTED_TASKS[targeted_task]["default"]["max_length"]
-        if targeted_task not in {"text-generation"}:
+        if targeted_task not in {"text-generation", "text2text-generation"}:
             kwargs["padding"] = kwargs.get("padding", "max_length")
             if kwargs.get("max_length") is None:
                 logger.warning(
@@ -384,12 +423,6 @@ def pipeline(
                     " To change this behaviour, pass the `padding='max_length'` and"
                     "`max_length=<your desired input length>` arguments to the pipeline function"
                 )
-        # question-answering already has its own default padding length `max_seq_len` defined, so we just enable padding to max length.
-        if targeted_task in {"question-answering"}:
-            kwargs["padding"] = "max_length"
-            logger.warning(
-                "No padding arguments specified, so pad to 384 by default. Inputs longer than 384 will be truncated."
-            )
         kwargs["max_length"] = kwargs.get("max_length", default_max_length)
 
     # question-answering already has its own default padding length `max_seq_len` defined, so we just enable padding to max length.
@@ -398,6 +431,8 @@ def pipeline(
         logger.warning(
             "No padding arguments specified, so pad to 384 by default. Inputs longer than 384 will be truncated."
         )
+
+    print(kwargs)
 
     # Set pad_token for models that do not have pad_token
     if model.config.model_type in {"gpt2"}:
