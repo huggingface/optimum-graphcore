@@ -79,10 +79,18 @@ class IPUSummarizationPipeline(SummarizationPipeline, IPUText2TextGenerationPipe
 
 
 class IPUTranslationPipeline(TranslationPipeline, IPUText2TextGenerationPipeline):
-    def preprocess(self, *args, truncation=TruncationStrategy.DO_NOT_TRUNCATE, src_lang=None, tgt_lang=None, max_input_length=None):
+    def preprocess(
+        self, *args, truncation=TruncationStrategy.DO_NOT_TRUNCATE, src_lang=None, tgt_lang=None, max_input_length=None
+    ):
         if getattr(self.tokenizer, "_build_translation_inputs", None):
             return self.tokenizer._build_translation_inputs(
-                *args, return_tensors=self.framework, max_length=max_input_length, padding="max_length", truncation=truncation, src_lang=src_lang, tgt_lang=tgt_lang
+                *args,
+                return_tensors=self.framework,
+                max_length=max_input_length,
+                padding="max_length",
+                truncation=truncation,
+                src_lang=src_lang,
+                tgt_lang=tgt_lang,
             )
         else:
             return super()._parse_and_tokenize(*args, truncation=truncation, max_input_length=max_input_length)
