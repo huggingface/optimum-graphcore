@@ -148,7 +148,7 @@ SUPPORTED_TASKS = {
         "default": {
             "model": ("ainize/bart-base-cnn", "b90bc9a"),
             "ipu_config": "Graphcore/bart-base-ipu",
-            "input_max_length": 50,
+            "max_input_length": 50,
             "max_length": 20,
         },
         "type": "text",
@@ -161,7 +161,7 @@ SUPPORTED_TASKS = {
             "model": ("t5-small", "9507060"),
             "ipu_config": "Graphcore/t5-small-ipu",
             "max_length": 50,
-            "input_max_length": 50,
+            "max_input_length": 45,
         },
         "type": "text",
     },
@@ -172,7 +172,7 @@ SUPPORTED_TASKS = {
             "model": ("t5-small", "9507060"),
             "ipu_config": "Graphcore/t5-small-ipu",
             "max_length": 50,
-            "input_max_length": 50,
+            "max_input_length": 50,
         },
         "type": "text",
     },
@@ -423,8 +423,8 @@ def pipeline(
         kwargs["max_length"] = kwargs.get("max_length", default_max_length)
 
     if targeted_task in {"summarization", "text2text-generation", "translation"}:
-        default_input_max_length = SUPPORTED_TASKS[targeted_task]["default"]["input_max_length"]
-        kwargs["input_max_length"] = kwargs.get("input_max_length", default_input_max_length)
+        default_max_input_length = SUPPORTED_TASKS[targeted_task]["default"]["max_input_length"]
+        kwargs["max_input_length"] = kwargs.get("max_input_length", default_max_input_length)
 
     # question-answering already has its own default padding length `max_seq_len` defined, so we just enable padding to max length.
     if targeted_task in {"question-answering"}:

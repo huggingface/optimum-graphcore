@@ -1,7 +1,7 @@
 import warnings
 
 from transformers import SummarizationPipeline, Text2TextGenerationPipeline, TranslationPipeline
-from transformers.pipelines.text2text_generation import ReturnType
+from transformers.pipelines.text2text_generation import ReturnType, TruncationStrategy
 
 
 class IPUText2TextGenerationPipeline(Text2TextGenerationPipeline):
@@ -13,15 +13,15 @@ class IPUText2TextGenerationPipeline(Text2TextGenerationPipeline):
         clean_up_tokenization_spaces=None,
         truncation=None,
         stop_sequence=None,
-        input_max_length=None,
+        max_input_length=None,
         **generate_kwargs
     ):
         preprocess_params = {}
         if truncation is not None:
             preprocess_params["truncation"] = truncation
 
-        if input_max_length is not None:
-            preprocess_params["input_max_length"] = input_max_length
+        if max_input_length is not None:
+            preprocess_params["max_input_length"] = max_input_length
 
         forward_params = generate_kwargs
 
@@ -64,7 +64,7 @@ class IPUText2TextGenerationPipeline(Text2TextGenerationPipeline):
         inputs = self.tokenizer(
             *args,
             padding=padding,
-            max_length=kwargs.get("input_max_length"),
+            max_length=kwargs.get("max_input_length"),
             truncation=truncation,
             return_tensors=self.framework,
         )
@@ -79,4 +79,10 @@ class IPUSummarizationPipeline(SummarizationPipeline, IPUText2TextGenerationPipe
 
 
 class IPUTranslationPipeline(TranslationPipeline, IPUText2TextGenerationPipeline):
-    pass
+    def preprocess(self, *args, truncation=TruncationStrategy.DO_NOT_TRUNCATE, src_lang=None, tgt_lang=None, max_input_length=None):
+        if getattr(self.tokenizer, "_build_translation_inputs", None):
+            return self.tokenizer._build_translation_inputs(
+                *args, return_tensors=self.framework, max_length=max_input_length, padding="max_length", truncation=truncation, src_lang=src_lang, tgt_lang=tgt_lang
+            )
+        else:
+            return super()._parse_and_tokenize(*args, truncation=truncation, max_input_length=max_input_length)
