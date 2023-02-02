@@ -20,6 +20,7 @@ import poptorch
 import transformers.pipelines
 from optimum.graphcore import IPUConfig
 from optimum.graphcore.modeling_utils import to_pipelined
+from optimum.graphcore.generation_utils import IPUGenerationMixin
 from transformers import (
     AudioClassificationPipeline,
     AutomaticSpeechRecognitionPipeline,
@@ -234,7 +235,10 @@ def get_poplar_executor(
         model.half()
     opts = ipu_config.to_options(for_inference=True)
     opts.setExecutionStrategy(poptorch.ShardedExecution())
-    model = poptorch.inferenceModel(model.eval(), opts)
+
+    # Text generation models have an internal Poplar executor so don't wrap model in that case
+    if not isinstance(model, IPUGenerationMixin):
+        model = poptorch.inferenceModel(model.eval(), opts)
     return model
 
 
@@ -258,6 +262,8 @@ def check_model_type(self, supported_models: Union[List[str], dict]):
 
     if isinstance(self.model, poptorch.PoplarExecutor):
         model_class_name = self.model._user_model.__class__.__bases__[0].__name__
+    elif isinstance(self.model, IPUGenerationMixin):
+        model_class_name = self.model.__class__.__bases__[0].__name__
     else:
         model_class_name = self.model.__class__.__name__
 
@@ -389,16 +395,24 @@ def pipeline(
     old_forward = pipeline_class._forward
 
     def new_forward(self, model_inputs, *args, **kwargs):
-        if isinstance(self.model, poptorch.PoplarExecutor):
+        if isinstance(self.model, poptorch.PoplarExecutor) or hasattr(self.model, "poptorch_model"):
             # Support change in batch size
-            if self.model._executable_inputs:
-                compiled_bs = self.model._executable_inputs.args[0].shape[0]
+            if hasattr(self.model, "poptorch_model"):
+                poplar_executor = self.model.poptorch_model
+            else:
+                poplar_executor = self.model
+
+            if poplar_executor._executable_inputs:
+                for arg in poplar_executor._executable_inputs.args:
+                    if isinstance(arg, torch.Tensor):
+                        compiled_bs = arg.shape[0]
+                        break
                 for input in model_inputs.values():
                     if isinstance(input, torch.Tensor):
                         input_bs = input.shape[0]
                         break
                 if compiled_bs != input_bs:
-                    self.model.destroy()
+                    poplar_executor.destroy()
             if fp16:
                 # Support fp16
                 for key, input in model_inputs.items():
@@ -408,10 +422,17 @@ def pipeline(
 
     pipeline_class._forward = new_forward
 
+    # Implement pipelines __del__ to clean up poplar exector
+    def _del(self):
+        # For text generation models, deallocate the internal poplar executor
+        if hasattr(self.model, "poptorch_model"):
+            self.model.poptorch_model.destroy()
+    pipeline_class.__del__ = _del
+    
     # Auto padding for some tasks
     if "max_length" in SUPPORTED_TASKS[targeted_task]["default"]:
         default_max_length = SUPPORTED_TASKS[targeted_task]["default"]["max_length"]
-        if targeted_task not in {"summarization", "text2text-generation", "translation"}:
+        if targeted_task not in {"summarization", "text-generation", "text2text-generation", "translation"}:
             kwargs["padding"] = kwargs.get("padding", "max_length")
             if kwargs.get("max_length") is None:
                 logger.warning(
