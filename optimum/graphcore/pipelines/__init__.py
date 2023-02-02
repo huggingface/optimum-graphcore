@@ -12,22 +12,25 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, List, Optional, Union
 
 import torch
 
 import poptorch
 import transformers.pipelines
 from optimum.graphcore import IPUConfig
+from optimum.graphcore.generation_utils import IPUGenerationMixin
 from optimum.graphcore.modeling_utils import to_pipelined
 from transformers import (
     AudioClassificationPipeline,
     AutomaticSpeechRecognitionPipeline,
     AutoModelForAudioClassification,
+    AutoModelForCausalLM,
     AutoModelForCTC,
     AutoModelForImageClassification,
     AutoModelForMaskedLM,
     AutoModelForQuestionAnswering,
+    AutoModelForSeq2SeqLM,
     AutoModelForSequenceClassification,
     AutoModelForTokenClassification,
     ImageClassificationPipeline,
@@ -36,6 +39,7 @@ from transformers import (
     ProcessorMixin,
     QuestionAnsweringPipeline,
     TextClassificationPipeline,
+    TextGenerationPipeline,
 )
 from transformers.feature_extraction_utils import PreTrainedFeatureExtractor
 from transformers.modeling_utils import PreTrainedModel
@@ -44,6 +48,7 @@ from transformers.pipelines import get_task
 from transformers.utils import HUGGINGFACE_CO_RESOLVE_ENDPOINT, logging
 
 from .fill_mask import IPUFillMaskPipeline
+from .text2text_generation import IPUSummarizationPipeline, IPUText2TextGenerationPipeline, IPUTranslationPipeline
 from .token_classification import IPUTokenClassificationPipeline
 from .zero_shot_classification import IPUZeroShotClassificationPipeline
 
@@ -128,6 +133,50 @@ SUPPORTED_TASKS = {
         },
         "type": "text",
     },
+    "text-generation": {
+        "impl": TextGenerationPipeline,
+        "class": (AutoModelForCausalLM,),
+        "default": {
+            "model": ("gpt2", "e7da7f2"),
+            "ipu_config": "Graphcore/gpt2-small-ipu",
+            "max_length": 50,
+        },
+        "type": "text",
+    },
+    "summarization": {
+        "impl": IPUSummarizationPipeline,
+        "class": (AutoModelForSeq2SeqLM,),
+        "default": {
+            "model": ("ainize/bart-base-cnn", "b90bc9a"),
+            "ipu_config": "Graphcore/bart-base-ipu",
+            "max_input_length": 50,
+            "max_length": 20,
+        },
+        "type": "text",
+    },
+    # This task is a special case as it's parametrized by SRC, TGT languages.
+    "translation": {
+        "impl": IPUTranslationPipeline,
+        "class": (AutoModelForSeq2SeqLM,),
+        "default": {
+            "model": ("t5-small", "9507060"),
+            "ipu_config": "Graphcore/t5-small-ipu",
+            "max_length": 50,
+            "max_input_length": 45,
+        },
+        "type": "text",
+    },
+    "text2text-generation": {
+        "impl": IPUText2TextGenerationPipeline,
+        "class": (AutoModelForSeq2SeqLM,),
+        "default": {
+            "model": ("t5-small", "9507060"),
+            "ipu_config": "Graphcore/t5-small-ipu",
+            "max_length": 50,
+            "max_input_length": 50,
+        },
+        "type": "text",
+    },
     "zero-shot-classification": {
         "impl": IPUZeroShotClassificationPipeline,
         "class": (AutoModelForSequenceClassification,),
@@ -186,12 +235,11 @@ def get_poplar_executor(
         model.half()
     opts = ipu_config.to_options(for_inference=True)
     opts.setExecutionStrategy(poptorch.ShardedExecution())
-    model = poptorch.inferenceModel(model.eval(), opts)
+
+    # Text generation models have an internal Poplar executor so don't wrap model in that case
+    if not isinstance(model, IPUGenerationMixin):
+        model = poptorch.inferenceModel(model.eval(), opts)
     return model
-
-
-def get_inference_context(self):
-    return torch.no_grad
 
 
 def check_model_type(self, supported_models: Union[List[str], dict]):
@@ -211,7 +259,15 @@ def check_model_type(self, supported_models: Union[List[str], dict]):
             else:
                 supported_models_names.append(model.__name__)
         supported_models = supported_models_names
-    if self.model._user_model.__class__.__bases__[0].__name__ not in supported_models:
+
+    if isinstance(self.model, poptorch.PoplarExecutor):
+        model_class_name = self.model._user_model.__class__.__bases__[0].__name__
+    elif isinstance(self.model, IPUGenerationMixin):
+        model_class_name = self.model.__class__.__bases__[0].__name__
+    else:
+        model_class_name = self.model.__class__.__name__
+
+    if model_class_name not in supported_models:
         logger.error(
             f"The model '{self.model._user_model.__class__.__bases__[0].__name__}' is not supported for {self.task}. Supported models are"
             f" {supported_models}."
@@ -333,49 +389,64 @@ def pipeline(
                 feature_extractor = preprocessor
 
     # Override Pipeline methods
-    Pipeline.get_inference_context = get_inference_context
     Pipeline.check_model_type = check_model_type
 
     # Override pipelines' _forward
     old_forward = pipeline_class._forward
 
     def new_forward(self, model_inputs, *args, **kwargs):
-        # Support change in batch size
-        if self.model._executable_inputs:
-            compiled_bs = self.model._executable_inputs.args[0].shape[0]
-            for input in model_inputs.values():
-                if isinstance(input, torch.Tensor):
-                    input_bs = input.shape[0]
-                    break
-            if compiled_bs != input_bs:
-                self.model.destroy()
-        if fp16:
-            # Support fp16
-            for key, input in model_inputs.items():
-                if isinstance(input, torch.Tensor) and input.dtype == torch.float32:
-                    model_inputs[key] = input.half()
+        if isinstance(self.model, poptorch.PoplarExecutor) or hasattr(self.model, "poptorch_model"):
+            # Support change in batch size
+            if hasattr(self.model, "poptorch_model"):
+                poplar_executor = self.model.poptorch_model
+            else:
+                poplar_executor = self.model
+
+            if poplar_executor._executable_inputs:
+                for arg in poplar_executor._executable_inputs.args:
+                    if isinstance(arg, torch.Tensor):
+                        compiled_bs = arg.shape[0]
+                        break
+                for input in model_inputs.values():
+                    if isinstance(input, torch.Tensor):
+                        input_bs = input.shape[0]
+                        break
+                if compiled_bs != input_bs:
+                    poplar_executor.destroy()
+            if fp16:
+                # Support fp16
+                for key, input in model_inputs.items():
+                    if isinstance(input, torch.Tensor) and input.dtype == torch.float32:
+                        model_inputs[key] = input.half()
         return old_forward(self, model_inputs, *args, **kwargs)
 
     pipeline_class._forward = new_forward
 
+    # Implement pipelines __del__ to clean up poplar exector
+    def _del(self):
+        # For text generation models, deallocate the internal poplar executor
+        if hasattr(self.model, "poptorch_model"):
+            self.model.poptorch_model.destroy()
+
+    pipeline_class.__del__ = _del
+
     # Auto padding for some tasks
     if "max_length" in SUPPORTED_TASKS[targeted_task]["default"]:
-        kwargs["padding"] = kwargs.get("padding", "max_length")
         default_max_length = SUPPORTED_TASKS[targeted_task]["default"]["max_length"]
-        if kwargs.get("max_length") is None:
-            logger.warning(
-                f"No padding arguments specified, so pad to {default_max_length} by default. "
-                f"Inputs longer than {default_max_length} will be truncated."
-                " To change this behaviour, pass the `padding='max_length'` and"
-                "`max_length=<your desired input length>` arguments to the pipeline function"
-            )
-        # question-answering already has its own default padding length `max_seq_len` defined, so we just enable padding to max length.
-        if targeted_task in {"question-answering"}:
-            kwargs["padding"] = "max_length"
-            logger.warning(
-                "No padding arguments specified, so pad to 384 by default. Inputs longer than 384 will be truncated."
-            )
+        if targeted_task not in {"summarization", "text-generation", "text2text-generation", "translation"}:
+            kwargs["padding"] = kwargs.get("padding", "max_length")
+            if kwargs.get("max_length") is None:
+                logger.warning(
+                    f"No padding arguments specified, so pad to {default_max_length} by default. "
+                    f"Inputs longer than {default_max_length} will be truncated."
+                    " To change this behaviour, pass the `padding='max_length'` and"
+                    "`max_length=<your desired input length>` arguments to the pipeline function"
+                )
         kwargs["max_length"] = kwargs.get("max_length", default_max_length)
+
+    if targeted_task in {"summarization", "text2text-generation", "translation"}:
+        default_max_input_length = SUPPORTED_TASKS[targeted_task]["default"]["max_input_length"]
+        kwargs["max_input_length"] = kwargs.get("max_input_length", default_max_input_length)
 
     # question-answering already has its own default padding length `max_seq_len` defined, so we just enable padding to max length.
     if targeted_task in {"question-answering"}:

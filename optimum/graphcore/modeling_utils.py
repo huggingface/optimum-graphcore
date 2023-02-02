@@ -125,6 +125,7 @@ class PipelineMixin:
         pipelined_model = cls(config)
         pipelined_model.load_state_dict(model.state_dict())
         pipelined_model.ipu_config = copy.deepcopy(ipu_config)
+        pipelined_model.training = model.training
         return pipelined_model
 
     @classmethod
@@ -222,29 +223,6 @@ class PipelineMixin:
             return sum(p.numel() for p in non_embedding_parameters if p.requires_grad or not only_trainable)
         else:
             return sum(p.numel() for p in self.parameters() if p.requires_grad or not only_trainable)
-
-
-class GenerationMethodsMixin:
-    def get_encoder(
-        self,
-        device_iterations: Optional[int] = None,
-        replication_factor: Optional[int] = None,
-        for_inference: bool = True,
-    ):
-        if not hasattr(self, "_wrapped_encoder"):
-            encoder = super().get_encoder()
-            if self.ipu_config.execute_encoder_on_cpu_for_generation:
-                self._wrapped_encoder = encoder.to(torch.float32)
-            else:
-                self.eval_opts = self.ipu_config.to_options(for_inference=True)
-                self._wrapped_encoder = poptorch.inferenceModel(
-                    encoder, options=self.ipu_config.to_options(for_inference=True)
-                )
-        return self._wrapped_encoder
-
-    def prepare_inputs_for_generation(self, input_ids: torch.LongTensor, **kwargs) -> Dict[str, Any]:
-        inputs = super().prepare_inputs_for_generation(input_ids, **kwargs)
-        return {k: v for k, v in inputs.items() if k in signature(self._forward_for_generate).parameters}
 
 
 def get_layer_ipu(layers_per_ipu: List[int], target_number_of_layers: Optional[Union[int, List]] = None):
@@ -448,8 +426,18 @@ class SharedEmbedding(nn.Module):
         #     decoder_inputs_embeds = self.shared(decoder_input_ids) * decoder_embed_scale
         # combined, n1, n2 = self._combine_inputs(input_ids, decoder_input_ids)
         # encoder_inputs_embeds, decoder_inputs_embeds = self._separate_inputs(self.shared(combined), n1, n2)
-        idx, combined = self._combine_inputs(input_ids, decoder_input_ids)
-        encoder_inputs_embeds, decoder_inputs_embeds = self._separate_inputs(idx, self.shared(combined))
+        encoder_inputs_embeds, decoder_inputs_embeds = None, None
+        if input_ids is None:
+            # call on decoder_input_ids only
+            decoder_inputs_embeds = self.shared(decoder_input_ids)
+        elif decoder_input_ids is None:
+            # call on input_ids only
+            encoder_inputs_embeds = self.shared(input_ids)
+        else:
+            # Call on the combined case
+            # This case is assuming input_ids and decoder_input_ids are not None
+            idx, combined = self._combine_inputs(input_ids, decoder_input_ids)
+            encoder_inputs_embeds, decoder_inputs_embeds = self._separate_inputs(idx, self.shared(combined))
 
         if encoder_embed_scale:
             encoder_inputs_embeds = encoder_inputs_embeds * encoder_embed_scale

@@ -38,7 +38,6 @@ from transformers.models.bart.modeling_bart import (
 
 from ...generation_utils import IPUGenerationMixin
 from ...modeling_utils import (
-    GenerationMethodsMixin,
     PipelineMixin,
     SerializedLinear,
     SharedEmbedding,
@@ -413,7 +412,7 @@ class _BartDecoderWithCustomMakeCausalAndExpandMask(BartDecoder):
             raise ValueError("You cannot specify both decoder_input_ids and decoder_inputs_embeds at the same time")
         elif input_ids is not None:
             input = input_ids
-            input_shape = input.shape()
+            input_shape = input.shape
             input_ids = input_ids.view(-1, input_shape[-1])
         elif inputs_embeds is not None:
             input_shape = inputs_embeds.size()[:-1]
@@ -648,11 +647,15 @@ class _BartModelWithSharedEmbedding(BartModel):
             )
         # If the user passed a tuple for encoder_outputs, we wrap it in a BaseModelOutput when return_dict=True
         elif return_dict and not isinstance(encoder_outputs, BaseModelOutput):
-            encoder_outputs = BaseModelOutput(
-                last_hidden_state=encoder_outputs[0],
-                hidden_states=encoder_outputs[1] if len(encoder_outputs) > 1 else None,
-                attentions=encoder_outputs[2] if len(encoder_outputs) > 2 else None,
-            )
+            # BUG: BaseModelOutput type being lost by poptorch?
+            if isinstance(encoder_outputs, dict):
+                encoder_outputs = BaseModelOutput(encoder_outputs)
+            else:
+                encoder_outputs = BaseModelOutput(
+                    last_hidden_state=encoder_outputs[0],
+                    hidden_states=encoder_outputs[1] if len(encoder_outputs) > 1 else None,
+                    attentions=encoder_outputs[2] if len(encoder_outputs) > 2 else None,
+                )
 
         # decoder outputs consists of (dec_features, past_key_value, dec_hidden, dec_attn)
         decoder_outputs = self.decoder(
@@ -686,9 +689,7 @@ class _BartModelWithSharedEmbedding(BartModel):
 
 
 @register(BartForConditionalGeneration)
-class PipelinedBartForConditionalGeneration(
-    GenerationMethodsMixin, BartForConditionalGeneration, PipelineMixin, IPUGenerationMixin
-):
+class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, PipelineMixin, IPUGenerationMixin):
     def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.

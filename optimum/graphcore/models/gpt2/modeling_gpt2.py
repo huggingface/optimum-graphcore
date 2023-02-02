@@ -24,6 +24,7 @@ from transformers import GPT2ForSequenceClassification, GPT2ForTokenClassificati
 from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions, SequenceClassifierOutputWithPast
 from transformers.models.gpt2.modeling_gpt2 import GPT2Attention
 
+from ...generation_utils import IPUGenerationMixin
 from ...modeling_utils import (
     PipelineMixin,
     SerializedEmbedding,
@@ -107,7 +108,7 @@ class GPT2PipelineMixin(PipelineMixin):
 
 
 @register(GPT2LMHeadModel)
-class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
+class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin, IPUGenerationMixin):
     def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.
@@ -150,8 +151,8 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Token Embedding     --> IPU 0")
         self.transformer.wte = poptorch.BeginBlock(self.transformer.wte, "Token embedding", ipu_id=0)
-        logger.info("Position Embedding  --> IPU 1")
-        self.transformer.wpe = poptorch.BeginBlock(self.transformer.wpe, "Position embedding", ipu_id=1)
+        logger.info("Position Embedding  --> IPU 0")
+        self.transformer.wpe = poptorch.BeginBlock(self.transformer.wpe, "Position embedding", ipu_id=0)
         hs = outline_attribute(self.transformer.ln_f, "LayerNorm")
         self._hooks.extend(hs)
 
