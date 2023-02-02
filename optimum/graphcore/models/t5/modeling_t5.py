@@ -27,7 +27,6 @@ from transformers.models.t5.modeling_t5 import __HEAD_MASK_WARNING_MSG, T5Block,
 
 from ...generation_utils import IPUGenerationMixin
 from ...modeling_utils import (
-    GenerationMethodsMixin,
     PipelineMixin,
     SerializedLinear,
     SharedEmbedding,

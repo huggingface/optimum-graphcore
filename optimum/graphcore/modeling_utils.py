@@ -225,30 +225,6 @@ class PipelineMixin:
             return sum(p.numel() for p in self.parameters() if p.requires_grad or not only_trainable)
 
 
-class GenerationMethodsMixin:
-    pass
-    # def get_encoder(
-    #     self,
-    #     device_iterations: Optional[int] = None,
-    #     replication_factor: Optional[int] = None,
-    #     for_inference: bool = True,
-    # ):
-    #     if not hasattr(self, "_wrapped_encoder"):
-    #         encoder = super().get_encoder()
-    #         if self.ipu_config.execute_encoder_on_cpu_for_generation:
-    #             self._wrapped_encoder = encoder.to(torch.float32)
-    #         else:
-    #             self.eval_opts = self.ipu_config.to_options(for_inference=True)
-    #             self._wrapped_encoder = poptorch.inferenceModel(
-    #                 encoder, options=self.ipu_config.to_options(for_inference=True)
-    #             )
-    #     return self._wrapped_encoder
-
-    # def prepare_inputs_for_generation(self, input_ids: torch.LongTensor, **kwargs) -> Dict[str, Any]:
-    #     inputs = super().prepare_inputs_for_generation(input_ids, **kwargs)
-    #     return {k: v for k, v in inputs.items() if k in signature(self._forward_for_generate).parameters}
-
-
 def get_layer_ipu(layers_per_ipu: List[int], target_number_of_layers: Optional[Union[int, List]] = None):
     # List of the IPU Id for each encoder layer
     layer_ipu: List[int] = []

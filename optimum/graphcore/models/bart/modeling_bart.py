@@ -38,7 +38,6 @@ from transformers.models.bart.modeling_bart import (
 
 from ...generation_utils import IPUGenerationMixin
 from ...modeling_utils import (
-    GenerationMethodsMixin,
     PipelineMixin,
     SerializedLinear,
     SharedEmbedding,
