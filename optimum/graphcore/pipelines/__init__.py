@@ -19,8 +19,8 @@ import torch
 import poptorch
 import transformers.pipelines
 from optimum.graphcore import IPUConfig
-from optimum.graphcore.modeling_utils import to_pipelined
 from optimum.graphcore.generation_utils import IPUGenerationMixin
+from optimum.graphcore.modeling_utils import to_pipelined
 from transformers import (
     AudioClassificationPipeline,
     AutomaticSpeechRecognitionPipeline,
@@ -427,8 +427,9 @@ def pipeline(
         # For text generation models, deallocate the internal poplar executor
         if hasattr(self.model, "poptorch_model"):
             self.model.poptorch_model.destroy()
+
     pipeline_class.__del__ = _del
-    
+
     # Auto padding for some tasks
     if "max_length" in SUPPORTED_TASKS[targeted_task]["default"]:
         default_max_length = SUPPORTED_TASKS[targeted_task]["default"]["max_length"]
