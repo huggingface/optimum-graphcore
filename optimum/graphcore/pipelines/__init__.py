@@ -151,6 +151,7 @@ SUPPORTED_TASKS = {
             "ipu_config": "Graphcore/bart-base-ipu",
             "max_input_length": 50,
             "max_length": 20,
+            "truncation": "only_first",
         },
         "type": "text",
     },
@@ -163,6 +164,7 @@ SUPPORTED_TASKS = {
             "ipu_config": "Graphcore/t5-small-ipu",
             "max_length": 50,
             "max_input_length": 45,
+            "truncation": "only_first",
         },
         "type": "text",
     },
@@ -174,6 +176,7 @@ SUPPORTED_TASKS = {
             "ipu_config": "Graphcore/t5-small-ipu",
             "max_length": 50,
             "max_input_length": 50,
+            "truncation": "only_first",
         },
         "type": "text",
     },
@@ -395,24 +398,7 @@ def pipeline(
     old_forward = pipeline_class._forward
 
     def new_forward(self, model_inputs, *args, **kwargs):
-        if isinstance(self.model, poptorch.PoplarExecutor) or hasattr(self.model, "poptorch_model"):
-            # Support change in batch size
-            if hasattr(self.model, "poptorch_model"):
-                poplar_executor = self.model.poptorch_model
-            else:
-                poplar_executor = self.model
-
-            if poplar_executor._executable_inputs:
-                for arg in poplar_executor._executable_inputs.args:
-                    if isinstance(arg, torch.Tensor):
-                        compiled_bs = arg.shape[0]
-                        break
-                for input in model_inputs.values():
-                    if isinstance(input, torch.Tensor):
-                        input_bs = input.shape[0]
-                        break
-                if compiled_bs != input_bs:
-                    poplar_executor.destroy()
+        if isinstance(self.model, poptorch.PoplarExecutor) or isinstance(self.model, IPUGenerationMixin):
             if fp16:
                 # Support fp16
                 for key, input in model_inputs.items():
@@ -447,6 +433,8 @@ def pipeline(
     if targeted_task in {"summarization", "text2text-generation", "translation"}:
         default_max_input_length = SUPPORTED_TASKS[targeted_task]["default"]["max_input_length"]
         kwargs["max_input_length"] = kwargs.get("max_input_length", default_max_input_length)
+        default_truncation = SUPPORTED_TASKS[targeted_task]["default"]["truncation"]
+        kwargs["truncation"] = kwargs.get("truncation", default_truncation)
 
     # question-answering already has its own default padding length `max_seq_len` defined, so we just enable padding to max length.
     if targeted_task in {"question-answering"}:
