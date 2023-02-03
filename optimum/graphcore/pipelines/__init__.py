@@ -395,24 +395,7 @@ def pipeline(
     old_forward = pipeline_class._forward
 
     def new_forward(self, model_inputs, *args, **kwargs):
-        if isinstance(self.model, poptorch.PoplarExecutor) or hasattr(self.model, "poptorch_model"):
-            # Support change in batch size
-            if hasattr(self.model, "poptorch_model"):
-                poplar_executor = self.model.poptorch_model
-            else:
-                poplar_executor = self.model
-
-            if poplar_executor._executable_inputs:
-                for arg in poplar_executor._executable_inputs.args:
-                    if isinstance(arg, torch.Tensor):
-                        compiled_bs = arg.shape[0]
-                        break
-                for input in model_inputs.values():
-                    if isinstance(input, torch.Tensor):
-                        input_bs = input.shape[0]
-                        break
-                if compiled_bs != input_bs:
-                    poplar_executor.destroy()
+        if isinstance(self.model, poptorch.PoplarExecutor) or isinstance(self.model, IPUGenerationMixin):
             if fp16:
                 # Support fp16
                 for key, input in model_inputs.items():
