@@ -403,6 +403,41 @@ class TokenClassificationExampleTester(ExampleTesterBase, metaclass=ExampleTestM
     TRAIN_BATCH_SIZE = 1
     EVAL_BATCH_SIZE = 1
 
+    # override to use a higher learning rate of 1e-4
+    def _create_command_line(
+        self,
+        script: str,
+        model_name: str,
+        ipu_config_name: str,
+        output_dir: str,
+        task: Optional[str] = None,
+        dataset_config_name: Optional[str] = None,
+        do_eval: bool = True,
+        lr: float = 1e-4,
+        train_batch_size: int = 1,
+        eval_batch_size: int = 1,
+        num_epochs: int = 2,
+        inference_device_iterations: int = 6,
+        gradient_accumulation_steps: int = 64,
+        extra_command_line_arguments: Optional[List[str]] = None,
+    ) -> List[str]:
+        return super()._create_command_line(
+            script,
+            model_name,
+            ipu_config_name,
+            output_dir,
+            task=task,
+            dataset_config_name=dataset_config_name,
+            do_eval=do_eval,
+            lr=lr,
+            train_batch_size=train_batch_size,
+            eval_batch_size=eval_batch_size,
+            num_epochs=num_epochs,
+            inference_device_iterations=inference_device_iterations,
+            gradient_accumulation_steps=gradient_accumulation_steps,
+            extra_command_line_arguments=extra_command_line_arguments,
+        )
+
 
 class MultipleChoiceExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_swag"):
     # Using a small gradient accumulation steps value because input data is repated for the multiple choice task.

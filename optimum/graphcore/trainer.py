@@ -1081,7 +1081,7 @@ class IPUTrainer:
         logger.info(f"  Num Epochs = {num_train_epochs}")
         logger.info(f"  Instantaneous batch size per device = {batch_size}")
         logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_train_batch_size}")
-        logger.info(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
+        logger.info(f"  Gradient Accumulation steps = {self.ipu_config.gradient_accumulation_steps}")
         logger.info(f"  Total optimization steps = {max_steps}")
 
         self.state.epoch = 0
@@ -1102,7 +1102,7 @@ class IPUTrainer:
             if not args.ignore_data_skip:
                 steps_trained_in_current_epoch = self.state.global_step % (num_update_steps_per_epoch)
                 # No need to multiply by the number of gradient accumulation steps as poptorch already accounts for that.
-                # steps_trained_in_current_epoch *= args.gradient_accumulation_steps
+                # steps_trained_in_current_epoch *= self.ipu_config.gradient_accumulation_steps
             else:
                 steps_trained_in_current_epoch = 0
 
@@ -1173,7 +1173,7 @@ class IPUTrainer:
             steps_in_epoch = (
                 len(epoch_iterator)
                 if has_length(train_dataloader)
-                else args.max_steps * args.gradient_accumulation_steps
+                else args.max_steps * self.ipu_config.gradient_accumulation_steps
             )
 
             self.control = self.callback_handler.on_epoch_begin(args, self.state, self.control)
