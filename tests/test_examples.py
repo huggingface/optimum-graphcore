@@ -158,6 +158,7 @@ class ExampleTestMeta(type):
                     task=self.TASK_NAME,
                     dataset_config_name=self.DATASET_CONFIG_NAME,
                     do_eval=self.EVAL_IS_SUPPORTED,
+                    lr=self.LEARNING_RATE,
                     train_batch_size=self.TRAIN_BATCH_SIZE,
                     eval_batch_size=self.EVAL_BATCH_SIZE,
                     num_epochs=self.NUM_EPOCHS,
@@ -222,6 +223,7 @@ class ExampleTesterBase(TestCase):
     SCORE_NAME = "eval_accuracy"
     DATASET_PARAMETER_NAME = "dataset_name"
     NUM_EPOCHS = 1
+    LEARNING_RATE = 1e-5
     TRAIN_BATCH_SIZE = 2
     EVAL_BATCH_SIZE = 2
     INFERENCE_DEVICE_ITERATIONS = 4
@@ -402,6 +404,7 @@ class TokenClassificationExampleTester(ExampleTesterBase, metaclass=ExampleTestM
     TASK_NAME = "conll2003"
     TRAIN_BATCH_SIZE = 1
     EVAL_BATCH_SIZE = 1
+    LEARNING_RATE = 1e-4
 
 
 class MultipleChoiceExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_swag"):
