@@ -142,6 +142,7 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
 
     @require_torch
     def test_small_model_pt(self):
+        # enable when Speech2TextForConditionalGeneration is supported
         pass
         # speech_recognizer = pipeline(
         #     task="automatic-speech-recognition",
@@ -153,6 +154,7 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
         # output = speech_recognizer(waveform)
         # self.assertEqual(output, {"text": "(Applaudissements)"})
 
+    # enable when SpeechEncoderDecoderModel is supported
     # @require_torch
     # def test_small_model_pt_seq2seq(self):
     #     speech_recognizer = pipeline(
@@ -253,6 +255,7 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
         output = speech_recognizer(filename)
         self.assertEqual(output, {"text": "A MAN SAID TO THE UNIVERSE SIR I EXIST"})
 
+    # enable when SpeechEncoderDecoderModel is supported
     # @require_torch
     # @slow
     # def test_torch_speech_encoder_decoder(self):
@@ -299,6 +302,7 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
         output = asr(data)
         self.assertEqual(output, {"text": "A MAN SAID TO THE UNIVERSE SIR I EXIST"})
 
+    # enable when Speech2TextForConditionalGeneration is supported
     # @slow
     # @require_torch
     # @require_torchaudio

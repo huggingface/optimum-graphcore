@@ -178,6 +178,7 @@ class QAPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
 
         self.assertEqual(nested_simplify(outputs), {"score": 0.028, "start": 0, "end": 11, "answer": "HuggingFace"})
 
+    # enable when DebertaV2 is supported
     # @slow
     # @require_torch
     # def test_small_model_japanese(self):

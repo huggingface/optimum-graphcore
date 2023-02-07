@@ -710,13 +710,14 @@ class PipelineUtilsTest(unittest.TestCase):
 
             self.check_default_pipeline(task, set_seed_fn, self.check_models_equal_pt)
 
+    # enable when table-question-answering task is supported
     # @slow
     # @require_torch
     # def test_load_default_pipelines_pt_table_qa(self):
     #     import torch
 
     #     set_seed_fn = lambda: torch.manual_seed(0)  # noqa: E731
-    #     self.check_default_pipeline("table-question-answering", "pt", set_seed_fn, self.check_models_equal_pt)
+    #     self.check_default_pipeline("table-question-answering", set_seed_fn, self.check_models_equal_pt)
 
     def check_default_pipeline(self, task, set_seed_fn, check_models_equal_fn):
         from optimum.graphcore.pipelines import SUPPORTED_TASKS, pipeline

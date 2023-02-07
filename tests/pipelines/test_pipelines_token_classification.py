@@ -402,6 +402,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
             ],
         )
 
+    # enable when XLMRoberta is supported
     # @require_torch
     # @slow
     # def test_aggregation_strategy_byte_level_tokenizer(self):
@@ -691,6 +692,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
             ],
         )
 
+    # enable when DebertaV2 is supported
     # @require_torch
     # def test_word_heuristic_leading_space(self):
     #     model_name = "hf-internal-testing/tiny-random-deberta-v2"
