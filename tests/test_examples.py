@@ -223,7 +223,7 @@ class ExampleTesterBase(TestCase):
     SCORE_NAME = "eval_accuracy"
     DATASET_PARAMETER_NAME = "dataset_name"
     NUM_EPOCHS = 1
-    LEARNING_RATE = 1e-5
+    LEARNING_RATE = 1e-4
     TRAIN_BATCH_SIZE = 2
     EVAL_BATCH_SIZE = 2
     INFERENCE_DEVICE_ITERATIONS = 4
@@ -247,7 +247,7 @@ class ExampleTesterBase(TestCase):
         task: Optional[str] = None,
         dataset_config_name: Optional[str] = None,
         do_eval: bool = True,
-        lr: float = 1e-5,
+        lr: float = 1e-4,
         train_batch_size: int = 2,
         eval_batch_size: int = 2,
         num_epochs: int = 2,
@@ -404,14 +404,13 @@ class TokenClassificationExampleTester(ExampleTesterBase, metaclass=ExampleTestM
     TASK_NAME = "conll2003"
     TRAIN_BATCH_SIZE = 1
     EVAL_BATCH_SIZE = 1
-    LEARNING_RATE = 1e-4
 
 
 class MultipleChoiceExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_swag"):
     # Using a small gradient accumulation steps value because input data is repated for the multiple choice task.
     TRAIN_BATCH_SIZE = 1
     EVAL_BATCH_SIZE = 1
-    EVAL_SCORE_THRESHOLD_OVERRIDES = {"distilbert-base-uncased": 0.645}
+    EVAL_SCORE_THRESHOLD_OVERRIDES = {"distilbert-base-uncased": 0.645, "Graphcore/groupbert-base-uncased": 0.66}
 
 
 class QuestionAnsweringExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_qa"):
@@ -445,7 +444,7 @@ class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, e
         task: Optional[str] = None,
         dataset_config_name: Optional[str] = None,
         do_eval: bool = True,
-        lr: float = 1e-5,
+        lr: float = 1e-4,
         train_batch_size: int = 1,
         eval_batch_size: int = 1,
         num_epochs: int = 2,
@@ -502,7 +501,7 @@ class TranslationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, exa
         task: Optional[str] = None,
         dataset_config_name: Optional[str] = None,
         do_eval: bool = True,
-        lr: float = 1e-5,
+        lr: float = 1e-4,
         train_batch_size: int = 1,
         eval_batch_size: int = 1,
         num_epochs: int = 2,
@@ -552,6 +551,7 @@ class AudioClassificationExampleTester(
     GRADIENT_ACCUMULATION_STEPS = 16
     NUM_EPOCHS = 3
     EXTRA_COMMAND_LINE_ARGUMENTS = ["--max_length_seconds 1", "--attention_mask False"]
+    LEARNING_RATE = 3e-5
 
 
 class SpeechRecognitionExampleTester(
