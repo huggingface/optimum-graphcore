@@ -100,7 +100,7 @@ class PackedBertOutputsForMultiLabel(nn.Module):
 
 
 
-class PackedPipelinedBertForSequenceClassification(BertForSequenceClassification, BertPipelineMixin):
+class PipelinedPackedBertForSequenceClassification(BertForSequenceClassification, BertPipelineMixin):
     """
     This class supports doing single-label/multi-label sequence-classification tasks with custom outputs.
     The problem_type must be passed to differentiate the two methods - multi_label_classification or single_label_classification. Multi-label requires a custom loss implementation to mask labels and logits, unlike single-label.
@@ -226,7 +226,7 @@ class PackedBertOutputsForQA(nn.Module):
         )
 
 
-class PackedPipelinedBertForQuestionAnswering(BertForQuestionAnswering, BertPipelineMixin):
+class PipelinedPackedBertForQuestionAnswering(BertForQuestionAnswering, BertPipelineMixin):
     """
     This class extends BertForQuestionAnswering with some differences required for packing. The 'packed' attention mask must be extended to a 3D binary "extended" attention mask for BERT to recognise the sequences within a single packed input as unrelated sequences. The output is extended to enable masking for padded labels, and then 'unpacking' the packed hidden state output before performing the loss calculation.
     """
