@@ -37,13 +37,13 @@ class PackedDatasetCreator:
     def __init__(
         self,
         tokenized_dataset,
+        problem_type,
+        num_labels: int = None,
         max_sequence_length: int = 384,
         max_sequences_per_pack: int = 6,
         training: bool = False,
         validation: bool = False,
         inference: bool = False,
-        num_labels: int = 1,
-        problem_type: str = "single_label_classification",
         algorithm: str = "SPFHP",
         pad_to_global_batch_size: bool = False,
         global_batch_size: int = None,
@@ -62,19 +62,11 @@ class PackedDatasetCreator:
 
         # Verify the problem type
         if problem_type in supported_problem_types:
-            self.problem_type = problem_type
+            self.problem_type = problem_type 
         else:
-            logger.warning(
-                f"Unsupported problem type given - attempting to detect from number of labels (default 1, unless specifically passed). \
-                Pass one of the supported types: {supported_problem_types}."
-            )
-
-            if "start_positions" in tokenized_dataset:
-                self.problem_type = "question_answering"
-            else:
-                self.problem_type = (
-                    "single_label_classification" if self.num_labels == 1 else "multi_label_classification"
-                )
+            logger.error(f'Unsupported problem type given - attempting to detect from number of labels (default 1, unless specifically passed). \
+                Pass one of the supported types: {supported_problem_types}.')
+            raise Exception          
 
         # Verify the task
         if not training and not validation and not inference:
@@ -83,8 +75,13 @@ class PackedDatasetCreator:
             )
             raise Exception
 
+        # Verify num_labels if not inference
         if inference:
             logger.info("Inference mode has been set. This will override training/validation mode and ignore labels.")
+        else:
+            if num_labels == None:
+                logger.error(f'For validation (to evaluate) and training, num_labels must be passed to PackedDatasetCreator - num_labels got "None"!')
+                raise Exception
 
         # Get the unpacked default data columns
         self.unpacked_input_ids = tokenized_dataset["input_ids"]
