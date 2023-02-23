@@ -228,9 +228,8 @@ class ExampleTesterBase(TestCase):
     EVAL_BATCH_SIZE = 2
     INFERENCE_DEVICE_ITERATIONS = 4
     GRADIENT_ACCUMULATION_STEPS = 64
-    TRAIN_REPLICATION_FACTOR = 2
-    INFERENCE_REPLICATION_FACTOR = 2
     EXTRA_COMMAND_LINE_ARGUMENTS = None
+    POD_TYPE = "pod8"
 
     def setUp(self):
         self._create_venv()
@@ -260,8 +259,6 @@ class ExampleTesterBase(TestCase):
         ipu_config_overrides = ",".join(
             [
                 "executable_cache_dir=disabled",
-                f"replication_factor={self.TRAIN_REPLICATION_FACTOR}",
-                f"inference_replication_factor={self.INFERENCE_REPLICATION_FACTOR}",
                 "device_iterations=1",
                 f"inference_device_iterations={inference_device_iterations}",
                 f"gradient_accumulation_steps={gradient_accumulation_steps}",
@@ -289,6 +286,7 @@ class ExampleTesterBase(TestCase):
             "--save_steps -1",
             "--save_total_limit 1",
             "--report_to none",
+            f"--pod_type {self.POD_TYPE}",
         ]
         if dataset_config_name is not None:
             cmd_line.append(f"--dataset_config_name {dataset_config_name}")
