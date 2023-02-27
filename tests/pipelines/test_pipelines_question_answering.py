@@ -331,7 +331,12 @@ between them. It's straightforward to train your models with one before loading 
 
         self.assertEqual(
             nested_simplify(outputs),
-            {"answer": "Jax, PyTorch and TensorFlow", "end": 1919, "score": 0.972, "start": 1892},  # score changed from upstream value of 0.971
+            {
+                "answer": "Jax, PyTorch and TensorFlow",
+                "end": 1919,
+                "score": 0.972,
+                "start": 1892,
+            },  # score changed from upstream value of 0.971
         )
 
 

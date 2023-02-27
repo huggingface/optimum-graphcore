@@ -238,18 +238,20 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
             nested_simplify(output[:3]),
             [
                 {"entity": "B-PER", "score": 0.999, "word": "Cons", "start": 0, "end": 4, "index": 1},
-                {"entity": "B-PER", "score": 0.800, "word": "##uelo", "start": 4, "end": 8, "index": 2},  # changed from upstream value of 0.803
+                {
+                    "entity": "B-PER",
+                    "score": 0.800,
+                    "word": "##uelo",
+                    "start": 4,
+                    "end": 8,
+                    "index": 2,
+                },  # changed from upstream value of 0.803
                 {"entity": "I-PER", "score": 0.999, "word": "Ara", "start": 9, "end": 12, "index": 3},
             ],
         )
 
         token_classifier = pipeline(
-            "ner",
-            model=model,
-            ipu_config=ipu_config,
-            tokenizer=tokenizer,
-            aggregation_strategy="simple",
-            fp16=False
+            "ner", model=model, ipu_config=ipu_config, tokenizer=tokenizer, aggregation_strategy="simple", fp16=False
         )
         output = token_classifier(sentence)
         self.assertEqual(
