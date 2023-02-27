@@ -267,7 +267,9 @@ class IPUTrainer:
         # set replication factor using pod_type (can be overruled by ipu_config_overrides)
         if self.args.pod_type is not None:
             replication_factor = self.args.get_num_ipus_from_podtype() // self.ipu_config.ipus_per_replica
-            self.ipu_config.update_from_string(f"replication_factor={replication_factor},inference_replication_factor={replication_factor}")
+            self.ipu_config.update_from_string(
+                f"replication_factor={replication_factor},inference_replication_factor={replication_factor}"
+            )
         if self.ipu_config.replication_factor > 1 or self.ipu_config.inference_replication_factor > 1:
             os.environ["TOKENIZERS_PARALLELISM"] = "true"
         if args.ipu_config_overrides:
