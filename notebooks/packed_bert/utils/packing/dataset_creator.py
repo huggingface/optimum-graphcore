@@ -62,11 +62,13 @@ class PackedDatasetCreator:
 
         # Verify the problem type
         if problem_type in supported_problem_types:
-            self.problem_type = problem_type 
+            self.problem_type = problem_type
         else:
-            logger.error(f'Unsupported problem type given - attempting to detect from number of labels (default 1, unless specifically passed). \
-                Pass one of the supported types: {supported_problem_types}.')
-            raise Exception          
+            logger.error(
+                f"Unsupported problem type given - attempting to detect from number of labels (default 1, unless specifically passed). \
+                Pass one of the supported types: {supported_problem_types}."
+            )
+            raise Exception
 
         # Verify the task
         if not training and not validation and not inference:
@@ -80,7 +82,9 @@ class PackedDatasetCreator:
             logger.info("Inference mode has been set. This will override training/validation mode and ignore labels.")
         else:
             if num_labels == None:
-                logger.error(f'For validation (to evaluate) and training, num_labels must be passed to PackedDatasetCreator - num_labels got "None"!')
+                logger.error(
+                    f'For validation (to evaluate) and training, num_labels must be passed to PackedDatasetCreator - num_labels got "None"!'
+                )
                 raise Exception
 
         # Get the unpacked default data columns
