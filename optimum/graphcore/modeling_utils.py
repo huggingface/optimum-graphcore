@@ -225,21 +225,29 @@ class PipelineMixin:
             return sum(p.numel() for p in self.parameters() if p.requires_grad or not only_trainable)
 
 
-def get_layer_ipu(layers_per_ipu: List[int], target_number_of_layers: Optional[Union[int, List]] = None):
+def get_layer_ipu(ipu_config: IPUConfig, target_number_of_layers: Optional[Union[int, List]] = None):
+    layers_per_ipu = ipu_config.layers_per_ipu
+    
+    if target_number_of_layers is not None:
+        if not isinstance(target_number_of_layers, (int, float)):
+            target_number_of_layers = len(target_number_of_layers)
+        
+        # if ipus_per_replica is 1, then put everything on IPU0, 
+        # ignoring layers_per_ipu 
+        if ipu_config.ipus_per_replica == 1:
+            return [0] * target_number_of_layers
+
     # List of the IPU Id for each encoder layer
     layer_ipu: List[int] = []
     for ipu, n_layers in enumerate(layers_per_ipu):
         layer_ipu += [ipu] * n_layers
-    if target_number_of_layers is not None:
-        if not isinstance(target_number_of_layers, (int, float)):
-            target_number_of_layers = len(target_number_of_layers)
-        if len(layer_ipu) < target_number_of_layers:
-            raise ValueError(
-                "layers_per_ipu does not define enough layers for the current model."
-                " The current IPU Config specifies IPU assignments for "
-                f"{len(layer_ipu)} layers but there are {target_number_of_layers} layers "
-                f"in the model. layers_per_ipu={layers_per_ipu}"
-            )
+    if target_number_of_layers is not None and len(layer_ipu) < target_number_of_layers:
+        raise ValueError(
+            "layers_per_ipu does not define enough layers for the current model."
+            " The current IPU Config specifies IPU assignments for "
+            f"{len(layer_ipu)} layers but there are {target_number_of_layers} layers "
+            f"in the model. layers_per_ipu={layers_per_ipu}"
+        )
     return layer_ipu
 
 
