@@ -228,15 +228,15 @@ class PipelineMixin:
 def get_layer_ipu(ipu_config: IPUConfig, target_number_of_layers: Optional[Union[int, List]] = None):
     layers_per_ipu = ipu_config.layers_per_ipu
     ipus_per_replica = ipu_config.ipus_per_replica
-    
+
     if target_number_of_layers is not None:
         if not isinstance(target_number_of_layers, (int, float)):
             target_number_of_layers = len(target_number_of_layers)
-        
-        # if ipus_per_replica is 1, then put everything on IPU0, ignoring layers_per_ipu 
+
+        # if ipus_per_replica is 1, then put everything on IPU0, ignoring layers_per_ipu
         if ipus_per_replica == 1:
             return [0] * target_number_of_layers
-        
+
         elif ipus_per_replica > 1:
             # default/wildcards - split layers evenly over all ipus
             if layers_per_ipu in ([-1], [-1] * ipus_per_replica):
@@ -246,7 +246,7 @@ def get_layer_ipu(ipu_config: IPUConfig, target_number_of_layers: Optional[Union
                     # add any remainder layers to last wildcard IPU
                     layers_per_ipu[-1] += remainder
 
-            # combination of wildcards and integers 
+            # combination of wildcards and integers
             elif -1 in layers_per_ipu and len(layers_per_ipu) == ipus_per_replica:
                 wildcard_idxs = [idx for idx, v in enumerate(layers_per_ipu) if v == -1]
                 num_wildcard_ipus = len(wildcard_idxs)
@@ -273,7 +273,6 @@ def get_layer_ipu(ipu_config: IPUConfig, target_number_of_layers: Optional[Union
                     f"{sum(layers_per_ipu)} layers but there are {target_number_of_layers} layers "
                     f"in the model. layers_per_ipu={layers_per_ipu}"
                 )
-
 
     # List of the IPU Id for each encoder layer
     layer_ipu: List[int] = []
