@@ -64,7 +64,10 @@ class DecoderWrapper(nn.Module):
             The output logits at position `t` only
         """
         outputs = self.pipelined_model(**model_inputs)
-        next_token_logits = poptorch.dynamic_slice(outputs.logits, 1, t, 1, 1)
+
+        # Set available memory proportion for memory efficient dynamic_slice
+        logits = poptorch.set_available_memory(outputs.logits, 0.2)
+        next_token_logits = poptorch.dynamic_slice(logits, 1, t, 1, 1)
         return type(outputs)(
             loss=None,
             logits=next_token_logits,
