@@ -38,4 +38,6 @@ jobs:
         export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_20_04-3.1*
         . ${SDK_PATH}/poplar-ubuntu_20_04*/enable.sh
         . ${SDK_PATH}/popart-ubuntu_20_04*/enable.sh
-        pytest tests/ --ignore=tests/pipelines/
+        export POPTORCH_WAIT_FOR_IPU=1
+        pytest tests/ -n 16 --ignore=tests/pipelines/ --ignore=tests/test_examples_match_transformers.py
+        pytest tests/test_examples_match_transformers.py
