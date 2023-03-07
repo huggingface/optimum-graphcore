@@ -16,6 +16,7 @@
 import copy
 import json
 import warnings
+from tempfile import NamedTemporaryFile
 from typing import Any, Dict, Optional, Union
 
 import torch
@@ -49,9 +50,8 @@ class IPUConfig(BaseConfig):
             **Note: This is an experimental feature and may not behave as expected.**
         executable_cache_dir (`str`, *optional*, defaults to `""`):
             Enables caching the compile executables to a directory.
-        initializers_path (`str`, *optional*, defaults to `""`):
-            If provided, saves the parameter initialisers to the specified `onnx` file. You should use this if your model
-            exceeds the maximum profobuf size of 2GB.
+        large_model (`bool`, *optional*, defaults to `False`):
+            Set to `True` if you see `onnx.ModelProto exceeded maximum protobuf size of 2GB`.
 
         > Parameters for controlling the batch size
 
@@ -150,7 +150,7 @@ class IPUConfig(BaseConfig):
 
         self.executable_cache_dir = kwargs.pop("executable_cache_dir", "")
 
-        self.initializers_path = kwargs.pop("initializers_path", "")
+        self.large_model = kwargs.pop("large_model", False)
 
         self.embedding_serialization_factor = kwargs.pop("embedding_serialization_factor", 1)
 
@@ -288,8 +288,8 @@ class IPUConfig(BaseConfig):
         if self.executable_cache_dir and self.executable_cache_dir != "disabled":
             opts.enableExecutableCaching(self.executable_cache_dir)
 
-        if self.initializers_path:
-            opts._Popart.set("saveInitializersToFile", self.initializers_path)
+        if self.large_model:
+            opts._Popart.set("saveInitializersToFile", NamedTemporaryFile().name)
 
         # Enable stochastic rounding (recommended for training with FP16)
         opts.Precision.enableStochasticRounding(not for_inference)
