@@ -46,9 +46,9 @@ from transformers.pytorch_utils import torch_int_div
 logger = logging.get_logger(__name__)
 
 
-class Seq2SeqWrapper(nn.Module):
+class DecoderWrapper(nn.Module):
     """
-    Fast wrapper for decoder part of Seq2Seq text generation models.
+    Fast wrapper for decoder part of text generation models.
     Only returns the logits from the last generated token to reduce IO costs.
     """
     def __init__(self, pipelined_model):
@@ -76,14 +76,9 @@ class IPUGenerationMixin(GenerationMixin):
         return nn.functional.pad(tensor, (0, max_length - tensor.shape[1]), "constant", pad_token_id)
 
     def _call_generate(self, *args, **kwargs):
-        if self.config.is_encoder_decoder:
-            if not hasattr(self, "poptorch_model"):
-                wrapper = Seq2SeqWrapper(self.eval())
-                self.poptorch_model = poptorch.inferenceModel(wrapper, self.ipu_config.to_options(for_inference=True))
-            
-        else:
-            if not hasattr(self, "poptorch_model"):
-                self.poptorch_model = poptorch.inferenceModel(self.eval, self.ipu_config.to_options(for_inference=True))
+        if not hasattr(self, "poptorch_model"):
+            wrapper = DecoderWrapper(self.eval())
+            self.poptorch_model = poptorch.inferenceModel(wrapper, self.ipu_config.to_options(for_inference=True))
 
         # This will trigger a compile first time it's ran
         return self.poptorch_model(*args, **kwargs)
