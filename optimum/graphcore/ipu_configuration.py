@@ -49,6 +49,9 @@ class IPUConfig(BaseConfig):
             **Note: This is an experimental feature and may not behave as expected.**
         executable_cache_dir (`str`, *optional*, defaults to `""`):
             Enables caching the compile executables to a directory.
+        initializers_path (`str`, *optional*, defaults to `""`):
+            If provided, saves the parameter initialisers to the specified `onnx` file. You should use this if your model
+            exceeds the maximum profobuf size of 2GB.
 
         > Parameters for controlling the batch size
 
@@ -146,6 +149,8 @@ class IPUConfig(BaseConfig):
         self.enable_half_partials = kwargs.pop("enable_half_partials", True)
 
         self.executable_cache_dir = kwargs.pop("executable_cache_dir", "")
+
+        self.initializers_path = kwargs.pop("initializers_path", "")
 
         self.embedding_serialization_factor = kwargs.pop("embedding_serialization_factor", 1)
 
@@ -282,6 +287,9 @@ class IPUConfig(BaseConfig):
         # Enable caching the compiled executable to disk
         if self.executable_cache_dir and self.executable_cache_dir != "disabled":
             opts.enableExecutableCaching(self.executable_cache_dir)
+
+        if self.initializers_path:
+            opts._Popart.set("saveInitializersToFile", self.initializers_path)
 
         # Enable stochastic rounding (recommended for training with FP16)
         opts.Precision.enableStochasticRounding(not for_inference)
