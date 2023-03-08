@@ -49,11 +49,12 @@ def preprocess_packed_qa(
 
     sample_mapping = tokenized_dataset.pop("overflow_to_sample_mapping")
 
-    dataset_answers = dataset[answer_key]
-    start_positions = []
-    end_positions = []
 
     if train:
+        dataset_answers = dataset[answer_key]
+        start_positions = []
+        end_positions = []
+
         offset_mapping = tokenized_dataset.pop("offset_mapping")
 
         for i, offsets in enumerate(tqdm(offset_mapping)):
@@ -196,6 +197,7 @@ def postprocess_packed_qa_predictions(
 
                 if min_null_score is None or min_null_score < feature_null_score:
                     min_null_score = feature_null_score
+
 
             # Go through all possibilities for the `n_best_size` greater start and end logits.
             start_indexes = np.argsort(start_logits)[-1 : -n_best_size - 1 : -1].tolist()

@@ -16,12 +16,13 @@ from torch.utils.data import Dataset
 
 
 class PackedClassificationDataset(Dataset):
-    def __init__(self, input_ids, attention_mask, token_type_ids, position_ids, labels):
+    def __init__(self, input_ids, attention_mask, token_type_ids, position_ids, labels=None, example_ids=None):
         self.input_ids = input_ids
         self.attention_mask = attention_mask
         self.token_type_ids = token_type_ids
         self.position_ids = position_ids
         self.labels = labels
+        self.example_ids = example_ids
 
     def __len__(self):
         return len(self.input_ids)
@@ -32,6 +33,7 @@ class PackedClassificationDataset(Dataset):
         token_type_ids = self.token_type_ids[index]
         position_ids = self.position_ids[index]
         labels = self.labels[index] if self.labels is not None else None
+        example_ids = self.example_ids[index] if self.example_ids is not None else None
 
         sample = {
             "input_ids": input_ids,
@@ -42,6 +44,9 @@ class PackedClassificationDataset(Dataset):
 
         if self.labels is not None:
             sample["labels"] = labels
+
+        if self.example_ids is not None:
+            sample["example_ids"] = example_ids
 
         return sample
 
