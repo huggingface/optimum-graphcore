@@ -161,7 +161,6 @@ class PackedDatasetCreator:
             self.adjust_offset_positions = True
             self.shift_cls_tokens = False
 
-
     # This function generates the histogram to be used by the histogram-based packing algorithm
     def generate_histogram(self):
         dataset_seq_lens = np.array([len(seq) for seq in self.unpacked_input_ids])
@@ -242,22 +241,20 @@ class PackedDatasetCreator:
                 self.packed_position_ids[pack_index, : len(position_ids_pack)] = position_ids_pack
 
                 if self.problem_type == "single_label_classification":
-                    if self.training or self.validation:                
+                    if self.training or self.validation:
                         labels_pack = [self.unpacked_labels[x] for x in inds]
                         self.packed_labels[pack_index, : len(labels_pack)] = labels_pack
                     if self.inference:
                         example_ids_pack = inds
-                        self.packed_example_ids[pack_index, :len(example_ids_pack)] = example_ids_pack
-                    
+                        self.packed_example_ids[pack_index, : len(example_ids_pack)] = example_ids_pack
 
                 if self.problem_type == "multi_label_classification":
-                    if self.training or self.validation:        
+                    if self.training or self.validation:
                         labels_pack = np.stack([self.unpacked_labels[x] for x in inds])
                         self.packed_labels[pack_index, : labels_pack.shape[0], :] = labels_pack
                     if self.inference:
                         example_ids_pack = inds
-                        self.packed_example_ids[pack_index, :len(example_ids_pack)] = example_ids_pack
-
+                        self.packed_example_ids[pack_index, : len(example_ids_pack)] = example_ids_pack
 
                 if self.problem_type == "question_answering":
                     if self.training:
@@ -297,7 +294,7 @@ class PackedDatasetCreator:
                 token_type_ids=self.packed_token_type_ids,
                 position_ids=self.packed_position_ids,
                 labels=self.packed_labels,
-                example_ids=self.packed_example_ids
+                example_ids=self.packed_example_ids,
             )
 
         if self.problem_type == "question_answering":
