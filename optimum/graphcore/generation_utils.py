@@ -77,12 +77,12 @@ class IPUGenerationMixin(GenerationMixin):
         return nn.functional.pad(tensor, (0, max_length - tensor.shape[1]), "constant", pad_token_id)
 
     def _call_generate(self, *args, **kwargs):
-        if not hasattr(self, "poptorch_model"):
+        if not hasattr(self, "poptorch_decoder"):
             wrapper = DecoderWrapper(self.eval())
-            self.poptorch_model = poptorch.inferenceModel(wrapper, self.ipu_config.to_options(for_inference=True))
+            self.poptorch_decoder = poptorch.inferenceModel(wrapper, self.ipu_config.to_options(for_inference=True))
 
         # This will trigger a compile first time it's ran
-        return self.poptorch_model(*args, **kwargs)
+        return self.poptorch_decoder(*args, **kwargs)
 
     def _prepare_encoder_decoder_kwargs_for_generation(
         self, inputs_tensor: torch.Tensor, model_kwargs, model_input_name: Optional[str] = None
@@ -103,9 +103,26 @@ class IPUGenerationMixin(GenerationMixin):
         encoder_kwargs["return_dict"] = True
         encoder_kwargs[model_input_name] = inputs_tensor
 
-        if not hasattr(self, "poptorch_encoder"): 
-            self.poptorch_encoder = poptorch.inferenceModel(encoder.eval(), self.ipu_config.to_options(for_inference=True))
-        model_kwargs["encoder_outputs"]: ModelOutput = self.poptorch_encoder(**encoder_kwargs)
+        # 4. Execute encoder on CPU or IPU
+        if self.ipu_config.execute_encoder_on_cpu_for_generation:
+            # get the model dtype and cast encoder to fp32 for cpu
+            dtype = next(encoder.parameters()).dtype
+            if dtype is torch.float16:
+                encoder.to(torch.float32)
+
+            model_kwargs["encoder_outputs"]: ModelOutput = encoder(**encoder_kwargs)
+
+            # undo the casting for cpu
+            if dtype is torch.float16:
+                encoder.to(torch.float16)
+                for key, output in model_kwargs["encoder_outputs"].items():
+                    if isinstance(output, torch.Tensor) and output.dtype is torch.float32:
+                        model_kwargs["encoder_outputs"][key] = output.to(torch.float16)
+        else:
+            # Execute on IPU
+            if not hasattr(self, "poptorch_encoder"):
+                self.poptorch_encoder = poptorch.inferenceModel(encoder.eval(), self.ipu_config.to_options(for_inference=True))
+            model_kwargs["encoder_outputs"]: ModelOutput = self.poptorch_encoder(**encoder_kwargs)
 
         return model_kwargs
 
