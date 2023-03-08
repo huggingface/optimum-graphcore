@@ -65,9 +65,7 @@ class DecoderWrapper(nn.Module):
         """
         outputs = self.pipelined_model(**model_inputs)
 
-        # Set available memory proportion for memory efficient dynamic_slice
-        logits = poptorch.set_available_memory(outputs.logits, 0.2)
-        next_token_logits = poptorch.dynamic_slice(logits, 1, t, 1, 1)
+        next_token_logits = poptorch.dynamic_slice(outputs.logits, 1, t, 1, 1)
         return type(outputs)(
             loss=None,
             logits=next_token_logits,
@@ -92,12 +90,7 @@ class IPUGenerationMixin(GenerationMixin):
         # 1. get encoder
         encoder = self.get_encoder()
 
-        # 2. get the model dtype and cast encoder to fp32 for cpu
-        dtype = next(encoder.parameters()).dtype
-        if dtype is torch.float16:
-            encoder.to(torch.float32)
-
-        # 3. prepare encoder args and encoder kwargs from model kwargs
+        # 2. prepare encoder args and encoder kwargs from model kwargs
         irrelevant_prefix = ["decoder_", "cross_attn", "use_cache"]
         encoder_kwargs = {
             argument: value
@@ -105,18 +98,14 @@ class IPUGenerationMixin(GenerationMixin):
             if not any(argument.startswith(p) for p in irrelevant_prefix)
         }
 
-        # 4. make sure that encoder returns `ModelOutput`
+        # 3. make sure that encoder returns `ModelOutput`
         model_input_name = model_input_name if model_input_name is not None else self.main_input_name
         encoder_kwargs["return_dict"] = True
         encoder_kwargs[model_input_name] = inputs_tensor
-        model_kwargs["encoder_outputs"]: ModelOutput = encoder(**encoder_kwargs)
 
-        # 5. undo the casting for cpu
-        if dtype is torch.float16:
-            encoder.to(torch.float16)
-            for key, output in model_kwargs["encoder_outputs"].items():
-                if isinstance(output, torch.Tensor) and output.dtype is torch.float32:
-                    model_kwargs["encoder_outputs"][key] = output.to(torch.float16)
+        if not hasattr(self, "poptorch_encoder"): 
+            self.poptorch_encoder = poptorch.inferenceModel(encoder.eval(), self.ipu_config.to_options(for_inference=True))
+        model_kwargs["encoder_outputs"]: ModelOutput = self.poptorch_encoder(**encoder_kwargs)
 
         return model_kwargs
 
