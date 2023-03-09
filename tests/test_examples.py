@@ -18,12 +18,12 @@ import json
 import os
 import re
 import subprocess
-from filelock import FileLock
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Callable, Dict, List, Optional, Tuple, Union
 from unittest import TestCase
 
+from filelock import FileLock
 from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
 from transformers import (
     CONFIG_MAPPING,
