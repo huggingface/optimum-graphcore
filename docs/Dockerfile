@@ -6,7 +6,7 @@ ARG commit_sha
 ARG clone_url
 ARG clone_name
 
-# Need node to build doc HTML. Taken from https://askubuntu.com/a/1113339
+# Need node to build doc HTML. Taken from https://stackoverflow.com/a/67491580
 RUN apt-get update && apt-get install -y \
     git \
     curl \
