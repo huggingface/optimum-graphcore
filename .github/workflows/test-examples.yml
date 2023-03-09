@@ -39,4 +39,4 @@ jobs:
         . ${SDK_PATH}/popart-ubuntu_20_04*/enable.sh
         export RUN_SLOW=true
         pytest tests/test_examples_match_transformers.py
-        pytest tests/test_examples.py
+        pytest tests/test_examples.py -n 16
