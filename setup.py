@@ -37,6 +37,7 @@ EXTRA_REQUIRE = {
         "psutil",
         "pytest",
         "pytest-pythonpath",
+        "pytest-xdist",
         "librosa",
         "soundfile",
     ],
