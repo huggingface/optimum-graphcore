@@ -1,5 +1,3 @@
-# Python 3.8 is needed because graphcore/pytorch:latest may be based on Ubuntu 18.04 with Python 3.6
-# And the constraints transformers==4.20.0 is not compatible with Python 3.6
 FROM graphcore/pytorch:3.1.0-ubuntu-20.04
 
 ARG commit_sha
@@ -19,4 +17,4 @@ RUN npm install npm@latest -g && \
 
 RUN git clone $clone_url  && cd $clone_name && git checkout $commit_sha
 RUN python3 -m pip install --no-cache-dir --upgrade pip
-RUN python3 -m pip install --no-cache-dir ./optimum-graphcore[quality]
+RUN cd $clone_name && python3 -m pip install --no-cache-dir .[quality]
