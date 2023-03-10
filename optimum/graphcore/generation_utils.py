@@ -51,6 +51,7 @@ class DecoderWrapper(nn.Module):
     Fast wrapper for decoder part of text generation models.
     Only returns the logits from the last generated token to reduce IO costs.
     """
+
     def __init__(self, pipelined_model):
         super().__init__()
         self.pipelined_model = pipelined_model
