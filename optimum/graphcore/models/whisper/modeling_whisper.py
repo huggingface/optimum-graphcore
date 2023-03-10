@@ -372,9 +372,9 @@ class _WhisperDecoderWithCustomMakeCausalAndExpandMask(WhisperDecoder):
             raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
 
         # past_key_values_length
-        # past_key_values_length = past_key_values[0][0].shape[2] if past_key_values is not None else 0     # PT <<<<<
+        past_key_values_length = past_key_values[0][0].shape[2] if past_key_values is not None else 0     # PT <<<<<
         # past_key_values_length = past_key_values[0][2] if past_key_values is not None else 0     # PT Change
-        past_key_values_length = past_key_values[0][2]                 # PT   The if is dangerous!!!
+        # past_key_values_length = past_key_values[0][2]                 # PT   The if is dangerous!!!
 
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
@@ -768,8 +768,10 @@ class PipelinedWhisperForConditionalGeneration(transformers.WhisperForConditiona
 
         self.change_encoder_layer_class(restore=False)
         self.change_encoder_and_decoder_classes(restore=False)
-        self.change_decoder_layer_class(restore=False)
-        self.change_positional_embedding(restore=False)
+
+        # Work in Progress for caching (PT)
+        # self.change_decoder_layer_class(restore=False)
+        # self.change_positional_embedding(restore=False)
 
         logger.info("---------- Device Allocation -----------")
         logger.info("conv1, conv2, embed_positions  --> IPU 0")
@@ -777,15 +779,16 @@ class PipelinedWhisperForConditionalGeneration(transformers.WhisperForConditiona
         self.model.encoder.conv2 = poptorch.BeginBlock(self.model.encoder.conv2, "Conv2", ipu_id=0)
         self.model.encoder.embed_positions = poptorch.BeginBlock(self.model.encoder.embed_positions, "Embed Positions", ipu_id=0)
 
-        cache_size = (
-            1, #TODO config.batch_size,
-            6, #TODO config.num_heads,
-            448, #TODO self.model.config.max_target_positions,
-            64 #TODO
-            )    
-        for l in self.model.decoder.layers:
-            l.self_attn.register_buffer("key_states_cache",torch.zeros(cache_size, dtype=torch.half), persistent=False)
-            l.self_attn.register_buffer("value_states_cache",torch.zeros(cache_size, dtype=torch.half), persistent=False)
+        # Work in Progress for caching
+        # cache_size = (
+        #     1, #TODO config.batch_size,
+        #     6, #TODO config.num_heads,
+        #     448, #TODO self.model.config.max_target_positions,
+        #     64 #TODO
+        #     )    
+        # for l in self.model.decoder.layers:
+        #     l.self_attn.register_buffer("key_states_cache",torch.zeros(cache_size, dtype=torch.half), persistent=False)
+        #     l.self_attn.register_buffer("value_states_cache",torch.zeros(cache_size, dtype=torch.half), persistent=False)
 
         # From modeling_bart.py
         number_of_layers = len(self.model.encoder.layers) + len(self.model.decoder.layers)

@@ -108,8 +108,8 @@ class IPUGenerationMixin(GenerationMixin):
             if not hasattr(self, "poptorch_model"):
                 self.poptorch_model = poptorch.inferenceModel(self.eval, self.ipu_config.to_options(for_inference=True))
  
-        # Prime the pump of the "past_key_values"
-        kwargs["past_key_values"] = ((None, None, torch.tensor(0, dtype=torch.int), None, None, None),)*6
+        # Prime the pump of the "past_key_values" PT
+        # kwargs["past_key_values"] = ((None, None, torch.tensor(0, dtype=torch.int), None, None, None),)*6
  
         # This will trigger a compile first time it's ran
         return self.poptorch_model(*args, **kwargs)
@@ -142,7 +142,7 @@ class IPUGenerationMixin(GenerationMixin):
         poe = None
         if "POPLAR_ENGINE_OPTIONS" in os.environ:
             poe = os.environ["POPLAR_ENGINE_OPTIONS"]
-            print("POPLAR_ENGINE_OPTIONS are disabled for the encoder - They will be applied to the decoder")
+            # print("POPLAR_ENGINE_OPTIONS are disabled for the encoder - They will be applied to the decoder")    # TODO   Find robust way to let the user know
             del os.environ["POPLAR_ENGINE_OPTIONS"]
         if not hasattr(self, "poptorch_encoder"): 
             self.poptorch_encoder = poptorch.inferenceModel(encoder.eval(), self.ipu_config.to_options(for_inference=True))
@@ -294,8 +294,9 @@ class IPUGenerationMixin(GenerationMixin):
         #     self._update_model_buffers_if_needed(model_kwargs)
 
         # Change: disable use_cache because it can't be statically compiled
-        # if "use_cache" in model_kwargs:
-        #     model_kwargs["use_cache"] = False
+        if "use_cache" in model_kwargs:
+            # print("Overriding use_cache setting... - use_cache=False")          # TODO Find a way to let the user know about the override
+            model_kwargs["use_cache"] = False
 
         # keep track of which sequences are already finished
         unfinished_sequences = input_ids.new(input_ids.shape[0]).fill_(1)
@@ -304,7 +305,7 @@ class IPUGenerationMixin(GenerationMixin):
         while True:
             # Change: remove synced_gpu code
             # Change: add input max_length padding
-            input_ids = self._pad_tensors_to_max_len(input_ids, stopping_criteria.max_length, pad_token_id)   # Cache works without removing the padding?
+            input_ids = self._pad_tensors_to_max_len(input_ids, stopping_criteria.max_length, pad_token_id)   # PT Cache works without removing the padding?
 
             # Change: For a seq2seq model such as BART, the "attention_mask" is the encoder/cross attention mask and it does not require padding.
             if not self.config.is_encoder_decoder:
@@ -315,12 +316,7 @@ class IPUGenerationMixin(GenerationMixin):
             # prepare model inputs
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
-            print("*******greedy search", model_inputs, "\n**********************")
-
-            model_inputs["decoder_input_ids"] = model_inputs["decoder_input_ids"][:,-1:]    # PT : with this the cached version compiles and runs, but produces wrong esults
-
-            import pdb
-            pdb.set_trace()
+            # model_inputs["decoder_input_ids"] = model_inputs["decoder_input_ids"][:,-1:]    # PT : with this the cached version compiles and runs, but produces wrong esults
             
             # forward pass to get next token
             outputs = self._call_generate(
@@ -578,7 +574,7 @@ class IPUGenerationMixin(GenerationMixin):
 
         # Change: disable use_cache because it can't be statically compiled
         if "use_cache" in model_kwargs:
-            print("Overriding use_cache setting... - use_cache=False")
+            # print("Overriding use_cache setting... - use_cache=False")    # TODO Find a way to let the user know
             model_kwargs["use_cache"] = False
 
         beam_scores = torch.zeros((batch_size, num_beams), dtype=torch.float, device=input_ids.device)
@@ -882,7 +878,7 @@ class IPUGenerationMixin(GenerationMixin):
 
         # Change: disable use_cache because it can't be statically compiled
         if "use_cache" in model_kwargs:
-            print("Overriding use_cache setting... - use_cache=False")
+            # print("Overriding use_cache setting... - use_cache=False")   # TODO Find a way to let the user know
             model_kwargs["use_cache"] = False
 
         # keep track of which sequences are already finished
@@ -1165,7 +1161,7 @@ class IPUGenerationMixin(GenerationMixin):
 
         # Change: disable use_cache because it can't be statically compiled
         if "use_cache" in model_kwargs:
-            print("Overriding use_cache setting... - use_cache=False")
+            # print("Overriding use_cache setting... - use_cache=False")     # TODO Find a way to let the user know of the override
             model_kwargs["use_cache"] = False
 
         beam_scores = torch.zeros((batch_size, num_beams), dtype=torch.float, device=input_ids.device)
