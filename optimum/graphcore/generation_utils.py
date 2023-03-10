@@ -46,16 +46,44 @@ from transformers.pytorch_utils import torch_int_div
 logger = logging.get_logger(__name__)
 
 
+class DecoderWrapper(nn.Module):
+    """
+    Fast wrapper for decoder part of text generation models.
+    Only returns the logits from the last generated token to reduce IO costs.
+    """
+
+    def __init__(self, pipelined_model):
+        super().__init__()
+        self.pipelined_model = pipelined_model
+
+    def forward(self, t, **model_inputs):
+        """
+        Args:
+            t : (`torch.Tensor(int)`) Tensor with single int representing the current length of the sequence being generated
+            model_inputs : Regular model_inputs passed to the wrapped model.
+        Returns:
+            The output logits at position `t` only
+        """
+        outputs = self.pipelined_model(**model_inputs)
+
+        next_token_logits = poptorch.dynamic_slice(outputs.logits, 1, t, 1, 1)
+        return type(outputs)(
+            loss=None,
+            logits=next_token_logits,
+        )
+
+
 class IPUGenerationMixin(GenerationMixin):
     def _pad_tensors_to_max_len(self, tensor: torch.Tensor, max_length: int, pad_token_id: int) -> torch.Tensor:
         return nn.functional.pad(tensor, (0, max_length - tensor.shape[1]), "constant", pad_token_id)
 
     def _call_generate(self, *args, **kwargs):
-        if not hasattr(self, "poptorch_model"):
-            self.poptorch_model = poptorch.inferenceModel(self.eval(), self.ipu_config.to_options(for_inference=True))
+        if not hasattr(self, "poptorch_decoder"):
+            wrapper = DecoderWrapper(self.eval())
+            self.poptorch_decoder = poptorch.inferenceModel(wrapper, self.ipu_config.to_options(for_inference=True))
 
         # This will trigger a compile first time it's ran
-        return self.poptorch_model(*args, **kwargs)
+        return self.poptorch_decoder(*args, **kwargs)
 
     def _prepare_encoder_decoder_kwargs_for_generation(
         self, inputs_tensor: torch.Tensor, model_kwargs, model_input_name: Optional[str] = None
@@ -245,6 +273,7 @@ class IPUGenerationMixin(GenerationMixin):
 
             # forward pass to get next token
             outputs = self._call_generate(
+                t=torch.tensor(cur_len - 1),
                 **model_inputs,
                 return_dict=True,
                 output_attentions=output_attentions,
@@ -254,13 +283,6 @@ class IPUGenerationMixin(GenerationMixin):
             input_ids = input_ids[:, :cur_len]
             if not self.config.is_encoder_decoder:
                 model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
-
-            outputs.logits = outputs.logits[:, :cur_len, :]
-            if outputs.logits.dim() == 3:
-                outputs.logits = outputs.logits[:, :cur_len, :]
-            # If the dimension of logits is 2, then only the logits of the last non-padding token is returned, so no need to slice.
-            else:
-                next_token_logits = outputs.logits
 
             # Change: remove synced_gpu code
 
@@ -516,6 +538,7 @@ class IPUGenerationMixin(GenerationMixin):
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
             outputs = self._call_generate(
+                t=torch.tensor(cur_len - 1),
                 **model_inputs,
                 return_dict=True,
                 output_attentions=output_attentions,
@@ -525,13 +548,6 @@ class IPUGenerationMixin(GenerationMixin):
             input_ids = input_ids[:, :cur_len]
             if not self.config.is_encoder_decoder:
                 model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
-
-            outputs.logits = outputs.logits[:, :cur_len, :]
-            if outputs.logits.dim() == 3:
-                outputs.logits = outputs.logits[:, :cur_len, :]
-            # If the dimension of logits is 2, then only the logits of the last non-padding token is returned, so no need to slice.
-            else:
-                next_token_logits = outputs.logits
 
             # Change: remove synced_gpu code
 
@@ -820,6 +836,7 @@ class IPUGenerationMixin(GenerationMixin):
 
             # forward pass to get next token
             outputs = self._call_generate(
+                t=torch.tensor(cur_len - 1),
                 **model_inputs,
                 return_dict=True,
                 output_attentions=output_attentions,
@@ -829,13 +846,6 @@ class IPUGenerationMixin(GenerationMixin):
             input_ids = input_ids[:, :cur_len]
             if not self.config.is_encoder_decoder:
                 model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
-
-            outputs.logits = outputs.logits[:, :cur_len, :]
-            if outputs.logits.dim() == 3:
-                outputs.logits = outputs.logits[:, :cur_len, :]
-            # If the dimension of logits is 2, then only the logits of the last non-padding token is returned, so no need to slice.
-            else:
-                next_token_logits = outputs.logits
 
             # Change: remove synced_gpu code
 
@@ -1098,6 +1108,7 @@ class IPUGenerationMixin(GenerationMixin):
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
             outputs = self._call_generate(
+                t=torch.tensor(cur_len - 1),
                 **model_inputs,
                 return_dict=True,
                 output_attentions=output_attentions,
@@ -1107,13 +1118,6 @@ class IPUGenerationMixin(GenerationMixin):
             input_ids = input_ids[:, :cur_len]
             if not self.config.is_encoder_decoder:
                 model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
-
-            outputs.logits = outputs.logits[:, :cur_len, :]
-            if outputs.logits.dim() == 3:
-                outputs.logits = outputs.logits[:, :cur_len, :]
-            # If the dimension of logits is 2, then only the logits of the last non-padding token is returned, so no need to slice.
-            else:
-                next_token_logits = outputs.logits
 
             # Change: remove synced_gpu code
 

@@ -138,7 +138,7 @@ class IPUConfig(BaseConfig):
                 'The "sharded_execution_for_inference" parameter is deprecated, sharded execution is always used during inference'
             )
 
-        self.matmul_proportion = kwargs.pop("matmul_proportion", 0.6)
+        self.matmul_proportion = kwargs.pop("matmul_proportion", 0.2)
 
         if "enable_half_first_order_momentum" in kwargs:
             warnings.warn('The "enable_half_first_order_momentum" parameter is deprecated')
