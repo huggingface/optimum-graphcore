@@ -13,6 +13,7 @@ except Exception as error:
 
 
 INSTALL_REQUIRES = [
+    "poptorch==3.2",
     "transformers==4.25.1",
     "optimum==1.6.1",
     "datasets",
