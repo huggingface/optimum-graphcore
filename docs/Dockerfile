@@ -19,4 +19,4 @@ RUN npm install npm@latest -g && \
 
 RUN git clone $clone_url  && cd $clone_name && git checkout $commit_sha
 RUN python3 -m pip install --no-cache-dir --upgrade pip
-RUN python3 -m pip install --no-cache-dir ./optimum-graphcore[quality]
+RUN cd $clone_name && python3 -m pip install --no-cache-dir .[quality]
