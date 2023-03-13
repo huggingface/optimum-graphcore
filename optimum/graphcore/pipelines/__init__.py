@@ -138,7 +138,7 @@ SUPPORTED_TASKS = {
         "class": (AutoModelForCausalLM,),
         "default": {
             "model": ("gpt2", "e7da7f2"),
-            "ipu_config": "Graphcore/gpt2-small-ipu",
+            "ipu_config": IPUConfig(layers_per_ipu=[12], matmul_proportion=0.2),
             "max_length": 50,
         },
         "type": "text",
@@ -148,7 +148,7 @@ SUPPORTED_TASKS = {
         "class": (AutoModelForSeq2SeqLM,),
         "default": {
             "model": ("ainize/bart-base-cnn", "b90bc9a"),
-            "ipu_config": "Graphcore/bart-base-ipu",
+            "ipu_config": IPUConfig(layers_per_ipu=[12], matmul_proportion=0.2),
             "max_input_length": 50,
             "max_length": 20,
             "truncation": "only_first",
@@ -161,7 +161,7 @@ SUPPORTED_TASKS = {
         "class": (AutoModelForSeq2SeqLM,),
         "default": {
             "model": ("t5-small", "9507060"),
-            "ipu_config": "Graphcore/t5-small-ipu",
+            "ipu_config": IPUConfig(layers_per_ipu=[12], matmul_proportion=0.2),
             "max_length": 50,
             "max_input_length": 45,
             "truncation": "only_first",
@@ -173,7 +173,7 @@ SUPPORTED_TASKS = {
         "class": (AutoModelForSeq2SeqLM,),
         "default": {
             "model": ("t5-small", "9507060"),
-            "ipu_config": "Graphcore/t5-small-ipu",
+            "ipu_config": IPUConfig(layers_per_ipu=[12], matmul_proportion=0.2),
             "max_length": 50,
             "max_input_length": 50,
             "truncation": "only_first",
@@ -210,7 +210,7 @@ def list_tasks() -> List[str]:
 
 def get_poplar_executor(
     model: PreTrainedModel,
-    ipu_config: Union[str, dict] = None,
+    ipu_config: Union[IPUConfig, str, dict] = None,
     fp16: bool = True,
 ) -> PreTrainedModel:
     ipu_config_arg = ipu_config
@@ -219,8 +219,8 @@ def get_poplar_executor(
         ipu_config = IPUConfig.from_pretrained(ipu_config)
     elif isinstance(ipu_config, dict):
         ipu_config = IPUConfig.from_dict(ipu_config)
-    else:
-        raise ValueError("ipu_config must be a string or a dictionary.")
+    elif not isinstance(ipu_config, IPUConfig):
+        raise ValueError("ipu_config must be an IPUConfig, string, or a dictionary.")
     ipu_config.inference_device_iterations = 1
     # TODO: inference_replication_factor should be adaptive, especially for batching.
     ipu_config.inference_replication_factor = 1
@@ -280,7 +280,7 @@ def check_model_type(self, supported_models: Union[List[str], dict]):
 def pipeline(
     task: str = None,
     model: Optional[Any] = None,
-    ipu_config: Union[str, dict] = None,
+    ipu_config: Union[IPUConfig, str, dict] = None,
     tokenizer: Optional[Union[str, PreTrainedTokenizer]] = None,
     feature_extractor: Optional[Union[str, PreTrainedFeatureExtractor]] = None,
     revision: Optional[str] = None,
@@ -411,8 +411,8 @@ def pipeline(
     # Implement pipelines __del__ to clean up poplar exector
     def _del(self):
         # For text generation models, deallocate the internal poplar executor
-        if hasattr(self.model, "poptorch_model"):
-            self.model.poptorch_model.destroy()
+        if hasattr(self.model, "poptorch_decoder"):
+            self.model.poptorch_decoder.destroy()
 
     pipeline_class.__del__ = _del
 

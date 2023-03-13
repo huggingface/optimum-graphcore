@@ -31,6 +31,7 @@ QUALITY_REQUIRES = [
 
 EXTRA_REQUIRE = {
     "testing": [
+        "filelock",
         "GitPython",
         "parameterized",
         "psutil",
