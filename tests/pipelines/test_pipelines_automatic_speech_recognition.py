@@ -51,7 +51,6 @@ TINY_IPU_CONFIG_DICT = {
     "inference_device_iterations": 1,
     "inference_replication_factor": {"default": 1},
     "executable_cache_dir": "./exe_cache",
-    "ipus_per_replica": 2,
     "layers_per_ipu": [4, 5],
     "matmul_proportion": 0.25,
 }
