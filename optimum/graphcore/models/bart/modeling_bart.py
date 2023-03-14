@@ -45,7 +45,6 @@ from ...modeling_utils import (
     recomputation_checkpoint,
     register,
     split_encoder_decoder_ipu_config,
-    tied_weight_model,
 )
 
 
@@ -852,7 +851,6 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
             return outputs
 
 
-@tied_weight_model(BartForSequenceClassification)
 @register(BartForSequenceClassification)
 class PipelinedBartForSequenceClassification(BartForSequenceClassification, PipelineMixin):
     def parallelize(self):
