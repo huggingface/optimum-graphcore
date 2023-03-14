@@ -258,7 +258,7 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
             block.__class__ = CustomT5Block
 
         number_of_layers = len(self.encoder.block) + len(self.decoder.block)
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, number_of_layers)
+        layer_ipu = get_layer_ipu(self.ipu_config, number_of_layers)
         for index, layer in enumerate(self.encoder.block):
             ipu = layer_ipu[index]
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_layers - 1:

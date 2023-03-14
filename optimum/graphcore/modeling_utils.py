@@ -225,21 +225,65 @@ class PipelineMixin:
             return sum(p.numel() for p in self.parameters() if p.requires_grad or not only_trainable)
 
 
-def get_layer_ipu(layers_per_ipu: List[int], target_number_of_layers: Optional[Union[int, List]] = None):
+def get_layer_ipu(ipu_config: IPUConfig, target_number_of_layers: Optional[Union[int, List]] = None):
+    layers_per_ipu = ipu_config.layers_per_ipu
+    ipus_per_replica = ipu_config.ipus_per_replica
+
+    # Check inputs are valid
+    if not all(isinstance(n, int) and n >= -1 for n in layers_per_ipu):
+        raise ValueError("Invalid values in layers_per_ipu. " f"layers_per_ipu={layers_per_ipu}")
+    if ipus_per_replica < 1:
+        raise ValueError("Invalid value for ipus_per_replica. " f"ipus_per_replica={ipus_per_replica}")
+
+    if target_number_of_layers is not None:
+        if not isinstance(target_number_of_layers, int):
+            target_number_of_layers = len(target_number_of_layers)
+
+        # if ipus_per_replica is 1, then put everything on IPU0, ignoring layers_per_ipu
+        if ipus_per_replica == 1:
+            return [0] * target_number_of_layers
+
+        elif ipus_per_replica > 1:
+            # default/wildcards - split layers evenly over all ipus
+            if layers_per_ipu in ([-1], [-1] * ipus_per_replica):
+                quotient, remainder = divmod(target_number_of_layers, ipus_per_replica)
+                layers_per_ipu = [quotient] * ipus_per_replica
+                if remainder > 0:
+                    # add any remainder layers to last wildcard IPU
+                    layers_per_ipu[-1] += remainder
+
+            # combination of wildcards and integers
+            elif -1 in layers_per_ipu and len(layers_per_ipu) == ipus_per_replica:
+                wildcard_idxs = [idx for idx, v in enumerate(layers_per_ipu) if v == -1]
+                num_wildcard_ipus = len(wildcard_idxs)
+                # wildcard_layers = target_num_layers - num_non_wildcard_layers
+                num_wildcard_layers = target_number_of_layers - sum([l for l in layers_per_ipu if l != -1])
+                quotient, remainder = divmod(num_wildcard_layers, num_wildcard_ipus)
+                for idx in wildcard_idxs:
+                    layers_per_ipu[idx] = quotient
+                if remainder > 0:
+                    # add any remainder layers to last wildcard IPU
+                    layers_per_ipu[wildcard_idxs[-1]] += remainder
+
+            elif len(layers_per_ipu) != ipus_per_replica:
+                raise ValueError(
+                    "layers_per_ipu has non-default value set, but its length does not match ipus_per_replica. "
+                    f"layers_per_ipu={layers_per_ipu}, ipus_per_replica={ipus_per_replica}. "
+                )
+            # no wildcards used
+            elif sum(layers_per_ipu) != target_number_of_layers:
+                raise ValueError(
+                    "layers_per_ipu does not define the correct number of layers for the current model."
+                    " The current IPU Config specifies IPU assignments for "
+                    f"{sum(layers_per_ipu)} layers but there are {target_number_of_layers} layers "
+                    f"in the model. layers_per_ipu={layers_per_ipu}"
+                )
+
     # List of the IPU Id for each encoder layer
     layer_ipu: List[int] = []
     for ipu, n_layers in enumerate(layers_per_ipu):
         layer_ipu += [ipu] * n_layers
-    if target_number_of_layers is not None:
-        if not isinstance(target_number_of_layers, (int, float)):
-            target_number_of_layers = len(target_number_of_layers)
-        if len(layer_ipu) < target_number_of_layers:
-            raise ValueError(
-                "layers_per_ipu does not define enough layers for the current model."
-                " The current IPU Config specifies IPU assignments for "
-                f"{len(layer_ipu)} layers but there are {target_number_of_layers} layers "
-                f"in the model. layers_per_ipu={layers_per_ipu}"
-            )
+
     return layer_ipu
 
 

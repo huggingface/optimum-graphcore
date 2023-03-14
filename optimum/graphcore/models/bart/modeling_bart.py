@@ -733,7 +733,7 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
         )
 
         number_of_layers = len(self.model.encoder.layers) + len(self.model.decoder.layers)
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, number_of_layers)
+        layer_ipu = get_layer_ipu(self.ipu_config, number_of_layers)
         for index, layer in enumerate(self.model.encoder.layers):
             ipu = layer_ipu[index]
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
@@ -870,7 +870,7 @@ class PipelinedBartForSequenceClassification(BartForSequenceClassification, Pipe
             self.model.encoder.layernorm_embedding, "Embedding", ipu_id=0
         )
         number_of_layers = len(self.model.encoder.layers) + len(self.model.decoder.layers)
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, number_of_layers)
+        layer_ipu = get_layer_ipu(self.ipu_config, number_of_layers)
         for index, layer in enumerate(self.model.encoder.layers):
             ipu = layer_ipu[index]
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:

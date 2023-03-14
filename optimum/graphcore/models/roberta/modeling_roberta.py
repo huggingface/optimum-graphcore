@@ -64,7 +64,7 @@ class RobertaPipelineMixin(PipelineMixin):
         hs = outline_attribute(self.roberta.embeddings.LayerNorm, "embedding")
         self._hooks.extend(hs)
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, self.roberta.encoder.layer)
+        layer_ipu = get_layer_ipu(self.ipu_config, self.roberta.encoder.layer)
         for index, layer in enumerate(self.roberta.encoder.layer):
             ipu = layer_ipu[index]
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
@@ -129,7 +129,7 @@ class PipelinedRobertaForMaskedLM(RobertaForMaskedLM, PipelineMixin):
         hs = outline_attribute(self.roberta.embeddings.LayerNorm, "embedding")
         self._hooks.extend(hs)
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, self.roberta.encoder.layer)
+        layer_ipu = get_layer_ipu(self.ipu_config, self.roberta.encoder.layer)
         for index, layer in enumerate(self.roberta.encoder.layer):
             ipu = layer_ipu[index]
             if self.ipu_config.recompute_checkpoint_every_layer:

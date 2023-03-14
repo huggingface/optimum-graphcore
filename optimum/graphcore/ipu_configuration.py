@@ -68,6 +68,10 @@ class IPUConfig(BaseConfig):
             Specifies the number of layers that will be put on each IPU for pipelined execution.
             For instance: `[2, 3, 4, 2]` specifies a 4-IPU pipeline, where the first two layers will be put on IPU0,
             the following three on IPU1, the next four on IPU2 and the last two on IPU3.
+            If the default of [-1] is used, the layers will be split evenly over `ipus_per_replica` IPUs.
+            The wildcard value '-1' can also be used in combination with integers.
+            For instance: `[1, 2, -1, -1]` specifies a 4-IPU pipeline, where the first layer is put on IPU0,
+            the next two layers on IPU1, and the remaining layers split evenly between IPU2 and IPU3.
 
         > Parameters for memory management
 
@@ -117,7 +121,7 @@ class IPUConfig(BaseConfig):
     def __init__(self, **kwargs):
         self.seed = kwargs.pop("seed", None)
 
-        self.layers_per_ipu = kwargs.pop("layers_per_ipu", [1])
+        self.layers_per_ipu = kwargs.pop("layers_per_ipu", [-1])
         self.ipus_per_replica = kwargs.pop("ipus_per_replica", len(self.layers_per_ipu))
 
         self.replication_factor = kwargs.pop("replication_factor", 1)
