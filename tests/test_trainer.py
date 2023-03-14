@@ -610,6 +610,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
 
         ipu_config = get_ipu_config()
         ipu_config.layers_per_ipu = [3]
+        ipu_config.ipus_per_replica = 1
         ipu_config.gradient_accumulation_steps = 8
 
         trainer = IPUTrainer(tiny_gpt2, ipu_config, args, train_dataset=train_dataset)
