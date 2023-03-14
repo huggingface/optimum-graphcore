@@ -229,8 +229,14 @@ def get_layer_ipu(ipu_config: IPUConfig, target_number_of_layers: Optional[Union
     layers_per_ipu = ipu_config.layers_per_ipu
     ipus_per_replica = ipu_config.ipus_per_replica
 
+    # Check inputs are valid
+    if not all(isinstance(n, int) and n >= -1 for n in layers_per_ipu):
+        raise ValueError("Invalid values in layers_per_ipu. " f"layers_per_ipu={layers_per_ipu}")
+    if ipus_per_replica < 1:
+        raise ValueError("Invalid value for ipus_per_replica. " f"ipus_per_replica={ipus_per_replica}")
+
     if target_number_of_layers is not None:
-        if not isinstance(target_number_of_layers, (int, float)):
+        if not isinstance(target_number_of_layers, int):
             target_number_of_layers = len(target_number_of_layers)
 
         # if ipus_per_replica is 1, then put everything on IPU0, ignoring layers_per_ipu
@@ -259,16 +265,15 @@ def get_layer_ipu(ipu_config: IPUConfig, target_number_of_layers: Optional[Union
                     # add any remainder layers to last wildcard IPU
                     layers_per_ipu[wildcard_idxs[-1]] += remainder
 
-            # wildcard used, but len(layers_per_ipu) !=  ipus_per_replica
-            elif -1 in layers_per_ipu:
+            elif len(layers_per_ipu) != ipus_per_replica:
                 raise ValueError(
                     "layers_per_ipu has non-default value set, but its length does not match ipus_per_replica. "
                     f"layers_per_ipu={layers_per_ipu}, ipus_per_replica={ipus_per_replica}. "
                 )
             # no wildcards used
-            elif sum(layers_per_ipu) < target_number_of_layers:
+            elif sum(layers_per_ipu) != target_number_of_layers:
                 raise ValueError(
-                    "layers_per_ipu does not define enough layers for the current model."
+                    "layers_per_ipu does not define the correct number of layers for the current model."
                     " The current IPU Config specifies IPU assignments for "
                     f"{sum(layers_per_ipu)} layers but there are {target_number_of_layers} layers "
                     f"in the model. layers_per_ipu={layers_per_ipu}"

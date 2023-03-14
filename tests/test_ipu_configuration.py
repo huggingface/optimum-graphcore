@@ -23,6 +23,7 @@ import pytest
 
 from optimum.graphcore import IPUConfig
 from optimum.graphcore.ipu_configuration import ALLOWED_POD_TYPES
+from optimum.graphcore.modeling_utils import get_layer_ipu
 from poptorch import OutputMode
 
 
@@ -229,3 +230,77 @@ class IPUConfigTester(unittest.TestCase):
 
     def test_batch_size_factor_for_inference(self):
         self._test_batch_size_factor(True)
+
+    def test_layers_per_ipu(self):
+        # ipus_per_replica inferred from layers_per_ipu
+        ipu_config = IPUConfig(layers_per_ipu=[1, 2])
+        self.assertEqual(ipu_config.ipus_per_replica, 2)
+
+        # get_layer_ipu with specific layers_per_ipu
+        ipu_config = IPUConfig(layers_per_ipu=[1, 2])
+        layer_ipu = get_layer_ipu(ipu_config, 3)
+        self.assertEqual(layer_ipu, [0, 1, 1])
+
+        # No target number of layers specified
+        ipu_config = IPUConfig(layers_per_ipu=[1, 2])
+        layer_ipu = get_layer_ipu(ipu_config)
+        self.assertEqual(layer_ipu, [0, 1, 1])
+
+        # Raises exception if number of layers is too few
+        ipu_config = IPUConfig(layers_per_ipu=[1, 2])
+        with pytest.raises(
+            ValueError, match="layers_per_ipu does not define the correct number of layers for the current model"
+        ):
+            layer_ipu = get_layer_ipu(ipu_config, 2)
+
+        # Raises exception if number of layers is too many
+        ipu_config = IPUConfig(layers_per_ipu=[1, 2])
+        with pytest.raises(
+            ValueError, match="layers_per_ipu does not define the correct number of layers for the current model"
+        ):
+            layer_ipu = get_layer_ipu(ipu_config, 4)
+
+        # layers_per_ipu and ipus_per_replica mismatch raises
+        ipu_config = IPUConfig(layers_per_ipu=[1, 2], ipus_per_replica=4)
+        with pytest.raises(
+            ValueError,
+            match=r"layers_per_ipu has non-default value set, but its length does not match ipus_per_replica",
+        ):
+            layer_ipu = get_layer_ipu(ipu_config, 3)
+        ipu_config = IPUConfig(layers_per_ipu=[1, -1], ipus_per_replica=4)
+        with pytest.raises(
+            ValueError,
+            match=r"layers_per_ipu has non-default value set, but its length does not match ipus_per_replica",
+        ):
+            layer_ipu = get_layer_ipu(ipu_config, 3)
+
+        # Default config everything should be on single IPU
+        ipu_config = IPUConfig()
+        layer_ipu = get_layer_ipu(ipu_config, 9)
+        self.assertEqual(layer_ipu, [0] * 9)
+
+        # Spread layers across 2 IPUs
+        ipu_config = IPUConfig(ipus_per_replica=2)
+        layer_ipu = get_layer_ipu(ipu_config, 6)  # even
+        self.assertEqual(layer_ipu, [0, 0, 0, 1, 1, 1])
+        layer_ipu = get_layer_ipu(ipu_config, 7)  # odd
+        self.assertEqual(layer_ipu, [0, 0, 0, 1, 1, 1, 1])
+
+        # Wild card
+        ipu_config = IPUConfig(layers_per_ipu=[2, -1])
+        layer_ipu = get_layer_ipu(ipu_config, 6)
+        self.assertEqual(layer_ipu, [0, 0, 1, 1, 1, 1])
+        ipu_config = IPUConfig(layers_per_ipu=[-1, 2])
+        layer_ipu = get_layer_ipu(ipu_config, 6)
+        self.assertEqual(layer_ipu, [0, 0, 0, 0, 1, 1])
+        ipu_config = IPUConfig(layers_per_ipu=[-1, 2, -1, 2])
+        layer_ipu = get_layer_ipu(ipu_config, 7)
+        self.assertEqual(layer_ipu, [0, 1, 1, 2, 2, 3, 3])
+
+        # Invalid values
+        ipu_config = IPUConfig(layers_per_ipu=[2, -2])
+        with pytest.raises(ValueError, match=r"Invalid values in layers_per_ipu"):
+            layer_ipu = get_layer_ipu(ipu_config, 6)
+        ipu_config = IPUConfig(ipus_per_replica=0)
+        with pytest.raises(ValueError, match=r"Invalid value for ipus_per_replica"):
+            layer_ipu = get_layer_ipu(ipu_config, 6)
