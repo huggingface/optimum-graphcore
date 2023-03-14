@@ -410,9 +410,11 @@ def pipeline(
 
     # Implement pipelines __del__ to clean up poplar exector
     def _del(self):
-        # For text generation models, deallocate the internal poplar executor
+        # For text generation models, deallocate the internal poplar executors
         if hasattr(self.model, "poptorch_decoder"):
             self.model.poptorch_decoder.destroy()
+        if hasattr(self.model, "poptorch_encoder"):
+            self.model.poptorch_encoder.destroy()
 
     pipeline_class.__del__ = _del
 
