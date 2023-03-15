@@ -16,6 +16,7 @@
 import copy
 import json
 import warnings
+from tempfile import NamedTemporaryFile
 from typing import Any, Dict, Optional, Union
 
 import torch
@@ -286,6 +287,8 @@ class IPUConfig(BaseConfig):
         # Enable caching the compiled executable to disk
         if self.executable_cache_dir and self.executable_cache_dir != "disabled":
             opts.enableExecutableCaching(self.executable_cache_dir)
+
+        opts._Popart.set("saveInitializersToFile", NamedTemporaryFile().name)
 
         # Enable stochastic rounding (recommended for training with FP16)
         opts.Precision.enableStochasticRounding(not for_inference)
