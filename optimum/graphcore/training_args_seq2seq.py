@@ -14,6 +14,7 @@
 
 from dataclasses import dataclass, field
 from typing import Optional
+from warnings import warn
 
 from optimum.utils import logging
 from transformers.file_utils import add_start_docstrings
@@ -66,6 +67,8 @@ class IPUSeq2SeqTrainingArguments(IPUTrainingArguments):
     def __post_init__(self):
         super().__post_init__()
         if self.predict_with_generate:
-            raise NotImplementedError(
-                "--predict_with_generate is not supported on IPUs yet, please run your evaluation on another device or set predict_with_generate to False"
+            warn(
+                ("--predict_with_generate is not fully supported on IPUs yet. "
+                "It is only supported for: --per_device_eval_batch_size == 1 and IPUConfig.inference_device_iterations == 1. "
+                "If not using these values please run your evaluation on another device or set predict_with_generate to False")
             )

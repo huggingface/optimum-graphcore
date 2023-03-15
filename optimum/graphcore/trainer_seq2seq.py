@@ -28,11 +28,31 @@ logger = logging.get_logger(__name__)
 
 
 class IPUSeq2SeqTrainer(IPUTrainer):
+    
     def _wrap_and_compile_model_for_evaluation(self, dataloader, prediction_loss_only):
         if prediction_loss_only:
             return super()._wrap_and_compile_model_for_evaluation(dataloader, prediction_loss_only)
-        self.model.compile_for_generate(next(iter(dataloader)), self.args.generation_num_beams)
+        
+        # for generation, let IPUGenerationMixin::_call_generate handle compilation of the model
+        # note though that self.model.poptorch_decoder (attribute added by IPUGenerationMixin::_call_generate)
+        # is the actual model attached to the device, self._detach_inference_model() therefore must destroy self.model.poptorch_decoder instead 
+        # of self.model
         return self.model
+    
+    def _detach_inference_model(self):
+        """
+        Detach inference model from IPUs
+        Override for text generation specific behaviour
+        """
+        # for text generation:
+        # IPUGenerationMixin::_call_generate() handles the compilation of the 
+        # poplar executor, It adds the compiled model 
+        # as poptorch_decoder to the model object, so the actual 
+        # inference_model we need to destroy is this poptorch_decoder
+        if hasattr(self.inference_model, "poptorch_decoder"):
+            self.inference_model = self.inference_model.poptorch_decoder
+
+        super()._detach_inference_model()
 
     def evaluate(
         self,
@@ -74,7 +94,7 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         self._max_length = max_length if max_length is not None else self.args.generation_max_length
         self._num_beams = num_beams if num_beams is not None else self.args.generation_num_beams
         return super().evaluate(eval_dataset, ignore_keys=ignore_keys, metric_key_prefix=metric_key_prefix)
-
+        
     def predict(
         self,
         test_dataset: Dataset,
@@ -122,6 +142,17 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         """
         self._max_length = max_length if max_length is not None else self.args.generation_max_length
         self._num_beams = num_beams if num_beams is not None else self.args.generation_num_beams
+        
+        if self.args.predict_with_generate:
+            # generation currently only supported for micro batch size = 1 and device iterations = 1
+            if self.ipu_config.inference_device_iterations != 1 or self.args.per_device_eval_batch_size != 1:
+                raise ValueError(
+                    ("IPUSeq2SeqTrainingArguments.predict_with_generate == True, but this is currently only supported for: "
+                     "IPUSeq2SeqTrainingArguments.per_device_eval_batch_size == 1 and IPUConfig.inference_device_iterations == 1. Current values are "
+                     f"{self.ipu_config.inference_device_iterations} and {self.args.per_device_eval_batch_size} respectively. "
+                     "Please create a new IPUSeq2SeqTrainer with the correct configuration, or set IPUSeq2SeqTrainer.args.predict_with_generate to False to run evaluation instead."
+                    )
+                )
         return super().predict(test_dataset, ignore_keys=ignore_keys, metric_key_prefix=metric_key_prefix)
 
     def prediction_step(
