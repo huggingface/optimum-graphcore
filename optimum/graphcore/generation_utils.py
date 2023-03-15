@@ -48,31 +48,14 @@ import poptorch.poptorch_core as poptorch_core
 logger = logging.get_logger(__name__)
 
 
-# def copyBuffersToDevice(poplar_executor):
-#     buffers = dict(poplar_executor._model.named_buffers())
-#     poptorch_core.copyWeightsToDevice_impl(poplar_executor._executable,
-#                                            tuple(buffers.keys()),
-#                                            tuple(buffers.values()))
-
-
-# def copyBuffersToHost(poplar_executor):
-#     buffers = dict(poplar_executor._model.named_buffers())
-#     poptorch_core.copyWeightsToHost_impl(poplar_executor._executable,
-#                                          tuple(buffers.keys()),
-#                                          tuple(buffers.values()))
-
-
 class Seq2SeqWrapper(nn.Module):
     def __init__(self, pipelined_model, encoder_outputs):
         super().__init__()
         self.pipelined_model = pipelined_model
-        # self.register_buffer("encoder_last_hidden_state", encoder_outputs.last_hidden_state)
-        # self.register_buffer("encoder_attention_mask", attention_mask)
 
     def forward(self, t, **model_inputs):
-        # encoder_outputs = BaseModelOutput(last_hidden_state=self.encoder_last_hidden_state)
         outputs = self.pipelined_model(
-            **model_inputs#, encoder_outputs=encoder_outputs, attention_mask=self.encoder_attention_mask
+            **model_inputs
         )
         next_token_logits = poptorch.dynamic_slice(outputs.logits, 1, t, 1, 1)
         return type(outputs)(
@@ -85,33 +68,16 @@ class IPUGenerationMixin(GenerationMixin):
     def _pad_tensors_to_max_len(self, tensor: torch.Tensor, max_length: int, pad_token_id: int) -> torch.Tensor:
         return nn.functional.pad(tensor, (0, max_length - tensor.shape[1]), "constant", pad_token_id)
 
-    # def _update_model_buffers_if_needed(self, model_kwargs):
-    #     """
-    #     If Seq2Seq decoder model then we cache the encoder values inside pytorch buffers to reduce the IO cost
-    #     """
-    #     print("in update model buffers")
-    #     if not self.config.is_encoder_decoder or not hasattr(self, "poptorch_model"):
-    #         return
-    #     self.poptorch_model.encoder_last_hidden_state = model_kwargs["encoder_outputs"]["last_hidden_state"] 
-    #     self.poptorch_model.encoder_attention_mask = model_kwargs["attention_mask"]
-    #     copyBuffersToDevice(self.poptorch_model)
-
     def _call_generate(self, *args, **kwargs):
         if self.config.is_encoder_decoder:
             if not hasattr(self, "poptorch_model"):
                 wrapper = Seq2SeqWrapper(self.eval(), kwargs["encoder_outputs"])
                 self.poptorch_model = poptorch.inferenceModel(wrapper, self.ipu_config.to_options(for_inference=True))
-            
-            # del kwargs["encoder_outputs"]
-            # del kwargs["attention_mask"]
         else:
             if not hasattr(self, "poptorch_model"):
                 self.poptorch_model = poptorch.inferenceModel(self.eval, self.ipu_config.to_options(for_inference=True))
  
-        # Prime the pump of the "past_key_values" PT
-        # kwargs["past_key_values"] = ((None, None, torch.tensor(0, dtype=torch.int), None, None, None),)*6
- 
-        # This will trigger a compile first time it's ran
+        # This will trigger a compile first time it's run
         return self.poptorch_model(*args, **kwargs)
 
     def _prepare_encoder_decoder_kwargs_for_generation(
@@ -120,12 +86,7 @@ class IPUGenerationMixin(GenerationMixin):
         # 1. get encoder
         encoder = self.get_encoder()
 
-        # 2. get the model dtype and cast encoder to fp32 for cpu
-        # dtype = next(encoder.parameters()).dtype
-        # if dtype is torch.float16:
-        #     encoder.to(torch.float32)
-
-        # 3. prepare encoder args and encoder kwargs from model kwargs
+        # 2. prepare encoder args and encoder kwargs from model kwargs
         irrelevant_prefix = ["decoder_", "cross_attn", "use_cache"]
         encoder_kwargs = {
             argument: value
@@ -133,30 +94,14 @@ class IPUGenerationMixin(GenerationMixin):
             if not any(argument.startswith(p) for p in irrelevant_prefix)
         }
 
-        # 4. make sure that encoder returns `ModelOutput`
+        # 3. make sure that encoder returns `ModelOutput`
         model_input_name = model_input_name if model_input_name is not None else self.main_input_name
         encoder_kwargs["return_dict"] = True
         encoder_kwargs[model_input_name] = inputs_tensor
-        # model_kwargs["encoder_outputs"]: ModelOutput = encoder(**encoder_kwargs)
-        import os
-        poe = None
-        if "POPLAR_ENGINE_OPTIONS" in os.environ:
-            poe = os.environ["POPLAR_ENGINE_OPTIONS"]
-            # print("POPLAR_ENGINE_OPTIONS are disabled for the encoder - They will be applied to the decoder")    # TODO   Find robust way to let the user know
-            del os.environ["POPLAR_ENGINE_OPTIONS"]
+
         if not hasattr(self, "poptorch_encoder"): 
             self.poptorch_encoder = poptorch.inferenceModel(encoder.eval(), self.ipu_config.to_options(for_inference=True))
         model_kwargs["encoder_outputs"]: ModelOutput = self.poptorch_encoder(**encoder_kwargs)
-
-        if poe is not None:
-            os.environ["POPLAR_ENGINE_OPTIONS"] = poe
-
-        # 5. undo the casting for cpu
-        # if dtype is torch.float16:
-        #     encoder.to(torch.float16)
-        #     for key, output in model_kwargs["encoder_outputs"].items():
-        #         if isinstance(output, torch.Tensor) and output.dtype is torch.float32:
-        #             model_kwargs["encoder_outputs"][key] = output.to(torch.float16)
 
         return model_kwargs
 
@@ -290,12 +235,9 @@ class IPUGenerationMixin(GenerationMixin):
                 model_kwargs["encoder_outputs"].get("hidden_states") if output_hidden_states else None
             )
 
-        # if self.config.is_encoder_decoder:
-        #     self._update_model_buffers_if_needed(model_kwargs)
-
         # Change: disable use_cache because it can't be statically compiled
         if "use_cache" in model_kwargs:
-            # print("Overriding use_cache setting... - use_cache=False")          # TODO Find a way to let the user know about the override
+            # print("Overriding use_cache setting... - use_cache=False")          # TODO Find an obtrusive way to let the user know about the override
             model_kwargs["use_cache"] = False
 
         # keep track of which sequences are already finished
@@ -305,7 +247,7 @@ class IPUGenerationMixin(GenerationMixin):
         while True:
             # Change: remove synced_gpu code
             # Change: add input max_length padding
-            input_ids = self._pad_tensors_to_max_len(input_ids, stopping_criteria.max_length, pad_token_id)   # PT Cache works without removing the padding?
+            input_ids = self._pad_tensors_to_max_len(input_ids, stopping_criteria.max_length, pad_token_id)
 
             # Change: For a seq2seq model such as BART, the "attention_mask" is the encoder/cross attention mask and it does not require padding.
             if not self.config.is_encoder_decoder:
@@ -316,8 +258,6 @@ class IPUGenerationMixin(GenerationMixin):
             # prepare model inputs
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
-            # model_inputs["decoder_input_ids"] = model_inputs["decoder_input_ids"][:,-1:]    # PT : with this the cached version compiles and runs, but produces wrong esults
-            
             # forward pass to get next token
             outputs = self._call_generate(
                 t=torch.tensor(cur_len - 1),
@@ -330,14 +270,6 @@ class IPUGenerationMixin(GenerationMixin):
             input_ids = input_ids[:, :cur_len]
             if not self.config.is_encoder_decoder:
                 model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
-
-            # outputs.logits = outputs.logits[:, :cur_len, :]
-            # if outputs.logits.dim() == 3:
-            #     outputs.logits = outputs.logits[:, :cur_len, :]
-            # # If the dimension of logits is 2, then only the logits of the last non-padding token is returned, so no need to slice.
-            # else:
-            # next_token_logits = outputs.logits
-            # import pdb; pdb.set_trace()
 
             # Change: remove synced_gpu code
 
