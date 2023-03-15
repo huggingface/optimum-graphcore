@@ -50,8 +50,6 @@ class IPUConfig(BaseConfig):
             **Note: This is an experimental feature and may not behave as expected.**
         executable_cache_dir (`str`, *optional*, defaults to `""`):
             Enables caching the compile executables to a directory.
-        large_model (`bool`, *optional*, defaults to `False`):
-            Set to `True` if you see `onnx.ModelProto exceeded maximum protobuf size of 2GB`.
 
         > Parameters for controlling the batch size
 
@@ -149,8 +147,6 @@ class IPUConfig(BaseConfig):
         self.enable_half_partials = kwargs.pop("enable_half_partials", True)
 
         self.executable_cache_dir = kwargs.pop("executable_cache_dir", "")
-
-        self.large_model = kwargs.pop("large_model", False)
 
         self.embedding_serialization_factor = kwargs.pop("embedding_serialization_factor", 1)
 
@@ -288,8 +284,7 @@ class IPUConfig(BaseConfig):
         if self.executable_cache_dir and self.executable_cache_dir != "disabled":
             opts.enableExecutableCaching(self.executable_cache_dir)
 
-        if self.large_model:
-            opts._Popart.set("saveInitializersToFile", NamedTemporaryFile().name)
+        opts._Popart.set("saveInitializersToFile", NamedTemporaryFile().name)
 
         # Enable stochastic rounding (recommended for training with FP16)
         opts.Precision.enableStochasticRounding(not for_inference)
