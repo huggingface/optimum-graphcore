@@ -123,9 +123,9 @@ class _WhisperEncoderLayerClamp(nn.Module):
         hidden_states = nn.functional.dropout(hidden_states, p=self.dropout, training=self.training)
         hidden_states = residual + hidden_states
 
-        # NOTE: We never clamp. This differs from the original implementation
-        # With the code below, compilation fails with an error
-        # 023-02-08T10:24:33.204593Z popart:popart 3749453.3749453 E: np broadcasting failed on Op 197 (ai.onnx.Add:7), incompatible types FLOAT and FLOAT16 (shapes [1500 384] and [384]) 
+        # NOTE: This differs from the original implementation
+        # There is a type mismatch bug with this call to clamp so we remove it here. It is anyway not needed on IPU because FP16 values are clamped to maximum value by default.
+        # TODO: when bug is fixed in future SDK remove this entire class;
 
         # clamp_value = torch.finfo(hidden_states.dtype).max - 1000
         # hidden_states = torch.clamp(hidden_states, min=-clamp_value, max=clamp_value)
@@ -370,9 +370,7 @@ class _WhisperDecoderWithCustomMakeCausalAndExpandMask(WhisperDecoder):
             raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
 
         # past_key_values_length
-        past_key_values_length = past_key_values[0][0].shape[2] if past_key_values is not None else 0     # PT <<<<<
-        # past_key_values_length = past_key_values[0][2] if past_key_values is not None else 0     # PT Change
-        # past_key_values_length = past_key_values[0][2]                 # PT   The if is dangerous!!!
+        past_key_values_length = past_key_values[0][0].shape[2] if past_key_values is not None else 0
 
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
