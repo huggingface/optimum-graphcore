@@ -120,8 +120,10 @@ class PackedDatasetCreator:
             if not self.inference:
                 self.unpacked_labels = tokenized_dataset[custom_label_key]
                 self.packed_labels = -100 * np.ones((self.total_num_packs, self.max_seq_per_pack), dtype=int)
+                self.packed_example_ids = None
             else:
                 self.packed_labels = None
+                self.packed_example_ids = -100 * np.ones((self.total_num_packs, self.max_seq_per_pack), dtype=int)
 
         elif problem_type == "multi_label_classification":
             self.dataset_class = PackedClassificationDataset
@@ -131,10 +133,13 @@ class PackedDatasetCreator:
                 self.packed_labels = -100 * np.ones(
                     (self.total_num_packs, self.max_seq_per_pack, self.num_labels), dtype=int
                 )
+                self.packed_example_ids = None
             else:
                 self.packed_labels = None
+                self.packed_example_ids = -100 * np.ones((self.total_num_packs, self.max_seq_per_pack), dtype=int)
 
         elif problem_type == "question_answering":
+            self.dataset_class = PackedQuestionAnsweringDataset
             if self.training:
                 self.unpacked_start_positions = tokenized_dataset["start_positions"]
                 self.unpacked_end_positions = tokenized_dataset["end_positions"]
@@ -155,8 +160,6 @@ class PackedDatasetCreator:
 
             self.adjust_offset_positions = True
             self.shift_cls_tokens = False
-
-            self.dataset_class = PackedQuestionAnsweringDataset
 
     # This function generates the histogram to be used by the histogram-based packing algorithm
     def generate_histogram(self):
@@ -180,7 +183,7 @@ class PackedDatasetCreator:
 
         return strategy
 
-    # This function ßåcreates the strategy
+    # This function creates the strategy
     def create(self):
         strategy_set = self.strategy[0]
         strategy_repeat_count = self.strategy[1]
@@ -237,14 +240,21 @@ class PackedDatasetCreator:
                 self.packed_token_type_ids[pack_index, : len(token_type_ids_pack)] = token_type_ids_pack
                 self.packed_position_ids[pack_index, : len(position_ids_pack)] = position_ids_pack
 
-                if self.training or self.validation:
-                    if self.problem_type == "single_label_classification":
+                if self.problem_type == "single_label_classification":
+                    if self.training or self.validation:
                         labels_pack = [self.unpacked_labels[x] for x in inds]
                         self.packed_labels[pack_index, : len(labels_pack)] = labels_pack
+                    if self.inference:
+                        example_ids_pack = inds
+                        self.packed_example_ids[pack_index, : len(example_ids_pack)] = example_ids_pack
 
-                    if self.problem_type == "multi_label_classification":
+                if self.problem_type == "multi_label_classification":
+                    if self.training or self.validation:
                         labels_pack = np.stack([self.unpacked_labels[x] for x in inds])
                         self.packed_labels[pack_index, : labels_pack.shape[0], :] = labels_pack
+                    if self.inference:
+                        example_ids_pack = inds
+                        self.packed_example_ids[pack_index, : len(example_ids_pack)] = example_ids_pack
 
                 if self.problem_type == "question_answering":
                     if self.training:
@@ -284,6 +294,7 @@ class PackedDatasetCreator:
                 token_type_ids=self.packed_token_type_ids,
                 position_ids=self.packed_position_ids,
                 labels=self.packed_labels,
+                example_ids=self.packed_example_ids,
             )
 
         if self.problem_type == "question_answering":
