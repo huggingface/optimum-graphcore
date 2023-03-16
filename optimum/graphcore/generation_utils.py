@@ -189,6 +189,12 @@ class IPUGenerationMixin(GenerationMixin):
 
         return model_kwargs
 
+    def detachFromDevice(self):
+        if hasattr(self, "poptorch_encoder"):
+            self.poptorch_encoder.detachFromDevice()
+        if hasattr(self, "poptorch_decoder"):
+            self.poptorch_decoder.detachFromDevice()
+
     # Modified from https://github.com/huggingface/transformers/blob/v4.20.1/src/transformers/generation_utils.py#L1532
     def greedy_search(
         self,
