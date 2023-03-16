@@ -140,12 +140,7 @@ class IPUGenerationMixin(GenerationMixin):
         # 1. get encoder
         encoder = self.get_encoder()
 
-        # 2. get the model dtype and cast encoder to fp32 for cpu
-        dtype = next(encoder.parameters()).dtype
-        if dtype is torch.float16:
-            encoder.to(torch.float32)
-
-        # 3. prepare encoder args and encoder kwargs from model kwargs
+        # 2. prepare encoder args and encoder kwargs from model kwargs
         irrelevant_prefix = ["decoder_", "cross_attn", "use_cache"]
         encoder_kwargs = {
             argument: value
@@ -153,13 +148,13 @@ class IPUGenerationMixin(GenerationMixin):
             if not any(argument.startswith(p) for p in irrelevant_prefix)
         }
 
-        # 4. Split self.ipu_config into encoder and decoder ipu_configs
+        # 3. Split self.ipu_config into encoder and decoder ipu_configs
         if not hasattr(self, "encoder_ipu_config"):
             self.encoder_ipu_config, self.decoder_ipu_config = _split_encoder_decoder_ipu_config(
                 self.ipu_config, self.config
             )
 
-        # 5. make sure that encoder returns `ModelOutput`
+        # 4. make sure that encoder returns `ModelOutput`
         model_input_name = model_input_name if model_input_name is not None else self.main_input_name
         encoder_kwargs["return_dict"] = True
         encoder_kwargs[model_input_name] = inputs_tensor
@@ -173,13 +168,6 @@ class IPUGenerationMixin(GenerationMixin):
             )
             self.ipu_config = self.ipu_config
         model_kwargs["encoder_outputs"]: ModelOutput = self.poptorch_encoder(**encoder_kwargs)
-
-        # 6. undo the casting for cpu
-        if dtype is torch.float16:
-            encoder.to(torch.float16)
-            for key, output in model_kwargs["encoder_outputs"].items():
-                if isinstance(output, torch.Tensor) and output.dtype is torch.float32:
-                    model_kwargs["encoder_outputs"][key] = output.to(torch.float16)
 
         return model_kwargs
 
