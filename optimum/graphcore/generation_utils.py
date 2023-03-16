@@ -12,8 +12,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+import os
 import copy
+import json
 import warnings
+import contextlib
 from itertools import groupby
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
@@ -48,6 +51,19 @@ from .modeling_utils import get_layer_ipu
 
 
 logger = logging.get_logger(__name__)
+
+
+@contextlib.contextmanager
+def graph_profile_dir_append(append: str):
+    if poplar_engine_options := os.getenv("POPLAR_ENGINE_OPTIONS"):
+        poplar_engine_options_dict = json.loads(poplar_engine_options)
+        poplar_engine_options_dict["autoReport.directory"] += append
+        os.environ["POPLAR_ENGINE_OPTIONS"] = json.dumps(poplar_engine_options_dict)
+    try:
+        yield
+    finally:
+        if poplar_engine_options:
+            os.environ["POPLAR_ENGINE_OPTIONS"] = poplar_engine_options
 
 
 def _split_encoder_decoder_ipu_config(ipu_config, config):
@@ -132,7 +148,8 @@ class IPUGenerationMixin(GenerationMixin):
                 )
 
         # This will trigger a compile first time it's ran
-        return self.poptorch_decoder(*args, **kwargs)
+        with graph_profile_dir_append("/decoder"):
+            return self.poptorch_decoder(*args, **kwargs)
 
     def _prepare_encoder_decoder_kwargs_for_generation(
         self, inputs_tensor: torch.Tensor, model_kwargs, model_input_name: Optional[str] = None
@@ -167,7 +184,8 @@ class IPUGenerationMixin(GenerationMixin):
                 encoder.eval(), self.encoder_ipu_config.to_options(for_inference=True)
             )
             self.ipu_config = self.ipu_config
-        model_kwargs["encoder_outputs"]: ModelOutput = self.poptorch_encoder(**encoder_kwargs)
+        with graph_profile_dir_append("/encoder"):
+            model_kwargs["encoder_outputs"]: ModelOutput = self.poptorch_encoder(**encoder_kwargs)
 
         return model_kwargs
 
