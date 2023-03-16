@@ -1,3 +1,4 @@
+import logging
 import time
 from typing import Dict, List
 
@@ -17,6 +18,9 @@ from transformers.data.data_collator import default_data_collator
 from utils.packing.dataset_creator import PackedDatasetCreator
 from utils.packing.dataset_templates import PackedQuestionAnsweringDataset
 from utils.packing.qa_utils import postprocess_packed_qa_predictions, preprocess_packed_qa
+
+
+logger = logging.getLogger("")
 
 
 def get_poplar_executor(model, ipu_config, batch, detach=False):
@@ -67,14 +71,11 @@ class PackedBertTextClassificationPipeline:
         problem_type: str = "single_label_classification",
         max_seq_per_pack: int = 12,
         max_seq_length: int = 384,
-        pretrained_tokenizer: str = "bert-base-uncased",
-        ipu_device_iterations: int = None,
-        ipu_replication_factor: int = None,
-        ipu_ipus_per_replica: int = None,
-        ipu_layers_per_ipu: List = None,
+        ipu_config: IPUConfig = None,
         micro_batch_size: int = 1,
         dataloader_mode: str = "async_rebatched",
         detach_model_after_compile: bool = False,
+        pretrained_tokenizer: str = "bert-base-uncased",
         label_categories: List = [],
     ) -> None:
         self.model_ckpt = model
@@ -86,35 +87,39 @@ class PackedBertTextClassificationPipeline:
         self.dataloader_mode = dataloader_mode
         self.detach_model_after_post_compile = detach_model_after_compile
         self.executable_cache_dir = executable_cache_dir
-        self.ipu_device_iterations = ipu_device_iterations
-        self.ipu_replication_factor = ipu_replication_factor
-        self.ipu_ipus_per_replica = ipu_ipus_per_replica
-        self.ipu_layers_per_ipu = ipu_layers_per_ipu
+
         self.micro_batch_size = micro_batch_size
         self.sentence_2_key = None
         self.label_categories = label_categories
 
-        self.gbs = self.ipu_device_iterations * self.ipu_replication_factor * self.micro_batch_size
+        if not ipu_config:
+            try:
+                logger.info("Attempting loading IPUConfig from model checkpoint:")
+                self.ipu_config = IPUConfig.from_pretrained(
+                    self.model_ckpt, executable_cache_dir=self.executable_cache_dir
+                )
+            except:
+                logger.warn(
+                    "Loading default config: 'Graphcore/bert-base-uncased' - because no IPUConfig found in model folder."
+                )
+                self.ipu_config = IPUConfig.from_pretrained(
+                    "Graphcore/bert-base-uncased", executable_cache_dir=self.executable_cache_dir
+                )
+        else:
+            self.ipu_config = ipu_config
 
-        self.ipu_config = None
+        self.gbs = (
+            self.ipu_config.inference_device_iterations
+            * self.ipu_config.inference_replication_factor
+            * self.micro_batch_size
+        )
 
         try:
-            self.ipu_config = IPUConfig.from_pretrained(
-                self.model_ckpt, executable_cache_dir=self.executable_cache_dir
-            )
+            logger.info("Attempting loading tokenizer from model checkpoint")
+            self.tokenizer = AutoTokenizer.from_pretrained(self.model_ckpt, use_fast=True)
         except:
-            self.ipu_config = IPUConfig.from_pretrained(
-                "Graphcore/bert-base-uncased", executable_cache_dir=self.executable_cache_dir
-            )
-
-        if self.ipu_layers_per_ipu:
-            self.ipu_config.layers_per_ipu = self.ipu_layers_per_ipu
-        if self.ipu_device_iterations:
-            self.ipu_config.inference_device_iterations = self.ipu_device_iterations
-        if self.ipu_replication_factor:
-            self.ipu_config.inference_replication_factor = self.ipu_replication_factor
-        if self.ipu_ipus_per_replica:
-            self.ipu_config.ipus_per_replica = self.ipu_ipus_per_replica
+            logger.warn("Loading tokenizer from defined because no pretrained tokenizer found in model folder.")
+            self.tokenizer = AutoTokenizer.from_pretrained(self.pretrained_tokenizer, use_fast=True)
 
         config = AutoConfig.from_pretrained(self.model_ckpt)
         config.max_sequences_per_pack = self.max_seq_per_pack
@@ -124,14 +129,10 @@ class PackedBertTextClassificationPipeline:
             PipelinedPackedBertForSequenceClassification(config).from_pretrained(self.model_ckpt, config=config).half()
         )
 
-        try:
-            self.tokenizer = AutoTokenizer.from_pretrained(self.model_ckpt, use_fast=True)
-        except:
-            self.tokenizer = AutoTokenizer.from_pretrained(self.pretrained_tokenizer, use_fast=True)
-
         compile_data = Dataset.from_dict({"text": ["I am a dummy sentence for compilation."]})
 
         enc_compile_data = compile_data.map(self.preprocess_function, batched=True)
+
         pck_compile_data = PackedDatasetCreator(
             tokenized_dataset=enc_compile_data,
             max_sequence_length=self.max_seq_length,
@@ -260,10 +261,7 @@ class PackedBertQuestionAnsweringPipeline:
         max_seq_per_pack: int = 12,
         max_seq_length: int = 384,
         pretrained_tokenizer: str = "bert-base-uncased",
-        ipu_device_iterations: int = None,
-        ipu_replication_factor: int = None,
-        ipu_ipus_per_replica: int = None,
-        ipu_layers_per_ipu: List = None,
+        ipu_config: str = None,
         micro_batch_size: int = 1,
         dataloader_mode: str = "async_rebatched",
         detach_model_after_compile: bool = False,
@@ -277,42 +275,38 @@ class PackedBertQuestionAnsweringPipeline:
         self.dataloader_mode = dataloader_mode
         self.detach_model_after_post_compile = detach_model_after_compile
         self.executable_cache_dir = executable_cache_dir
-        self.ipu_device_iterations = ipu_device_iterations
-        self.ipu_replication_factor = ipu_replication_factor
-        self.ipu_ipus_per_replica = ipu_ipus_per_replica
-        self.ipu_layers_per_ipu = ipu_layers_per_ipu
         self.micro_batch_size = micro_batch_size
 
-        self.gbs = self.ipu_device_iterations * self.ipu_replication_factor * self.micro_batch_size
+        if not ipu_config:
+            try:
+                logger.info("Attempting loading IPUConfig from model checkpoint:")
+                self.ipu_config = IPUConfig.from_pretrained(
+                    self.model_ckpt, executable_cache_dir=self.executable_cache_dir
+                )
+            except:
+                logger.warn(
+                    "Loading default config: 'Graphcore/bert-base-uncased' - because no IPUConfig found in model folder."
+                )
+                self.ipu_config = IPUConfig.from_pretrained(
+                    "Graphcore/bert-base-uncased", executable_cache_dir=self.executable_cache_dir
+                )
+        else:
+            self.ipu_config = ipu_config
 
-        self.ipu_config = None
-
-        try:
-            self.ipu_config = IPUConfig.from_pretrained(
-                self.model_ckpt, executable_cache_dir=self.executable_cache_dir
-            )
-        except:
-            self.ipu_config = IPUConfig.from_pretrained(
-                "Graphcore/bert-base-uncased", executable_cache_dir=self.executable_cache_dir
-            )
-
-        if self.ipu_layers_per_ipu:
-            self.ipu_config.layers_per_ipu = self.ipu_layers_per_ipu
-        if self.ipu_device_iterations:
-            self.ipu_config.inference_device_iterations = self.ipu_device_iterations
-        if self.ipu_replication_factor:
-            self.ipu_config.inference_replication_factor = self.ipu_replication_factor
-        if self.ipu_ipus_per_replica:
-            self.ipu_config.ipus_per_replica = self.ipu_ipus_per_replica
-
-        config = AutoConfig.from_pretrained(self.model_ckpt)
-        config.max_sequences_per_pack = self.max_seq_per_pack
-        config.problem_type = self.problem_type
+        self.gbs = (
+            self.ipu_config.inference_device_iterations
+            * self.ipu_config.inference_replication_factor
+            * self.micro_batch_size
+        )
 
         try:
             self.tokenizer = AutoTokenizer.from_pretrained(self.model_ckpt, use_fast=True)
         except:
             self.tokenizer = AutoTokenizer.from_pretrained(self.pretrained_tokenizer, use_fast=True)
+
+        config = AutoConfig.from_pretrained(self.model_ckpt)
+        config.max_sequences_per_pack = self.max_seq_per_pack
+        config.problem_type = self.problem_type
 
         self.model = (
             PipelinedPackedBertForQuestionAnswering(config).from_pretrained(self.model_ckpt, config=config).half()
