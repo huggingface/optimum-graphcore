@@ -168,7 +168,7 @@ class IPUGenerationMixin(GenerationMixin):
         # ideally a 1 dimensional tensor would be provided, however poptorch requires that
         # the first dimension of a tensor is the global batch size
         return torch.ones((global_batch_size, 1)) * token_id
-    
+
     # Modified from https://github.com/huggingface/transformers/blob/v4.20.1/src/transformers/generation_utils.py#L1532
     def greedy_search(
         self,
@@ -320,7 +320,7 @@ class IPUGenerationMixin(GenerationMixin):
 
             # prepare model inputs
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
-            
+
             # forward pass to get next token
             outputs = self._call_generate(
                 t=self._get_cur_token_logits_tensor(model_inputs["decoder_input_ids"].shape[0], cur_len - 1),
@@ -329,7 +329,7 @@ class IPUGenerationMixin(GenerationMixin):
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
             )
-            
+
             # Change: Remove padding and restore to actual length
             input_ids = input_ids[:, :cur_len]
             if not self.config.is_encoder_decoder:
@@ -893,7 +893,7 @@ class IPUGenerationMixin(GenerationMixin):
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
             )
-            
+
             # Change: Remove padding and restore to actual length
             input_ids = input_ids[:, :cur_len]
             if not self.config.is_encoder_decoder:

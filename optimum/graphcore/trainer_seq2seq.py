@@ -28,26 +28,25 @@ logger = logging.get_logger(__name__)
 
 
 class IPUSeq2SeqTrainer(IPUTrainer):
-    
     def _wrap_and_compile_model_for_evaluation(self, dataloader, prediction_loss_only):
         if prediction_loss_only:
             return super()._wrap_and_compile_model_for_evaluation(dataloader, prediction_loss_only)
-        
+
         # for generation, let IPUGenerationMixin::_call_generate handle compilation of the model
         # note though that self.model.poptorch_decoder (attribute added by IPUGenerationMixin::_call_generate)
-        # is the actual model attached to the device, self._detach_inference_model() therefore must destroy self.model.poptorch_decoder instead 
+        # is the actual model attached to the device, self._detach_inference_model() therefore must destroy self.model.poptorch_decoder instead
         # of self.model
         return self.model
-    
+
     def _detach_inference_model(self):
         """
         Detach inference model from IPUs
         Override for text generation specific behaviour
         """
         # for text generation:
-        # IPUGenerationMixin::_call_generate() handles the compilation of the 
-        # poplar executor, It adds the compiled model 
-        # as poptorch_decoder to the model object, so the actual 
+        # IPUGenerationMixin::_call_generate() handles the compilation of the
+        # poplar executor, It adds the compiled model
+        # as poptorch_decoder to the model object, so the actual
         # inference_model we need to destroy is this poptorch_decoder
         if hasattr(self.inference_model, "poptorch_decoder"):
             self.inference_model = self.inference_model.poptorch_decoder
@@ -94,7 +93,7 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         self._max_length = max_length if max_length is not None else self.args.generation_max_length
         self._num_beams = num_beams if num_beams is not None else self.args.generation_num_beams
         return super().evaluate(eval_dataset, ignore_keys=ignore_keys, metric_key_prefix=metric_key_prefix)
-        
+
     def predict(
         self,
         test_dataset: Dataset,
