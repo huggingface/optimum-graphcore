@@ -226,7 +226,7 @@ def get_poplar_executor(
     ipu_config.inference_replication_factor = 1
     try:
         model = to_pipelined(model, ipu_config, force=False)
-        model.parallelize()
+        model.parallelize(for_generation=True)
     except Exception as error:
         new_message = (
             "The model and ipu_config seem to be incompatible,"

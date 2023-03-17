@@ -225,7 +225,7 @@ class PipelineMixin:
             return sum(p.numel() for p in self.parameters() if p.requires_grad or not only_trainable)
 
 
-def split_ipu_config(ipu_config: IPUConfig, parts: List[str] = []):
+def split_ipu_config(ipu_config: IPUConfig, parts: List[str] = []) -> List[IPUConfig]:
     msg = (
         "'{arg}' must take one of the following three forms:\n"
         "  - float: one value for all parts\n"
