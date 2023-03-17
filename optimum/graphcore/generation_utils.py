@@ -117,7 +117,8 @@ class IPUGenerationMixin(GenerationMixin):
     def _pad_tensors_to_max_len(self, tensor: torch.Tensor, max_length: int, pad_token_id: int) -> torch.Tensor:
         return nn.functional.pad(tensor, (0, max_length - tensor.shape[1]), "constant", pad_token_id)
 
-    def _call_generate(self, *args, **kwargs):
+    def _call_generate(self, *args, cur_token_id: int, **kwargs):
+        t = self._get_cur_token_logits_tensor(cur_token_id)
         if not hasattr(self, "poptorch_decoder"):
             wrapper = DecoderWrapper(self.eval())
             decoder_ipu_config = getattr(self, "decoder_ipu_config", self.ipu_config)
@@ -125,7 +126,7 @@ class IPUGenerationMixin(GenerationMixin):
 
         # This will trigger a compile first time it's ran
         with graph_profile_dir_append("/decoder"):
-            return self.poptorch_decoder(*args, **kwargs)
+            return self.poptorch_decoder(*args, t=t, **kwargs)
 
     def _prepare_encoder_decoder_kwargs_for_generation(
         self, inputs_tensor: torch.Tensor, model_kwargs, model_input_name: Optional[str] = None
@@ -164,10 +165,10 @@ class IPUGenerationMixin(GenerationMixin):
     def _get_cur_token_logits_tensor(self, token_id):
         # returns a 1 dimensional tensor of the form [device_iterations]
         # with all elements equal to token_id.
-        # token_id is the current token being decoded, it 
+        # token_id is the current token being decoded, it
         # is required in order to return only the logits for this token
-        # ideally a single tensor would be provided, however 
-        # poptorch requires that the first dimension of an input tensor is 
+        # ideally a single tensor would be provided, however
+        # poptorch requires that the first dimension of an input tensor is
         # divisible by the number of device iterations
         return torch.ones(self.ipu_config.inference_device_iterations) * token_id
 
@@ -325,7 +326,7 @@ class IPUGenerationMixin(GenerationMixin):
 
             # forward pass to get next token
             outputs = self._call_generate(
-                t=self._get_cur_token_logits_tensor(cur_len - 1),
+                cur_token_id=cur_len - 1,
                 **model_inputs,
                 return_dict=True,
                 output_attentions=output_attentions,
@@ -591,7 +592,7 @@ class IPUGenerationMixin(GenerationMixin):
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
             outputs = self._call_generate(
-                t=self._get_cur_token_logits_tensor(cur_len - 1),
+                cur_token_id=cur_len - 1,
                 **model_inputs,
                 return_dict=True,
                 output_attentions=output_attentions,
@@ -889,7 +890,7 @@ class IPUGenerationMixin(GenerationMixin):
 
             # forward pass to get next token
             outputs = self._call_generate(
-                t=self._get_cur_token_logits_tensor(cur_len - 1),
+                cur_token_id=cur_len - 1,
                 **model_inputs,
                 return_dict=True,
                 output_attentions=output_attentions,
@@ -1162,7 +1163,7 @@ class IPUGenerationMixin(GenerationMixin):
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
             outputs = self._call_generate(
-                t=self._get_cur_token_logits_tensor(cur_len - 1),
+                cur_token_id=cur_len - 1,
                 **model_inputs,
                 return_dict=True,
                 output_attentions=output_attentions,
