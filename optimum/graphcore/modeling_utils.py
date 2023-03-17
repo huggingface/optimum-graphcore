@@ -225,6 +225,32 @@ class PipelineMixin:
             return sum(p.numel() for p in self.parameters() if p.requires_grad or not only_trainable)
 
 
+def split_ipu_config(ipu_config: IPUConfig, parts: List[str] = []):
+    msg = (
+        "'{arg}' must take one of the following three forms:\n"
+        "  - float: one value for all parts\n"
+        "  - list(float): different values for each parts\n"
+        "  - list(list(float)): different values for each IPU in each part\n"
+        "The outer list must be of length {n}"
+    )
+    # Split layers_per_ipu between the given parts
+    ipu_configs = {part: copy.deepcopy(ipu_config) for part in parts}
+    for i, (name, ipu_config) in enumerate(ipu_configs.items()):
+        if isinstance(ipu_config.layers_per_ipu, list):
+            if len(ipu_config.layers_per_ipu) == len(parts):
+                ipu_configs[name].layers_per_ipu = ipu_config.layers_per_ipu[i]
+                ipu_configs[name].ipus_per_replica = len(ipu_configs[name].layers_per_ipu)
+            else:
+                raise ValueError(msg.format(arg="layers_per_ipu", n=len(parts)))
+        # Split matmul_proportion between the given parts
+        if isinstance(ipu_config.matmul_proportion, list):
+            if len(ipu_config.matmul_proportion) == len(parts):
+                ipu_configs[name].matmul_proportion = ipu_config.matmul_proportion[i]
+            else:
+                raise ValueError(msg.format(arg="matmul_proportion", n=len(parts)))
+    return ipu_configs.values()
+
+
 def get_layer_ipu(ipu_config: IPUConfig, target_number_of_layers: Optional[Union[int, List]] = None):
     layers_per_ipu = ipu_config.layers_per_ipu
     ipus_per_replica = ipu_config.ipus_per_replica

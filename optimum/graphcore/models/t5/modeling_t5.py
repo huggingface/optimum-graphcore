@@ -33,6 +33,7 @@ from ...modeling_utils import (
     get_layer_ipu,
     recomputation_checkpoint,
     register,
+    split_ipu_config,
 )
 
 
@@ -257,10 +258,10 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
         for block in self.decoder.block:
             block.__class__ = CustomT5Block
 
-        number_of_layers = len(self.encoder.block) + len(self.decoder.block)
-        layer_ipu = get_layer_ipu(self.ipu_config, number_of_layers)
-        for index, layer in enumerate(self.encoder.block):
-            ipu = layer_ipu[index]
+        self.encoder_ipu_config, self.decoder_ipu_config = split_ipu_config(self.ipu_config, ["encoder", "decoder"])
+
+        encoder_layer_ipu = get_layer_ipu(self.encoder_ipu_config, len(self.encoder.block))
+        for index, (layer, ipu) in enumerate(zip(self.encoder.block, encoder_layer_ipu)):
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_layers - 1:
                 recomputation_checkpoint(layer)
             self.encoder.block[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
@@ -270,9 +271,8 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
             self.encoder.final_layer_norm, "Encoder Stack Final LayerNorm", ipu_id=ipu
         )
 
-        shift = len(self.encoder.block)
-        for index, layer in enumerate(self.decoder.block):
-            ipu = layer_ipu[index + shift]
+        decoder_layer_ipu = get_layer_ipu(self.decoder_ipu_config, len(self.decoder.block))
+        for index, (layer, ipu) in enumerate(zip(self.decoder.block, decoder_layer_ipu)):
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_layers - 1:
                 recomputation_checkpoint(layer)
             self.decoder.block[index] = poptorch.BeginBlock(layer, f"Decoder{index}", ipu_id=ipu)

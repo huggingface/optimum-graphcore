@@ -12,11 +12,11 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-import os
+import contextlib
 import copy
 import json
+import os
 import warnings
-import contextlib
 from itertools import groupby
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
@@ -66,39 +66,6 @@ def graph_profile_dir_append(append: str):
             os.environ["POPLAR_ENGINE_OPTIONS"] = poplar_engine_options
 
 
-def _split_encoder_decoder_ipu_config(ipu_config, config):
-    num_encoder_layers = config.num_layers
-    num_decoder_layers = config.num_decoder_layers
-    layer_ipu = get_layer_ipu(ipu_config, num_encoder_layers + num_decoder_layers)
-    num_encoder_ipus = layer_ipu[num_encoder_layers - 1] + 1
-    num_decoder_ipus = layer_ipu[num_encoder_layers + num_decoder_layers - 1] - num_encoder_ipus + 1
-
-    if num_encoder_ipus + num_decoder_ipus > ipu_config.ipus_per_replica:
-        raise ValueError(
-            "Unable to split IPUConfig for encoder and decoder executors. Trying:"
-            f"layer_per_ipu={ipu_config.layers_per_ipu}"
-            f"Encoder: {num_encoder_layers} layers on {num_encoder_ipus} IPUs"
-            f"Decoder: {num_decoder_layers} layers on {num_decoder_ipus} IPUs"
-        )
-
-    # Expand layers_per_ipu without wildcards for split
-    full_layers_per_ipu = [len(list(group)) for _, group in groupby(layer_ipu)]
-
-    # Split encoder and pad the unused decoder layers at the last IPU
-    encoder_ipu_config = copy.deepcopy(ipu_config)
-    encoder_ipu_config.layers_per_ipu = full_layers_per_ipu[:num_encoder_ipus]
-    encoder_ipu_config.layers_per_ipu[-1] = encoder_ipu_config.layers_per_ipu[-1] + num_decoder_layers
-    encoder_ipu_config.ipus_per_replica = num_encoder_ipus
-
-    # Split decoder and pad the unused encoder layers at the first IPU
-    decoder_ipu_config = copy.deepcopy(ipu_config)
-    decoder_ipu_config.layers_per_ipu = full_layers_per_ipu[num_encoder_ipus:]
-    decoder_ipu_config.layers_per_ipu[0] = decoder_ipu_config.layers_per_ipu[0] + num_encoder_layers
-    decoder_ipu_config.ipus_per_replica = num_decoder_ipus
-
-    return encoder_ipu_config, decoder_ipu_config
-
-
 class DecoderWrapper(nn.Module):
     """
     Fast wrapper for decoder part of text generation models.
@@ -134,9 +101,6 @@ class IPUGenerationMixin(GenerationMixin):
         if not hasattr(self, "poptorch_decoder"):
             if hasattr(self, "decoder_ipu_config"):
                 # Use split decoder ipu_config for encoder/decoder models
-                self.deparallelize()
-                self.ipu_config = self.decoder_ipu_config
-                self.parallelize()
                 wrapper = DecoderWrapper(self.eval())
                 self.poptorch_decoder = poptorch.inferenceModel(
                     wrapper, self.decoder_ipu_config.to_options(for_inference=True)
@@ -165,25 +129,15 @@ class IPUGenerationMixin(GenerationMixin):
             if not any(argument.startswith(p) for p in irrelevant_prefix)
         }
 
-        # 3. Split self.ipu_config into encoder and decoder ipu_configs
-        if not hasattr(self, "encoder_ipu_config"):
-            self.encoder_ipu_config, self.decoder_ipu_config = _split_encoder_decoder_ipu_config(
-                self.ipu_config, self.config
-            )
-
-        # 4. make sure that encoder returns `ModelOutput`
+        # 3. make sure that encoder returns `ModelOutput`
         model_input_name = model_input_name if model_input_name is not None else self.main_input_name
         encoder_kwargs["return_dict"] = True
         encoder_kwargs[model_input_name] = inputs_tensor
         if not hasattr(self, "poptorch_encoder"):
             # Use split encoder ipu_config for encoder/decoder models
-            self.deparallelize()
-            self.ipu_config = self.encoder_ipu_config
-            self.parallelize()
             self.poptorch_encoder = poptorch.inferenceModel(
                 encoder.eval(), self.encoder_ipu_config.to_options(for_inference=True)
             )
-            self.ipu_config = self.ipu_config
         with graph_profile_dir_append("/encoder"):
             model_kwargs["encoder_outputs"]: ModelOutput = self.poptorch_encoder(**encoder_kwargs)
 
