@@ -44,8 +44,8 @@ from ...modeling_utils import (
     get_layer_ipu,
     recomputation_checkpoint,
     register,
-    tied_weight_model,
     split_encoder_decoder_ipu_config,
+    tied_weight_model,
 )
 
 
@@ -737,7 +737,7 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
         num_decoder_layers = len(self.model.decoder.layers)
 
         if kwargs.get("for_generation"):
-            # If running for text generation we split the IPU config into two configs  
+            # If running for text generation we split the IPU config into two configs
             # because we run the encoder and decoder as separate Poplar executors.
             ipu_configs = split_encoder_decoder_ipu_config(self.ipu_config, num_encoder_layers, num_decoder_layers)
             self.encoder_ipu_config, self.decoder_ipu_config = ipu_configs

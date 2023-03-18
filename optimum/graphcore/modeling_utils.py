@@ -225,7 +225,9 @@ class PipelineMixin:
             return sum(p.numel() for p in self.parameters() if p.requires_grad or not only_trainable)
 
 
-def _expand_layers_per_ipu_wildcard(ipu_config: IPUConfig, target_number_of_layers: Optional[Union[int, List]] = None) -> List[int]:
+def _expand_layers_per_ipu_wildcard(
+    ipu_config: IPUConfig, target_number_of_layers: Optional[Union[int, List]] = None
+) -> List[int]:
     """
     Expand any wildcard values in `ipu_config.layers_per_ipu`.
 
@@ -291,11 +293,13 @@ def _expand_layers_per_ipu_wildcard(ipu_config: IPUConfig, target_number_of_laye
     return layers_per_ipu
 
 
-def split_encoder_decoder_ipu_config(ipu_config: IPUConfig, num_encoder_layers: int, num_decoder_layers: int) -> List[IPUConfig]:
+def split_encoder_decoder_ipu_config(
+    ipu_config: IPUConfig, num_encoder_layers: int, num_decoder_layers: int
+) -> List[IPUConfig]:
     """
     Given an `ipu_config` for an entire encoder-decoder model and the number of encoder and decoder layers,
     this function will split the `ipu_config` into two separate configs:
-      `encoder_ipu_config` and `decoder_ipu_config`. 
+      `encoder_ipu_config` and `decoder_ipu_config`.
     It will split the `ipu_config.layers_per_ipu` into two given the inputted numbers of encoder and decoder
     layers.
 
@@ -327,7 +331,7 @@ def split_encoder_decoder_ipu_config(ipu_config: IPUConfig, num_encoder_layers: 
 
     # Split layers_per_ipu between the given num layers
     layers_per_ipu = _expand_layers_per_ipu_wildcard(ipu_config, num_encoder_layers + num_decoder_layers)
-    cumsum = [sum(layers_per_ipu[:i+1]) for i in range(len(layers_per_ipu))]
+    cumsum = [sum(layers_per_ipu[: i + 1]) for i in range(len(layers_per_ipu))]
     try:
         cut = cumsum.index(num_encoder_layers) + 1
     except:
@@ -337,7 +341,7 @@ def split_encoder_decoder_ipu_config(ipu_config: IPUConfig, num_encoder_layers: 
             f"\tipu_config.layers_per_ipu={ipu_config.layers_per_ipu}\n"
             f"\tnum_encoder_layers={num_encoder_layers}\n"
             f"\tnum_decoder_layers={num_decoder_layers}\n"
-            )
+        )
     ipu_configs["encoder"].layers_per_ipu = layers_per_ipu[:cut]
     ipu_configs["decoder"].layers_per_ipu = layers_per_ipu[cut:]
 

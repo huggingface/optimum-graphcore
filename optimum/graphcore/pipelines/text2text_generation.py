@@ -14,7 +14,7 @@ class IPUText2TextGenerationPipeline(Text2TextGenerationPipeline):
         truncation=None,
         stop_sequence=None,
         max_input_length=None,
-        **generate_kwargs
+        **generate_kwargs,
     ):
         preprocess_params = {}
         if truncation is not None:
