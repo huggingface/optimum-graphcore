@@ -33,7 +33,7 @@ from ...modeling_utils import (
     get_layer_ipu,
     recomputation_checkpoint,
     register,
-    split_ipu_config,
+    split_encoder_decoder_ipu_config,
 )
 
 
@@ -258,16 +258,21 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
         for block in self.decoder.block:
             block.__class__ = CustomT5Block
 
+        num_encoder_layers = len(self.encoder.block)
+        num_decoder_layers = len(self.decoder.block)
+
         if kwargs.get("for_generation"):
-            ipu_configs = split_ipu_config(self.ipu_config, ["encoder", "decoder"])
+            # If running for text generation we split the IPU config into two configs  
+            # because we run the encoder and decoder as separate Poplar executors.
+            ipu_configs = split_encoder_decoder_ipu_config(self.ipu_config, num_encoder_layers, num_decoder_layers)
             self.encoder_ipu_config, self.decoder_ipu_config = ipu_configs
-            encoder_layer_ipu = get_layer_ipu(self.encoder_ipu_config, len(self.encoder.block))
-            decoder_layer_ipu = get_layer_ipu(self.decoder_ipu_config, len(self.decoder.block))
+            encoder_layer_ipu = get_layer_ipu(self.encoder_ipu_config, num_encoder_layers)
+            decoder_layer_ipu = get_layer_ipu(self.decoder_ipu_config, num_decoder_layers)
         else:
-            number_of_layers = len(self.encoder.block) + len(self.decoder.block)
+            number_of_layers = num_encoder_layers + num_decoder_layers
             layer_ipu = get_layer_ipu(self.ipu_config, number_of_layers)
-            encoder_layer_ipu = layer_ipu[:len(self.encoder.block)]
-            decoder_layer_ipu = layer_ipu[len(self.encoder.block):]
+            encoder_layer_ipu = layer_ipu[:num_encoder_layers]
+            decoder_layer_ipu = layer_ipu[num_encoder_layers:]
 
         for index, (layer, ipu) in enumerate(zip(self.encoder.block, encoder_layer_ipu)):
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_layers - 1:
