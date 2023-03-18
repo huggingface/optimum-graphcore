@@ -99,17 +99,11 @@ class IPUGenerationMixin(GenerationMixin):
 
     def _call_generate(self, *args, **kwargs):
         if not hasattr(self, "poptorch_decoder"):
-            if hasattr(self, "decoder_ipu_config"):
-                # Use split decoder ipu_config for encoder/decoder models
-                wrapper = DecoderWrapper(self.eval())
-                self.poptorch_decoder = poptorch.inferenceModel(
-                    wrapper, self.decoder_ipu_config.to_options(for_inference=True)
-                )
-            else:
-                wrapper = DecoderWrapper(self.eval())
-                self.poptorch_decoder = poptorch.inferenceModel(
-                    wrapper, self.ipu_config.to_options(for_inference=True)
-                )
+            wrapper = DecoderWrapper(self.eval())
+            decoder_ipu_config = getattr(self, "decoder_ipu_config", self.ipu_config)
+            self.poptorch_decoder = poptorch.inferenceModel(
+                wrapper, decoder_ipu_config.to_options(for_inference=True)
+            )
 
         # This will trigger a compile first time it's ran
         with graph_profile_dir_append("/decoder"):
