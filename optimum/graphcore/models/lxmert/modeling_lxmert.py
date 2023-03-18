@@ -30,7 +30,7 @@ logger = logging.get_logger(__name__)
 
 @register(LxmertForQuestionAnswering)
 class PipelinedLxmertForQuestionAnswering(LxmertForQuestionAnswering, PipelineMixin):
-    def parallelize(self):
+    def parallelize(self, **kwargs):
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model

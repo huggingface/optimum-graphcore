@@ -25,7 +25,7 @@ logger = logging.get_logger(__name__)
 
 @register(ConvNextForImageClassification)
 class PipelinedConvNextForImageClassification(ConvNextForImageClassification, PipelineMixin):
-    def parallelize(self):
+    def parallelize(self, **kwargs):
         super().parallelize()
 
         # Use optimized ConvNextLayer

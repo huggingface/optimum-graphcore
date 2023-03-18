@@ -63,7 +63,7 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
         super().__init__(config)
         self.gather_indices = OnehotGather()
 
-    def parallelize(self):
+    def parallelize(self, **kwargs):
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model
@@ -235,7 +235,7 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
         super().__init__(config)
         self.gather_indices = OnehotGather()
 
-    def parallelize(self):
+    def parallelize(self, **kwargs):
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model
@@ -380,7 +380,7 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
 
 
 class BertPipelineMixin(PipelineMixin):
-    def parallelize(self):
+    def parallelize(self, **kwargs):
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model
@@ -442,7 +442,7 @@ class PipelinedBertForSequenceClassification(BertForSequenceClassification, Bert
     ```
     """
 
-    def parallelize(self):
+    def parallelize(self, **kwargs):
         super().parallelize()
         last_ipu = self.ipu_config.ipus_per_replica - 1
         logger.info(f"Classifier Output --> IPU {last_ipu}")
@@ -462,7 +462,7 @@ class PipelinedBertForMultipleChoice(BertForMultipleChoice, BertPipelineMixin):
     ```
     """
 
-    def parallelize(self):
+    def parallelize(self, **kwargs):
         super().parallelize()
         last_ipu = self.ipu_config.ipus_per_replica - 1
         logger.info(f"Classifier Output --> IPU {last_ipu}")
@@ -482,7 +482,7 @@ class PipelinedBertForTokenClassification(BertForTokenClassification, BertPipeli
     ```
     """
 
-    def parallelize(self):
+    def parallelize(self, **kwargs):
         super().parallelize()
         last_ipu = self.ipu_config.ipus_per_replica - 1
         logger.info(f"Classifier Output --> IPU {last_ipu}")
@@ -502,7 +502,7 @@ class PipelinedBertForQuestionAnswering(BertForQuestionAnswering, BertPipelineMi
     ```
     """
 
-    def parallelize(self):
+    def parallelize(self, **kwargs):
         super().parallelize()
         last_ipu = self.ipu_config.ipus_per_replica - 1
         logger.info(f"QA Outputs --> IPU {last_ipu}")

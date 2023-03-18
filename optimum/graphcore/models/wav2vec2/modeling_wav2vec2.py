@@ -128,7 +128,7 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
     def _add_begin_block(self, module, name, ipu_id):
         poptorch.BeginBlock(module, name, ipu_id)
 
-    def parallelize(self):
+    def parallelize(self, **kwargs):
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model
@@ -413,7 +413,7 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
     def _add_begin_block(self, module, name, ipu_id):
         poptorch.BeginBlock(module, name, ipu_id)
 
-    def parallelize(self):
+    def parallelize(self, **kwargs):
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model

@@ -117,7 +117,7 @@ class IPUMultiHeadSelfAttention(MultiHeadSelfAttention):
 
 
 class DistilBertPipelineMixin(PipelineMixin):
-    def parallelize(self):
+    def parallelize(self, **kwargs):
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model
@@ -171,7 +171,7 @@ class PipelinedDistilBertForMaskedLM(DistilBertForMaskedLM, DistilBertPipelineMi
         super().__init__(config)
         self.gather_indices = OnehotGather()
 
-    def parallelize(self):
+    def parallelize(self, **kwargs):
         super().parallelize()
 
         if self.ipu_config.embedding_serialization_factor > 1:
@@ -268,7 +268,7 @@ class PipelinedDistilBertForMaskedLM(DistilBertForMaskedLM, DistilBertPipelineMi
 
 @register(DistilBertForSequenceClassification)
 class PipelinedDistilBertForSequenceClassification(DistilBertForSequenceClassification, DistilBertPipelineMixin):
-    def parallelize(self):
+    def parallelize(self, **kwargs):
         super().parallelize()
 
         last_ipu = self.ipu_config.ipus_per_replica - 1
@@ -281,7 +281,7 @@ class PipelinedDistilBertForSequenceClassification(DistilBertForSequenceClassifi
 
 @register(DistilBertForQuestionAnswering)
 class PipelinedDistilBertForQuestionAnswering(DistilBertForQuestionAnswering, DistilBertPipelineMixin):
-    def parallelize(self):
+    def parallelize(self, **kwargs):
         super().parallelize()
 
         last_ipu = self.ipu_config.ipus_per_replica - 1
@@ -332,7 +332,7 @@ class PipelinedDistilBertForQuestionAnswering(DistilBertForQuestionAnswering, Di
 
 @register(DistilBertForTokenClassification)
 class PipelinedDistilBertForTokenClassification(DistilBertForTokenClassification, DistilBertPipelineMixin):
-    def parallelize(self):
+    def parallelize(self, **kwargs):
         super().parallelize()
 
         last_ipu = self.ipu_config.ipus_per_replica - 1
@@ -344,7 +344,7 @@ class PipelinedDistilBertForTokenClassification(DistilBertForTokenClassification
 
 @register(DistilBertForMultipleChoice)
 class PipelinedDistilBertForMultipleChoice(DistilBertForMultipleChoice, DistilBertPipelineMixin):
-    def parallelize(self):
+    def parallelize(self, **kwargs):
         super().parallelize()
 
         last_ipu = self.ipu_config.ipus_per_replica - 1
