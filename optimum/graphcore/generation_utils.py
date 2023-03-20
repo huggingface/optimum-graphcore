@@ -13,11 +13,9 @@
 #  limitations under the License.
 
 import contextlib
-import copy
 import json
 import os
 import warnings
-from itertools import groupby
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
 import torch
