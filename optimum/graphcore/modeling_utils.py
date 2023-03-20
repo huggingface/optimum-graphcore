@@ -44,6 +44,12 @@ TIED_WEIGHT_MODELS = set(
 )
 
 
+class IncompatibleIPUConfigError(Exception):
+    """An exception used when an IPU Config is incompatible with a model"""
+
+    pass
+
+
 def tied_weight_model(transformers_cls=None):
     """Certain models may either have tied weights, or similar weight aliasing.
     We track these as they currently need additional unwrapping when used in the IPUTrainer.
@@ -243,9 +249,9 @@ def _expand_layers_per_ipu_wildcard(
 
     # Check inputs are valid
     if not all(isinstance(n, int) and n >= -1 for n in layers_per_ipu):
-        raise ValueError("Invalid values in layers_per_ipu. " f"layers_per_ipu={layers_per_ipu}")
+        raise IncompatibleIPUConfigError("Invalid values in layers_per_ipu. " f"layers_per_ipu={layers_per_ipu}")
     if ipus_per_replica < 1:
-        raise ValueError("Invalid value for ipus_per_replica. " f"ipus_per_replica={ipus_per_replica}")
+        raise IncompatibleIPUConfigError("Invalid value for ipus_per_replica. " f"ipus_per_replica={ipus_per_replica}")
 
     if target_number_of_layers is not None:
         if not isinstance(target_number_of_layers, int):
@@ -278,13 +284,13 @@ def _expand_layers_per_ipu_wildcard(
                     layers_per_ipu[wildcard_idxs[-1]] += remainder
 
             elif len(layers_per_ipu) != ipus_per_replica:
-                raise ValueError(
+                raise IncompatibleIPUConfigError(
                     "layers_per_ipu has non-default value set, but its length does not match ipus_per_replica. "
                     f"layers_per_ipu={layers_per_ipu}, ipus_per_replica={ipus_per_replica}. "
                 )
             # no wildcards used
             elif sum(layers_per_ipu) != target_number_of_layers:
-                raise ValueError(
+                raise IncompatibleIPUConfigError(
                     "layers_per_ipu does not define the correct number of layers for the current model."
                     " The current IPU Config specifies IPU assignments for "
                     f"{sum(layers_per_ipu)} layers but there are {target_number_of_layers} layers "
@@ -325,7 +331,7 @@ def split_encoder_decoder_ipu_config(
     """
     # Need at least two IPUs to do the split
     if ipu_config.ipus_per_replica < 2:
-        raise ValueError("Need ipus_per_replica of at least 2 to split ipu_config into encoder and decoder configs")
+        raise IncompatibleIPUConfigError("Need ipus_per_replica of at least 2 to split ipu_config into encoder and decoder configs")
 
     ipu_configs = {name: copy.deepcopy(ipu_config) for name in ["encoder", "decoder"]}
 
