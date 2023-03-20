@@ -165,9 +165,12 @@ class IPUCrossAttention(CrossAttention):
                 return divisor
         raise ValueError(f"No divisor found in range [{start}, {end}].")
 
-    def _attention(self, query, key, value):
+    def _attention(self, query, key, value, attention_mask):
         """Overriding this implementation as the `torch.baddbmm` op is not registered."""
         attention_scores = torch.matmul(query, key.transpose(1, 2)) * self.scale
+
+        if attention_mask is not None:
+            attention_scores = attention_scores + attention_mask
 
         attention_probs = attention_scores.softmax(dim=-1)
 
@@ -177,7 +180,7 @@ class IPUCrossAttention(CrossAttention):
         hidden_states = self.reshape_batch_dim_to_heads(hidden_states)
         return hidden_states
 
-    def _sliced_attention(self, query, key, value, sequence_length, dim):
+    def _sliced_attention(self, query, key, value, sequence_length, dim, attention_mask):
         """
         Overriding this implementation to slice across the query sequence length instead of across heads.
         NB: this ignores the `slice_size` factor since we interpret it differently and use a value that is
@@ -186,7 +189,7 @@ class IPUCrossAttention(CrossAttention):
         attn_matrix_mem = query.element_size() * query.shape[0] * query.shape[1] * key.shape[1]
         num_slices = attn_matrix_mem // (self._attn_matrix_target_mem_mb * 1024 * 1024)
         if num_slices < 2:
-            return self._attention(query, key, value)
+            return self._attention(query, key, value, attention_mask)
 
         num_slices = self._nearest_divisor(query.shape[1], num_slices, 2 * num_slices)
         slice_size = query.shape[1] // num_slices
@@ -199,6 +202,8 @@ class IPUCrossAttention(CrossAttention):
             end_idx = (i + 1) * slice_size
 
             attn_slice = torch.matmul(query[:, start_idx:end_idx], key) * self.scale
+            if attention_mask is not None:
+                attn_slice = attn_slice + attention_mask[:, start_idx:end_idx]
             attn_slice = attn_slice.softmax(dim=-1)
             attn_slice = torch.matmul(attn_slice, value)
 
