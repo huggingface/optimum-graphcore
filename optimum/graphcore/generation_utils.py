@@ -45,7 +45,6 @@ from transformers.generation.utils import (
 from transformers.modeling_outputs import ModelOutput
 from transformers.pytorch_utils import torch_int_div
 
-from .modeling_utils import get_layer_ipu
 
 
 logger = logging.get_logger(__name__)
