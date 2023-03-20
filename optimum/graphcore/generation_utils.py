@@ -99,9 +99,7 @@ class IPUGenerationMixin(GenerationMixin):
         if not hasattr(self, "poptorch_decoder"):
             wrapper = DecoderWrapper(self.eval())
             decoder_ipu_config = getattr(self, "decoder_ipu_config", self.ipu_config)
-            self.poptorch_decoder = poptorch.inferenceModel(
-                wrapper, decoder_ipu_config.to_options(for_inference=True)
-            )
+            self.poptorch_decoder = poptorch.inferenceModel(wrapper, decoder_ipu_config.to_options(for_inference=True))
 
         # This will trigger a compile first time it's ran
         with graph_profile_dir_append("/decoder"):
