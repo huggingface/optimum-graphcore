@@ -23,7 +23,11 @@ import pytest
 
 from optimum.graphcore import IPUConfig
 from optimum.graphcore.ipu_configuration import ALLOWED_POD_TYPES
-from optimum.graphcore.modeling_utils import IncompatibleIPUConfigError, get_layer_ipu, split_encoder_decoder_ipu_config
+from optimum.graphcore.modeling_utils import (
+    IncompatibleIPUConfigError,
+    get_layer_ipu,
+    split_encoder_decoder_ipu_config,
+)
 from poptorch import OutputMode
 
 
@@ -249,14 +253,16 @@ class IPUConfigTester(unittest.TestCase):
         # Raises exception if number of layers is too few
         ipu_config = IPUConfig(layers_per_ipu=[1, 2])
         with pytest.raises(
-            IncompatibleIPUConfigError, match="layers_per_ipu does not define the correct number of layers for the current model"
+            IncompatibleIPUConfigError,
+            match="layers_per_ipu does not define the correct number of layers for the current model",
         ):
             layer_ipu = get_layer_ipu(ipu_config, 2)
 
         # Raises exception if number of layers is too many
         ipu_config = IPUConfig(layers_per_ipu=[1, 2])
         with pytest.raises(
-            IncompatibleIPUConfigError, match="layers_per_ipu does not define the correct number of layers for the current model"
+            IncompatibleIPUConfigError,
+            match="layers_per_ipu does not define the correct number of layers for the current model",
         ):
             layer_ipu = get_layer_ipu(ipu_config, 4)
 
@@ -344,7 +350,9 @@ class IPUConfigTester(unittest.TestCase):
 
         # Encoder and decoder layers defined on same IPU should raise an exception
         ipu_config = IPUConfig(layers_per_ipu=[4, 3])
-        with pytest.raises(IncompatibleIPUConfigError, match=r"Unable to find valid split of ipu_config.layers_per_ipu"):
+        with pytest.raises(
+            IncompatibleIPUConfigError, match=r"Unable to find valid split of ipu_config.layers_per_ipu"
+        ):
             e_ipu_config, d_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 3, 4)
 
         # If ipu_config only has 1 IPU then it should raise and exception
