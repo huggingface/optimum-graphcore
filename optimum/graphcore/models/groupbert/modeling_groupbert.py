@@ -415,7 +415,7 @@ class PipelinedGroupBertForPreTraining(GroupBertForPreTraining, PipelineMixin):
         super().__init__(config)
         self.gather_indices = OnehotGather()
 
-    def parallelize(self, **kwargs):
+    def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model
@@ -580,7 +580,7 @@ class PipelinedGroupBertForMaskedLM(GroupBertForMaskedLM, PipelineMixin):
         super().__init__(config)
         self.gather_indices = OnehotGather()
 
-    def parallelize(self, **kwargs):
+    def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model
@@ -717,7 +717,7 @@ class PipelinedGroupBertForMaskedLM(GroupBertForMaskedLM, PipelineMixin):
 
 
 class BertPipelineMixin(PipelineMixin):
-    def parallelize(self, **kwargs):
+    def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model
@@ -772,7 +772,7 @@ class PipelinedGroupBertForSequenceClassification(GroupBertForSequenceClassifica
     ```
     """
 
-    def parallelize(self, **kwargs):
+    def parallelize(self):
         super().parallelize()
         last_ipu = self.ipu_config.ipus_per_replica - 1
         logger.info(f"Classifier Output --> IPU {last_ipu}")
@@ -792,7 +792,7 @@ class PipelinedGroupBertForMultipleChoice(GroupBertForMultipleChoice, BertPipeli
     ```
     """
 
-    def parallelize(self, **kwargs):
+    def parallelize(self):
         super().parallelize()
         last_ipu = self.ipu_config.ipus_per_replica - 1
         logger.info(f"Classifier Output --> IPU {last_ipu}")
@@ -812,7 +812,7 @@ class PipelinedGroupBertForTokenClassification(GroupBertForTokenClassification, 
     ```
     """
 
-    def parallelize(self, **kwargs):
+    def parallelize(self):
         super().parallelize()
         last_ipu = self.ipu_config.ipus_per_replica - 1
         logger.info(f"Classifier Output --> IPU {last_ipu}")
@@ -832,7 +832,7 @@ class PipelinedGroupBertForQuestionAnswering(GroupBertForQuestionAnswering, Bert
     ```
     """
 
-    def parallelize(self, **kwargs):
+    def parallelize(self):
         super().parallelize()
         last_ipu = self.ipu_config.ipus_per_replica - 1
         logger.info(f"QA Outputs --> IPU {last_ipu}")

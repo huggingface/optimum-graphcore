@@ -24,7 +24,7 @@ logger = logging.get_logger(__name__)
 
 @register(transformers.ViTForImageClassification)
 class PipelinedViTForImageClassification(transformers.ViTForImageClassification, PipelineMixin):
-    def parallelize(self, **kwargs):
+    def parallelize(self):
         super().parallelize()
         logger.info("---------- Device Allocation -----------")
         logger.info("Embedding  --> IPU 0")

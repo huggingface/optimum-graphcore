@@ -45,7 +45,7 @@ logger = logging.get_logger(__name__)
 
 
 class RobertaPipelineMixin(PipelineMixin):
-    def parallelize(self, **kwargs):
+    def parallelize(self):
         """
         Transform the Roberta model body to run in an IPU pipeline.
         - Adds pipeline stages to the model
@@ -102,7 +102,7 @@ class PipelinedRobertaForMaskedLM(RobertaForMaskedLM, PipelineMixin):
         super().__init__(config)
         self.gather_indices = OnehotGather()
 
-    def parallelize(self, **kwargs):
+    def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model
@@ -246,7 +246,7 @@ class PipelinedRobertaForSequenceClassification(RobertaForSequenceClassification
     ```
     """
 
-    def parallelize(self, **kwargs):
+    def parallelize(self):
         super().parallelize()
         last_ipu = self.ipu_config.ipus_per_replica - 1
         logger.info(f"Classifier Output --> IPU {last_ipu}")
@@ -266,7 +266,7 @@ class PipelinedRobertaForMultipleChoice(RobertaForMultipleChoice, RobertaPipelin
     ```
     """
 
-    def parallelize(self, **kwargs):
+    def parallelize(self):
         super().parallelize()
         last_ipu = self.ipu_config.ipus_per_replica - 1
         logger.info(f"Classifier Output --> IPU {last_ipu}")
@@ -286,7 +286,7 @@ class PipelinedRobertaForTokenClassification(RobertaForTokenClassification, Robe
     ```
     """
 
-    def parallelize(self, **kwargs):
+    def parallelize(self):
         super().parallelize()
         last_ipu = self.ipu_config.ipus_per_replica - 1
         logger.info(f"Classifier Output --> IPU {last_ipu}")
@@ -306,7 +306,7 @@ class PipelinedRobertaForQuestionAnswering(RobertaForQuestionAnswering, RobertaP
     ```
     """
 
-    def parallelize(self, **kwargs):
+    def parallelize(self):
         super().parallelize()
         last_ipu = self.ipu_config.ipus_per_replica - 1
         logger.info(f"QA Outputs --> IPU {last_ipu}")

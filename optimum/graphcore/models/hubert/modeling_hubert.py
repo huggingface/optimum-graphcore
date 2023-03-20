@@ -38,7 +38,7 @@ class PipelinedHubertForSequenceClassification(HubertForSequenceClassification, 
             new_cls = HubertEncoder if restore else IPUHubertEncoder
         self.hubert.encoder.__class__ = new_cls
 
-    def parallelize(self, **kwargs):
+    def parallelize(self):
         super().parallelize()
 
         self.change_hubert_encoder_class(False)

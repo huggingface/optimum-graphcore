@@ -291,7 +291,7 @@ class DebertaPipelineMixin(PipelineMixin):
                 func = DebertaEncoder.get_rel_embedding if restore else _get_rel_embedding
                 mod.get_rel_embedding = func.__get__(mod, DebertaEncoder)
 
-    def parallelize(self, **kwargs):
+    def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model
@@ -456,7 +456,7 @@ class PipelinedDebertaForSequenceClassification(DebertaForSequenceClassification
     ```
     """
 
-    def parallelize(self, **kwargs):
+    def parallelize(self):
         super().parallelize()
         last_ipu = self.ipu_config.ipus_per_replica - 1
         logger.info(f"Classifier Output --> IPU {last_ipu}")
@@ -476,7 +476,7 @@ class PipelinedDebertaForTokenClassification(DebertaForTokenClassification, Debe
     ```
     """
 
-    def parallelize(self, **kwargs):
+    def parallelize(self):
         super().parallelize()
         last_ipu = self.ipu_config.ipus_per_replica - 1
         logger.info(f"Classifier Output --> IPU {last_ipu}")
@@ -506,7 +506,7 @@ class PipelinedDebertaForQuestionAnswering(DebertaForQuestionAnswering, DebertaP
     ```
     """
 
-    def parallelize(self, **kwargs):
+    def parallelize(self):
         super().parallelize()
         last_ipu = self.ipu_config.ipus_per_replica - 1
         logger.info(f"QA Outputs --> IPU {last_ipu}")

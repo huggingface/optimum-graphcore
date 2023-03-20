@@ -41,7 +41,7 @@ logger = logging.get_logger(__name__)
 
 
 class GPT2PipelineMixin(PipelineMixin):
-    def parallelize(self, **kwargs):
+    def parallelize(self):
         """
         Transform the GPT2 model body to run in an IPU pipeline.
         - Adds pipeline stages to the model
@@ -109,7 +109,7 @@ class GPT2PipelineMixin(PipelineMixin):
 
 @register(GPT2LMHeadModel)
 class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin, IPUGenerationMixin):
-    def parallelize(self, **kwargs):
+    def parallelize(self):
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model
@@ -282,7 +282,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin, IPUGenerationMixi
 
 @register(GPT2ForSequenceClassification)
 class PipelinedGPT2ForSequenceClassification(GPT2ForSequenceClassification, GPT2PipelineMixin):
-    def parallelize(self, **kwargs):
+    def parallelize(self):
         super().parallelize()
         last_ipu = self.ipu_config.ipus_per_replica - 1
         logger.info(f"Head       --> IPU {last_ipu}")
@@ -338,7 +338,7 @@ class PipelinedGPT2ForSequenceClassification(GPT2ForSequenceClassification, GPT2
 
 @register(GPT2ForTokenClassification)
 class PipelinedGPT2ForTokenClassification(GPT2ForTokenClassification, GPT2PipelineMixin):
-    def parallelize(self, **kwargs):
+    def parallelize(self):
         super().parallelize()
         last_ipu = self.ipu_config.ipus_per_replica - 1
         logger.info(f"Head       --> IPU {last_ipu}")
