@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+import contextlib
+import json
+import os
 import warnings
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
@@ -44,6 +47,19 @@ from transformers.pytorch_utils import torch_int_div
 
 
 logger = logging.get_logger(__name__)
+
+
+@contextlib.contextmanager
+def graph_profile_dir_append(append: str):
+    if poplar_engine_options := os.getenv("POPLAR_ENGINE_OPTIONS"):
+        poplar_engine_options_dict = json.loads(poplar_engine_options)
+        poplar_engine_options_dict["autoReport.directory"] += append
+        os.environ["POPLAR_ENGINE_OPTIONS"] = json.dumps(poplar_engine_options_dict)
+    try:
+        yield
+    finally:
+        if poplar_engine_options:
+            os.environ["POPLAR_ENGINE_OPTIONS"] = poplar_engine_options
 
 
 class DecoderWrapper(nn.Module):
@@ -80,10 +96,12 @@ class IPUGenerationMixin(GenerationMixin):
     def _call_generate(self, *args, **kwargs):
         if not hasattr(self, "poptorch_decoder"):
             wrapper = DecoderWrapper(self.eval())
-            self.poptorch_decoder = poptorch.inferenceModel(wrapper, self.ipu_config.to_options(for_inference=True))
+            decoder_ipu_config = getattr(self, "decoder_ipu_config", self.ipu_config)
+            self.poptorch_decoder = poptorch.inferenceModel(wrapper, decoder_ipu_config.to_options(for_inference=True))
 
         # This will trigger a compile first time it's ran
-        return self.poptorch_decoder(*args, **kwargs)
+        with graph_profile_dir_append("/decoder"):
+            return self.poptorch_decoder(*args, **kwargs)
 
     def _prepare_encoder_decoder_kwargs_for_generation(
         self, inputs_tensor: torch.Tensor, model_kwargs, model_input_name: Optional[str] = None
@@ -91,12 +109,7 @@ class IPUGenerationMixin(GenerationMixin):
         # 1. get encoder
         encoder = self.get_encoder()
 
-        # 2. get the model dtype and cast encoder to fp32 for cpu
-        dtype = next(encoder.parameters()).dtype
-        if dtype is torch.float16:
-            encoder.to(torch.float32)
-
-        # 3. prepare encoder args and encoder kwargs from model kwargs
+        # 2. prepare encoder args and encoder kwargs from model kwargs
         irrelevant_prefix = ["decoder_", "cross_attn", "use_cache"]
         encoder_kwargs = {
             argument: value
@@ -104,20 +117,25 @@ class IPUGenerationMixin(GenerationMixin):
             if not any(argument.startswith(p) for p in irrelevant_prefix)
         }
 
-        # 4. make sure that encoder returns `ModelOutput`
+        # 3. make sure that encoder returns `ModelOutput`
         model_input_name = model_input_name if model_input_name is not None else self.main_input_name
         encoder_kwargs["return_dict"] = True
         encoder_kwargs[model_input_name] = inputs_tensor
-        model_kwargs["encoder_outputs"]: ModelOutput = encoder(**encoder_kwargs)
-
-        # 5. undo the casting for cpu
-        if dtype is torch.float16:
-            encoder.to(torch.float16)
-            for key, output in model_kwargs["encoder_outputs"].items():
-                if isinstance(output, torch.Tensor) and output.dtype is torch.float32:
-                    model_kwargs["encoder_outputs"][key] = output.to(torch.float16)
+        if not hasattr(self, "poptorch_encoder"):
+            # Use split encoder ipu_config for encoder/decoder models
+            self.poptorch_encoder = poptorch.inferenceModel(
+                encoder.eval(), self.encoder_ipu_config.to_options(for_inference=True)
+            )
+        with graph_profile_dir_append("/encoder"):
+            model_kwargs["encoder_outputs"]: ModelOutput = self.poptorch_encoder(**encoder_kwargs)
 
         return model_kwargs
+
+    def detachFromDevice(self):
+        if hasattr(self, "poptorch_encoder"):
+            self.poptorch_encoder.detachFromDevice()
+        if hasattr(self, "poptorch_decoder"):
+            self.poptorch_decoder.detachFromDevice()
 
     # Modified from https://github.com/huggingface/transformers/blob/v4.20.1/src/transformers/generation_utils.py#L1532
     def greedy_search(

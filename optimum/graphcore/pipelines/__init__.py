@@ -20,7 +20,7 @@ import poptorch
 import transformers.pipelines
 from optimum.graphcore import IPUConfig
 from optimum.graphcore.generation_utils import IPUGenerationMixin
-from optimum.graphcore.modeling_utils import to_pipelined
+from optimum.graphcore.modeling_utils import IncompatibleIPUConfigError, to_pipelined
 from transformers import (
     AudioClassificationPipeline,
     AutomaticSpeechRecognitionPipeline,
@@ -51,12 +51,6 @@ from .fill_mask import IPUFillMaskPipeline
 from .text2text_generation import IPUSummarizationPipeline, IPUText2TextGenerationPipeline, IPUTranslationPipeline
 from .token_classification import IPUTokenClassificationPipeline
 from .zero_shot_classification import IPUZeroShotClassificationPipeline
-
-
-class IncompatibleIPUConfigError(Exception):
-    """An exception used when an IPU Config is incompatible with a model"""
-
-    pass
 
 
 logger = logging.get_logger(__name__)
@@ -138,7 +132,7 @@ SUPPORTED_TASKS = {
         "class": (AutoModelForCausalLM,),
         "default": {
             "model": ("gpt2", "e7da7f2"),
-            "ipu_config": IPUConfig(layers_per_ipu=[12], matmul_proportion=0.2),
+            "ipu_config": IPUConfig(),
             "max_length": 50,
         },
         "type": "text",
@@ -148,7 +142,7 @@ SUPPORTED_TASKS = {
         "class": (AutoModelForSeq2SeqLM,),
         "default": {
             "model": ("ainize/bart-base-cnn", "b90bc9a"),
-            "ipu_config": IPUConfig(layers_per_ipu=[12], matmul_proportion=0.2),
+            "ipu_config": IPUConfig(ipus_per_replica=2),
             "max_input_length": 50,
             "max_length": 20,
             "truncation": "only_first",
@@ -161,7 +155,7 @@ SUPPORTED_TASKS = {
         "class": (AutoModelForSeq2SeqLM,),
         "default": {
             "model": ("t5-small", "9507060"),
-            "ipu_config": IPUConfig(layers_per_ipu=[12], matmul_proportion=0.2),
+            "ipu_config": IPUConfig(ipus_per_replica=2),
             "max_length": 50,
             "max_input_length": 45,
             "truncation": "only_first",
@@ -173,7 +167,7 @@ SUPPORTED_TASKS = {
         "class": (AutoModelForSeq2SeqLM,),
         "default": {
             "model": ("t5-small", "9507060"),
-            "ipu_config": IPUConfig(layers_per_ipu=[12], matmul_proportion=0.2),
+            "ipu_config": IPUConfig(ipus_per_replica=2),
             "max_length": 50,
             "max_input_length": 50,
             "truncation": "only_first",
@@ -226,12 +220,16 @@ def get_poplar_executor(
     ipu_config.inference_replication_factor = 1
     try:
         model = to_pipelined(model, ipu_config, force=False)
-        model.parallelize()
+        if model.config.is_encoder_decoder:
+            model.parallelize(for_generation=True)
+        else:
+            model.parallelize()
     except Exception as error:
         new_message = (
             "The model and ipu_config seem to be incompatible,"
             " please try a different IPU config or customizing it for the model."
-            f" The config provided is '{ipu_config_arg}'"
+            f" The config provided is '{ipu_config_arg}'\n"
+            f"{error}"
         )
         raise IncompatibleIPUConfigError(new_message) from error
     if fp16:
@@ -410,9 +408,11 @@ def pipeline(
 
     # Implement pipelines __del__ to clean up poplar exector
     def _del(self):
-        # For text generation models, deallocate the internal poplar executor
+        # For text generation models, deallocate the internal poplar executors
         if hasattr(self.model, "poptorch_decoder"):
             self.model.poptorch_decoder.destroy()
+        if hasattr(self.model, "poptorch_encoder"):
+            self.model.poptorch_encoder.destroy()
 
     pipeline_class.__del__ = _del
 

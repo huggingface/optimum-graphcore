@@ -44,6 +44,12 @@ TIED_WEIGHT_MODELS = set(
 )
 
 
+class IncompatibleIPUConfigError(Exception):
+    """An exception used when an IPU Config is incompatible with a model"""
+
+    pass
+
+
 def tied_weight_model(transformers_cls=None):
     """Certain models may either have tied weights, or similar weight aliasing.
     We track these as they currently need additional unwrapping when used in the IPUTrainer.
@@ -225,15 +231,27 @@ class PipelineMixin:
             return sum(p.numel() for p in self.parameters() if p.requires_grad or not only_trainable)
 
 
-def get_layer_ipu(ipu_config: IPUConfig, target_number_of_layers: Optional[Union[int, List]] = None):
-    layers_per_ipu = ipu_config.layers_per_ipu
+def _expand_layers_per_ipu_wildcard(
+    ipu_config: IPUConfig, target_number_of_layers: Optional[Union[int, List]] = None
+) -> List[int]:
+    """
+    Expand any wildcard values in `ipu_config.layers_per_ipu`.
+
+    For example, if we have:
+    ```
+    layers_per_ipu = [-1, -1]
+    target_number_of_layers = 9
+    ```
+    this function will expand the wildcard values to `layers_per_ipu = [4, 5]`
+    """
+    layers_per_ipu = copy.deepcopy(ipu_config.layers_per_ipu)
     ipus_per_replica = ipu_config.ipus_per_replica
 
     # Check inputs are valid
     if not all(isinstance(n, int) and n >= -1 for n in layers_per_ipu):
-        raise ValueError("Invalid values in layers_per_ipu. " f"layers_per_ipu={layers_per_ipu}")
+        raise IncompatibleIPUConfigError("Invalid values in layers_per_ipu. " f"layers_per_ipu={layers_per_ipu}")
     if ipus_per_replica < 1:
-        raise ValueError("Invalid value for ipus_per_replica. " f"ipus_per_replica={ipus_per_replica}")
+        raise IncompatibleIPUConfigError("Invalid value for ipus_per_replica. " f"ipus_per_replica={ipus_per_replica}")
 
     if target_number_of_layers is not None:
         if not isinstance(target_number_of_layers, int):
@@ -241,7 +259,7 @@ def get_layer_ipu(ipu_config: IPUConfig, target_number_of_layers: Optional[Union
 
         # if ipus_per_replica is 1, then put everything on IPU0, ignoring layers_per_ipu
         if ipus_per_replica == 1:
-            return [0] * target_number_of_layers
+            return [target_number_of_layers]
 
         elif ipus_per_replica > 1:
             # default/wildcards - split layers evenly over all ipus
@@ -266,18 +284,90 @@ def get_layer_ipu(ipu_config: IPUConfig, target_number_of_layers: Optional[Union
                     layers_per_ipu[wildcard_idxs[-1]] += remainder
 
             elif len(layers_per_ipu) != ipus_per_replica:
-                raise ValueError(
+                raise IncompatibleIPUConfigError(
                     "layers_per_ipu has non-default value set, but its length does not match ipus_per_replica. "
                     f"layers_per_ipu={layers_per_ipu}, ipus_per_replica={ipus_per_replica}. "
                 )
             # no wildcards used
             elif sum(layers_per_ipu) != target_number_of_layers:
-                raise ValueError(
+                raise IncompatibleIPUConfigError(
                     "layers_per_ipu does not define the correct number of layers for the current model."
                     " The current IPU Config specifies IPU assignments for "
                     f"{sum(layers_per_ipu)} layers but there are {target_number_of_layers} layers "
                     f"in the model. layers_per_ipu={layers_per_ipu}"
                 )
+    return layers_per_ipu
+
+
+def split_encoder_decoder_ipu_config(
+    ipu_config: IPUConfig, num_encoder_layers: int, num_decoder_layers: int
+) -> List[IPUConfig]:
+    """
+    Given an `ipu_config` for an entire encoder-decoder model and the number of encoder and decoder layers,
+    this function will split the `ipu_config` into two separate configs:
+      `encoder_ipu_config` and `decoder_ipu_config`.
+    It will split the `ipu_config.layers_per_ipu` into two given the inputted numbers of encoder and decoder
+    layers.
+
+    Example:
+    ```
+    >> ipu_config = IPUConfig(layers_per_ipu=[12, 12], ipus_per_replica=2)
+    >> encoder_ipu_config, decoder_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 12, 12)
+
+    >> encoder_ipu_config
+    => IPUConfig(layers_ler_ipu=[12], ipus_per_replica=1)
+
+    >> decoder_ipu_config
+    => IPUConfig(layers_ler_ipu=[12], ipus_per_replica=1)
+    ```
+
+    Args:
+        ipu_config: The `IPUConfig` for the the whole encoder-decoder model
+        num_encoder_layers: Number of encoder layers in the model
+        num_decoder_layers: Number of decoder layers in the model
+
+    Returns:
+        encoder_ipu_config, decoder_ipu_config
+    """
+    # Need at least two IPUs to do the split
+    if ipu_config.ipus_per_replica < 2:
+        raise IncompatibleIPUConfigError(
+            "Need ipus_per_replica of at least 2 to split ipu_config into encoder and decoder configs"
+        )
+
+    ipu_configs = {name: copy.deepcopy(ipu_config) for name in ["encoder", "decoder"]}
+
+    # Split layers_per_ipu between the given num layers
+    layers_per_ipu = _expand_layers_per_ipu_wildcard(ipu_config, num_encoder_layers + num_decoder_layers)
+    cumsum = [sum(layers_per_ipu[: i + 1]) for i in range(len(layers_per_ipu))]
+    try:
+        cut = [i + 1 for i, c in enumerate(cumsum) if c == num_encoder_layers][-1]
+    except:
+        raise IncompatibleIPUConfigError(
+            f"Unable to find valid split of ipu_config.layers_per_ipu\n"
+            "Arguments: \n"
+            f"\tipu_config.layers_per_ipu={ipu_config.layers_per_ipu}\n"
+            f"\tnum_encoder_layers={num_encoder_layers}\n"
+            f"\tnum_decoder_layers={num_decoder_layers}\n"
+        )
+    ipu_configs["encoder"].layers_per_ipu = layers_per_ipu[:cut]
+    ipu_configs["decoder"].layers_per_ipu = layers_per_ipu[cut:]
+
+    # Modify the ipus_per_replica
+    ipu_configs["encoder"].ipus_per_replica = len(ipu_configs["encoder"].layers_per_ipu)
+    ipu_configs["decoder"].ipus_per_replica = len(ipu_configs["decoder"].layers_per_ipu)
+
+    # Split matmul_proportion between the given num layers
+    matmul_proportion = ipu_config.matmul_proportion
+    if isinstance(matmul_proportion, list):
+        ipu_configs["encoder"].matmul_proportion = matmul_proportion[:cut]
+        ipu_configs["decoder"].matmul_proportion = matmul_proportion[cut:]
+
+    return ipu_configs.values()
+
+
+def get_layer_ipu(ipu_config: IPUConfig, target_number_of_layers: Optional[Union[int, List]] = None) -> List[int]:
+    layers_per_ipu = _expand_layers_per_ipu_wildcard(ipu_config, target_number_of_layers)
 
     # List of the IPU Id for each encoder layer
     layer_ipu: List[int] = []
