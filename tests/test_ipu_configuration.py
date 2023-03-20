@@ -354,3 +354,11 @@ class IPUConfigTester(unittest.TestCase):
             match=r"Need ipus_per_replica of at least 2 to split ipu_config into encoder and decoder configs",
         ):
             e_ipu_config, d_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 2, 2)
+
+        # Handle empty IPU in last stage of encoder
+        ipu_config = IPUConfig(layers_per_ipu=[1, 2, 3, 0, 5, 6, 7, 8])
+        e_ipu_config, d_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 6, 26)
+        self.assertEqual(e_ipu_config.layers_per_ipu, [1, 2, 3, 0])
+        self.assertEqual(e_ipu_config.ipus_per_replica, 4)
+        self.assertEqual(d_ipu_config.layers_per_ipu, [5, 6, 7, 8])
+        self.assertEqual(d_ipu_config.ipus_per_replica, 4)
