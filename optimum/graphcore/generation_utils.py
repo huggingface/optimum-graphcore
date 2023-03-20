@@ -125,11 +125,10 @@ class IPUGenerationMixin(GenerationMixin):
         model_input_name = model_input_name if model_input_name is not None else self.main_input_name
         encoder_kwargs["return_dict"] = True
         encoder_kwargs[model_input_name] = inputs_tensor
-        if not hasattr(self, "poptorch_encoder"):
-            # Use split encoder ipu_config for encoder/decoder models
-            self.poptorch_encoder = poptorch.inferenceModel(
-                encoder.eval(), self.encoder_ipu_config.to_options(for_inference=True)
-            )
+        encoder_ipu_config = getattr(self, "encoder_ipu_config", self.ipu_config)
+        self.poptorch_encoder = poptorch.inferenceModel(
+            encoder.eval(), encoder_ipu_config.to_options(for_inference=True)
+        )
         with graph_profile_dir_append("/encoder"):
             model_kwargs["encoder_outputs"]: ModelOutput = self.poptorch_encoder(**encoder_kwargs)
 
