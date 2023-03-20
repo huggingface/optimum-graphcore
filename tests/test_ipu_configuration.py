@@ -23,7 +23,7 @@ import pytest
 
 from optimum.graphcore import IPUConfig
 from optimum.graphcore.ipu_configuration import ALLOWED_POD_TYPES
-from optimum.graphcore.modeling_utils import get_layer_ipu, split_encoder_decoder_ipu_config
+from optimum.graphcore.modeling_utils import IncompatibleIPUConfigError, get_layer_ipu, split_encoder_decoder_ipu_config
 from poptorch import OutputMode
 
 
@@ -249,27 +249,27 @@ class IPUConfigTester(unittest.TestCase):
         # Raises exception if number of layers is too few
         ipu_config = IPUConfig(layers_per_ipu=[1, 2])
         with pytest.raises(
-            ValueError, match="layers_per_ipu does not define the correct number of layers for the current model"
+            IncompatibleIPUConfigError, match="layers_per_ipu does not define the correct number of layers for the current model"
         ):
             layer_ipu = get_layer_ipu(ipu_config, 2)
 
         # Raises exception if number of layers is too many
         ipu_config = IPUConfig(layers_per_ipu=[1, 2])
         with pytest.raises(
-            ValueError, match="layers_per_ipu does not define the correct number of layers for the current model"
+            IncompatibleIPUConfigError, match="layers_per_ipu does not define the correct number of layers for the current model"
         ):
             layer_ipu = get_layer_ipu(ipu_config, 4)
 
         # layers_per_ipu and ipus_per_replica mismatch raises
         ipu_config = IPUConfig(layers_per_ipu=[1, 2], ipus_per_replica=4)
         with pytest.raises(
-            ValueError,
+            IncompatibleIPUConfigError,
             match=r"layers_per_ipu has non-default value set, but its length does not match ipus_per_replica",
         ):
             layer_ipu = get_layer_ipu(ipu_config, 3)
         ipu_config = IPUConfig(layers_per_ipu=[1, -1], ipus_per_replica=4)
         with pytest.raises(
-            ValueError,
+            IncompatibleIPUConfigError,
             match=r"layers_per_ipu has non-default value set, but its length does not match ipus_per_replica",
         ):
             layer_ipu = get_layer_ipu(ipu_config, 3)
@@ -299,10 +299,10 @@ class IPUConfigTester(unittest.TestCase):
 
         # Invalid values
         ipu_config = IPUConfig(layers_per_ipu=[2, -2])
-        with pytest.raises(ValueError, match=r"Invalid values in layers_per_ipu"):
+        with pytest.raises(IncompatibleIPUConfigError, match=r"Invalid values in layers_per_ipu"):
             layer_ipu = get_layer_ipu(ipu_config, 6)
         ipu_config = IPUConfig(ipus_per_replica=0)
-        with pytest.raises(ValueError, match=r"Invalid value for ipus_per_replica"):
+        with pytest.raises(IncompatibleIPUConfigError, match=r"Invalid value for ipus_per_replica"):
             layer_ipu = get_layer_ipu(ipu_config, 6)
 
     def test_split_encoder_decoder_ipu_config(self):
@@ -338,19 +338,19 @@ class IPUConfigTester(unittest.TestCase):
         # Wrong number of layers should raise an exception
         ipu_config = IPUConfig(layers_per_ipu=[1, 2])
         with pytest.raises(
-            ValueError, match=r"layers_per_ipu does not define the correct number of layers for the current model"
+            Incompatible, match=r"layers_per_ipu does not define the correct number of layers for the current model"
         ):
             e_ipu_config, d_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 2, 2)
 
         # Encoder and decoder layers defined on same IPU should raise an exception
         ipu_config = IPUConfig(layers_per_ipu=[4, 3])
-        with pytest.raises(ValueError, match=r"Unable to find valid split of ipu_config.layers_per_ipu"):
+        with pytest.raises(IncompatibleIPUConfigError, match=r"Unable to find valid split of ipu_config.layers_per_ipu"):
             e_ipu_config, d_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 3, 4)
 
         # If ipu_config only has 1 IPU then it should raise and exception
         ipu_config = IPUConfig(layers_per_ipu=[4])
         with pytest.raises(
-            ValueError,
+            IncompatibleIPUConfigError,
             match=r"Need ipus_per_replica of at least 2 to split ipu_config into encoder and decoder configs",
         ):
             e_ipu_config, d_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 2, 2)
