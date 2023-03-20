@@ -691,7 +691,7 @@ class _BartModelWithSharedEmbedding(BartModel):
 
 @register(BartForConditionalGeneration)
 class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, PipelineMixin, IPUGenerationMixin):
-    def parallelize(self, **kwargs):
+    def parallelize(self, for_generation=False):
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model
@@ -736,7 +736,7 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
         num_encoder_layers = len(self.model.encoder.layers)
         num_decoder_layers = len(self.model.decoder.layers)
 
-        if kwargs.get("for_generation"):
+        if for_generation:
             # If running for text generation we split the IPU config into two configs
             # because we run the encoder and decoder as separate Poplar executors.
             ipu_configs = split_encoder_decoder_ipu_config(self.ipu_config, num_encoder_layers, num_decoder_layers)

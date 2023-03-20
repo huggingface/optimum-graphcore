@@ -214,7 +214,7 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
             if not restore:
                 self.lm_scale_modifier /= emb_scaling
 
-    def parallelize(self, **kwargs):
+    def parallelize(self, for_generation=False):
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model
@@ -261,7 +261,7 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
         num_encoder_layers = len(self.encoder.block)
         num_decoder_layers = len(self.decoder.block)
 
-        if kwargs.get("for_generation"):
+        if for_generation:
             # If running for text generation we split the IPU config into two configs
             # because we run the encoder and decoder as separate Poplar executors.
             ipu_configs = split_encoder_decoder_ipu_config(self.ipu_config, num_encoder_layers, num_decoder_layers)
