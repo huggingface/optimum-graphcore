@@ -251,7 +251,7 @@ def _expand_layers_per_ipu_wildcard(
     if not all(isinstance(n, int) and n >= -1 for n in layers_per_ipu):
         raise IncompatibleIPUConfigError(f"Invalid values in layers_per_ipu. layers_per_ipu={layers_per_ipu}")
     if ipus_per_replica < 1:
-        raise IncompatibleIPUConfigError("Invalid value for ipus_per_replica. " f"ipus_per_replica={ipus_per_replica}")
+        raise IncompatibleIPUConfigError(f"Invalid value for ipus_per_replica. ipus_per_replica={ipus_per_replica}")
 
     if target_number_of_layers is not None:
         if not isinstance(target_number_of_layers, int):
