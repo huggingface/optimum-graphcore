@@ -344,7 +344,8 @@ class IPUConfigTester(unittest.TestCase):
         # Wrong number of layers should raise an exception
         ipu_config = IPUConfig(layers_per_ipu=[1, 2])
         with pytest.raises(
-            IncompatibleIPUConfigError, match=r"layers_per_ipu does not define the correct number of layers for the current model"
+            IncompatibleIPUConfigError,
+            match=r"layers_per_ipu does not define the correct number of layers for the current model",
         ):
             e_ipu_config, d_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 2, 2)
 
