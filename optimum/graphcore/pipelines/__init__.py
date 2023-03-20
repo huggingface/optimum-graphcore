@@ -20,7 +20,7 @@ import poptorch
 import transformers.pipelines
 from optimum.graphcore import IPUConfig
 from optimum.graphcore.generation_utils import IPUGenerationMixin
-from optimum.graphcore.modeling_utils import to_pipelined, IncompatibleIPUConfigError
+from optimum.graphcore.modeling_utils import IncompatibleIPUConfigError, to_pipelined
 from transformers import (
     AudioClassificationPipeline,
     AutomaticSpeechRecognitionPipeline,
