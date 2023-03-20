@@ -249,9 +249,9 @@ def _expand_layers_per_ipu_wildcard(
 
     # Check inputs are valid
     if not all(isinstance(n, int) and n >= -1 for n in layers_per_ipu):
-        raise IncompatibleIPUConfigError(f"Invalid values in layers_per_ipu. layers_per_ipu={layers_per_ipu}")
+        raise IncompatibleIPUConfigError("Invalid values in layers_per_ipu. " f"layers_per_ipu={layers_per_ipu}")
     if ipus_per_replica < 1:
-        raise IncompatibleIPUConfigError(f"Invalid value for ipus_per_replica. ipus_per_replica={ipus_per_replica}")
+        raise IncompatibleIPUConfigError("Invalid value for ipus_per_replica. " f"ipus_per_replica={ipus_per_replica}")
 
     if target_number_of_layers is not None:
         if not isinstance(target_number_of_layers, int):
@@ -331,9 +331,7 @@ def split_encoder_decoder_ipu_config(
     """
     # Need at least two IPUs to do the split
     if ipu_config.ipus_per_replica < 2:
-        raise IncompatibleIPUConfigError(
-            "Need ipus_per_replica of at least 2 to split ipu_config into encoder and decoder configs"
-        )
+        raise IncompatibleIPUConfigError("Need ipus_per_replica of at least 2 to split ipu_config into encoder and decoder configs")
 
     ipu_configs = {name: copy.deepcopy(ipu_config) for name in ["encoder", "decoder"]}
 
@@ -343,7 +341,7 @@ def split_encoder_decoder_ipu_config(
     try:
         cut = [i + 1 for i, c in enumerate(cumsum) if c == num_encoder_layers][-1]
     except:
-        raise ValueError(
+        raise IncompatibleIPUConfigError(
             f"Unable to find valid split of ipu_config.layers_per_ipu\n"
             "Arguments: \n"
             f"\tipu_config.layers_per_ipu={ipu_config.layers_per_ipu}\n"
