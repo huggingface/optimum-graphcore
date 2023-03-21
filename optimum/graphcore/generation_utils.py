@@ -42,7 +42,7 @@ from transformers.generation.utils import (
     SampleOutput,
     StoppingCriteriaList,
 )
-from transformers.modeling_outputs import BaseModelOutput, ModelOutput, Seq2SeqLMOutput
+from transformers.modeling_outputs import ModelOutput
 from transformers.pytorch_utils import torch_int_div
 
 
@@ -269,9 +269,8 @@ class IPUGenerationMixin(GenerationMixin):
             )
 
         # Change: disable use_cache because it can't be statically compiled
-        if "use_cache" in model_kwargs:
-            logger.warn("Overriding use_cache setting... - use_cache=False")
-            model_kwargs["use_cache"] = False
+        if "use_cache" in model_kwargs and model_kwargs["use_cache"]:
+            raise ValueError("use_cache=True is currently not supported")
 
         # keep track of which sequences are already finished
         unfinished_sequences = input_ids.new(input_ids.shape[0]).fill_(1)
@@ -538,9 +537,8 @@ class IPUGenerationMixin(GenerationMixin):
             )
 
         # Change: disable use_cache because it can't be statically compiled
-        if "use_cache" in model_kwargs:
-            logger.warn("Overriding use_cache setting... - use_cache=False")
-            model_kwargs["use_cache"] = False
+        if "use_cache" in model_kwargs and model_kwargs["use_cache"]:
+            raise ValueError("use_cache=True is currently not supported")
 
         beam_scores = torch.zeros((batch_size, num_beams), dtype=torch.float, device=input_ids.device)
         beam_scores[:, 1:] = -1e9
@@ -834,9 +832,8 @@ class IPUGenerationMixin(GenerationMixin):
             )
 
         # Change: disable use_cache because it can't be statically compiled
-        if "use_cache" in model_kwargs:
-            logger.warn("Overriding use_cache setting... - use_cache=False")
-            model_kwargs["use_cache"] = False
+        if "use_cache" in model_kwargs and model_kwargs["use_cache"]:
+            raise ValueError("use_cache=True is currently not supported")
 
         # keep track of which sequences are already finished
         unfinished_sequences = input_ids.new(input_ids.shape[0]).fill_(1)
@@ -1111,9 +1108,8 @@ class IPUGenerationMixin(GenerationMixin):
             )
 
         # Change: disable use_cache because it can't be statically compiled
-        if "use_cache" in model_kwargs:
-            logger.warn("Overriding use_cache setting... - use_cache=False")
-            model_kwargs["use_cache"] = False
+        if "use_cache" in model_kwargs and model_kwargs["use_cache"]:
+            raise ValueError("use_cache=True is currently not supported")
 
         beam_scores = torch.zeros((batch_size, num_beams), dtype=torch.float, device=input_ids.device)
         beam_scores = beam_scores.view((batch_size * num_beams,))
