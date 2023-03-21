@@ -1,4 +1,4 @@
-# Copyright (c) 2021 Graphcore Ltd. All rights reserved.
+# Copyright (c) 2023 Graphcore Ltd. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -18,7 +18,6 @@ import torch
 from torch import nn
 
 import poptorch
-import transformers
 from optimum.utils import logging
 from transformers import WhisperConfig
 from transformers.modeling_outputs import (
@@ -29,14 +28,19 @@ from transformers.modeling_outputs import (
 from transformers.models.whisper.modeling_whisper import (
     WhisperAttention,
     WhisperDecoder,
-    WhisperDecoderLayer,
     WhisperEncoder,
     WhisperEncoderLayer,
-    WhisperPositionalEmbedding,
+    WhisperForConditionalGeneration,
 )
 
 from ...generation_utils import IPUGenerationMixin
-from ...modeling_utils import PipelineMixin, get_layer_ipu, recomputation_checkpoint, register, split_encoder_decoder_ipu_config
+from ...modeling_utils import (
+    PipelineMixin,
+    get_layer_ipu,
+    recomputation_checkpoint,
+    register,
+    split_encoder_decoder_ipu_config,
+)
 
 
 logger = logging.get_logger(__name__)
@@ -488,10 +492,8 @@ class _WhisperDecoderWithCustomMakeCausalAndExpandMask(WhisperDecoder):
         )
 
 
-@register(transformers.WhisperForConditionalGeneration)
-class PipelinedWhisperForConditionalGeneration(
-    transformers.WhisperForConditionalGeneration, PipelineMixin, IPUGenerationMixin
-):
+@register(WhisperForConditionalGeneration)
+class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, PipelineMixin, IPUGenerationMixin):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -504,17 +506,6 @@ class PipelinedWhisperForConditionalGeneration(
         for layer in self.model.encoder.layers:
             layer.__class__ = WhisperEncoderLayer if restore else _WhisperEncoderLayerClamp
 
-    def change_decoder_layer_class(self, restore: bool):
-        """Changes the decoder layer class to support static caching of key and value projections
-
-        Args:
-            restore: whether to restore the decoder layers to their original version or not.
-        """
-        for layer in self.model.decoder.layers:
-            layer.__class__ = WhisperDecoderLayer if restore else _WhisperDecoderLayerWithCache
-            layer.self_attn.__class__ = WhisperAttention if restore else _WhisperAttentionWithCache
-            layer.encoder_attn.__class__ = WhisperAttention if restore else _WhisperAttentionWithCache
-
     def change_encoder_and_decoder_classes(self, restore: bool):
         """Changes the encoder and decoder classes to update their forward pass so that they use our custom versions of
         _make_causal_mask and _expand_mask.
@@ -524,11 +515,6 @@ class PipelinedWhisperForConditionalGeneration(
         """
         self.model.encoder.__class__ = WhisperEncoder if restore else _WhisperEncoderWithCustomExpandMask
         self.model.decoder.__class__ = WhisperDecoder if restore else _WhisperDecoderWithCustomMakeCausalAndExpandMask
-
-    def change_positional_embedding(self, restore: bool):
-        self.model.decoder.embed_positions.__class__ = (
-            WhisperPositionalEmbedding if restore else _WhisperPositionalEmbedding
-        )
 
     def parallelize(self, for_generation=False):
         super().parallelize()
