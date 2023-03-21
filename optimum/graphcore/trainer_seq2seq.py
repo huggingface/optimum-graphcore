@@ -32,10 +32,14 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         if prediction_loss_only:
             return super()._wrap_and_compile_model_for_evaluation(dataloader, prediction_loss_only)
 
-        # for generation, let IPUGenerationMixin::_call_generate handle compilation of the model
-        # note though that self.model.poptorch_decoder (attribute added by IPUGenerationMixin::_call_generate)
-        # is the actual model attached to the device, self._detach_inference_model() therefore must destroy self.model.poptorch_decoder instead
-        # of self.model
+        # reparallelize for generation
+        self.model = self.model.deparallelize().parallelize(for_generation=True)
+        
+        # let IPUGenerationMixin::_call_generate handle compilation of the model
+        # note though that self.model.poptorch_decoder and self.model.poptorch_encoder
+        # (attribute added by IPUGenerationMixin::_call_generate)
+        # are the actual models attached to the device, self._detach_inference_model() therefore must destroy 
+        # self.model.poptorch_decoder and self.model.poptorch_encoder instead of self.model
         return self.model
 
     def _detach_inference_model(self):
@@ -45,12 +49,17 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         """
         # for text generation:
         # IPUGenerationMixin::_call_generate() handles the compilation of the
-        # poplar executor, It adds the compiled model
-        # as poptorch_decoder to the model object, so the actual
-        # inference_model we need to destroy is this poptorch_decoder
+        # poplar executor, It adds the compiled models
+        # as poptorch_decoder and poptorch_encoder to the model object, so the actual
+        # inference_models we need to destroy are poptorch_decoder and poptorch_encoder
         if hasattr(self.inference_model, "poptorch_decoder"):
-            self.inference_model = self.inference_model.poptorch_decoder
-
+            temp = self.inference_model
+            if hasattr(self.inference_model, "poptorch_encoder"):
+                self.inference_model = self.inference_model.poptorch_encoder
+                super()._detach_inference_model()
+            self.inference_model = temp.poptorch_decoder
+            self.model = self.model.deparallelize().parallelize(for_generation=False)    
+            
         super()._detach_inference_model()
 
     def evaluate(
