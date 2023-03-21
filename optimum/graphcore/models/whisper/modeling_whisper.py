@@ -36,7 +36,7 @@ from transformers.models.whisper.modeling_whisper import (
 )
 
 from ...generation_utils import IPUGenerationMixin
-from ...modeling_utils import PipelineMixin, get_layer_ipu, recomputation_checkpoint, register
+from ...modeling_utils import PipelineMixin, get_layer_ipu, recomputation_checkpoint, register, split_encoder_decoder_ipu_config
 
 
 logger = logging.get_logger(__name__)
@@ -530,7 +530,7 @@ class PipelinedWhisperForConditionalGeneration(
             WhisperPositionalEmbedding if restore else _WhisperPositionalEmbedding
         )
 
-    def parallelize(self):
+    def parallelize(self, for_generation=False):
         super().parallelize()
 
         self.change_encoder_layer_class(restore=False)
@@ -544,11 +544,23 @@ class PipelinedWhisperForConditionalGeneration(
             self.model.encoder.embed_positions, "Embed Positions", ipu_id=0
         )
 
-        # From modeling_bart.py
-        number_of_layers = len(self.model.encoder.layers) + len(self.model.decoder.layers)
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, number_of_layers)
-        for index, layer in enumerate(self.model.encoder.layers):
-            ipu = layer_ipu[index]
+        num_encoder_layers = len(self.model.encoder.layers)
+        num_decoder_layers = len(self.model.decoder.layers)
+
+        if for_generation:
+            # If running for text generation we split the IPU config into two configs
+            # because we run the encoder and decoder as separate Poplar executors.
+            ipu_configs = split_encoder_decoder_ipu_config(self.ipu_config, num_encoder_layers, num_decoder_layers)
+            self.encoder_ipu_config, self.decoder_ipu_config = ipu_configs
+            encoder_layer_ipu = get_layer_ipu(self.encoder_ipu_config, num_encoder_layers)
+            decoder_layer_ipu = get_layer_ipu(self.decoder_ipu_config, num_decoder_layers)
+        else:
+            number_of_layers = num_encoder_layers + num_decoder_layers
+            layer_ipu = get_layer_ipu(self.ipu_config, number_of_layers)
+            encoder_layer_ipu = layer_ipu[:num_encoder_layers]
+            decoder_layer_ipu = layer_ipu[num_encoder_layers:]
+
+        for index, (layer, ipu) in enumerate(zip(self.model.encoder.layers, encoder_layer_ipu)):
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
                 recomputation_checkpoint(layer)
             self.model.encoder.layers[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
@@ -557,12 +569,10 @@ class PipelinedWhisperForConditionalGeneration(
         # we need to deal with the model.encoder.layer norm
         self.model.encoder.layer_norm = poptorch.BeginBlock(
             self.model.encoder.layer_norm, "Encoder Layer Norm", ipu_id=ipu
-        )  ###
+        )
         logger.info(f"Encoder LN {index:<2} --> IPU {ipu}")
 
-        shift = len(self.model.encoder.layers)
-        for index, layer in enumerate(self.model.decoder.layers):
-            ipu = layer_ipu[index + shift]
+        for index, (layer, ipu) in enumerate(zip(self.model.decoder.layers, decoder_layer_ipu)):
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
                 recomputation_checkpoint(layer)
             self.model.decoder.layers[index] = poptorch.BeginBlock(layer, f"Decoder{index}", ipu_id=ipu)
