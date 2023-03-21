@@ -60,8 +60,8 @@ STABLE_DIFFUSION_V1_512_IPU_CONFIG = {
     },
     "unet": {
         "ipus_per_replica": 4,
-        "matmul_proportion": 0.1,
-        "attn_matrix_target_mem_mb": 50,
+        "matmul_proportion": [0.6, 0.6, 0.1, 0.3],
+        "attn_matrix_target_mem_mb": 100,
     },
     "vae": {"ipus_per_replica": 2, "matmul_proportion": 0.3},
     "safety_checker": {"ipus_per_replica": 1, "matmul_proportion": 0.6},
