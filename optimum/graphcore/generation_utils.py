@@ -97,7 +97,7 @@ class DecoderWrapper(nn.Module):
     def forward(self, t, **model_inputs):
         """
         Args:
-            t : (`torch.Tensor(int)`) Tensor of dimension 1 representing the current length of the sequence being generated
+            t : (`torch.Tensor(int)`) Tensor with single int representing the current length of the sequence being generated
             model_inputs : Regular model_inputs passed to the wrapped model.
         Returns:
             The output logits at position `t` only
