@@ -341,7 +341,8 @@ def split_encoder_decoder_ipu_config(
     layers_per_ipu = _expand_layers_per_ipu_wildcard(ipu_config, num_encoder_layers + num_decoder_layers)
     cumsum = [sum(layers_per_ipu[: i + 1]) for i in range(len(layers_per_ipu))]
     try:
-        cut = [i + 1 for i, c in enumerate(cumsum) if c == num_encoder_layers][-1]
+        cut = [i + 1 for i, c in enumerate(cumsum) if c == num_encoder_layers]
+        cut = max([num for num in cut if num & (num - 1) == 0])
     except:
         raise IncompatibleIPUConfigError(
             f"Unable to find valid split of ipu_config.layers_per_ipu\n"
