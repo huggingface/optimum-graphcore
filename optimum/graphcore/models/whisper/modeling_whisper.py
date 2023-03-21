@@ -11,26 +11,33 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import List, Optional, Tuple, Union
 import random
+from typing import List, Optional, Tuple, Union
 
-import poptorch
 import torch
-import transformers
-from optimum.utils import logging
-
-from ...modeling_utils import PipelineMixin, get_layer_ipu, recomputation_checkpoint, register
-from ...generation_utils import IPUGenerationMixin
-
 from torch import nn
 
-from transformers.models.whisper.modeling_whisper import WhisperEncoderLayer, WhisperAttention, WhisperEncoder, WhisperDecoder, WhisperDecoderLayer, WhisperPositionalEmbedding
+import poptorch
+import transformers
+from optimum.utils import logging
 from transformers import WhisperConfig
 from transformers.modeling_outputs import (
     BaseModelOutput,
     BaseModelOutputWithPastAndCrossAttentions,
     Seq2SeqModelOutput,
 )
+from transformers.models.whisper.modeling_whisper import (
+    WhisperAttention,
+    WhisperDecoder,
+    WhisperDecoderLayer,
+    WhisperEncoder,
+    WhisperEncoderLayer,
+    WhisperPositionalEmbedding,
+)
+
+from ...generation_utils import IPUGenerationMixin
+from ...modeling_utils import PipelineMixin, get_layer_ipu, recomputation_checkpoint, register
+
 
 logger = logging.get_logger(__name__)
 
@@ -68,6 +75,7 @@ def _expand_mask(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] 
     inverted_mask = 1.0 - expanded_mask
 
     return inverted_mask.masked_fill(inverted_mask.to(torch.bool), -FLOAT16_LIMIT)
+
 
 class _WhisperEncoderLayerClamp(nn.Module):
     def __init__(self, config: WhisperConfig):
@@ -135,7 +143,7 @@ class _WhisperEncoderLayerClamp(nn.Module):
         if output_attentions:
             outputs += (attn_weights,)
 
-        return outputs  
+        return outputs
 
 
 class _WhisperEncoderWithCustomExpandMask(WhisperEncoder):
@@ -481,7 +489,9 @@ class _WhisperDecoderWithCustomMakeCausalAndExpandMask(WhisperDecoder):
 
 
 @register(transformers.WhisperForConditionalGeneration)
-class PipelinedWhisperForConditionalGeneration(transformers.WhisperForConditionalGeneration, PipelineMixin, IPUGenerationMixin):
+class PipelinedWhisperForConditionalGeneration(
+    transformers.WhisperForConditionalGeneration, PipelineMixin, IPUGenerationMixin
+):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -502,8 +512,8 @@ class PipelinedWhisperForConditionalGeneration(transformers.WhisperForConditiona
         """
         for layer in self.model.decoder.layers:
             layer.__class__ = WhisperDecoderLayer if restore else _WhisperDecoderLayerWithCache
-            layer.self_attn.__class__ = WhisperAttention if restore else _WhisperAttentionWithCache      
-            layer.encoder_attn.__class__ = WhisperAttention if restore else _WhisperAttentionWithCache      
+            layer.self_attn.__class__ = WhisperAttention if restore else _WhisperAttentionWithCache
+            layer.encoder_attn.__class__ = WhisperAttention if restore else _WhisperAttentionWithCache
 
     def change_encoder_and_decoder_classes(self, restore: bool):
         """Changes the encoder and decoder classes to update their forward pass so that they use our custom versions of
@@ -514,10 +524,11 @@ class PipelinedWhisperForConditionalGeneration(transformers.WhisperForConditiona
         """
         self.model.encoder.__class__ = WhisperEncoder if restore else _WhisperEncoderWithCustomExpandMask
         self.model.decoder.__class__ = WhisperDecoder if restore else _WhisperDecoderWithCustomMakeCausalAndExpandMask
-    
-    def change_positional_embedding(self, restore: bool):
-        self.model.decoder.embed_positions.__class__ = WhisperPositionalEmbedding if restore else _WhisperPositionalEmbedding
 
+    def change_positional_embedding(self, restore: bool):
+        self.model.decoder.embed_positions.__class__ = (
+            WhisperPositionalEmbedding if restore else _WhisperPositionalEmbedding
+        )
 
     def parallelize(self):
         super().parallelize()
@@ -525,13 +536,13 @@ class PipelinedWhisperForConditionalGeneration(transformers.WhisperForConditiona
         self.change_encoder_layer_class(restore=False)
         self.change_encoder_and_decoder_classes(restore=False)
 
-
         logger.info("---------- Device Allocation -----------")
         logger.info("conv1, conv2, embed_positions  --> IPU 0")
         self.model.encoder.conv1 = poptorch.BeginBlock(self.model.encoder.conv1, "Conv1", ipu_id=0)
         self.model.encoder.conv2 = poptorch.BeginBlock(self.model.encoder.conv2, "Conv2", ipu_id=0)
-        self.model.encoder.embed_positions = poptorch.BeginBlock(self.model.encoder.embed_positions, "Embed Positions", ipu_id=0)
-
+        self.model.encoder.embed_positions = poptorch.BeginBlock(
+            self.model.encoder.embed_positions, "Embed Positions", ipu_id=0
+        )
 
         # From modeling_bart.py
         number_of_layers = len(self.model.encoder.layers) + len(self.model.decoder.layers)
@@ -544,7 +555,9 @@ class PipelinedWhisperForConditionalGeneration(transformers.WhisperForConditiona
             logger.info(f"Encoder {index:<2} --> IPU {ipu}")
 
         # we need to deal with the model.encoder.layer norm
-        self.model.encoder.layer_norm = poptorch.BeginBlock(self.model.encoder.layer_norm, "Encoder Layer Norm", ipu_id=ipu)  ###
+        self.model.encoder.layer_norm = poptorch.BeginBlock(
+            self.model.encoder.layer_norm, "Encoder Layer Norm", ipu_id=ipu
+        )  ###
         logger.info(f"Encoder LN {index:<2} --> IPU {ipu}")
 
         shift = len(self.model.encoder.layers)
@@ -559,7 +572,9 @@ class PipelinedWhisperForConditionalGeneration(transformers.WhisperForConditiona
 
         logger.info(f"Head       --> IPU {last_ipu}")
         logger.info("---------------------------------------")
-        self.model.decoder.layer_norm = poptorch.BeginBlock(self.model.decoder.layer_norm, "Decoder Layer Norm", ipu_id=last_ipu)
+        self.model.decoder.layer_norm = poptorch.BeginBlock(
+            self.model.decoder.layer_norm, "Decoder Layer Norm", ipu_id=last_ipu
+        )
         self.proj_out = poptorch.BeginBlock(self.proj_out, "Output Projection", ipu_id=last_ipu)
         return self
 
@@ -580,12 +595,12 @@ class PipelinedWhisperForConditionalGeneration(transformers.WhisperForConditiona
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple[torch.Tensor], Seq2SeqModelOutput]:
-        # when encoder_outputs is passed as BaseModelOutput, it comes out as a dict... 
+        # when encoder_outputs is passed as BaseModelOutput, it comes out as a dict...
         if return_dict and isinstance(encoder_outputs, dict):
             encoder_outputs = BaseModelOutput(
                 last_hidden_state=encoder_outputs["last_hidden_state"],
                 hidden_states=encoder_outputs.get("hidden_states", None),
-                attentions=encoder_outputs.get("attentions", None)
+                attentions=encoder_outputs.get("attentions", None),
             )
 
         return super().forward(
