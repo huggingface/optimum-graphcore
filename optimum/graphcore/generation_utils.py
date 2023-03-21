@@ -12,6 +12,9 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+import contextlib
+import json
+import os
 import warnings
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
 
@@ -42,21 +45,43 @@ from transformers.generation.utils import (
 from transformers.modeling_outputs import BaseModelOutput, ModelOutput, Seq2SeqLMOutput
 from transformers.pytorch_utils import torch_int_div
 
-import poptorch.poptorch_core as poptorch_core
-
 
 logger = logging.get_logger(__name__)
 
 
-class Seq2SeqWrapper(nn.Module):
-    def __init__(self, pipelined_model, encoder_outputs):
+@contextlib.contextmanager
+def graph_profile_dir_append(append: str):
+    if poplar_engine_options := os.getenv("POPLAR_ENGINE_OPTIONS"):
+        poplar_engine_options_dict = json.loads(poplar_engine_options)
+        poplar_engine_options_dict["autoReport.directory"] += append
+        os.environ["POPLAR_ENGINE_OPTIONS"] = json.dumps(poplar_engine_options_dict)
+    try:
+        yield
+    finally:
+        if poplar_engine_options:
+            os.environ["POPLAR_ENGINE_OPTIONS"] = poplar_engine_options
+
+
+class DecoderWrapper(nn.Module):
+    """
+    Fast wrapper for decoder part of text generation models.
+    Only returns the logits from the last generated token to reduce IO costs.
+    """
+
+    def __init__(self, pipelined_model):
         super().__init__()
         self.pipelined_model = pipelined_model
 
     def forward(self, t, **model_inputs):
-        outputs = self.pipelined_model(
-            **model_inputs
-        )
+        """
+        Args:
+            t : (`torch.Tensor(int)`) Tensor with single int representing the current length of the sequence being generated
+            model_inputs : Regular model_inputs passed to the wrapped model.
+        Returns:
+            The output logits at position `t` only
+        """
+        outputs = self.pipelined_model(**model_inputs)
+
         next_token_logits = poptorch.dynamic_slice(outputs.logits, 1, t, 1, 1)
         return type(outputs)(
             loss=None,
@@ -69,16 +94,14 @@ class IPUGenerationMixin(GenerationMixin):
         return nn.functional.pad(tensor, (0, max_length - tensor.shape[1]), "constant", pad_token_id)
 
     def _call_generate(self, *args, **kwargs):
-        if self.config.is_encoder_decoder:
-            if not hasattr(self, "poptorch_model"):
-                wrapper = Seq2SeqWrapper(self.eval(), kwargs["encoder_outputs"])
-                self.poptorch_model = poptorch.inferenceModel(wrapper, self.ipu_config.to_options(for_inference=True))
-        else:
-            if not hasattr(self, "poptorch_model"):
-                self.poptorch_model = poptorch.inferenceModel(self.eval, self.ipu_config.to_options(for_inference=True))
- 
-        # This will trigger a compile first time it's run
-        return self.poptorch_model(*args, **kwargs)
+        if not hasattr(self, "poptorch_decoder"):
+            wrapper = DecoderWrapper(self.eval())
+            decoder_ipu_config = getattr(self, "decoder_ipu_config", self.ipu_config)
+            self.poptorch_decoder = poptorch.inferenceModel(wrapper, decoder_ipu_config.to_options(for_inference=True))
+
+        # This will trigger a compile first time it's ran
+        with graph_profile_dir_append("/decoder"):
+            return self.poptorch_decoder(*args, **kwargs)
 
     def _prepare_encoder_decoder_kwargs_for_generation(
         self, inputs_tensor: torch.Tensor, model_kwargs, model_input_name: Optional[str] = None
@@ -99,11 +122,21 @@ class IPUGenerationMixin(GenerationMixin):
         encoder_kwargs["return_dict"] = True
         encoder_kwargs[model_input_name] = inputs_tensor
 
-        if not hasattr(self, "poptorch_encoder"): 
-            self.poptorch_encoder = poptorch.inferenceModel(encoder.eval(), self.ipu_config.to_options(for_inference=True))
-        model_kwargs["encoder_outputs"]: ModelOutput = self.poptorch_encoder(**encoder_kwargs)
+        if not hasattr(self, "poptorch_encoder"):
+            # Use split encoder ipu_config for encoder/decoder models
+            self.poptorch_encoder = poptorch.inferenceModel(
+                encoder.eval(), self.encoder_ipu_config.to_options(for_inference=True)
+            )
+        with graph_profile_dir_append("/encoder"):
+            model_kwargs["encoder_outputs"]: ModelOutput = self.poptorch_encoder(**encoder_kwargs)
 
         return model_kwargs
+
+    def detachFromDevice(self):
+        if hasattr(self, "poptorch_encoder"):
+            self.poptorch_encoder.detachFromDevice()
+        if hasattr(self, "poptorch_decoder"):
+            self.poptorch_decoder.detachFromDevice()
 
     # Modified from https://github.com/huggingface/transformers/blob/v4.20.1/src/transformers/generation_utils.py#L1532
     def greedy_search(
@@ -527,6 +560,7 @@ class IPUGenerationMixin(GenerationMixin):
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
             outputs = self._call_generate(
+                t=torch.tensor(cur_len - 1),
                 **model_inputs,
                 return_dict=True,
                 output_attentions=output_attentions,
@@ -536,13 +570,6 @@ class IPUGenerationMixin(GenerationMixin):
             input_ids = input_ids[:, :cur_len]
             if not self.config.is_encoder_decoder:
                 model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
-
-            outputs.logits = outputs.logits[:, :cur_len, :]
-            if outputs.logits.dim() == 3:
-                outputs.logits = outputs.logits[:, :cur_len, :]
-            # If the dimension of logits is 2, then only the logits of the last non-padding token is returned, so no need to slice.
-            else:
-                next_token_logits = outputs.logits
 
             # Change: remove synced_gpu code
 
@@ -832,6 +859,7 @@ class IPUGenerationMixin(GenerationMixin):
 
             # forward pass to get next token
             outputs = self._call_generate(
+                t=torch.tensor(cur_len - 1),
                 **model_inputs,
                 return_dict=True,
                 output_attentions=output_attentions,
@@ -841,13 +869,6 @@ class IPUGenerationMixin(GenerationMixin):
             input_ids = input_ids[:, :cur_len]
             if not self.config.is_encoder_decoder:
                 model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
-
-            outputs.logits = outputs.logits[:, :cur_len, :]
-            if outputs.logits.dim() == 3:
-                outputs.logits = outputs.logits[:, :cur_len, :]
-            # If the dimension of logits is 2, then only the logits of the last non-padding token is returned, so no need to slice.
-            else:
-                next_token_logits = outputs.logits
 
             # Change: remove synced_gpu code
 
@@ -1111,6 +1132,7 @@ class IPUGenerationMixin(GenerationMixin):
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
             outputs = self._call_generate(
+                t=torch.tensor(cur_len - 1),
                 **model_inputs,
                 return_dict=True,
                 output_attentions=output_attentions,
@@ -1120,13 +1142,6 @@ class IPUGenerationMixin(GenerationMixin):
             input_ids = input_ids[:, :cur_len]
             if not self.config.is_encoder_decoder:
                 model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
-
-            outputs.logits = outputs.logits[:, :cur_len, :]
-            if outputs.logits.dim() == 3:
-                outputs.logits = outputs.logits[:, :cur_len, :]
-            # If the dimension of logits is 2, then only the logits of the last non-padding token is returned, so no need to slice.
-            else:
-                next_token_logits = outputs.logits
 
             # Change: remove synced_gpu code
 

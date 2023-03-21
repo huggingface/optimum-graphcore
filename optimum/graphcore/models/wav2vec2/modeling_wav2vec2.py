@@ -166,7 +166,7 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
         # Project Quantizer
         layers.append(("Project Quantizer", self.project_q))
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, layers)
+        layer_ipu = get_layer_ipu(self.ipu_config, layers)
 
         for i, (name, layer) in enumerate(layers):
             logger.info(f"{name} --> IPU {layer_ipu[i]}")
@@ -448,7 +448,7 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
             # Project Hidden
             layers.append(("Project Hidden", self.lm_head))
 
-            layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, layers)
+            layer_ipu = get_layer_ipu(self.ipu_config, layers)
 
             for i, (name, layer) in enumerate(layers):
                 logger.info(f"{name} --> IPU {layer_ipu[i]}")

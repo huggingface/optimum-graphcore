@@ -32,6 +32,8 @@ jobs:
         pip install ${SDK_PATH}/poptorch-*.whl
         pip install .[testing]
     - name: Test with Pytest
+      env:
+        POPTORCH_WAIT_FOR_IPU: 1
       run: |
         source base/bin/activate
         export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_20_04-3.1*
@@ -39,4 +41,4 @@ jobs:
         . ${SDK_PATH}/popart-ubuntu_20_04*/enable.sh
         export RUN_SLOW=true
         pytest tests/test_examples_match_transformers.py
-        pytest tests/test_examples.py
+        pytest tests/test_examples.py -n 4

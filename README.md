@@ -110,7 +110,7 @@ For more information, check our [documentation](https://huggingface.co/docs/opti
 
 ## Supported Models
 The following model architectures and tasks are currently supported by 🤗 Optimum Graphcore:
-|            | Pre-Training | Masked LM | Causal LM | Seq2Seq LM (Summarization, Translation, etc) | Sequence Classification | Token Classification | Question Answering | Multiple Choice | Image Classification |
+|            | Pre-Training | Masked LM | Causal LM | Seq2Seq LM (Summarization, Translation, etc) | Text Classification | Token Classification | Question Answering | Multiple Choice | Image Classification |
 |------------|--------------|-----------|-----------|----------------------------------------------|-------------------------|----------------------|--------------------|-----------------|----------------------|
 | BART       | ✅            |           | ❌         | ✅                                            | ✅                       |                      | ❌                  |                 |                      |
 | BERT       | ✅            | ✅         | ❌         |                                              | ✅                       | ✅                    | ✅                  | ✅               |                      |

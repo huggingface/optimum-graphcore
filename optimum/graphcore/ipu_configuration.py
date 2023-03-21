@@ -16,6 +16,7 @@
 import copy
 import json
 import warnings
+from tempfile import NamedTemporaryFile
 from typing import Any, Dict, Optional, Union
 
 import torch
@@ -68,6 +69,10 @@ class IPUConfig(BaseConfig):
             Specifies the number of layers that will be put on each IPU for pipelined execution.
             For instance: `[2, 3, 4, 2]` specifies a 4-IPU pipeline, where the first two layers will be put on IPU0,
             the following three on IPU1, the next four on IPU2 and the last two on IPU3.
+            If the default of [-1] is used, the layers will be split evenly over `ipus_per_replica` IPUs.
+            The wildcard value '-1' can also be used in combination with integers.
+            For instance: `[1, 2, -1, -1]` specifies a 4-IPU pipeline, where the first layer is put on IPU0,
+            the next two layers on IPU1, and the remaining layers split evenly between IPU2 and IPU3.
 
         > Parameters for memory management
 
@@ -117,8 +122,8 @@ class IPUConfig(BaseConfig):
     def __init__(self, **kwargs):
         self.seed = kwargs.pop("seed", None)
 
-        self.ipus_per_replica = kwargs.pop("ipus_per_replica", 1)
-        self.layers_per_ipu = kwargs.pop("layers_per_ipu", [1])
+        self.layers_per_ipu = kwargs.pop("layers_per_ipu", [-1])
+        self.ipus_per_replica = kwargs.pop("ipus_per_replica", len(self.layers_per_ipu))
 
         self.replication_factor = kwargs.pop("replication_factor", 1)
         self.inference_replication_factor = kwargs.pop("inference_replication_factor", 1)
@@ -138,7 +143,7 @@ class IPUConfig(BaseConfig):
                 'The "sharded_execution_for_inference" parameter is deprecated, sharded execution is always used during inference'
             )
 
-        self.matmul_proportion = kwargs.pop("matmul_proportion", 0.6)
+        self.matmul_proportion = kwargs.pop("matmul_proportion", 0.2)
 
         if "enable_half_first_order_momentum" in kwargs:
             warnings.warn('The "enable_half_first_order_momentum" parameter is deprecated')
@@ -282,6 +287,8 @@ class IPUConfig(BaseConfig):
         # Enable caching the compiled executable to disk
         if self.executable_cache_dir and self.executable_cache_dir != "disabled":
             opts.enableExecutableCaching(self.executable_cache_dir)
+
+        opts._Popart.set("saveInitializersToFile", NamedTemporaryFile().name)
 
         # Enable stochastic rounding (recommended for training with FP16)
         opts.Precision.enableStochasticRounding(not for_inference)

@@ -16,6 +16,7 @@ jobs:
       PR_NUMBER: ${{ github.event.number }}
       EVENT_CONTEXT: ${{ toJSON(github.event) }}
       PR_CLONE_URL: ${{ github.event.pull_request.head.repo.clone_url }}
+      PR_CLONE_NAME: ${{ github.event.pull_request.head.repo.name }}
 
     steps:
       - uses: actions/checkout@v2
@@ -44,7 +45,7 @@ jobs:
       - name: Make documentation
         run: |
           cd optimum-graphcore
-          make doc BUILD_DIR=graphcore-doc-build VERSION=pr_$PR_NUMBER COMMIT_SHA_SUBPACKAGE=$COMMIT_SHA CLONE_URL=$PR_CLONE_URL
+          make doc BUILD_DIR=graphcore-doc-build VERSION=pr_$PR_NUMBER COMMIT_SHA_SUBPACKAGE=$COMMIT_SHA CLONE_URL=$PR_CLONE_URL CLONE_NAME=$PR_CLONE_NAME
           cd ..
 
       - name: Push to repositories

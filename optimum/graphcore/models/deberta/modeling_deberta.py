@@ -330,7 +330,7 @@ class DebertaPipelineMixin(PipelineMixin):
         if self.deberta.encoder.relative_attention:
             self.deberta.encoder.rel_embeddings = poptorch.BeginBlock(self.deberta.encoder.rel_embeddings, ipu_id=0)
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, self.deberta.encoder.layer)
+        layer_ipu = get_layer_ipu(self.ipu_config, self.deberta.encoder.layer)
         for index, layer in enumerate(self.deberta.encoder.layer):
             ipu = layer_ipu[index]
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
