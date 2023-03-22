@@ -17,7 +17,7 @@ INSTALL_REQUIRES = [
     "optimum==1.6.1",
     "datasets",
     "tokenizers",
-    "torch @ https://download.pytorch.org/whl/cpu/torch-1.13.0%2Bcpu-cp38-cp38-linux_x86_64.whl",
+    "torch @ https://download.pytorch.org/whl/cpu/torch-1.13.1%2Bcpu-cp38-cp38-linux_x86_64.whl",
     "sentencepiece",
     "scipy",
     "pillow",
