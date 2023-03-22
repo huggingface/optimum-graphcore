@@ -368,6 +368,7 @@ class IPUTrainer:
         if args.compile_only:
             logger.info("Called with compile_only=True. Compiling models then exiting.")
             if args.do_train:
+                self.optimizer = self.create_optimizer()
                 train_dl = self.get_train_dataloader()
                 model = self.wrap_model(self.model)
                 self.compile_model(model, next(iter(train_dl)), log=True)
