@@ -371,3 +371,19 @@ class IPUConfigTester(unittest.TestCase):
         self.assertEqual(e_ipu_config.ipus_per_replica, 4)
         self.assertEqual(d_ipu_config.layers_per_ipu, [5, 6, 7, 8])
         self.assertEqual(d_ipu_config.ipus_per_replica, 4)
+
+        # Split where first IPU has 0 layers
+        ipu_config = IPUConfig(layers_per_ipu=[0, 6, 0, 6])
+        e_ipu_config, d_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 6, 6)
+        self.assertEqual(e_ipu_config.layers_per_ipu, [0, 6])
+        self.assertEqual(e_ipu_config.ipus_per_replica, 2)
+        self.assertEqual(d_ipu_config.layers_per_ipu, [0, 6])
+        self.assertEqual(d_ipu_config.ipus_per_replica, 2)
+
+        # Split where there are many zeros
+        ipu_config = IPUConfig(layers_per_ipu=[3, 0, 3, 0, 0, 7])
+        e_ipu_config, d_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 6, 7)
+        self.assertEqual(e_ipu_config.layers_per_ipu, [3, 0, 3, 0])
+        self.assertEqual(e_ipu_config.ipus_per_replica, 4)
+        self.assertEqual(d_ipu_config.layers_per_ipu, [0, 7])
+        self.assertEqual(d_ipu_config.ipus_per_replica, 2)
