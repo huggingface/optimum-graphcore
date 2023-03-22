@@ -35,6 +35,7 @@ First clone and install `optimum`:
 ```
 git clone https://github.com/huggingface/optimum
 cd optimum
+git checkout v1.7.1-release
 pip install -e .
 cd ..
 ```
