@@ -51,15 +51,16 @@ logger = logging.get_logger(__name__)
 
 @contextlib.contextmanager
 def graph_profile_dir_append(append: str):
-    if poplar_engine_options := os.getenv("POPLAR_ENGINE_OPTIONS"):
-        poplar_engine_options_dict = json.loads(poplar_engine_options)
-        poplar_engine_options_dict["autoReport.directory"] += append
-        os.environ["POPLAR_ENGINE_OPTIONS"] = json.dumps(poplar_engine_options_dict)
+    if poplar_engine_options_original := os.getenv("POPLAR_ENGINE_OPTIONS"):
+        poplar_engine_options_modified = json.loads(poplar_engine_options_original)
+        if autoreport_directory := poplar_engine_options_modified.get("autoReport.directory"):
+            poplar_engine_options_modified["autoReport.directory"] = autoreport_directory + append
+            os.environ["POPLAR_ENGINE_OPTIONS"] = json.dumps(poplar_engine_options_modified)
     try:
         yield
     finally:
-        if poplar_engine_options:
-            os.environ["POPLAR_ENGINE_OPTIONS"] = poplar_engine_options
+        if poplar_engine_options_original:
+            os.environ["POPLAR_ENGINE_OPTIONS"] = poplar_engine_options_original
 
 
 class DecoderWrapper(nn.Module):
