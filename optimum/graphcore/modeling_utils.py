@@ -342,6 +342,7 @@ def split_encoder_decoder_ipu_config(
     cumsum = [sum(layers_per_ipu[: i + 1]) for i in range(len(layers_per_ipu))]
     try:
         cut = [i + 1 for i, c in enumerate(cumsum) if c == num_encoder_layers]
+        # Choose the cut index that's the highest power of 2
         cut = max([num for num in cut if num & (num - 1) == 0])
     except:
         raise IncompatibleIPUConfigError(
