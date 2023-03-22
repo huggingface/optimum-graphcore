@@ -220,7 +220,7 @@ def get_poplar_executor(
     ipu_config.inference_replication_factor = 1
     try:
         model = to_pipelined(model, ipu_config, force=False)
-        if model.config.is_encoder_decoder:
+        if model.config.is_encoder_decoder and isinstance(model, IPUGenerationMixin):
             model.parallelize(for_generation=True)
         else:
             model.parallelize()
