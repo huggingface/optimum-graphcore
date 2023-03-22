@@ -33,7 +33,7 @@ If you are working on the `optimum-graphcore` code then you should use an editab
 First clone and install `optimum`:
 
 ```
-git clone https://github.com/huggingface/optimum
+git clone https://github.com/huggingface/optimum --branch v1.6.1-release
 cd optimum
 pip install -e .
 cd ..

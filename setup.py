@@ -14,10 +14,10 @@ except Exception as error:
 
 INSTALL_REQUIRES = [
     "transformers==4.25.1",
-    "optimum",
+    "optimum==1.6.1",
     "datasets",
     "tokenizers",
-    "torch",
+    "torch @ https://download.pytorch.org/whl/cpu/torch-1.13.0%2Bcpu-cp38-cp38-linux_x86_64.whl",
     "sentencepiece",
     "scipy",
     "pillow",
