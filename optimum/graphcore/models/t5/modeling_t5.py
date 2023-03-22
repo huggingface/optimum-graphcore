@@ -226,6 +226,7 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
         model = PipelinedT5ForConditionalGeneration(config).parallelize().half()
         ```
         """
+        PipelineMixin.parallelize(self)
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding  --> IPU 0")
