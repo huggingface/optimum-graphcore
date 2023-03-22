@@ -350,6 +350,9 @@ def split_encoder_decoder_ipu_config(
             f"\tipu_config.layers_per_ipu={ipu_config.layers_per_ipu}\n"
             f"\tnum_encoder_layers={num_encoder_layers}\n"
             f"\tnum_decoder_layers={num_decoder_layers}\n"
+            "Possible causes: \n"
+            "Encoder and decoder layers cannot be placed on the same IPUs.\n"
+            "The encoder and decoder layers_per_ipu splits each need a number of devices that's a power of 2."
         )
     ipu_configs["encoder"].layers_per_ipu = layers_per_ipu[:cut]
     ipu_configs["decoder"].layers_per_ipu = layers_per_ipu[cut:]
