@@ -30,7 +30,7 @@ class FillMaskPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
         unmasker = pipeline(
             task="fill-mask",
             model="sshleifer/tiny-distilroberta-base",
-            ipu_config="Graphcore/roberta-base-ipu",
+            ipu_config={"layers_per_ipu": [0, 2], "ipus_per_replica": 2},
             top_k=2,
             framework="pt",
         )

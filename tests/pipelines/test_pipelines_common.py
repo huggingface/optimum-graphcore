@@ -77,6 +77,8 @@ ROBERTA_EMBEDDING_ADJUSMENT_CONFIGS = [
     "XLMRobertaConfig",
 ]
 
+TINY_DISTILBERT_IPU_CONFIG = {"layers_per_ipu": [2, 3], "ipus_per_replica": 2}
+
 
 def get_supported_models(models_to_test, task_mapping, task="default"):
     """
@@ -362,7 +364,7 @@ class CommonPipelineTest(unittest.TestCase):
         text_classifier = pipeline(
             task="text-classification",
             model="hf-internal-testing/tiny-random-distilbert",
-            ipu_config="Graphcore/distilbert-base-ipu",
+            ipu_config=TINY_DISTILBERT_IPU_CONFIG,
         )
         dataset = MyDataset()
         for output in text_classifier(dataset):
@@ -372,7 +374,7 @@ class CommonPipelineTest(unittest.TestCase):
     def test_check_task_auto_inference(self):
         pipe = pipeline(
             model="hf-internal-testing/tiny-random-distilbert",
-            ipu_config="Graphcore/distilbert-base-ipu",
+            ipu_config=TINY_DISTILBERT_IPU_CONFIG,
         )
 
         self.assertIsInstance(pipe, TextClassificationPipeline)
@@ -381,14 +383,14 @@ class CommonPipelineTest(unittest.TestCase):
     def test_pipeline_batch_size_global(self):
         pipe = pipeline(
             model="hf-internal-testing/tiny-random-distilbert",
-            ipu_config="Graphcore/distilbert-base-ipu",
+            ipu_config=TINY_DISTILBERT_IPU_CONFIG,
         )
         self.assertEqual(pipe._batch_size, None)
         self.assertEqual(pipe._num_workers, None)
 
         pipe = pipeline(
             model="hf-internal-testing/tiny-random-distilbert",
-            ipu_config="Graphcore/distilbert-base-ipu",
+            ipu_config=TINY_DISTILBERT_IPU_CONFIG,
             batch_size=2,
             num_workers=1,
         )
@@ -402,7 +404,7 @@ class CommonPipelineTest(unittest.TestCase):
 
         text_classifier = pipeline(
             model="hf-internal-testing/tiny-random-distilbert",
-            ipu_config="Graphcore/distilbert-base-ipu",
+            ipu_config=TINY_DISTILBERT_IPU_CONFIG,
             pipeline_class=MyPipeline,
         )
 
@@ -424,7 +426,7 @@ class CommonPipelineTest(unittest.TestCase):
 
         pipe = pipeline(
             model="hf-internal-testing/tiny-random-distilbert",
-            ipu_config="Graphcore/distilbert-base-ipu",
+            ipu_config=TINY_DISTILBERT_IPU_CONFIG,
         )
 
         results = []
@@ -450,7 +452,7 @@ class CommonPipelineTest(unittest.TestCase):
         text_classifier = pipeline(
             task="text-classification",
             model=model,
-            ipu_config="Graphcore/distilbert-base-ipu",
+            ipu_config=TINY_DISTILBERT_IPU_CONFIG,
             tokenizer=tokenizer,
         )
 
