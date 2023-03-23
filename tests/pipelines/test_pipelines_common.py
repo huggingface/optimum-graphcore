@@ -288,8 +288,9 @@ class PipelineTestCaseMeta(type):
             return test
 
         mapping = dct.get("model_mapping", {})
+        task = dct.get("task", "default")
         if mapping:
-            mapping_items = get_supported_models(MODELS_TO_TEST_MAPPING, mapping)
+            mapping_items = get_supported_models(MODELS_TO_TEST_MAPPING, mapping, task=task)
             for configuration, model_architectures, ipu_config, checkpoint in mapping_items:
                 if not isinstance(model_architectures, tuple):
                     model_architectures = (model_architectures,)
