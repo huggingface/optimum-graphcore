@@ -31,11 +31,13 @@ QUALITY_REQUIRES = [
 
 EXTRA_REQUIRE = {
     "testing": [
+        "filelock",
         "GitPython",
         "parameterized",
         "psutil",
         "pytest",
         "pytest-pythonpath",
+        "pytest-xdist",
         "librosa",
         "soundfile",
     ],

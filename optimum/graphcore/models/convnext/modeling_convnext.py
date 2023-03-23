@@ -37,7 +37,8 @@ class PipelinedConvNextForImageClassification(ConvNextForImageClassification, Pi
         logger.info(f"Embedding  --> IPU 0")
         self.convnext.embeddings = poptorch.BeginBlock(self.convnext.embeddings, "Embedding", ipu_id=0)
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        num_encoder_layers = sum([len(stage.layers) for stage in self.convnext.encoder.stages])
+        layer_ipu = get_layer_ipu(self.ipu_config, num_encoder_layers)
         global_layer_idx = 0
         for stage_idx, stage in enumerate(self.convnext.encoder.stages):
             for layer_idx, layer in enumerate(stage.layers):

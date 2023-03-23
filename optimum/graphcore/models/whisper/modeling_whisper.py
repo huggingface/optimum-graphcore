@@ -1,4 +1,4 @@
-# Copyright (c) 2021 Graphcore Ltd. All rights reserved.
+# Copyright (c) 2023 Graphcore Ltd. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,26 +11,37 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from typing import List, Optional, Tuple, Union
 import random
+from typing import List, Optional, Tuple, Union
 
-import poptorch
 import torch
-import transformers
-from optimum.utils import logging
-
-from ...modeling_utils import PipelineMixin, get_layer_ipu, recomputation_checkpoint, register
-from ...generation_utils import IPUGenerationMixin
-
 from torch import nn
 
-from transformers.models.whisper.modeling_whisper import WhisperEncoderLayer, WhisperAttention, WhisperEncoder, WhisperDecoder, WhisperDecoderLayer, WhisperPositionalEmbedding
+import poptorch
+from optimum.utils import logging
 from transformers import WhisperConfig
 from transformers.modeling_outputs import (
     BaseModelOutput,
     BaseModelOutputWithPastAndCrossAttentions,
     Seq2SeqModelOutput,
 )
+from transformers.models.whisper.modeling_whisper import (
+    WhisperAttention,
+    WhisperDecoder,
+    WhisperEncoder,
+    WhisperEncoderLayer,
+    WhisperForConditionalGeneration,
+)
+
+from ...generation_utils import IPUGenerationMixin
+from ...modeling_utils import (
+    PipelineMixin,
+    get_layer_ipu,
+    recomputation_checkpoint,
+    register,
+    split_encoder_decoder_ipu_config,
+)
+
 
 logger = logging.get_logger(__name__)
 
@@ -68,6 +79,7 @@ def _expand_mask(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] 
     inverted_mask = 1.0 - expanded_mask
 
     return inverted_mask.masked_fill(inverted_mask.to(torch.bool), -FLOAT16_LIMIT)
+
 
 class _WhisperEncoderLayerClamp(nn.Module):
     def __init__(self, config: WhisperConfig):
@@ -135,7 +147,7 @@ class _WhisperEncoderLayerClamp(nn.Module):
         if output_attentions:
             outputs += (attn_weights,)
 
-        return outputs  
+        return outputs
 
 
 class _WhisperEncoderWithCustomExpandMask(WhisperEncoder):
@@ -480,8 +492,8 @@ class _WhisperDecoderWithCustomMakeCausalAndExpandMask(WhisperDecoder):
         )
 
 
-@register(transformers.WhisperForConditionalGeneration)
-class PipelinedWhisperForConditionalGeneration(transformers.WhisperForConditionalGeneration, PipelineMixin, IPUGenerationMixin):
+@register(WhisperForConditionalGeneration)
+class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, PipelineMixin, IPUGenerationMixin):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -494,17 +506,6 @@ class PipelinedWhisperForConditionalGeneration(transformers.WhisperForConditiona
         for layer in self.model.encoder.layers:
             layer.__class__ = WhisperEncoderLayer if restore else _WhisperEncoderLayerClamp
 
-    def change_decoder_layer_class(self, restore: bool):
-        """Changes the decoder layer class to support static caching of key and value projections
-
-        Args:
-            restore: whether to restore the decoder layers to their original version or not.
-        """
-        for layer in self.model.decoder.layers:
-            layer.__class__ = WhisperDecoderLayer if restore else _WhisperDecoderLayerWithCache
-            layer.self_attn.__class__ = WhisperAttention if restore else _WhisperAttentionWithCache      
-            layer.encoder_attn.__class__ = WhisperAttention if restore else _WhisperAttentionWithCache      
-
     def change_encoder_and_decoder_classes(self, restore: bool):
         """Changes the encoder and decoder classes to update their forward pass so that they use our custom versions of
         _make_causal_mask and _expand_mask.
@@ -514,42 +515,50 @@ class PipelinedWhisperForConditionalGeneration(transformers.WhisperForConditiona
         """
         self.model.encoder.__class__ = WhisperEncoder if restore else _WhisperEncoderWithCustomExpandMask
         self.model.decoder.__class__ = WhisperDecoder if restore else _WhisperDecoderWithCustomMakeCausalAndExpandMask
-    
-    def change_positional_embedding(self, restore: bool):
-        self.model.decoder.embed_positions.__class__ = WhisperPositionalEmbedding if restore else _WhisperPositionalEmbedding
 
-
-    def parallelize(self):
+    def parallelize(self, for_generation=False):
         super().parallelize()
 
         self.change_encoder_layer_class(restore=False)
         self.change_encoder_and_decoder_classes(restore=False)
 
-
         logger.info("---------- Device Allocation -----------")
         logger.info("conv1, conv2, embed_positions  --> IPU 0")
         self.model.encoder.conv1 = poptorch.BeginBlock(self.model.encoder.conv1, "Conv1", ipu_id=0)
         self.model.encoder.conv2 = poptorch.BeginBlock(self.model.encoder.conv2, "Conv2", ipu_id=0)
-        self.model.encoder.embed_positions = poptorch.BeginBlock(self.model.encoder.embed_positions, "Embed Positions", ipu_id=0)
+        self.model.encoder.embed_positions = poptorch.BeginBlock(
+            self.model.encoder.embed_positions, "Embed Positions", ipu_id=0
+        )
 
+        num_encoder_layers = len(self.model.encoder.layers)
+        num_decoder_layers = len(self.model.decoder.layers)
 
-        # From modeling_bart.py
-        number_of_layers = len(self.model.encoder.layers) + len(self.model.decoder.layers)
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, number_of_layers)
-        for index, layer in enumerate(self.model.encoder.layers):
-            ipu = layer_ipu[index]
+        if for_generation:
+            # If running for text generation we split the IPU config into two configs
+            # because we run the encoder and decoder as separate Poplar executors.
+            ipu_configs = split_encoder_decoder_ipu_config(self.ipu_config, num_encoder_layers, num_decoder_layers)
+            self.encoder_ipu_config, self.decoder_ipu_config = ipu_configs
+            encoder_layer_ipu = get_layer_ipu(self.encoder_ipu_config, num_encoder_layers)
+            decoder_layer_ipu = get_layer_ipu(self.decoder_ipu_config, num_decoder_layers)
+        else:
+            number_of_layers = num_encoder_layers + num_decoder_layers
+            layer_ipu = get_layer_ipu(self.ipu_config, number_of_layers)
+            encoder_layer_ipu = layer_ipu[:num_encoder_layers]
+            decoder_layer_ipu = layer_ipu[num_encoder_layers:]
+
+        for index, (layer, ipu) in enumerate(zip(self.model.encoder.layers, encoder_layer_ipu)):
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
                 recomputation_checkpoint(layer)
             self.model.encoder.layers[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
             logger.info(f"Encoder {index:<2} --> IPU {ipu}")
 
         # we need to deal with the model.encoder.layer norm
-        self.model.encoder.layer_norm = poptorch.BeginBlock(self.model.encoder.layer_norm, "Encoder Layer Norm", ipu_id=ipu)  ###
+        self.model.encoder.layer_norm = poptorch.BeginBlock(
+            self.model.encoder.layer_norm, "Encoder Layer Norm", ipu_id=ipu
+        )
         logger.info(f"Encoder LN {index:<2} --> IPU {ipu}")
 
-        shift = len(self.model.encoder.layers)
-        for index, layer in enumerate(self.model.decoder.layers):
-            ipu = layer_ipu[index + shift]
+        for index, (layer, ipu) in enumerate(zip(self.model.decoder.layers, decoder_layer_ipu)):
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
                 recomputation_checkpoint(layer)
             self.model.decoder.layers[index] = poptorch.BeginBlock(layer, f"Decoder{index}", ipu_id=ipu)
@@ -559,7 +568,9 @@ class PipelinedWhisperForConditionalGeneration(transformers.WhisperForConditiona
 
         logger.info(f"Head       --> IPU {last_ipu}")
         logger.info("---------------------------------------")
-        self.model.decoder.layer_norm = poptorch.BeginBlock(self.model.decoder.layer_norm, "Decoder Layer Norm", ipu_id=last_ipu)
+        self.model.decoder.layer_norm = poptorch.BeginBlock(
+            self.model.decoder.layer_norm, "Decoder Layer Norm", ipu_id=last_ipu
+        )
         self.proj_out = poptorch.BeginBlock(self.proj_out, "Output Projection", ipu_id=last_ipu)
         return self
 
@@ -580,12 +591,12 @@ class PipelinedWhisperForConditionalGeneration(transformers.WhisperForConditiona
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple[torch.Tensor], Seq2SeqModelOutput]:
-        # when encoder_outputs is passed as BaseModelOutput, it comes out as a dict... 
+        # when encoder_outputs is passed as BaseModelOutput, it comes out as a dict...
         if return_dict and isinstance(encoder_outputs, dict):
             encoder_outputs = BaseModelOutput(
                 last_hidden_state=encoder_outputs["last_hidden_state"],
                 hidden_states=encoder_outputs.get("hidden_states", None),
-                attentions=encoder_outputs.get("attentions", None)
+                attentions=encoder_outputs.get("attentions", None),
             )
 
         return super().forward(

@@ -75,7 +75,7 @@ class GPT2PipelineMixin(PipelineMixin):
         hs = outline_attribute(self.transformer.ln_f, "LayerNorm")
         self._hooks.extend(hs)
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, self.transformer.h)
+        layer_ipu = get_layer_ipu(self.ipu_config, self.transformer.h)
         for index, layer in enumerate(self.transformer.h):
             ipu = layer_ipu[index]
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
@@ -156,7 +156,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin, IPUGenerationMixi
         hs = outline_attribute(self.transformer.ln_f, "LayerNorm")
         self._hooks.extend(hs)
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, self.transformer.h)
+        layer_ipu = get_layer_ipu(self.ipu_config, self.transformer.h)
         for index, layer in enumerate(self.transformer.h):
             ipu = layer_ipu[index]
             if self.ipu_config.recompute_checkpoint_every_layer:
