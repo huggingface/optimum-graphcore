@@ -106,7 +106,7 @@ from transformers.utils import (
 from .data.data_collator import pad_on_batch_axis
 from .ipu_configuration import IPU_CONFIG_NAME, IPUConfig
 from .modelcard import IPUTrainingSummary
-from .modeling_utils import TIED_WEIGHT_MODELS, to_pipelined
+from .modeling_utils import to_pipelined
 from .trainer_utils import _WorkerInit
 from .training_args import IPUTrainingArguments
 
