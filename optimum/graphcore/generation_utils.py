@@ -42,7 +42,7 @@ from transformers.generation.utils import (
     SampleOutput,
     StoppingCriteriaList,
 )
-from transformers.modeling_outputs import ModelOutput
+from transformers.modeling_outputs import ModelOutput, Seq2SeqLMOutput
 from transformers.pytorch_utils import torch_int_div
 
 
@@ -81,13 +81,15 @@ class DecoderWrapper(nn.Module):
         Returns:
             The output logits at position `t` only
         """
-        outputs = self.pipelined_model(**model_inputs)
+        # outputs = self.pipelined_model(**model_inputs)
 
-        next_token_logits = poptorch.dynamic_slice(outputs.logits, 1, t, 1, 1)
-        return type(outputs)(
-            loss=None,
-            logits=next_token_logits,
-        )
+        # next_token_logits = poptorch.dynamic_slice(outputs.logits, 1, t, 1, 1)
+        # return type(outputs)(
+        #     loss=None,
+        #     logits=next_token_logits,
+        # )
+        lm_logits = self.pipelined_model._forward_decoder_for_generation(t, **model_inputs)
+        return Seq2SeqLMOutput(logits=lm_logits)
 
 
 class IPUGenerationMixin(GenerationMixin):
