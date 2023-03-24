@@ -22,6 +22,7 @@ from torch import Tensor
 import poptorch
 from optimum.utils import logging
 from transformers import T5ForConditionalGeneration
+from transformers.activations import NewGELUActivation
 from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
 from transformers.models.t5.modeling_t5 import __HEAD_MASK_WARNING_MSG, T5Block, T5Stack
 
@@ -131,6 +132,14 @@ class CustomT5Block(T5Block):
             outputs = outputs + attention_outputs
 
         return outputs  # hidden-states, present_key_value_states, (self-attention position bias), (self-attention weights), (cross-attention position bias), (cross-attention weights)
+
+class CustomGELU(NewGELUActivation):
+    def forward(self, input: Tensor) -> Tensor:
+        safe = torch.logical_and(-39 < input, input < 39)
+        safe_input = torch.where(safe, input, 0.0)
+        gelu = super().forward(safe_input)
+        relu = nn.functional.relu(input)
+        return torch.where(safe, gelu, relu)
 
 
 class CustomT5Stack(T5Stack):
@@ -246,8 +255,10 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
         # Use a custom T5Block implementation that removes a dynamic if blocks that can't be statically traced
         for block in self.encoder.block:
             block.__class__ = CustomT5Block
+            block.layer[-1].DenseReluDense.act = CustomGELU()
         for block in self.decoder.block:
             block.__class__ = CustomT5Block
+            block.layer[-1].DenseReluDense.act = CustomGELU()
 
         num_encoder_layers = len(self.encoder.block)
         num_decoder_layers = len(self.decoder.block)
