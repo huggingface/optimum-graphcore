@@ -163,14 +163,11 @@ class IPUGenerationMixin(GenerationMixin):
             self.poptorch_decoder.detachFromDevice()
 
     def _get_cur_token_logits_tensor(self, token_id):
-        # returns a 1 dimensional tensor of the form [device_iterations]
+        # returns a 1 dimensional tensor of the form [device_iterations * replication factor]
         # with all elements equal to token_id.
         # token_id is the current token being decoded, it
         # is required in order to return only the logits for this token
-        # ideally a single tensor would be provided, however
-        # poptorch requires that the first dimension of an input tensor is
-        # divisible by the number of device iterations
-        return torch.ones(self.ipu_config.inference_device_iterations) * token_id
+        return torch.ones(self.ipu_config.inference_device_iterations * self.ipu_config.inference_replication_factor) * token_id
 
     # Modified from https://github.com/huggingface/transformers/blob/v4.20.1/src/transformers/generation_utils.py#L1532
     def greedy_search(
