@@ -290,6 +290,9 @@ class IPUConfig(BaseConfig):
 
         opts._Popart.set("saveInitializersToFile", NamedTemporaryFile().name)
 
+        # Enable floating point exceptions
+        opts.Precision.enableFloatingPointExceptions(True)
+
         # Enable stochastic rounding (recommended for training with FP16)
         opts.Precision.enableStochasticRounding(not for_inference)
 
