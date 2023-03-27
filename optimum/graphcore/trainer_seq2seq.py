@@ -34,33 +34,12 @@ class IPUSeq2SeqTrainer(IPUTrainer):
 
         # reparallelize for generation
         self.model = self.model.deparallelize().parallelize(for_generation=True)
-        
+
         # let IPUGenerationMixin::_call_generate handle compilation of the model
         # note though that self.model.poptorch_decoder and self.model.poptorch_encoder
         # (attribute added by IPUGenerationMixin::_call_generate)
-        # are the actual models attached to the device, self._detach_inference_model() therefore must destroy 
-        # self.model.poptorch_decoder and self.model.poptorch_encoder instead of self.model
+        # are the actual models attached to the device
         return self.model
-
-    def _detach_inference_model(self):
-        """
-        Detach inference model from IPUs
-        Override for text generation specific behaviour
-        """
-        # for text generation:
-        # IPUGenerationMixin::_call_generate() handles the compilation of the
-        # poplar executor, It adds the compiled models
-        # as poptorch_decoder and poptorch_encoder to the model object, so the actual
-        # inference_models we need to destroy are poptorch_decoder and poptorch_encoder
-        if hasattr(self.inference_model, "poptorch_decoder"):
-            temp = self.inference_model
-            if hasattr(self.inference_model, "poptorch_encoder"):
-                self.inference_model = self.inference_model.poptorch_encoder
-                super()._detach_inference_model()
-            self.inference_model = temp.poptorch_decoder
-            self.model = self.model.deparallelize().parallelize(for_generation=False)    
-            
-        super()._detach_inference_model()
 
     def evaluate(
         self,

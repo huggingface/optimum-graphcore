@@ -167,7 +167,10 @@ class IPUGenerationMixin(GenerationMixin):
         # with all elements equal to token_id.
         # token_id is the current token being decoded, it
         # is required in order to return only the logits for this token
-        return torch.ones(self.ipu_config.inference_device_iterations * self.ipu_config.inference_replication_factor) * token_id
+        return (
+            torch.ones(self.ipu_config.inference_device_iterations * self.ipu_config.inference_replication_factor)
+            * token_id
+        )
 
     # Modified from https://github.com/huggingface/transformers/blob/v4.20.1/src/transformers/generation_utils.py#L1532
     def greedy_search(
