@@ -1,4 +1,4 @@
-FROM graphcore/pytorch:3.1.0-ubuntu-20.04
+FROM graphcore/pytorch:3.2.0-ubuntu-20.04
 
 ARG commit_sha
 ARG clone_url

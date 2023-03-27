@@ -28,7 +28,7 @@ jobs:
       run: |
         source base/bin/activate
         pip install --upgrade pip
-        export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_20_04-3.1*
+        export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_20_04-3.2*
         pip install ${SDK_PATH}/poptorch-*.whl
         pip install .[testing]
     - name: Test with Pytest
@@ -36,7 +36,7 @@ jobs:
         POPTORCH_WAIT_FOR_IPU: 1
       run: |
         source base/bin/activate
-        export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_20_04-3.1*
+        export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_20_04-3.2*
         . ${SDK_PATH}/poplar-ubuntu_20_04*/enable.sh
         . ${SDK_PATH}/popart-ubuntu_20_04*/enable.sh
         export RUN_SLOW=true
