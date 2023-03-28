@@ -578,6 +578,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         args = IPUTrainingArguments("./regression", report_to=[], fp32=True)
         dict1, dict2 = args.to_dict(), trainer.args.to_dict()
         for key in dict1.keys():
+            print(f"{key=}")
             # Logging dir can be slightly different as they default to something with the time.
             if key != "logging_dir":
                 self.assertEqual(dict1[key], dict2[key])
