@@ -134,6 +134,8 @@ class CustomT5Block(T5Block):
         return outputs  # hidden-states, present_key_value_states, (self-attention position bias), (self-attention weights), (cross-attention position bias), (cross-attention weights)
 
 class CustomGELU(NewGELUActivation):
+    # Work-around bug with torch.nn.GELU(approximate="tanh")
+    # TODO: Remove this when bug is fixed
     def forward(self, input: Tensor) -> Tensor:
         safe = torch.logical_and(-39 < input, input < 39)
         safe_input = torch.where(safe, input, 0.0)
@@ -255,9 +257,13 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
         # Use a custom T5Block implementation that removes a dynamic if blocks that can't be statically traced
         for block in self.encoder.block:
             block.__class__ = CustomT5Block
+            # Work-around bug with torch.nn.GELU(approximate="tanh")
+            # TODO: Remove this when bug is fixed
             block.layer[-1].DenseReluDense.act = CustomGELU()
         for block in self.decoder.block:
             block.__class__ = CustomT5Block
+            # Work-around bug with torch.nn.GELU(approximate="tanh")
+            # TODO: Remove this when bug is fixed
             block.layer[-1].DenseReluDense.act = CustomGELU()
 
         num_encoder_layers = len(self.encoder.block)
