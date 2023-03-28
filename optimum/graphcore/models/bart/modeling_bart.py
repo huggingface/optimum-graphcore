@@ -799,31 +799,6 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
 
         return self
 
-    def _lm_head_for_generation_decoder(self, x):
-        if hasattr(self, "cur_step"):
-            x = poptorch.dynamic_slice(x, 1, self.cur_step, 1, 1)
-        return self._lm_head(x)
-
-    def _forward_decoder_for_generation(self, t, **model_args):
-        """
-        Optimized version of the decoder-only forward mode used in text generation.
-        Only computes the projection on the position `t` of the sequence rather than
-        on the whole sequence.
-        Used in generation_utils.py.
-
-        Args:
-            t : tensor(int) The current token position in the generated sequence
-            model_args : The arguments passed to the decoder for generation
-
-        Returns:
-            lm_logits for the single position `t` in the generated sequence
-        """
-        outputs = self.model(**model_args)
-        next_token_output = poptorch.dynamic_slice(outputs[0], 1, t, 1, 1)
-        lm_logits = self.lm_head(next_token_output)
-        lm_logits = lm_logits + self.final_logits_bias.to(lm_logits.device)
-        return lm_logits
-
     def forward(
         self,
         input_ids: torch.LongTensor = None,
