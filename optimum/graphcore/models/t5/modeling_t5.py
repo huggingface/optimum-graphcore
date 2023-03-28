@@ -25,7 +25,7 @@ from transformers import T5ForConditionalGeneration
 from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
 from transformers.models.t5.modeling_t5 import __HEAD_MASK_WARNING_MSG, T5Block, T5Stack
 
-from ...generation_utils import IPUGenerationMixin
+from ...generation_utils import IPUGenerationMixin, _SliceLinear
 from ...modeling_utils import (
     PipelineMixin,
     SerializedLinear,
@@ -320,6 +320,9 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
         for block in self.decoder.block:
             block.__class__ = T5Block
 
+        if self.lm_head.__class__ == _SliceLinear:
+            self.lm_head = self.lm_head.wrapped_linear
+
         if self.ipu_config.embedding_serialization_factor > 1:
             old_lm_head = nn.Linear(
                 self.config.d_model,
@@ -355,14 +358,14 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
     ) -> Union[Tuple[torch.FloatTensor], Seq2SeqLMOutput]:
         """
         Optimized version of the decoder-only forward mode used in text generation.
-        Only computes the projection on the position `t` of the sequence rather than 
+        Only computes the projection on the position `t` of the sequence rather than
         on the whole sequence.
         Used in generation_utils.py.
 
         Args:
             t : tensor(int) The current token position in the generated sequence
             model_args : The arguments passed to the decoder for generation
-        
+
         Returns:
             lm_logits for the single position `t` in the generated sequence
         """

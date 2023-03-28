@@ -36,7 +36,7 @@ from transformers.models.bart.modeling_bart import (
     shift_tokens_right,
 )
 
-from ...generation_utils import IPUGenerationMixin
+from ...generation_utils import IPUGenerationMixin, _SliceLinear
 from ...modeling_utils import (
     PipelineMixin,
     SerializedLinear,
@@ -784,6 +784,9 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
         self.model.change_bart_attention_class(True)
         self.model.__class__ = BartModel
 
+        if self.lm_head.__class__ == _SliceLinear:
+            self.lm_head = self.lm_head.wrapped_linear
+
         if self.ipu_config.embedding_serialization_factor > 1:
             old_lm_head = nn.Linear(
                 self.config.d_model,
@@ -796,17 +799,22 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
 
         return self
 
+    def _lm_head_for_generation_decoder(self, x):
+        if hasattr(self, "cur_step"):
+            x = poptorch.dynamic_slice(x, 1, self.cur_step, 1, 1)
+        return self._lm_head(x)
+
     def _forward_decoder_for_generation(self, t, **model_args):
         """
         Optimized version of the decoder-only forward mode used in text generation.
-        Only computes the projection on the position `t` of the sequence rather than 
+        Only computes the projection on the position `t` of the sequence rather than
         on the whole sequence.
         Used in generation_utils.py.
 
         Args:
             t : tensor(int) The current token position in the generated sequence
             model_args : The arguments passed to the decoder for generation
-        
+
         Returns:
             lm_logits for the single position `t` in the generated sequence
         """

@@ -63,6 +63,24 @@ def graph_profile_dir_append(append: str):
             os.environ["POPLAR_ENGINE_OPTIONS"] = poplar_engine_options_original
 
 
+class _SliceLinear(nn.Module):
+    """
+    Wrapper layer for `Linear` that performs a `dynamic_slice` on the input 
+    before executing the linear. The intended use is as an optimized replacement of the
+    LM Head in the Decoder for text generation inference.
+    The slice is performed on the position `self.cur_step` of the input tensor.
+    `self.cur_step` is a buffer.
+    """
+    def __init__(self, linear_layer):
+        super().__init__()
+        self.wrapped_linear = linear_layer
+        self.register_buffer("cur_step", torch.tensor([0], dtype=torch.int32))
+
+    def forward(self, x):
+        x = poptorch.dynamic_slice(x, 1, self.cur_step, 1, 1)
+        return self.wrapped_linear(x)
+
+
 class DecoderWrapper(nn.Module):
     """
     Fast wrapper for decoder part of text generation models.
@@ -72,6 +90,8 @@ class DecoderWrapper(nn.Module):
     def __init__(self, pipelined_model):
         super().__init__()
         self.pipelined_model = pipelined_model
+        # Replace the LM-head with the faster _SliceLinear layer
+        self.pipelined_model.set_output_embeddings(_SliceLinear(self.pipelined_model.get_output_embeddings()))
 
     def forward(self, t, **model_inputs):
         """
@@ -81,15 +101,16 @@ class DecoderWrapper(nn.Module):
         Returns:
             The output logits at position `t` only
         """
-        # outputs = self.pipelined_model(**model_inputs)
+        # Update the cur_step buffer in the _SliceLinear layer
+        self.pipelined_model.get_output_embeddings().cur_step.copy_(t)
 
-        # next_token_logits = poptorch.dynamic_slice(outputs.logits, 1, t, 1, 1)
-        # return type(outputs)(
-        #     loss=None,
-        #     logits=next_token_logits,
-        # )
-        lm_logits = self.pipelined_model._forward_decoder_for_generation(t, **model_inputs)
-        return Seq2SeqLMOutput(logits=lm_logits)
+        # Run the decoder
+        outputs = self.pipelined_model(**model_inputs)
+
+        return type(outputs)(
+            loss=None,
+            logits=outputs.logits,
+        )
 
 
 class IPUGenerationMixin(GenerationMixin):
