@@ -65,12 +65,13 @@ def graph_profile_dir_append(append: str):
 
 class _SliceLinear(nn.Module):
     """
-    Wrapper layer for `Linear` that performs a `dynamic_slice` on the input 
+    Wrapper layer for `Linear` that performs a `dynamic_slice` on the input
     before executing the linear. The intended use is as an optimized replacement of the
     LM Head in the Decoder for text generation inference.
     The slice is performed on the position `self.cur_step` of the input tensor.
     `self.cur_step` is a buffer.
     """
+
     def __init__(self, linear_layer):
         super().__init__()
         self.wrapped_linear = linear_layer
