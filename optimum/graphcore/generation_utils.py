@@ -42,7 +42,7 @@ from transformers.generation.utils import (
     SampleOutput,
     StoppingCriteriaList,
 )
-from transformers.modeling_outputs import ModelOutput, Seq2SeqLMOutput
+from transformers.modeling_outputs import ModelOutput
 from transformers.pytorch_utils import torch_int_div
 
 
