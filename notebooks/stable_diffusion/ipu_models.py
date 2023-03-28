@@ -117,7 +117,7 @@ def get_default_ipu_configs(
     num_prompts=1,
     num_images_per_prompt=1,
     pod_type="pod4",
-    **common_kwargs
+    **common_kwargs,
 ):
     if engine not in INFERENCE_ENGINES_TO_MODEL_NAMES:
         raise ValueError(f"{engine} should be one of {', '.join(INFERENCE_ENGINES_TO_MODEL_NAMES)}")
@@ -532,7 +532,7 @@ class IPUStableDiffusionPipelineMixin:
         text_encoder_ipu_config=None,
         vae_ipu_config=None,
         safety_checker_ipu_config=None,
-        **kwargs
+        **kwargs,
     ):
         return super().from_pretrained(
             pretrained_model_name_or_path,

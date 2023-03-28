@@ -266,7 +266,7 @@ if is_torch_available():
         eval_len=EVAL_LEN,
         pretrained=True,
         half_precision=False,
-        **kwargs
+        **kwargs,
     ):
         label_names = kwargs.get("label_names", None)
         train_dataset = RegressionDataset(length=train_len, label_names=label_names)
