@@ -385,15 +385,11 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
                 return_dict=return_dict,
             )
         elif return_dict and not isinstance(encoder_outputs, BaseModelOutput):
-            # BUG: BaseModelOutput type being lost by poptorch?
-            if isinstance(encoder_outputs, dict):
-                encoder_outputs = BaseModelOutput(encoder_outputs)
-            else:
-                encoder_outputs = BaseModelOutput(
-                    last_hidden_state=encoder_outputs[0],
-                    hidden_states=encoder_outputs[1] if len(encoder_outputs) > 1 else None,
-                    attentions=encoder_outputs[2] if len(encoder_outputs) > 2 else None,
-                )
+            encoder_outputs = BaseModelOutput(
+                last_hidden_state=encoder_outputs[0],
+                hidden_states=encoder_outputs[1] if len(encoder_outputs) > 1 else None,
+                attentions=encoder_outputs[2] if len(encoder_outputs) > 2 else None,
+            )
 
         hidden_states = encoder_outputs[0]
 
