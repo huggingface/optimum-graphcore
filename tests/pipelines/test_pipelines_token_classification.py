@@ -736,7 +736,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_no_offset_tokenizer(self):
         model_name = "hf-internal-testing/tiny-bert-for-token-classification"
-        ipu_config = {"layers_per_ipu": [0, 2], "ipus_per_replica": 2}
+        ipu_config = {"layers_per_ipu": [2], "ipus_per_replica": 1}
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
         token_classifier = pipeline(
             task="token-classification",
@@ -756,7 +756,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_small_model_pt(self):
         model_name = "hf-internal-testing/tiny-bert-for-token-classification"
-        ipu_config = {"layers_per_ipu": [0, 2], "ipus_per_replica": 2}
+        ipu_config = {"layers_per_ipu": [2], "ipus_per_replica": 1}
         token_classifier = pipeline(
             task="token-classification",
             model=model_name,

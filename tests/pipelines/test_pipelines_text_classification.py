@@ -29,7 +29,7 @@ class TextClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTestC
         text_classifier = pipeline(
             task="text-classification",
             model="hf-internal-testing/tiny-random-distilbert",
-            ipu_config={"layers_per_ipu": [2, 3], "ipus_per_replica": 2},
+            ipu_config={"layers_per_ipu": [5], "ipus_per_replica": 1},
         )
 
         outputs = text_classifier("This is great !")

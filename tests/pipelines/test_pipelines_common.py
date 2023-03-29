@@ -77,7 +77,7 @@ ROBERTA_EMBEDDING_ADJUSMENT_CONFIGS = [
     "XLMRobertaConfig",
 ]
 
-TINY_DISTILBERT_IPU_CONFIG = {"layers_per_ipu": [2, 3], "ipus_per_replica": 2}
+TINY_DISTILBERT_IPU_CONFIG = {"layers_per_ipu": [5], "ipus_per_replica": 1}
 
 
 def get_supported_models(models_to_test, task_mapping, task="default"):
