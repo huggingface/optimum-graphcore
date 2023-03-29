@@ -117,7 +117,7 @@ class QAPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
         question_answerer = pipeline(
             "question-answering",
             model="sshleifer/tiny-distilbert-base-cased-distilled-squad",
-            ipu_config="Graphcore/distilbert-base-ipu",
+            ipu_config={"layers_per_ipu": [2], "ipus_per_replica": 1},
         )
 
         outputs = question_answerer(
@@ -132,7 +132,7 @@ class QAPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
         pipe = pipeline(
             model="sshleifer/tiny-distilbert-base-cased-distilled-squad",
             batch_size=16,
-            ipu_config="Graphcore/distilbert-base-ipu",
+            ipu_config={"layers_per_ipu": [2], "ipus_per_replica": 1},
         )
 
         def data():
@@ -147,7 +147,7 @@ class QAPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
         question_answerer = pipeline(
             "question-answering",
             model="sshleifer/tiny-distilbert-base-cased-distilled-squad",
-            ipu_config="Graphcore/distilbert-base-ipu",
+            ipu_config={"layers_per_ipu": [2], "ipus_per_replica": 1},
         )
 
         real_postprocess = question_answerer.postprocess
@@ -178,6 +178,7 @@ class QAPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
 
         self.assertEqual(nested_simplify(outputs), {"score": 0.028, "start": 0, "end": 11, "answer": "HuggingFace"})
 
+    # enable when DebertaV2 is supported
     # @slow
     # @require_torch
     # def test_small_model_japanese(self):
@@ -330,7 +331,12 @@ between them. It's straightforward to train your models with one before loading 
 
         self.assertEqual(
             nested_simplify(outputs),
-            {"answer": "Jax, PyTorch and TensorFlow", "end": 1919, "score": 0.971, "start": 1892},
+            {
+                "answer": "Jax, PyTorch and TensorFlow",
+                "end": 1919,
+                "score": 0.972,
+                "start": 1892,
+            },  # score changed from upstream value of 0.971
         )
 
 

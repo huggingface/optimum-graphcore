@@ -404,8 +404,8 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
                 conv_layer.layer_norm.eps = self.original_eps[i]
         else:
             self.original_eps = []
-            eps = 1e-4
             for conv_layer in self.wav2vec2.feature_extractor.conv_layers:
+                eps = 1e-4 if conv_layer.layer_norm.weight.dtype == torch.float16 else conv_layer.layer_norm.eps
                 # Save the original values, to restore later
                 self.original_eps.append(conv_layer.layer_norm.eps)
                 conv_layer.layer_norm.eps = eps
