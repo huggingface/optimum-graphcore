@@ -36,7 +36,7 @@ from transformers.models.bart.modeling_bart import (
     shift_tokens_right,
 )
 
-from ...generation_utils import IPUGenerationMixin
+from ...generation_utils import IPUGenerationMixin, _IndexedInputLinear
 from ...modeling_utils import (
     PipelineMixin,
     SerializedLinear,
@@ -779,6 +779,9 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
         self.model.change_bart_encoder_and_decoder_classes(True)
         self.model.change_bart_attention_class(True)
         self.model.__class__ = BartModel
+
+        if self.lm_head.__class__ == _IndexedInputLinear:
+            self.lm_head = self.lm_head.wrapped_linear
 
         if self.ipu_config.embedding_serialization_factor > 1:
             old_lm_head = nn.Linear(
