@@ -84,7 +84,7 @@ SUPPORTED_TASKS = {
         "class": (AutoModelForMaskedLM,),
         "default": {
             "model": ("distilroberta-base", "ec58a5b"),
-            "ipu_config": "Graphcore/roberta-base-ipu",
+            "ipu_config": "Graphcore/distilroberta-base-ipu",
             "max_length": 128,
         },
         "type": "text",

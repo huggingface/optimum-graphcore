@@ -739,7 +739,8 @@ class PipelineUtilsTest(unittest.TestCase):
         auto_model_cls = relevant_auto_classes[0]
 
         # retrieve correct model ids
-        if task == "translation":
+        # TODO: enable this when we support separate configs for different translation languages
+        if False and task == "translation":
             # special case for translation pipeline which has multiple languages
             model_ids = []
             revisions = []
