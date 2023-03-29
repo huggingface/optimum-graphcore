@@ -25,7 +25,7 @@ from transformers import T5ForConditionalGeneration
 from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
 from transformers.models.t5.modeling_t5 import __HEAD_MASK_WARNING_MSG, T5Block, T5Stack
 
-from ...generation_utils import IPUGenerationMixin, _SliceLinear
+from ...generation_utils import IPUGenerationMixin, _IndexedInputLinear
 from ...modeling_utils import (
     PipelineMixin,
     SerializedLinear,
@@ -320,7 +320,7 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
         for block in self.decoder.block:
             block.__class__ = T5Block
 
-        if self.lm_head.__class__ == _SliceLinear:
+        if self.lm_head.__class__ == _IndexedInputLinear:
             self.lm_head = self.lm_head.wrapped_linear
 
         if self.ipu_config.embedding_serialization_factor > 1:

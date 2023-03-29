@@ -24,7 +24,7 @@ from transformers import GPT2ForSequenceClassification, GPT2ForTokenClassificati
 from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions, SequenceClassifierOutputWithPast
 from transformers.models.gpt2.modeling_gpt2 import GPT2Attention
 
-from ...generation_utils import IPUGenerationMixin, _SliceLinear
+from ...generation_utils import IPUGenerationMixin, _IndexedInputLinear
 from ...modeling_utils import (
     PipelineMixin,
     SerializedEmbedding,
@@ -173,7 +173,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin, IPUGenerationMixi
     def deparallelize(self):
         PipelineMixin.deparallelize(self)
 
-        if self.lm_head.__class__ == _SliceLinear:
+        if self.lm_head.__class__ == _IndexedInputLinear:
             self.lm_head = self.lm_head.wrapped_linear
 
         if self.ipu_config.embedding_serialization_factor > 1:
