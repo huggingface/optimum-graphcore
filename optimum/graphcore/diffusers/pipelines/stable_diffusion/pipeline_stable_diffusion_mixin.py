@@ -18,143 +18,21 @@ from typing import Optional, Tuple, Union
 import torch
 
 import poptorch
-from diffusers import (
-    AutoencoderKL,
-    StableDiffusionImg2ImgPipeline,
-    StableDiffusionInpaintPipeline,
-    StableDiffusionPipeline,
-    UNet2DConditionModel,
-)
+from diffusers import AutoencoderKL, StableDiffusionPipeline, UNet2DConditionModel
 from diffusers.models.attention import CrossAttention
 from diffusers.models.unet_2d_condition import UNet2DConditionOutput
 from diffusers.models.vae import DecoderOutput
-from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker, cosine_distance
-from optimum.graphcore import IPUConfig
-from optimum.graphcore.ipu_configuration import ALLOWED_POD_TYPES
-from optimum.graphcore.modeling_utils import PipelineMixin
 from optimum.utils import logging
 from transformers import CLIPTextModel
 from transformers.modeling_outputs import BaseModelOutputWithPooling
 from transformers.models.clip.modeling_clip import CLIPTextTransformer
 
+from ....ipu_configuration import IPUConfig
+from ....modeling_utils import PipelineMixin
+from .safety_checker import IPUStableDiffusionSafetyChecker
+
 
 logger = logging.get_logger(__name__)
-
-
-INFERENCE_ENGINES_TO_MODEL_NAMES = {
-    "stable-diffusion-v1": "CompVis/stable-diffusion-v1-4",  # this is a guess
-    "stable-diffusion-v1-5": "runwayml/stable-diffusion-v1-5",
-    "stable-diffusion-512-v2-0": "stabilityai/stable-diffusion-2-base",
-    "stable-diffusion-768-v2-0": "stabilityai/stable-diffusion-2",
-    "stable-diffusion-512-v2-1": "stabilityai/stable-diffusion-2-1-base",
-    "stable-diffusion-768-v2-1": "stabilityai/stable-diffusion-2-1",
-    "stable-inpainting-v1-0": "runwayml/stable-diffusion-inpainting",
-    "stable-inpainting-512-v2-0": "stabilityai/stable-diffusion-2-inpainting",
-}
-
-
-STABLE_DIFFUSION_V1_512_IPU_CONFIG = {
-    "text_encoder": {
-        "ipus_per_replica": 1,
-        "matmul_proportion": 0.6,
-    },
-    "unet": {
-        "ipus_per_replica": 4,
-        "matmul_proportion": [0.6, 0.6, 0.1, 0.3],
-        "attn_matrix_target_mem_mb": 100,
-    },
-    "vae": {"ipus_per_replica": 2, "matmul_proportion": 0.3},
-    "safety_checker": {"ipus_per_replica": 1, "matmul_proportion": 0.6},
-}
-
-
-STABLE_DIFFUSION_V2_512_IPU_CONFIG = {
-    "text_encoder": {
-        "ipus_per_replica": 1,
-        "matmul_proportion": 0.6,
-    },
-    "unet": {
-        "ipus_per_replica": 4,
-        "matmul_proportion": [0.6, 0.6, 0.1, 0.3],
-        "attn_matrix_target_mem_mb": 100,
-    },
-    "vae": {"ipus_per_replica": 2, "matmul_proportion": 0.3},
-    "safety_checker": {"ipus_per_replica": 1, "matmul_proportion": 0.6},
-}
-
-
-STABLE_DIFFUSION_V2_768_IPU_CONFIG = {
-    "text_encoder": {
-        "ipus_per_replica": 1,
-        "matmul_proportion": 0.6,
-    },
-    "unet": {
-        "ipus_per_replica": 4,
-        "matmul_proportion": [0.06, 0.1, 0.1, 0.1],
-        "attn_matrix_target_mem_mb": 45,
-    },
-    "vae": None,  # not supported yet
-    "safety_checker": {"ipus_per_replica": 1, "matmul_proportion": 0.6},
-}
-
-
-INFERENCE_ENGINES_TO_IPU_CONFIGS = {
-    "stable-diffusion-v1": STABLE_DIFFUSION_V1_512_IPU_CONFIG,  # this is a guess
-    "stable-diffusion-v1-5": STABLE_DIFFUSION_V1_512_IPU_CONFIG,
-    "stable-diffusion-512-v2-0": STABLE_DIFFUSION_V2_512_IPU_CONFIG,
-    "stable-diffusion-768-v2-0": STABLE_DIFFUSION_V2_768_IPU_CONFIG,
-    "stable-diffusion-512-v2-1": STABLE_DIFFUSION_V2_512_IPU_CONFIG,
-    "stable-diffusion-768-v2-1": STABLE_DIFFUSION_V2_768_IPU_CONFIG,
-    "stable-inpainting-v1-0": STABLE_DIFFUSION_V1_512_IPU_CONFIG,
-    "stable-inpainting-512-v2-0": STABLE_DIFFUSION_V2_512_IPU_CONFIG,
-}
-
-
-def get_default_ipu_configs(
-    engine="stable-diffusion-512-v2-0",
-    height=512,
-    width=512,
-    num_prompts=1,
-    num_images_per_prompt=1,
-    pod_type="pod4",
-    **common_kwargs,
-):
-    if engine not in INFERENCE_ENGINES_TO_MODEL_NAMES:
-        raise ValueError(f"{engine} should be one of {', '.join(INFERENCE_ENGINES_TO_MODEL_NAMES)}")
-    if pod_type not in ALLOWED_POD_TYPES:
-        raise ValueError(
-            f"{pod_type} is not a correct value for a POD type, supported POD types: {', '.join(ALLOWED_POD_TYPES)}"
-        )
-
-    default_image_dim = 768 if "768" in engine else 512
-    if default_image_dim == 768 and height < default_image_dim and width < default_image_dim:
-        logger.warn(
-            "Generating an image of a size smaller than 768x768 with a checkpoint finetuned for 768x768 "
-            "can lead to images of poor quality."
-        )
-
-    model_ipu_configs = INFERENCE_ENGINES_TO_IPU_CONFIGS[engine]
-
-    unet_ipu_config = model_ipu_configs["unet"]
-    text_encoder_ipu_config = model_ipu_configs["text_encoder"] if pod_type != "pod4" else None
-    vae_ipu_config = model_ipu_configs["vae"] if pod_type != "pod4" else None
-    safety_checker_ipu_config = model_ipu_configs["safety_checker"] if pod_type != "pod4" else None
-
-    # Set the micro batch size at 1 for now.
-    common_kwargs["inference_device_iterations"] = num_prompts * num_images_per_prompt
-
-    unet_ipu_config = {**unet_ipu_config, **common_kwargs}
-    if text_encoder_ipu_config:
-        text_encoder_ipu_config = {**text_encoder_ipu_config, **common_kwargs}
-        # The text encoder is only run once per single prompt or batch of prompts,
-        # then outputs are duplicated by num_images_per_prompt.
-        text_encoder_ipu_config["inference_device_iterations"] = num_prompts
-    if vae_ipu_config:
-        vae_ipu_config = {**vae_ipu_config, **common_kwargs}
-    if safety_checker_ipu_config:
-        safety_checker_ipu_config = {**safety_checker_ipu_config, **common_kwargs}
-
-    return unet_ipu_config, text_encoder_ipu_config, vae_ipu_config, safety_checker_ipu_config
 
 
 class IPUCrossAttention(CrossAttention):
@@ -333,40 +211,6 @@ class IPUAutoencoderKL(AutoencoderKL, PipelineMixin):
         output = super().decode(z.to(self.decoder.conv_in.weight.dtype), return_dict=return_dict)
         output.sample = output.sample.to(torch.float32)
         return output
-
-
-class IPUStableDiffusionSafetyChecker(StableDiffusionSafetyChecker, PipelineMixin):
-    def forward(self, clip_input: torch.FloatTensor, images: torch.FloatTensor):
-        # Adapted from StableDiffusionSafetyChecker.forward_onnx
-        dtype = next(self.vision_model.parameters()).dtype
-        clip_input = clip_input.to(dtype)
-
-        pooled_output = self.vision_model(clip_input)[1]  # pooled_output
-        image_embeds = self.visual_projection(pooled_output)
-
-        special_cos_dist = cosine_distance(image_embeds, self.special_care_embeds)
-        cos_dist = cosine_distance(image_embeds, self.concept_embeds)
-
-        # increase this value to create a stronger `nsfw` filter
-        # at the cost of increasing the possibility of filtering benign images
-        adjustment = 0.0
-
-        special_scores = special_cos_dist - self.special_care_embeds_weights + adjustment
-        # special_scores = special_scores.round(decimals=3)
-        special_care = torch.any(special_scores > 0, dim=1)
-        special_adjustment = special_care * 0.01
-        special_adjustment = special_adjustment.unsqueeze(1).expand(-1, cos_dist.shape[1])
-
-        concept_scores = (cos_dist - self.concept_embeds_weights) + special_adjustment
-        # concept_scores = concept_scores.round(decimals=3)
-        has_nsfw_concepts = torch.any(concept_scores > 0, dim=1)
-
-        # IPU mod
-        # images[has_nsfw_concepts] = 0.0  # black image
-        images = images * ~has_nsfw_concepts
-        images = images.to(torch.float32)
-
-        return images, has_nsfw_concepts
 
 
 def maybe_cast_module_to_float(module):
@@ -549,15 +393,3 @@ class IPUStableDiffusionPipelineMixin:
                 continue
             if module.isAttachedToDevice():
                 module.detachFromDevice()
-
-
-class IPUStableDiffusionPipeline(IPUStableDiffusionPipelineMixin, StableDiffusionPipeline):
-    pass
-
-
-class IPUStableDiffusionImg2ImgPipeline(IPUStableDiffusionPipelineMixin, StableDiffusionImg2ImgPipeline):
-    pass
-
-
-class IPUStableDiffusionInpaintPipeline(IPUStableDiffusionPipelineMixin, StableDiffusionInpaintPipeline):
-    pass

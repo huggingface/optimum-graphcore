@@ -1,0 +1,4 @@
+from .ipu_configs import INFERENCE_ENGINES_TO_MODEL_NAMES, get_default_ipu_configs
+from .pipeline_stable_diffusion import IPUStableDiffusionPipeline
+from .pipeline_stable_diffusion_img2img import IPUStableDiffusionImg2ImgPipeline
+from .pipeline_stable_diffusion_inpaint import IPUStableDiffusionInpaintPipeline
