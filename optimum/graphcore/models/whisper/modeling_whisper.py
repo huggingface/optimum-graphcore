@@ -591,13 +591,6 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple[torch.Tensor], Seq2SeqModelOutput]:
-        # when encoder_outputs is passed as BaseModelOutput, it comes out as a dict...
-        if return_dict and isinstance(encoder_outputs, dict):
-            encoder_outputs = BaseModelOutput(
-                last_hidden_state=encoder_outputs["last_hidden_state"],
-                hidden_states=encoder_outputs.get("hidden_states", None),
-                attentions=encoder_outputs.get("attentions", None),
-            )
 
         return super().forward(
             input_features,
