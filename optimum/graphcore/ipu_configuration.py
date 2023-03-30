@@ -154,7 +154,7 @@ class IPUConfig(BaseConfig):
 
         self.embedding_serialization_factor = kwargs.pop("embedding_serialization_factor", 1)
 
-        self.recompute_checkpoint_every_layer = kwargs.pop("recompute_checkpoint_every_layer", False)
+        self.recompute_checkpoint_every_layer = kwargs.pop("recompute_checkpoint_every_layer", True)
         self.output_mode = kwargs.pop("output_mode", "final")
 
         # TODO: remove this if unnecessary.

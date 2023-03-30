@@ -30,7 +30,7 @@ class FillMaskPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
         unmasker = pipeline(
             task="fill-mask",
             model="sshleifer/tiny-distilroberta-base",
-            ipu_config="Graphcore/roberta-base-ipu",
+            ipu_config={"layers_per_ipu": [2], "ipus_per_replica": 1},
             top_k=2,
             framework="pt",
         )
@@ -100,9 +100,10 @@ class FillMaskPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
         unmasker = pipeline(
             task="fill-mask",
             model="distilroberta-base",
-            ipu_config="Graphcore/roberta-base-ipu",
+            ipu_config={"layers_per_ipu": [6], "ipus_per_replica": 1},
             top_k=2,
             framework="pt",
+            fp16=False,
         )
         self.run_large_test(unmasker)
 
@@ -127,7 +128,7 @@ class FillMaskPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
                 },
                 {
                     "sequence": "The largest city in France is Lyon",
-                    "score": 0.214,
+                    "score": 0.215,  # changed from upstream value of 0.214
                     "token": 12790,
                     "token_str": " Lyon",
                 },

@@ -16,33 +16,17 @@ class IPUText2TextGenerationPipeline(Text2TextGenerationPipeline):
         max_input_length=None,
         **generate_kwargs,
     ):
-        preprocess_params = {}
-        if truncation is not None:
-            preprocess_params["truncation"] = truncation
-
+        preprocess_params, forward_params, postprocess_params = super()._sanitize_parameters(
+            return_tensors,
+            return_text,
+            return_type,
+            clean_up_tokenization_spaces,
+            truncation,
+            stop_sequence,
+            **generate_kwargs,
+        )
         if max_input_length is not None:
             preprocess_params["max_input_length"] = max_input_length
-
-        forward_params = generate_kwargs
-
-        postprocess_params = {}
-        if return_tensors is not None and return_type is None:
-            return_type = ReturnType.TENSORS if return_tensors else ReturnType.TEXT
-        if return_type is not None:
-            postprocess_params["return_type"] = return_type
-
-        if clean_up_tokenization_spaces is not None:
-            postprocess_params["clean_up_tokenization_spaces"] = clean_up_tokenization_spaces
-
-        if stop_sequence is not None:
-            stop_sequence_ids = self.tokenizer.encode(stop_sequence, add_special_tokens=False)
-            if len(stop_sequence_ids) > 1:
-                warnings.warn(
-                    "Stopping on a multiple token sequence is not yet supported on transformers. The first token of"
-                    " the stop sequence will be used as the stop sequence string in the interim."
-                )
-            generate_kwargs["eos_token_id"] = stop_sequence_ids[0]
-
         return preprocess_params, forward_params, postprocess_params
 
     def _parse_and_tokenize(self, *args, truncation, **kwargs):

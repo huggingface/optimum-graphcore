@@ -25,7 +25,7 @@ from transformers import T5ForConditionalGeneration
 from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
 from transformers.models.t5.modeling_t5 import __HEAD_MASK_WARNING_MSG, T5Block, T5Stack
 
-from ...generation_utils import IPUGenerationMixin
+from ...generation_utils import IPUGenerationMixin, _IndexedInputLinear
 from ...modeling_utils import (
     PipelineMixin,
     SerializedLinear,
@@ -226,6 +226,7 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
         model = PipelinedT5ForConditionalGeneration(config).parallelize().half()
         ```
         """
+        PipelineMixin.parallelize(self)
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding  --> IPU 0")
@@ -276,7 +277,7 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
 
         for index, (layer, ipu) in enumerate(zip(self.encoder.block, encoder_layer_ipu)):
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_layers - 1:
-                recomputation_checkpoint(layer)
+                self._hooks.append(recomputation_checkpoint(layer))
             self.encoder.block[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
             logger.info(f"Encoder {index:<2} --> IPU {ipu}")
 
@@ -286,7 +287,7 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
 
         for index, (layer, ipu) in enumerate(zip(self.decoder.block, decoder_layer_ipu)):
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_layers - 1:
-                recomputation_checkpoint(layer)
+                self._hooks.append(recomputation_checkpoint(layer))
             self.decoder.block[index] = poptorch.BeginBlock(layer, f"Decoder{index}", ipu_id=ipu)
             logger.info(f"Decoder {index:<2} --> IPU {ipu}")
 
@@ -318,6 +319,9 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
             block.__class__ = T5Block
         for block in self.decoder.block:
             block.__class__ = T5Block
+
+        if self.lm_head.__class__ == _IndexedInputLinear:
+            self.lm_head = self.lm_head.wrapped_linear
 
         if self.ipu_config.embedding_serialization_factor > 1:
             old_lm_head = nn.Linear(
@@ -384,15 +388,11 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
                 return_dict=return_dict,
             )
         elif return_dict and not isinstance(encoder_outputs, BaseModelOutput):
-            # BUG: BaseModelOutput type being lost by poptorch?
-            if isinstance(encoder_outputs, dict):
-                encoder_outputs = BaseModelOutput(encoder_outputs)
-            else:
-                encoder_outputs = BaseModelOutput(
-                    last_hidden_state=encoder_outputs[0],
-                    hidden_states=encoder_outputs[1] if len(encoder_outputs) > 1 else None,
-                    attentions=encoder_outputs[2] if len(encoder_outputs) > 2 else None,
-                )
+            encoder_outputs = BaseModelOutput(
+                last_hidden_state=encoder_outputs[0],
+                hidden_states=encoder_outputs[1] if len(encoder_outputs) > 1 else None,
+                attentions=encoder_outputs[2] if len(encoder_outputs) > 2 else None,
+            )
 
         hidden_states = encoder_outputs[0]
 

@@ -51,15 +51,35 @@ logger = logging.get_logger(__name__)
 
 @contextlib.contextmanager
 def graph_profile_dir_append(append: str):
-    if poplar_engine_options := os.getenv("POPLAR_ENGINE_OPTIONS"):
-        poplar_engine_options_dict = json.loads(poplar_engine_options)
-        poplar_engine_options_dict["autoReport.directory"] += append
-        os.environ["POPLAR_ENGINE_OPTIONS"] = json.dumps(poplar_engine_options_dict)
+    if poplar_engine_options_original := os.getenv("POPLAR_ENGINE_OPTIONS"):
+        poplar_engine_options_modified = json.loads(poplar_engine_options_original)
+        if autoreport_directory := poplar_engine_options_modified.get("autoReport.directory"):
+            poplar_engine_options_modified["autoReport.directory"] = autoreport_directory + append
+            os.environ["POPLAR_ENGINE_OPTIONS"] = json.dumps(poplar_engine_options_modified)
     try:
         yield
     finally:
-        if poplar_engine_options:
-            os.environ["POPLAR_ENGINE_OPTIONS"] = poplar_engine_options
+        if poplar_engine_options_original:
+            os.environ["POPLAR_ENGINE_OPTIONS"] = poplar_engine_options_original
+
+
+class _IndexedInputLinear(nn.Module):
+    """
+    Wrapper layer for `Linear` that performs a `dynamic_slice` on the input
+    before executing the linear. The intended use is as an optimized replacement of the
+    LM Head in the Decoder for text generation inference.
+    The slice is performed on the position `self.index` of the input tensor, where
+    `self.index` is a PyTorch buffer.
+    """
+
+    def __init__(self, linear_layer):
+        super().__init__()
+        self.wrapped_linear = linear_layer
+        self.register_buffer("index", torch.tensor([0], dtype=torch.int32))
+
+    def forward(self, x):
+        x = poptorch.dynamic_slice(x, 1, self.index, 1, 1)
+        return self.wrapped_linear(x)
 
 
 class DecoderWrapper(nn.Module):
@@ -71,6 +91,8 @@ class DecoderWrapper(nn.Module):
     def __init__(self, pipelined_model):
         super().__init__()
         self.pipelined_model = pipelined_model
+        # Replace the LM-head with the faster _IndexedInputLinear layer
+        self.pipelined_model.set_output_embeddings(_IndexedInputLinear(self.pipelined_model.get_output_embeddings()))
 
     def forward(self, t, **model_inputs):
         """
@@ -80,12 +102,15 @@ class DecoderWrapper(nn.Module):
         Returns:
             The output logits at position `t` only
         """
+        # Update the index buffer in the _IndexedInputLinear layer
+        self.pipelined_model.get_output_embeddings().index.copy_(t)
+
+        # Run the decoder
         outputs = self.pipelined_model(**model_inputs)
 
-        next_token_logits = poptorch.dynamic_slice(outputs.logits, 1, t, 1, 1)
         return type(outputs)(
             loss=None,
-            logits=next_token_logits,
+            logits=outputs.logits,
         )
 
 

@@ -1,4 +1,4 @@
-name: examples
+name: pipelines
 
 on:
   schedule:
@@ -40,5 +40,4 @@ jobs:
         . ${SDK_PATH}/poplar-ubuntu_20_04*/enable.sh
         . ${SDK_PATH}/popart-ubuntu_20_04*/enable.sh
         export RUN_SLOW=true
-        pytest tests/test_examples_match_transformers.py
-        pytest tests/test_examples.py -n 4
+        pytest tests/pipelines/ -n 8

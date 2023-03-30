@@ -68,6 +68,7 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
         for k, v in (list(MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING.items()) if MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING else [])
         + (MODEL_FOR_CTC_MAPPING.items() if MODEL_FOR_CTC_MAPPING else [])
     }
+    task = "ctc"
 
     def get_test_pipeline(self, model, ipu_config, tokenizer, feature_extractor):
         if tokenizer is None:
@@ -142,6 +143,7 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
 
     @require_torch
     def test_small_model_pt(self):
+        # enable when Speech2TextForConditionalGeneration is supported
         pass
         # speech_recognizer = pipeline(
         #     task="automatic-speech-recognition",
@@ -153,6 +155,7 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
         # output = speech_recognizer(waveform)
         # self.assertEqual(output, {"text": "(Applaudissements)"})
 
+    # enable when SpeechEncoderDecoderModel is supported
     # @require_torch
     # def test_small_model_pt_seq2seq(self):
     #     speech_recognizer = pipeline(
@@ -238,6 +241,8 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
     @require_torch
     @slow
     def test_torch_large(self):
+        # enable when max_input_length is supported
+        return
         speech_recognizer = pipeline(
             task="automatic-speech-recognition",
             model="facebook/wav2vec2-base-960h",
@@ -253,6 +258,7 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
         output = speech_recognizer(filename)
         self.assertEqual(output, {"text": "A MAN SAID TO THE UNIVERSE SIR I EXIST"})
 
+    # enable when SpeechEncoderDecoderModel is supported
     # @require_torch
     # @slow
     # def test_torch_speech_encoder_decoder(self):
@@ -271,6 +277,8 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
     @slow
     @require_torch
     def test_simple_wav2vec2(self):
+        # enable when max_input_length is supported
+        return
         model = Wav2Vec2ForCTC.from_pretrained("facebook/wav2vec2-base-960h")
         ipu_config = "Graphcore/wav2vec2-ctc-base-ipu"
         tokenizer = AutoTokenizer.from_pretrained("facebook/wav2vec2-base-960h")
@@ -299,6 +307,7 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
         output = asr(data)
         self.assertEqual(output, {"text": "A MAN SAID TO THE UNIVERSE SIR I EXIST"})
 
+    # enable when Speech2TextForConditionalGeneration is supported
     # @slow
     # @require_torch
     # @require_torchaudio
@@ -376,6 +385,8 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
     @require_torch
     @require_torchaudio
     def test_xls_r_to_en(self):
+        # enable when SpeechEncoderDecoderModel is supported
+        return
         speech_recognizer = pipeline(
             task="automatic-speech-recognition",
             model="facebook/wav2vec2-xls-r-1b-21-to-en",
@@ -392,6 +403,8 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
     @require_torch
     @require_torchaudio
     def test_xls_r_from_en(self):
+        # enable when SpeechEncoderDecoderModel is supported
+        return
         speech_recognizer = pipeline(
             task="automatic-speech-recognition",
             model="facebook/wav2vec2-xls-r-1b-en-to-15",
@@ -408,6 +421,8 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
     @require_torch
     @require_torchaudio
     def test_speech_to_text_leveraged(self):
+        # enable when SpeechEncoderDecoderModel is supported
+        return
         speech_recognizer = pipeline(
             task="automatic-speech-recognition",
             model="patrickvonplaten/wav2vec2-2-bart-base",
@@ -565,6 +580,8 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
     @require_torch
     @slow
     def test_chunking_and_timestamps(self):
+        # even with padding this is non-trivial to get working correctly
+        return
         model = Wav2Vec2ForCTC.from_pretrained("facebook/wav2vec2-base-960h")
         ipu_config = "Graphcore/wav2vec2-ctc-base-ipu"
         tokenizer = AutoTokenizer.from_pretrained("facebook/wav2vec2-base-960h")

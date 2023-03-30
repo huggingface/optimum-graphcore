@@ -22,14 +22,7 @@ from torch import nn
 
 import poptorch
 from optimum.utils import logging
-from transformers import AutoConfig, PreTrainedModel
-from transformers.modeling_outputs import ModelOutput
-from transformers.models.auto.modeling_auto import (
-    MODEL_FOR_CAUSAL_LM_MAPPING,
-    MODEL_FOR_MASKED_LM_MAPPING,
-    MODEL_FOR_PRETRAINING_MAPPING,
-    MODEL_FOR_QUESTION_ANSWERING_MAPPING_NAMES,
-)
+from transformers import PreTrainedModel
 
 from .ipu_configuration import IPUConfig
 
@@ -37,36 +30,10 @@ from .ipu_configuration import IPUConfig
 logger = logging.get_logger(__name__)
 
 
-TIED_WEIGHT_MODELS = set(
-    MODEL_FOR_PRETRAINING_MAPPING.values()
-    + MODEL_FOR_MASKED_LM_MAPPING.values()
-    + MODEL_FOR_CAUSAL_LM_MAPPING.values()
-)
-
-
 class IncompatibleIPUConfigError(Exception):
     """An exception used when an IPU Config is incompatible with a model"""
 
     pass
-
-
-def tied_weight_model(transformers_cls=None):
-    """Certain models may either have tied weights, or similar weight aliasing.
-    We track these as they currently need additional unwrapping when used in the IPUTrainer.
-    This should be removed when the associated parameter copying bug is fixed."""
-
-    def wrapper(cls):
-        tied_weight_cls = transformers_cls
-        if tied_weight_cls is None:
-            if not issubclass(cls, PipelineMixin):
-                raise ValueError(
-                    f"If original transformers class is not provided, the model must already be pipelined."
-                )
-            tied_weight_cls = cls
-        TIED_WEIGHT_MODELS.add(tied_weight_cls)
-        return cls
-
-    return wrapper
 
 
 _PRETRAINED_TO_PIPELINED_REGISTRY = {}
@@ -341,7 +308,9 @@ def split_encoder_decoder_ipu_config(
     layers_per_ipu = _expand_layers_per_ipu_wildcard(ipu_config, num_encoder_layers + num_decoder_layers)
     cumsum = [sum(layers_per_ipu[: i + 1]) for i in range(len(layers_per_ipu))]
     try:
-        cut = [i + 1 for i, c in enumerate(cumsum) if c == num_encoder_layers][-1]
+        cut = [i + 1 for i, c in enumerate(cumsum) if c == num_encoder_layers]
+        # Choose the cut index that's the highest power of 2
+        cut = max([num for num in cut if num & (num - 1) == 0])
     except:
         raise IncompatibleIPUConfigError(
             f"Unable to find valid split of ipu_config.layers_per_ipu\n"
@@ -349,6 +318,9 @@ def split_encoder_decoder_ipu_config(
             f"\tipu_config.layers_per_ipu={ipu_config.layers_per_ipu}\n"
             f"\tnum_encoder_layers={num_encoder_layers}\n"
             f"\tnum_decoder_layers={num_decoder_layers}\n"
+            "Possible causes: \n"
+            "Encoder and decoder layers cannot be placed on the same IPUs.\n"
+            "The encoder and decoder layers_per_ipu splits each need a number of devices that's a power of 2."
         )
     ipu_configs["encoder"].layers_per_ipu = layers_per_ipu[:cut]
     ipu_configs["decoder"].layers_per_ipu = layers_per_ipu[cut:]
