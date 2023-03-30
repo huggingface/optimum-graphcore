@@ -50,6 +50,7 @@ from transformers.activations import ACT2FN
 
 FLOAT16_LIMIT = 1e4
 
+
 # Copied from transformers.models.bart.modeling_bart._make_causal_mask
 def _make_causal_mask(input_ids_shape: torch.Size, dtype: torch.dtype, past_key_values_length: int = 0):
     """
@@ -421,7 +422,6 @@ class _WhisperDecoderWithCustomMakeCausalAndExpandMask(WhisperDecoder):
             past_key_value = past_key_values[idx] if past_key_values is not None else None
 
             if self.gradient_checkpointing and self.training:
-
                 if use_cache:
                     logger.warning(
                         "`use_cache = True` is incompatible with gradient checkpointing. Setting `use_cache ="
@@ -447,7 +447,6 @@ class _WhisperDecoderWithCustomMakeCausalAndExpandMask(WhisperDecoder):
                     None,  # past_key_value
                 )
             else:
-
                 layer_outputs = decoder_layer(
                     hidden_states,
                     attention_mask=attention_mask,
