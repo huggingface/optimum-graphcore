@@ -33,7 +33,7 @@ from transformers.models.whisper.modeling_whisper import (
     WhisperForConditionalGeneration,
 )
 
-from ...generation_utils import IPUGenerationMixin
+from ...generation_utils import IPUGenerationMixin, _IndexedInputLinear
 from ...modeling_utils import (
     PipelineMixin,
     get_layer_ipu,
@@ -547,7 +547,7 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
 
         for index, (layer, ipu) in enumerate(zip(self.model.encoder.layers, encoder_layer_ipu)):
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
-                recomputation_checkpoint(layer)
+                self._hooks.append(recomputation_checkpoint(layer))
             self.model.encoder.layers[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
             logger.info(f"Encoder {index:<2} --> IPU {ipu}")
 
@@ -559,7 +559,7 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
 
         for index, (layer, ipu) in enumerate(zip(self.model.decoder.layers, decoder_layer_ipu)):
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
-                recomputation_checkpoint(layer)
+                self._hooks.append(recomputation_checkpoint(layer))
             self.model.decoder.layers[index] = poptorch.BeginBlock(layer, f"Decoder{index}", ipu_id=ipu)
             logger.info(f"Decoder {index:<2} --> IPU {ipu}")
 
@@ -572,3 +572,12 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         )
         self.proj_out = poptorch.BeginBlock(self.proj_out, "Output Projection", ipu_id=last_ipu)
         return self
+
+    def deparallelize(self):
+        super().deparallelize()
+
+        self.change_encoder_layer_class(restore=True)
+        self.change_encoder_and_decoder_classes(restore=True)
+
+        if self.proj_out.__class__ == _IndexedInputLinear:
+            self.proj_out = self.lm_head.wrapped_linear
