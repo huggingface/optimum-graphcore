@@ -19,7 +19,7 @@ import torch
 
 import poptorch
 from diffusers import AutoencoderKL, StableDiffusionPipeline, UNet2DConditionModel
-from diffusers.models.attention import CrossAttention
+from diffusers.models.cross_attention import CrossAttention
 from diffusers.models.unet_2d_condition import UNet2DConditionOutput
 from diffusers.models.vae import DecoderOutput
 from optimum.utils import logging
@@ -35,7 +35,19 @@ from .safety_checker import IPUStableDiffusionSafetyChecker
 logger = logging.get_logger(__name__)
 
 
-class IPUCrossAttention(CrossAttention):
+class IPUSlicedAttnProcessor:
+    """
+    SlicedAttnProcessor but we slice across the query sequence length instead of across heads.
+    NB: this ignores the `slice_size` factor since we interpret it differently and use a value that is
+    derived from the sequence length based on an empirical attention matrix memory target.
+    """
+
+    def __init__(self, attn_matrix_target_mem_mb: int):
+        if attn_matrix_target_mem_mb < 1:
+            raise ValueError(f"`attn_matrix_target_mem_mb` {attn_matrix_target_mem_mb} must be a positive integer.")
+
+        self._attn_matrix_target_mem_mb = attn_matrix_target_mem_mb
+
     @staticmethod
     def _nearest_divisor(target, start, end):
         for divisor in range(start, end + 1):
@@ -43,32 +55,25 @@ class IPUCrossAttention(CrossAttention):
                 return divisor
         raise ValueError(f"No divisor found in range [{start}, {end}].")
 
-    def _attention(self, query, key, value, attention_mask):
-        """Overriding this implementation as the `torch.baddbmm` op is not registered."""
-        attention_scores = torch.matmul(query, key.transpose(1, 2)) * self.scale
+    def __call__(self, attn: CrossAttention, hidden_states, encoder_hidden_states=None, attention_mask=None):
+        batch_size, sequence_length, _ = hidden_states.shape
 
-        if attention_mask is not None:
-            attention_scores = attention_scores + attention_mask
+        attention_mask = attn.prepare_attention_mask(attention_mask, sequence_length)
 
-        attention_probs = attention_scores.softmax(dim=-1)
+        query = attn.to_q(hidden_states)
+        dim = query.shape[-1]
+        query = attn.head_to_batch_dim(query)
 
-        hidden_states = torch.bmm(attention_probs, value)
+        encoder_hidden_states = encoder_hidden_states if encoder_hidden_states is not None else hidden_states
+        key = attn.to_k(encoder_hidden_states)
+        value = attn.to_v(encoder_hidden_states)
+        key = attn.head_to_batch_dim(key)
+        value = attn.head_to_batch_dim(value)
 
-        # reshape hidden_states
-        hidden_states = self.reshape_batch_dim_to_heads(hidden_states)
-        return hidden_states
-
-    def _sliced_attention(self, query, key, value, sequence_length, dim, attention_mask):
-        """
-        Overriding this implementation to slice across the query sequence length instead of across heads.
-        NB: this ignores the `slice_size` factor since we interpret it differently and use a value that is
-        derived from the sequence length based on an empirical attention matrix memory target.
-        """
+        # Begin IPU modifications.
         attn_matrix_mem = query.element_size() * query.shape[0] * query.shape[1] * key.shape[1]
         num_slices = attn_matrix_mem // (self._attn_matrix_target_mem_mb * 1024 * 1024)
-        if num_slices < 2:
-            return self._attention(query, key, value, attention_mask)
-
+        num_slices = max(num_slices, 1)
         num_slices = self._nearest_divisor(query.shape[1], num_slices, 2 * num_slices)
         slice_size = query.shape[1] // num_slices
 
@@ -79,7 +84,7 @@ class IPUCrossAttention(CrossAttention):
             start_idx = i * slice_size
             end_idx = (i + 1) * slice_size
 
-            attn_slice = torch.matmul(query[:, start_idx:end_idx], key) * self.scale
+            attn_slice = torch.matmul(query[:, start_idx:end_idx], key) * attn.scale
             if attention_mask is not None:
                 attn_slice = attn_slice + attention_mask[:, start_idx:end_idx]
             attn_slice = attn_slice.softmax(dim=-1)
@@ -88,9 +93,15 @@ class IPUCrossAttention(CrossAttention):
             hidden_states.append(attn_slice)
 
         hidden_states = torch.cat(hidden_states, dim=1)
+        # End IPU modifications.
 
-        # reshape hidden_states
-        hidden_states = self.reshape_batch_dim_to_heads(hidden_states)
+        hidden_states = attn.batch_to_head_dim(hidden_states)
+
+        # linear proj
+        hidden_states = attn.to_out[0](hidden_states)
+        # dropout
+        hidden_states = attn.to_out[1](hidden_states)
+
         return hidden_states
 
 
@@ -135,16 +146,15 @@ class IPUCLIPTextModel(CLIPTextModel, PipelineMixin):
 
 
 class IPUUNet2DConditionModel(UNet2DConditionModel, PipelineMixin):
-    def change_cross_attention_class(self, attn_matrix_target_mem_mb=None):
+    def change_cross_attention_processor(self, attn_matrix_target_mem_mb):
         for module in self.modules():
             if isinstance(module, CrossAttention):
-                module.__class__ = IPUCrossAttention
-                module._attn_matrix_target_mem_mb = attn_matrix_target_mem_mb
+                module.set_processor(IPUSlicedAttnProcessor(attn_matrix_target_mem_mb))
 
     def parallelize(self, attn_matrix_target_mem_mb=None):
         super().parallelize()
 
-        self.change_cross_attention_class(attn_matrix_target_mem_mb=attn_matrix_target_mem_mb)
+        self.change_cross_attention_processor(attn_matrix_target_mem_mb)
 
         self.conv_in = poptorch.BeginBlock(self.conv_in, "conv_in", ipu_id=0)
         self.down_blocks[2].downsamplers[0] = poptorch.BeginBlock(
@@ -385,6 +395,14 @@ class IPUStableDiffusionPipelineMixin:
             vae_ipu_config=vae_ipu_config,
             safety_checker_ipu_config=safety_checker_ipu_config,
             **kwargs,
+        )
+
+    def set_attention_slice(self, slice_size: Optional[int]):
+        # Another side effect of letting this go through is that CrossAttention could set
+        # a different processor than what we intended, so do the simple thing for now.
+        logger.warn(
+            "Attention slicing is enabled by default. Specifying a custom value "
+            "for the `slice_size` is currently unsupported."
         )
 
     def detach_from_device(self):
