@@ -421,15 +421,18 @@ class SerializedEmbedding(nn.Module):
             ]
         )
 
-    def deserialize(self):
+    def deserialize(self, freeze=False):
         """
         Deserialize the internal wrapped embedding layer and return it as a
-        `nn.Embedding` object.
+        `nn.Embedding` object. Optionally override the default behaviour of
+        freezing embeddings when initialising from a tensor object.
 
         Returns:
             `nn.Embedding` layer
         """
-        return nn.Embedding.from_pretrained(torch.vstack([l.weight for l in self.split_embeddings]), padding_idx=0)
+        return nn.Embedding.from_pretrained(
+            torch.vstack([l.weight for l in self.split_embeddings]), padding_idx=0, freeze=freeze
+        )
 
     def forward(self, indices):
         # iterate through the splits
