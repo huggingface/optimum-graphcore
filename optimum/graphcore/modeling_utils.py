@@ -410,7 +410,7 @@ class SerializedEmbedding(nn.Module):
         # Num embeddings should be divisible by the serialization factor
         assert self.num_embeddings % self.serialization_factor == 0
         self.split_size = self.num_embeddings // self.serialization_factor
-        
+
         freeze = not embedding.weight.requires_grad
         self.split_embeddings = nn.ModuleList(
             [
@@ -431,7 +431,7 @@ class SerializedEmbedding(nn.Module):
         Returns:
             `nn.Embedding` layer
         """
-        
+
         freeze = not self.split_embeddings[0].weight.requires_grad
         return nn.Embedding.from_pretrained(
             torch.vstack([l.weight for l in self.split_embeddings]), padding_idx=0, freeze=freeze
