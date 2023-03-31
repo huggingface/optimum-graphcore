@@ -31,7 +31,14 @@ class IPUSeq2SeqTrainer(IPUTrainer):
     def _wrap_and_compile_model_for_evaluation(self, dataloader, prediction_loss_only):
         if prediction_loss_only:
             return super()._wrap_and_compile_model_for_evaluation(dataloader, prediction_loss_only)
-        self.model.compile_for_generate(next(iter(dataloader)), self.args.generation_num_beams)
+
+        # reparallelize for generation
+        self.model = self.model.deparallelize().parallelize(for_generation=True)
+
+        # let IPUGenerationMixin::_call_generate handle compilation of the model
+        # note though that self.model.poptorch_decoder and self.model.poptorch_encoder
+        # (attribute added by IPUGenerationMixin::_call_generate)
+        # are the actual models attached to the device
         return self.model
 
     def evaluate(

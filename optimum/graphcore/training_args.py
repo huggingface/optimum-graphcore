@@ -97,9 +97,9 @@ class IPUTrainingArguments:
 
         prediction_loss_only (`bool`, *optional*, defaults to `False`):
             When performing evaluation and generating predictions, only returns the loss.
-        per_device_train_batch_size (`int`, *optional*, defaults to 8):
+        per_device_train_batch_size (`int`, *optional*, defaults to 1):
             The batch size per IPU for training.
-        per_device_eval_batch_size (`int`, *optional*, defaults to 8):
+        per_device_eval_batch_size (`int`, *optional*, defaults to 1):
             The batch size per IPU for evaluation.
         gradient_accumulation_steps (`int`, *optional*, defaults to 1):
             Number of updates steps to accumulate the gradients for, before performing a backward/update pass.

@@ -449,6 +449,7 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
             return Seq2SeqLMOutput(
                 loss=loss,
             )
+
         return Seq2SeqLMOutput(
             loss=loss,
             logits=lm_logits,
