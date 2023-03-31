@@ -410,26 +410,29 @@ class SerializedEmbedding(nn.Module):
         # Num embeddings should be divisible by the serialization factor
         assert self.num_embeddings % self.serialization_factor == 0
         self.split_size = self.num_embeddings // self.serialization_factor
+        
+        freeze = not embedding.weight.requires_grad
         self.split_embeddings = nn.ModuleList(
             [
                 nn.Embedding.from_pretrained(
                     embedding.weight[i * self.split_size : (i + 1) * self.split_size, :].detach(),
-                    freeze=False,
+                    freeze=freeze,
                     padding_idx=embedding.padding_idx if i == 0 else None,
                 )
                 for i in range(self.serialization_factor)
             ]
         )
 
-    def deserialize(self, freeze=False):
+    def deserialize(self):
         """
         Deserialize the internal wrapped embedding layer and return it as a
-        `nn.Embedding` object. Optionally override the default behaviour of
-        freezing embeddings when initialising from a tensor object.
+        `nn.Embedding` object.
 
         Returns:
             `nn.Embedding` layer
         """
+        
+        freeze = not self.split_embeddings[0].weight.requires_grad
         return nn.Embedding.from_pretrained(
             torch.vstack([l.weight for l in self.split_embeddings]), padding_idx=0, freeze=freeze
         )
