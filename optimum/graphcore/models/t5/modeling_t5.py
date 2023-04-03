@@ -42,12 +42,13 @@ logger = logging.get_logger(__name__)
 
 
 class UpCastWrapper(nn.Module):
-    def __init__(self, module: nn.Module):
+    def __init__(self, module: nn.Module, scale: float=1.0):
         super().__init__()
         self.module = module
+        self.scale = scale
 
     def forward(self, input):
-        return self.module(input).to(torch.float32)
+        return self.module(input).to(torch.float32) * self.scale
 
 
 class CustomGELU(NewGELUActivation):
