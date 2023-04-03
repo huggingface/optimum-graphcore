@@ -291,12 +291,14 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
             block.layer[1].dropout = UpCastWrapper(block.layer[-1].dropout, scale)
             # Work-around bug with torch.nn.GELU(approximate="tanh")
             # TODO: Remove this when bug is fixed
-            block.layer[1].DenseReluDense.act = CustomGELU()
+            if self.config.dense_act_fn == "gelu_new":
+                block.layer[1].DenseReluDense.act = CustomGELU()
         for block in self.decoder.block:
             block.__class__ = CustomT5Block
             # Work-around bug with torch.nn.GELU(approximate="tanh")
             # TODO: Remove this when bug is fixed
-            block.layer[2].DenseReluDense.act = CustomGELU()
+            if self.config.dense_act_fn == "gelu_new":
+                block.layer[2].DenseReluDense.act = CustomGELU()
 
         num_encoder_layers = len(self.encoder.block)
         num_decoder_layers = len(self.decoder.block)
