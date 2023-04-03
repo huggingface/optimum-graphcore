@@ -41,6 +41,15 @@ from ...modeling_utils import (
 logger = logging.get_logger(__name__)
 
 
+class UpCastWrapper(nn.Module):
+    def __init__(self, module: nn.Module):
+        super().__init__()
+        self.module = module
+
+    def forward(self, input):
+        return self.module(input).to(torch.float32)
+
+
 class CustomGELU(NewGELUActivation):
     # Work-around bug with torch.nn.GELU(approximate="tanh")
     # TODO: Remove this when bug is fixed
@@ -255,9 +264,24 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
         self.encoder.__class__ = CustomT5Stack
         self.decoder.__class__ = CustomT5Stack
 
+        # Upcast input embeddings so that the residuals remain in FP32. This
+        # cast is reversed where necessary by the T5LayerNorm layers in:
+        # - first layer of T5LayerSelfAttention
+        # - first layer of T5LayerFF
+        # - final_layer_norm
+        # Which, conveniently, are all the places that this needs to happen.
+        # Therefore, so we just need to upcast immediately before the residual
+        # adds in T5LayerSelfAttention and T5LayerFF. This is handled in the
+        # for loop below.
+        self.encoder.embed_tokens = UpCastWrapper(self.encoder.embed_tokens)
+
         # Use a custom T5Block implementation that removes a dynamic if blocks that can't be statically traced
         for block in self.encoder.block:
             block.__class__ = CustomT5Block
+            # Dropout happens immediately before the residual add. Inserting a
+            # cast here keeps the residual structure in FP32
+            block.layer[0].dropout = UpCastWrapper(block.layer[0].dropout)
+            block.layer[-1].dropout = UpCastWrapper(block.layer[-1].dropout)
             # Work-around bug with torch.nn.GELU(approximate="tanh")
             # TODO: Remove this when bug is fixed
             block.layer[-1].DenseReluDense.act = CustomGELU()
