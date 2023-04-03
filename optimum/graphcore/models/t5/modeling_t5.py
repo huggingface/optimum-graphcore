@@ -280,17 +280,23 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
         for block in self.encoder.block:
             block.__class__ = CustomT5Block
             # Dropout happens immediately before the residual add. Inserting a
-            # cast here keeps the residual structure in FP32
+            # cast in T5LayerSelfAttention and T5LayerFF keeps the residual
+            # structure in FP32
             block.layer[0].dropout = UpCastWrapper(block.layer[0].dropout)
-            block.layer[-1].dropout = UpCastWrapper(block.layer[-1].dropout)
+            # Scale down the weights for the T5LayerFF down-projection and
+            # then scale its output back up again after it is cast to FP32
+            scale = 10.0
+            with torch.no_grad():
+                block.layer[1].DenseReluDense.wo.weight /= scale
+            block.layer[1].dropout = UpCastWrapper(block.layer[-1].dropout, scale)
             # Work-around bug with torch.nn.GELU(approximate="tanh")
             # TODO: Remove this when bug is fixed
-            block.layer[-1].DenseReluDense.act = CustomGELU()
+            block.layer[1].DenseReluDense.act = CustomGELU()
         for block in self.decoder.block:
             block.__class__ = CustomT5Block
             # Work-around bug with torch.nn.GELU(approximate="tanh")
             # TODO: Remove this when bug is fixed
-            block.layer[-1].DenseReluDense.act = CustomGELU()
+            block.layer[2].DenseReluDense.act = CustomGELU()
 
         num_encoder_layers = len(self.encoder.block)
         num_decoder_layers = len(self.decoder.block)
