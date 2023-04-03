@@ -19,9 +19,10 @@ import torch
 
 import poptorch
 from diffusers import AutoencoderKL, StableDiffusionPipeline, UNet2DConditionModel
+from diffusers.models.autoencoder_kl import AutoencoderKLOutput
 from diffusers.models.cross_attention import CrossAttention
 from diffusers.models.unet_2d_condition import UNet2DConditionOutput
-from diffusers.models.vae import DecoderOutput
+from diffusers.models.vae import DecoderOutput, DiagonalGaussianDistribution
 from optimum.utils import logging
 from transformers import CLIPTextModel
 from transformers.modeling_outputs import BaseModelOutputWithPooling
@@ -221,6 +222,16 @@ class IPUAutoencoderKL(AutoencoderKL, PipelineMixin):
         output = super().decode(z.to(self.decoder.conv_in.weight.dtype), return_dict=return_dict)
         output.sample = output.sample.to(torch.float32)
         return output
+
+    def encode(self, x: torch.FloatTensor, return_dict: bool = True) -> AutoencoderKLOutput:
+        h = self.encoder(x.to(self.encoder.conv_in.weight.dtype))
+        moments = self.quant_conv(h)
+        posterior = DiagonalGaussianDistribution(moments.to(torch.float32))
+
+        if not return_dict:
+            return (posterior,)
+
+        return AutoencoderKLOutput(latent_dist=posterior)
 
 
 def maybe_cast_module_to_float(module):
