@@ -304,7 +304,7 @@ class IPUGenerationMixin(GenerationMixin):
             )
 
         # Change: disable use_cache because it can't be statically compiled
-        if "use_cache" in model_kwargs and model_kwargs["use_cache"]:
+        if model_kwargs.get("use_cache"):
             raise ValueError("use_cache=True is currently not supported")
 
         # keep track of which sequences are already finished
@@ -573,7 +573,7 @@ class IPUGenerationMixin(GenerationMixin):
             )
 
         # Change: disable use_cache because it can't be statically compiled
-        if "use_cache" in model_kwargs and model_kwargs["use_cache"]:
+        if model_kwargs.get("use_cache"):
             raise ValueError("use_cache=True is currently not supported")
 
         beam_scores = torch.zeros((batch_size, num_beams), dtype=torch.float, device=input_ids.device)
@@ -868,7 +868,7 @@ class IPUGenerationMixin(GenerationMixin):
             )
 
         # Change: disable use_cache because it can't be statically compiled
-        if "use_cache" in model_kwargs and model_kwargs["use_cache"]:
+        if model_kwargs.get("use_cache"):
             raise ValueError("use_cache=True is currently not supported")
 
         # keep track of which sequences are already finished
@@ -1145,7 +1145,7 @@ class IPUGenerationMixin(GenerationMixin):
             )
 
         # Change: disable use_cache because it can't be statically compiled
-        if "use_cache" in model_kwargs and model_kwargs["use_cache"]:
+        if model_kwargs.get("use_cache"):
             raise ValueError("use_cache=True is currently not supported")
 
         beam_scores = torch.zeros((batch_size, num_beams), dtype=torch.float, device=input_ids.device)
