@@ -41,6 +41,17 @@ from ...modeling_utils import (
 logger = logging.get_logger(__name__)
 
 
+class CustomGELU(NewGELUActivation):
+    # Work-around bug with torch.nn.GELU(approximate="tanh")
+    # TODO: Remove this when bug is fixed
+    def forward(self, input: Tensor) -> Tensor:
+        safe = torch.logical_and(-39 < input, input < 39)
+        safe_input = torch.where(safe, input, 0.0)
+        gelu = super().forward(safe_input)
+        relu = nn.functional.relu(input)
+        return torch.where(safe, gelu, relu)
+
+
 class CustomT5Block(T5Block):
     def forward(
         self,
@@ -132,16 +143,6 @@ class CustomT5Block(T5Block):
             outputs = outputs + attention_outputs
 
         return outputs  # hidden-states, present_key_value_states, (self-attention position bias), (self-attention weights), (cross-attention position bias), (cross-attention weights)
-
-class CustomGELU(NewGELUActivation):
-    # Work-around bug with torch.nn.GELU(approximate="tanh")
-    # TODO: Remove this when bug is fixed
-    def forward(self, input: Tensor) -> Tensor:
-        safe = torch.logical_and(-39 < input, input < 39)
-        safe_input = torch.where(safe, input, 0.0)
-        gelu = super().forward(safe_input)
-        relu = nn.functional.relu(input)
-        return torch.where(safe, gelu, relu)
 
 
 class CustomT5Stack(T5Stack):
