@@ -42,7 +42,7 @@ logger = logging.get_logger(__name__)
 
 
 class UpCastWrapper(nn.Module):
-    def __init__(self, module: nn.Module, scale: float=1.0):
+    def __init__(self, module: nn.Module, scale: float = 1.0):
         super().__init__()
         self.module = module
         self.scale = scale
