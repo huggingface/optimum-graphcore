@@ -41,7 +41,7 @@ jobs:
         export POPTORCH_WAIT_FOR_IPU=1
         pytest tests/ -n 16 --ignore=tests/pipelines/ --ignore=tests/test_examples_match_transformers.py
         pytest tests/test_examples_match_transformers.py
-    - name: Upload Report
+    - name: Upload PopTorch error log if present
       if: always()
       uses: actions/upload-artifact@v3
       with:
