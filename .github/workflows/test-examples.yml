@@ -46,6 +46,6 @@ jobs:
       if: always()
       uses: actions/upload-artifact@v3
       with:
-        name: poptorch_error.log
+        name: poptorch_error
         path: poptorch_error.log
 
