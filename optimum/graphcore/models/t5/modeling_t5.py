@@ -26,7 +26,7 @@ from transformers.activations import NewGELUActivation
 from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
 from transformers.models.t5.modeling_t5 import __HEAD_MASK_WARNING_MSG, T5Block, T5Stack
 
-from ...generation_utils import IPUGenerationMixin
+from ...generation_utils import IPUGenerationMixin, _IndexedInputLinear
 from ...modeling_utils import (
     PipelineMixin,
     SerializedLinear,
@@ -361,6 +361,9 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
         for block in self.decoder.block:
             block.__class__ = T5Block
 
+        if self.lm_head.__class__ == _IndexedInputLinear:
+            self.lm_head = self.lm_head.wrapped_linear
+
         if self.ipu_config.embedding_serialization_factor > 1:
             old_lm_head = nn.Linear(
                 self.config.d_model,
@@ -426,15 +429,11 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
                 return_dict=return_dict,
             )
         elif return_dict and not isinstance(encoder_outputs, BaseModelOutput):
-            # BUG: BaseModelOutput type being lost by poptorch?
-            if isinstance(encoder_outputs, dict):
-                encoder_outputs = BaseModelOutput(encoder_outputs)
-            else:
-                encoder_outputs = BaseModelOutput(
-                    last_hidden_state=encoder_outputs[0],
-                    hidden_states=encoder_outputs[1] if len(encoder_outputs) > 1 else None,
-                    attentions=encoder_outputs[2] if len(encoder_outputs) > 2 else None,
-                )
+            encoder_outputs = BaseModelOutput(
+                last_hidden_state=encoder_outputs[0],
+                hidden_states=encoder_outputs[1] if len(encoder_outputs) > 1 else None,
+                attentions=encoder_outputs[2] if len(encoder_outputs) > 2 else None,
+            )
 
         hidden_states = encoder_outputs[0]
 
@@ -491,6 +490,7 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
             return Seq2SeqLMOutput(
                 loss=loss,
             )
+
         return Seq2SeqLMOutput(
             loss=loss,
             logits=lm_logits,

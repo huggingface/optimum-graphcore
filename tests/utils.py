@@ -30,4 +30,5 @@ MODELS_TO_TEST_MAPPING = {
         "default": ("facebook/wav2vec2-base", "Graphcore/wav2vec2-base-ipu"),
         "ctc": ("facebook/wav2vec2-base", "Graphcore/wav2vec2-ctc-base-ipu"),
     },
+    "whisper": ("openai/whisper-tiny", "Graphcore/whisper-tiny-ipu"),
 }

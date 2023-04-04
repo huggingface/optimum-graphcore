@@ -18,146 +18,37 @@ from typing import Optional, Tuple, Union
 import torch
 
 import poptorch
-from diffusers import (
-    AutoencoderKL,
-    StableDiffusionImg2ImgPipeline,
-    StableDiffusionInpaintPipeline,
-    StableDiffusionPipeline,
-    UNet2DConditionModel,
-)
-from diffusers.models.attention import CrossAttention
+from diffusers import AutoencoderKL, StableDiffusionPipeline, UNet2DConditionModel
+from diffusers.models.autoencoder_kl import AutoencoderKLOutput
+from diffusers.models.cross_attention import CrossAttention
 from diffusers.models.unet_2d_condition import UNet2DConditionOutput
-from diffusers.models.vae import DecoderOutput
-from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker, cosine_distance
-from optimum.graphcore import IPUConfig
-from optimum.graphcore.ipu_configuration import ALLOWED_POD_TYPES
-from optimum.graphcore.modeling_utils import PipelineMixin
+from diffusers.models.vae import DecoderOutput, DiagonalGaussianDistribution
 from optimum.utils import logging
 from transformers import CLIPTextModel
 from transformers.modeling_outputs import BaseModelOutputWithPooling
 from transformers.models.clip.modeling_clip import CLIPTextTransformer
 
+from ....ipu_configuration import IPUConfig
+from ....modeling_utils import PipelineMixin
+from .safety_checker import IPUStableDiffusionSafetyChecker
+
 
 logger = logging.get_logger(__name__)
 
 
-INFERENCE_ENGINES_TO_MODEL_NAMES = {
-    "stable-diffusion-v1": "CompVis/stable-diffusion-v1-4",  # this is a guess
-    "stable-diffusion-v1-5": "runwayml/stable-diffusion-v1-5",
-    "stable-diffusion-512-v2-0": "stabilityai/stable-diffusion-2-base",
-    "stable-diffusion-768-v2-0": "stabilityai/stable-diffusion-2",
-    "stable-diffusion-512-v2-1": "stabilityai/stable-diffusion-2-1-base",
-    "stable-diffusion-768-v2-1": "stabilityai/stable-diffusion-2-1",
-    "stable-inpainting-v1-0": "runwayml/stable-diffusion-inpainting",
-    "stable-inpainting-512-v2-0": "stabilityai/stable-diffusion-2-inpainting",
-}
+class IPUSlicedAttnProcessor:
+    """
+    SlicedAttnProcessor but we slice across the query sequence length instead of across heads.
+    NB: this ignores the `slice_size` factor since we interpret it differently and use a value that is
+    derived from the sequence length based on an empirical attention matrix memory target.
+    """
 
+    def __init__(self, attn_matrix_target_mem_mb: int):
+        if attn_matrix_target_mem_mb < 1:
+            raise ValueError(f"`attn_matrix_target_mem_mb` {attn_matrix_target_mem_mb} must be a positive integer.")
 
-STABLE_DIFFUSION_V1_512_IPU_CONFIG = {
-    "text_encoder": {
-        "ipus_per_replica": 1,
-        "matmul_proportion": 0.6,
-    },
-    "unet": {
-        "ipus_per_replica": 4,
-        "matmul_proportion": [0.6, 0.6, 0.1, 0.3],
-        "attn_matrix_target_mem_mb": 100,
-    },
-    "vae": {"ipus_per_replica": 2, "matmul_proportion": 0.3},
-    "safety_checker": {"ipus_per_replica": 1, "matmul_proportion": 0.6},
-}
+        self._attn_matrix_target_mem_mb = attn_matrix_target_mem_mb
 
-
-STABLE_DIFFUSION_V2_512_IPU_CONFIG = {
-    "text_encoder": {
-        "ipus_per_replica": 1,
-        "matmul_proportion": 0.6,
-    },
-    "unet": {
-        "ipus_per_replica": 4,
-        "matmul_proportion": [0.6, 0.6, 0.1, 0.3],
-        "attn_matrix_target_mem_mb": 100,
-    },
-    "vae": {"ipus_per_replica": 2, "matmul_proportion": 0.3},
-    "safety_checker": {"ipus_per_replica": 1, "matmul_proportion": 0.6},
-}
-
-
-STABLE_DIFFUSION_V2_768_IPU_CONFIG = {
-    "text_encoder": {
-        "ipus_per_replica": 1,
-        "matmul_proportion": 0.6,
-    },
-    "unet": {
-        "ipus_per_replica": 4,
-        "matmul_proportion": [0.06, 0.1, 0.1, 0.1],
-        "attn_matrix_target_mem_mb": 45,
-    },
-    "vae": None,  # not supported yet
-    "safety_checker": {"ipus_per_replica": 1, "matmul_proportion": 0.6},
-}
-
-
-INFERENCE_ENGINES_TO_IPU_CONFIGS = {
-    "stable-diffusion-v1": STABLE_DIFFUSION_V1_512_IPU_CONFIG,  # this is a guess
-    "stable-diffusion-v1-5": STABLE_DIFFUSION_V1_512_IPU_CONFIG,
-    "stable-diffusion-512-v2-0": STABLE_DIFFUSION_V2_512_IPU_CONFIG,
-    "stable-diffusion-768-v2-0": STABLE_DIFFUSION_V2_768_IPU_CONFIG,
-    "stable-diffusion-512-v2-1": STABLE_DIFFUSION_V2_512_IPU_CONFIG,
-    "stable-diffusion-768-v2-1": STABLE_DIFFUSION_V2_768_IPU_CONFIG,
-    "stable-inpainting-v1-0": STABLE_DIFFUSION_V1_512_IPU_CONFIG,
-    "stable-inpainting-512-v2-0": STABLE_DIFFUSION_V2_512_IPU_CONFIG,
-}
-
-
-def get_default_ipu_configs(
-    engine="stable-diffusion-512-v2-0",
-    height=512,
-    width=512,
-    num_prompts=1,
-    num_images_per_prompt=1,
-    pod_type="pod4",
-    **common_kwargs
-):
-    if engine not in INFERENCE_ENGINES_TO_MODEL_NAMES:
-        raise ValueError(f"{engine} should be one of {', '.join(INFERENCE_ENGINES_TO_MODEL_NAMES)}")
-    if pod_type not in ALLOWED_POD_TYPES:
-        raise ValueError(
-            f"{pod_type} is not a correct value for a POD type, supported POD types: {', '.join(ALLOWED_POD_TYPES)}"
-        )
-
-    default_image_dim = 768 if "768" in engine else 512
-    if default_image_dim == 768 and height < default_image_dim and width < default_image_dim:
-        logger.warn(
-            "Generating an image of a size smaller than 768x768 with a checkpoint finetuned for 768x768 "
-            "can lead to images of poor quality."
-        )
-
-    model_ipu_configs = INFERENCE_ENGINES_TO_IPU_CONFIGS[engine]
-
-    unet_ipu_config = model_ipu_configs["unet"]
-    text_encoder_ipu_config = model_ipu_configs["text_encoder"] if pod_type != "pod4" else None
-    vae_ipu_config = model_ipu_configs["vae"] if pod_type != "pod4" else None
-    safety_checker_ipu_config = model_ipu_configs["safety_checker"] if pod_type != "pod4" else None
-
-    # Set the micro batch size at 1 for now.
-    common_kwargs["inference_device_iterations"] = num_prompts * num_images_per_prompt
-
-    unet_ipu_config = {**unet_ipu_config, **common_kwargs}
-    if text_encoder_ipu_config:
-        text_encoder_ipu_config = {**text_encoder_ipu_config, **common_kwargs}
-        # The text encoder is only run once per single prompt or batch of prompts,
-        # then outputs are duplicated by num_images_per_prompt.
-        text_encoder_ipu_config["inference_device_iterations"] = num_prompts
-    if vae_ipu_config:
-        vae_ipu_config = {**vae_ipu_config, **common_kwargs}
-    if safety_checker_ipu_config:
-        safety_checker_ipu_config = {**safety_checker_ipu_config, **common_kwargs}
-
-    return unet_ipu_config, text_encoder_ipu_config, vae_ipu_config, safety_checker_ipu_config
-
-
-class IPUCrossAttention(CrossAttention):
     @staticmethod
     def _nearest_divisor(target, start, end):
         for divisor in range(start, end + 1):
@@ -165,32 +56,25 @@ class IPUCrossAttention(CrossAttention):
                 return divisor
         raise ValueError(f"No divisor found in range [{start}, {end}].")
 
-    def _attention(self, query, key, value, attention_mask):
-        """Overriding this implementation as the `torch.baddbmm` op is not registered."""
-        attention_scores = torch.matmul(query, key.transpose(1, 2)) * self.scale
+    def __call__(self, attn: CrossAttention, hidden_states, encoder_hidden_states=None, attention_mask=None):
+        batch_size, sequence_length, _ = hidden_states.shape
 
-        if attention_mask is not None:
-            attention_scores = attention_scores + attention_mask
+        attention_mask = attn.prepare_attention_mask(attention_mask, sequence_length)
 
-        attention_probs = attention_scores.softmax(dim=-1)
+        query = attn.to_q(hidden_states)
+        dim = query.shape[-1]
+        query = attn.head_to_batch_dim(query)
 
-        hidden_states = torch.bmm(attention_probs, value)
+        encoder_hidden_states = encoder_hidden_states if encoder_hidden_states is not None else hidden_states
+        key = attn.to_k(encoder_hidden_states)
+        value = attn.to_v(encoder_hidden_states)
+        key = attn.head_to_batch_dim(key)
+        value = attn.head_to_batch_dim(value)
 
-        # reshape hidden_states
-        hidden_states = self.reshape_batch_dim_to_heads(hidden_states)
-        return hidden_states
-
-    def _sliced_attention(self, query, key, value, sequence_length, dim, attention_mask):
-        """
-        Overriding this implementation to slice across the query sequence length instead of across heads.
-        NB: this ignores the `slice_size` factor since we interpret it differently and use a value that is
-        derived from the sequence length based on an empirical attention matrix memory target.
-        """
+        # Begin IPU modifications.
         attn_matrix_mem = query.element_size() * query.shape[0] * query.shape[1] * key.shape[1]
         num_slices = attn_matrix_mem // (self._attn_matrix_target_mem_mb * 1024 * 1024)
-        if num_slices < 2:
-            return self._attention(query, key, value, attention_mask)
-
+        num_slices = max(num_slices, 1)
         num_slices = self._nearest_divisor(query.shape[1], num_slices, 2 * num_slices)
         slice_size = query.shape[1] // num_slices
 
@@ -201,7 +85,7 @@ class IPUCrossAttention(CrossAttention):
             start_idx = i * slice_size
             end_idx = (i + 1) * slice_size
 
-            attn_slice = torch.matmul(query[:, start_idx:end_idx], key) * self.scale
+            attn_slice = torch.matmul(query[:, start_idx:end_idx], key) * attn.scale
             if attention_mask is not None:
                 attn_slice = attn_slice + attention_mask[:, start_idx:end_idx]
             attn_slice = attn_slice.softmax(dim=-1)
@@ -210,9 +94,15 @@ class IPUCrossAttention(CrossAttention):
             hidden_states.append(attn_slice)
 
         hidden_states = torch.cat(hidden_states, dim=1)
+        # End IPU modifications.
 
-        # reshape hidden_states
-        hidden_states = self.reshape_batch_dim_to_heads(hidden_states)
+        hidden_states = attn.batch_to_head_dim(hidden_states)
+
+        # linear proj
+        hidden_states = attn.to_out[0](hidden_states)
+        # dropout
+        hidden_states = attn.to_out[1](hidden_states)
+
         return hidden_states
 
 
@@ -257,16 +147,15 @@ class IPUCLIPTextModel(CLIPTextModel, PipelineMixin):
 
 
 class IPUUNet2DConditionModel(UNet2DConditionModel, PipelineMixin):
-    def change_cross_attention_class(self, attn_matrix_target_mem_mb=None):
+    def change_cross_attention_processor(self, attn_matrix_target_mem_mb):
         for module in self.modules():
             if isinstance(module, CrossAttention):
-                module.__class__ = IPUCrossAttention
-                module._attn_matrix_target_mem_mb = attn_matrix_target_mem_mb
+                module.set_processor(IPUSlicedAttnProcessor(attn_matrix_target_mem_mb))
 
     def parallelize(self, attn_matrix_target_mem_mb=None):
         super().parallelize()
 
-        self.change_cross_attention_class(attn_matrix_target_mem_mb=attn_matrix_target_mem_mb)
+        self.change_cross_attention_processor(attn_matrix_target_mem_mb)
 
         self.conv_in = poptorch.BeginBlock(self.conv_in, "conv_in", ipu_id=0)
         self.down_blocks[2].downsamplers[0] = poptorch.BeginBlock(
@@ -334,39 +223,15 @@ class IPUAutoencoderKL(AutoencoderKL, PipelineMixin):
         output.sample = output.sample.to(torch.float32)
         return output
 
+    def encode(self, x: torch.FloatTensor, return_dict: bool = True) -> AutoencoderKLOutput:
+        h = self.encoder(x.to(self.encoder.conv_in.weight.dtype))
+        moments = self.quant_conv(h)
+        posterior = DiagonalGaussianDistribution(moments.to(torch.float32))
 
-class IPUStableDiffusionSafetyChecker(StableDiffusionSafetyChecker, PipelineMixin):
-    def forward(self, clip_input: torch.FloatTensor, images: torch.FloatTensor):
-        # Adapted from StableDiffusionSafetyChecker.forward_onnx
-        dtype = next(self.vision_model.parameters()).dtype
-        clip_input = clip_input.to(dtype)
+        if not return_dict:
+            return (posterior,)
 
-        pooled_output = self.vision_model(clip_input)[1]  # pooled_output
-        image_embeds = self.visual_projection(pooled_output)
-
-        special_cos_dist = cosine_distance(image_embeds, self.special_care_embeds)
-        cos_dist = cosine_distance(image_embeds, self.concept_embeds)
-
-        # increase this value to create a stronger `nsfw` filter
-        # at the cost of increasing the possibility of filtering benign images
-        adjustment = 0.0
-
-        special_scores = special_cos_dist - self.special_care_embeds_weights + adjustment
-        # special_scores = special_scores.round(decimals=3)
-        special_care = torch.any(special_scores > 0, dim=1)
-        special_adjustment = special_care * 0.01
-        special_adjustment = special_adjustment.unsqueeze(1).expand(-1, cos_dist.shape[1])
-
-        concept_scores = (cos_dist - self.concept_embeds_weights) + special_adjustment
-        # concept_scores = concept_scores.round(decimals=3)
-        has_nsfw_concepts = torch.any(concept_scores > 0, dim=1)
-
-        # IPU mod
-        # images[has_nsfw_concepts] = 0.0  # black image
-        images = images * ~has_nsfw_concepts
-        images = images.to(torch.float32)
-
-        return images, has_nsfw_concepts
+        return AutoencoderKLOutput(latent_dist=posterior)
 
 
 def maybe_cast_module_to_float(module):
@@ -532,7 +397,7 @@ class IPUStableDiffusionPipelineMixin:
         text_encoder_ipu_config=None,
         vae_ipu_config=None,
         safety_checker_ipu_config=None,
-        **kwargs
+        **kwargs,
     ):
         return super().from_pretrained(
             pretrained_model_name_or_path,
@@ -543,21 +408,17 @@ class IPUStableDiffusionPipelineMixin:
             **kwargs,
         )
 
+    def set_attention_slice(self, slice_size: Optional[int]):
+        # Another side effect of letting this go through is that CrossAttention could set
+        # a different processor than what we intended, so do the simple thing for now.
+        logger.warn(
+            "Attention slicing is enabled by default. Specifying a custom value "
+            "for the `slice_size` is currently unsupported."
+        )
+
     def detach_from_device(self):
         for module in [self.text_encoder, self.unet.unet, self.vae, self.safety_checker]:
             if not isinstance(module, poptorch.PoplarExecutor):
                 continue
             if module.isAttachedToDevice():
                 module.detachFromDevice()
-
-
-class IPUStableDiffusionPipeline(IPUStableDiffusionPipelineMixin, StableDiffusionPipeline):
-    pass
-
-
-class IPUStableDiffusionImg2ImgPipeline(IPUStableDiffusionPipelineMixin, StableDiffusionImg2ImgPipeline):
-    pass
-
-
-class IPUStableDiffusionInpaintPipeline(IPUStableDiffusionPipelineMixin, StableDiffusionInpaintPipeline):
-    pass

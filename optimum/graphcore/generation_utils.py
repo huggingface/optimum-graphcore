@@ -63,6 +63,25 @@ def graph_profile_dir_append(append: str):
             os.environ["POPLAR_ENGINE_OPTIONS"] = poplar_engine_options_original
 
 
+class _IndexedInputLinear(nn.Module):
+    """
+    Wrapper layer for `Linear` that performs a `dynamic_slice` on the input
+    before executing the linear. The intended use is as an optimized replacement of the
+    LM Head in the Decoder for text generation inference.
+    The slice is performed on the position `self.index` of the input tensor, where
+    `self.index` is a PyTorch buffer.
+    """
+
+    def __init__(self, linear_layer):
+        super().__init__()
+        self.wrapped_linear = linear_layer
+        self.register_buffer("index", torch.tensor([0], dtype=torch.int32))
+
+    def forward(self, x):
+        x = poptorch.dynamic_slice(x, 1, self.index, 1, 1)
+        return self.wrapped_linear(x)
+
+
 class DecoderWrapper(nn.Module):
     """
     Fast wrapper for decoder part of text generation models.
@@ -72,6 +91,8 @@ class DecoderWrapper(nn.Module):
     def __init__(self, pipelined_model):
         super().__init__()
         self.pipelined_model = pipelined_model
+        # Replace the LM-head with the faster _IndexedInputLinear layer
+        self.pipelined_model.set_output_embeddings(_IndexedInputLinear(self.pipelined_model.get_output_embeddings()))
 
     def forward(self, t, **model_inputs):
         """
@@ -81,12 +102,14 @@ class DecoderWrapper(nn.Module):
         Returns:
             The output logits at position `t` only
         """
-        outputs = self.pipelined_model(**model_inputs)
+        # Update the index buffer in the _IndexedInputLinear layer
+        self.pipelined_model.get_output_embeddings().index.copy_(t)
 
-        next_token_logits = poptorch.dynamic_slice(outputs.logits, 1, t, 1, 1)
+        # Run the decoder
+        outputs = self.pipelined_model(**model_inputs)
         return type(outputs)(
             loss=None,
-            logits=next_token_logits,
+            logits=outputs.logits,
         )
 
 
@@ -94,7 +117,8 @@ class IPUGenerationMixin(GenerationMixin):
     def _pad_tensors_to_max_len(self, tensor: torch.Tensor, max_length: int, pad_token_id: int) -> torch.Tensor:
         return nn.functional.pad(tensor, (0, max_length - tensor.shape[1]), "constant", pad_token_id)
 
-    def _call_generate(self, *args, **kwargs):
+    def _call_generate(self, *args, cur_token_id: int, **kwargs):
+        t = self._get_cur_token_logits_tensor(cur_token_id)
         if not hasattr(self, "poptorch_decoder"):
             wrapper = DecoderWrapper(self.eval())
             decoder_ipu_config = getattr(self, "decoder_ipu_config", self.ipu_config)
@@ -102,7 +126,7 @@ class IPUGenerationMixin(GenerationMixin):
 
         # This will trigger a compile first time it's ran
         with graph_profile_dir_append("/decoder"):
-            return self.poptorch_decoder(*args, **kwargs)
+            return self.poptorch_decoder(*args, t=t, **kwargs)
 
     def _prepare_encoder_decoder_kwargs_for_generation(
         self, inputs_tensor: torch.Tensor, model_kwargs, model_input_name: Optional[str] = None
@@ -122,6 +146,7 @@ class IPUGenerationMixin(GenerationMixin):
         model_input_name = model_input_name if model_input_name is not None else self.main_input_name
         encoder_kwargs["return_dict"] = True
         encoder_kwargs[model_input_name] = inputs_tensor
+
         if not hasattr(self, "poptorch_encoder"):
             # Use split encoder ipu_config for encoder/decoder models
             self.poptorch_encoder = poptorch.inferenceModel(
@@ -137,6 +162,16 @@ class IPUGenerationMixin(GenerationMixin):
             self.poptorch_encoder.detachFromDevice()
         if hasattr(self, "poptorch_decoder"):
             self.poptorch_decoder.detachFromDevice()
+
+    def _get_cur_token_logits_tensor(self, token_id):
+        # returns a 1 dimensional tensor of the form [device_iterations * replication factor]
+        # with all elements equal to token_id.
+        # token_id is the current token being decoded, it
+        # is required in order to return only the logits for this token
+        return (
+            torch.ones(self.ipu_config.inference_device_iterations * self.ipu_config.inference_replication_factor)
+            * token_id
+        )
 
     # Modified from https://github.com/huggingface/transformers/blob/v4.20.1/src/transformers/generation_utils.py#L1532
     def greedy_search(
@@ -269,8 +304,8 @@ class IPUGenerationMixin(GenerationMixin):
             )
 
         # Change: disable use_cache because it can't be statically compiled
-        if "use_cache" in model_kwargs:
-            model_kwargs["use_cache"] = False
+        if model_kwargs.get("use_cache"):
+            raise ValueError("use_cache=True is currently not supported")
 
         # keep track of which sequences are already finished
         unfinished_sequences = input_ids.new(input_ids.shape[0]).fill_(1)
@@ -292,12 +327,13 @@ class IPUGenerationMixin(GenerationMixin):
 
             # forward pass to get next token
             outputs = self._call_generate(
-                t=torch.tensor(cur_len - 1),
+                cur_token_id=cur_len - 1,
                 **model_inputs,
                 return_dict=True,
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
             )
+
             # Change: Remove padding and restore to actual length
             input_ids = input_ids[:, :cur_len]
             if not self.config.is_encoder_decoder:
@@ -352,6 +388,7 @@ class IPUGenerationMixin(GenerationMixin):
             if unfinished_sequences.max() == 0 or stopping_criteria(input_ids, scores):
                 # Change: remove synced_gpu code
                 break
+        # End of while True
 
         if return_dict_in_generate:
             if self.config.is_encoder_decoder:
@@ -536,8 +573,8 @@ class IPUGenerationMixin(GenerationMixin):
             )
 
         # Change: disable use_cache because it can't be statically compiled
-        if "use_cache" in model_kwargs:
-            model_kwargs["use_cache"] = False
+        if model_kwargs.get("use_cache"):
+            raise ValueError("use_cache=True is currently not supported")
 
         beam_scores = torch.zeros((batch_size, num_beams), dtype=torch.float, device=input_ids.device)
         beam_scores[:, 1:] = -1e9
@@ -557,7 +594,7 @@ class IPUGenerationMixin(GenerationMixin):
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
             outputs = self._call_generate(
-                t=torch.tensor(cur_len - 1),
+                cur_token_id=cur_len - 1,
                 **model_inputs,
                 return_dict=True,
                 output_attentions=output_attentions,
@@ -831,8 +868,8 @@ class IPUGenerationMixin(GenerationMixin):
             )
 
         # Change: disable use_cache because it can't be statically compiled
-        if "use_cache" in model_kwargs:
-            model_kwargs["use_cache"] = False
+        if model_kwargs.get("use_cache"):
+            raise ValueError("use_cache=True is currently not supported")
 
         # keep track of which sequences are already finished
         unfinished_sequences = input_ids.new(input_ids.shape[0]).fill_(1)
@@ -855,12 +892,13 @@ class IPUGenerationMixin(GenerationMixin):
 
             # forward pass to get next token
             outputs = self._call_generate(
-                t=torch.tensor(cur_len - 1),
+                cur_token_id=cur_len - 1,
                 **model_inputs,
                 return_dict=True,
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
             )
+
             # Change: Remove padding and restore to actual length
             input_ids = input_ids[:, :cur_len]
             if not self.config.is_encoder_decoder:
@@ -1107,8 +1145,8 @@ class IPUGenerationMixin(GenerationMixin):
             )
 
         # Change: disable use_cache because it can't be statically compiled
-        if "use_cache" in model_kwargs:
-            model_kwargs["use_cache"] = False
+        if model_kwargs.get("use_cache"):
+            raise ValueError("use_cache=True is currently not supported")
 
         beam_scores = torch.zeros((batch_size, num_beams), dtype=torch.float, device=input_ids.device)
         beam_scores = beam_scores.view((batch_size * num_beams,))
@@ -1127,7 +1165,7 @@ class IPUGenerationMixin(GenerationMixin):
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
             outputs = self._call_generate(
-                t=torch.tensor(cur_len - 1),
+                cur_token_id=cur_len - 1,
                 **model_inputs,
                 return_dict=True,
                 output_attentions=output_attentions,

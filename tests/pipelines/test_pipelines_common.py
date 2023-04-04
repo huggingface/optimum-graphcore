@@ -77,6 +77,8 @@ ROBERTA_EMBEDDING_ADJUSMENT_CONFIGS = [
     "XLMRobertaConfig",
 ]
 
+TINY_DISTILBERT_IPU_CONFIG = {"layers_per_ipu": [5], "ipus_per_replica": 1}
+
 
 def get_supported_models(models_to_test, task_mapping, task="default"):
     """
@@ -286,8 +288,9 @@ class PipelineTestCaseMeta(type):
             return test
 
         mapping = dct.get("model_mapping", {})
+        task = dct.get("task", "default")
         if mapping:
-            mapping_items = get_supported_models(MODELS_TO_TEST_MAPPING, mapping)
+            mapping_items = get_supported_models(MODELS_TO_TEST_MAPPING, mapping, task=task)
             for configuration, model_architectures, ipu_config, checkpoint in mapping_items:
                 if not isinstance(model_architectures, tuple):
                     model_architectures = (model_architectures,)
@@ -362,7 +365,7 @@ class CommonPipelineTest(unittest.TestCase):
         text_classifier = pipeline(
             task="text-classification",
             model="hf-internal-testing/tiny-random-distilbert",
-            ipu_config="Graphcore/distilbert-base-ipu",
+            ipu_config=TINY_DISTILBERT_IPU_CONFIG,
         )
         dataset = MyDataset()
         for output in text_classifier(dataset):
@@ -372,7 +375,7 @@ class CommonPipelineTest(unittest.TestCase):
     def test_check_task_auto_inference(self):
         pipe = pipeline(
             model="hf-internal-testing/tiny-random-distilbert",
-            ipu_config="Graphcore/distilbert-base-ipu",
+            ipu_config=TINY_DISTILBERT_IPU_CONFIG,
         )
 
         self.assertIsInstance(pipe, TextClassificationPipeline)
@@ -381,14 +384,14 @@ class CommonPipelineTest(unittest.TestCase):
     def test_pipeline_batch_size_global(self):
         pipe = pipeline(
             model="hf-internal-testing/tiny-random-distilbert",
-            ipu_config="Graphcore/distilbert-base-ipu",
+            ipu_config=TINY_DISTILBERT_IPU_CONFIG,
         )
         self.assertEqual(pipe._batch_size, None)
         self.assertEqual(pipe._num_workers, None)
 
         pipe = pipeline(
             model="hf-internal-testing/tiny-random-distilbert",
-            ipu_config="Graphcore/distilbert-base-ipu",
+            ipu_config=TINY_DISTILBERT_IPU_CONFIG,
             batch_size=2,
             num_workers=1,
         )
@@ -402,7 +405,7 @@ class CommonPipelineTest(unittest.TestCase):
 
         text_classifier = pipeline(
             model="hf-internal-testing/tiny-random-distilbert",
-            ipu_config="Graphcore/distilbert-base-ipu",
+            ipu_config=TINY_DISTILBERT_IPU_CONFIG,
             pipeline_class=MyPipeline,
         )
 
@@ -424,7 +427,7 @@ class CommonPipelineTest(unittest.TestCase):
 
         pipe = pipeline(
             model="hf-internal-testing/tiny-random-distilbert",
-            ipu_config="Graphcore/distilbert-base-ipu",
+            ipu_config=TINY_DISTILBERT_IPU_CONFIG,
         )
 
         results = []
@@ -450,7 +453,7 @@ class CommonPipelineTest(unittest.TestCase):
         text_classifier = pipeline(
             task="text-classification",
             model=model,
-            ipu_config="Graphcore/distilbert-base-ipu",
+            ipu_config=TINY_DISTILBERT_IPU_CONFIG,
             tokenizer=tokenizer,
         )
 
@@ -710,13 +713,14 @@ class PipelineUtilsTest(unittest.TestCase):
 
             self.check_default_pipeline(task, set_seed_fn, self.check_models_equal_pt)
 
+    # enable when table-question-answering task is supported
     # @slow
     # @require_torch
     # def test_load_default_pipelines_pt_table_qa(self):
     #     import torch
 
     #     set_seed_fn = lambda: torch.manual_seed(0)  # noqa: E731
-    #     self.check_default_pipeline("table-question-answering", "pt", set_seed_fn, self.check_models_equal_pt)
+    #     self.check_default_pipeline("table-question-answering", set_seed_fn, self.check_models_equal_pt)
 
     def check_default_pipeline(self, task, set_seed_fn, check_models_equal_fn):
         from optimum.graphcore.pipelines import SUPPORTED_TASKS, pipeline
@@ -735,7 +739,8 @@ class PipelineUtilsTest(unittest.TestCase):
         auto_model_cls = relevant_auto_classes[0]
 
         # retrieve correct model ids
-        if task == "translation":
+        # TODO: enable this when we support separate configs for different translation languages
+        if False and task == "translation":
             # special case for translation pipeline which has multiple languages
             model_ids = []
             revisions = []
@@ -782,7 +787,7 @@ class PipelineUtilsTest(unittest.TestCase):
         models_are_equal = True
         for model1_p, model2_p in zip(model1.parameters(), model2.parameters()):
             # cast default model's parameters to fp16 since pipeline model's parameters are by default in fp16
-            if model1_p.data.ne(model2_p.data.half()).sum() > 0:
+            if model1_p.data.ne(model2_p.data.to(model1_p.dtype)).sum() > 0:
                 models_are_equal = False
 
         return models_are_equal

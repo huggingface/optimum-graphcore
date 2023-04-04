@@ -29,21 +29,13 @@ Optimum Graphcore is a fast-moving project, and you may want to install from sou
 
 ### Installing in developer mode
 
-If you are working on the `optimum-graphcore` code then you should use an editable install.
-First clone and install `optimum`:
+If you are working on the `optimum-graphcore` code then you should use an editable install
+by cloning and installing `optimum` and `optimum-graphcore`:
 
 ```
 git clone https://github.com/huggingface/optimum --branch v1.6.1-release
-cd optimum
-pip install -e .
-cd ..
-```
-
-The clone and install `optimum-graphcore`:
-```
 git clone https://github.com/huggingface/optimum-graphcore
-cd optimum-graphcore
-pip install -e .
+pip install -e optimum -e optimum-graphcore
 ```
 
 Now whenever you change the code, you'll be able to run with those changes instantly.

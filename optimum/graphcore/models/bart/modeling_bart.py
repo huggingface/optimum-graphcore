@@ -36,7 +36,7 @@ from transformers.models.bart.modeling_bart import (
     shift_tokens_right,
 )
 
-from ...generation_utils import IPUGenerationMixin
+from ...generation_utils import IPUGenerationMixin, _IndexedInputLinear
 from ...modeling_utils import (
     PipelineMixin,
     SerializedLinear,
@@ -45,7 +45,6 @@ from ...modeling_utils import (
     recomputation_checkpoint,
     register,
     split_encoder_decoder_ipu_config,
-    tied_weight_model,
 )
 
 
@@ -648,15 +647,11 @@ class _BartModelWithSharedEmbedding(BartModel):
             )
         # If the user passed a tuple for encoder_outputs, we wrap it in a BaseModelOutput when return_dict=True
         elif return_dict and not isinstance(encoder_outputs, BaseModelOutput):
-            # BUG: BaseModelOutput type being lost by poptorch?
-            if isinstance(encoder_outputs, dict):
-                encoder_outputs = BaseModelOutput(encoder_outputs)
-            else:
-                encoder_outputs = BaseModelOutput(
-                    last_hidden_state=encoder_outputs[0],
-                    hidden_states=encoder_outputs[1] if len(encoder_outputs) > 1 else None,
-                    attentions=encoder_outputs[2] if len(encoder_outputs) > 2 else None,
-                )
+            encoder_outputs = BaseModelOutput(
+                last_hidden_state=encoder_outputs[0],
+                hidden_states=encoder_outputs[1] if len(encoder_outputs) > 1 else None,
+                attentions=encoder_outputs[2] if len(encoder_outputs) > 2 else None,
+            )
 
         # decoder outputs consists of (dec_features, past_key_value, dec_hidden, dec_attn)
         decoder_outputs = self.decoder(
@@ -785,6 +780,9 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
         self.model.change_bart_attention_class(True)
         self.model.__class__ = BartModel
 
+        if self.lm_head.__class__ == _IndexedInputLinear:
+            self.lm_head = self.lm_head.wrapped_linear
+
         if self.ipu_config.embedding_serialization_factor > 1:
             old_lm_head = nn.Linear(
                 self.config.d_model,
@@ -852,7 +850,6 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
             return outputs
 
 
-@tied_weight_model(BartForSequenceClassification)
 @register(BartForSequenceClassification)
 class PipelinedBartForSequenceClassification(BartForSequenceClassification, PipelineMixin):
     def parallelize(self):

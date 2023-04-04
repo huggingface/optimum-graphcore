@@ -38,9 +38,11 @@ from transformers import (
     MODEL_FOR_QUESTION_ANSWERING_MAPPING,
     MODEL_FOR_SEQ_TO_SEQ_CAUSAL_LM_MAPPING,
     MODEL_FOR_SEQUENCE_CLASSIFICATION_MAPPING,
+    MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING,
     MODEL_FOR_TOKEN_CLASSIFICATION_MAPPING,
     MODEL_MAPPING,
     AutoFeatureExtractor,
+    AutoProcessor,
     AutoTokenizer,
 )
 
@@ -64,6 +66,7 @@ def _get_models_to_test(model_to_test_names):
             MODEL_FOR_QUESTION_ANSWERING_MAPPING,
             MODEL_FOR_SEQ_TO_SEQ_CAUSAL_LM_MAPPING,
             MODEL_FOR_SEQUENCE_CLASSIFICATION_MAPPING,
+            MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING,
             MODEL_FOR_TOKEN_CLASSIFICATION_MAPPING,
             MODEL_MAPPING,
         ]
@@ -102,11 +105,16 @@ MODELS_TO_TEST = _get_models_to_test(MODELS_TO_TEST_MAPPING)
 class PipelinedModelsTester(TestCase):
     # Copied from transformers hubert tests.
     def _load_superb(self, task, num_samples):
-        from datasets import load_dataset
-
         ds = load_dataset("anton-l/superb_dummy", task, split="test")
 
         return ds[:num_samples]
+
+    def _load_librispeech(self, num_samples):
+        ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation")
+        # automatic decoding with librispeech
+        speech_samples = ds.sort("id").select(range(num_samples))[:num_samples]["audio"]
+
+        return [x["array"] for x in speech_samples]
 
     def _generate_input_for_model_class(self, model_name_or_path, model_class):
         # TODO: add support for labels.
@@ -153,8 +161,12 @@ class PipelinedModelsTester(TestCase):
         ):
             # Wav2Vec2 does speech pretraining, so it requires speech data as input
             extractor = AutoFeatureExtractor.from_pretrained(model_name_or_path)
-            ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation")
-            inputs = extractor(ds[0]["audio"]["array"], return_tensors="pt")
+            input_speech = self._load_librispeech(1)
+            inputs = extractor(input_speech, return_tensors="pt")
+        elif model_class in MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING.values():
+            input_speech = self._load_librispeech(1)
+            processor = AutoProcessor.from_pretrained(model_name_or_path)
+            inputs = processor(audio=input_speech, text="This part of the speech", return_tensors="pt")
         else:
             inputs = extractor(
                 "This is a test to check that pretrained and pipeline model outputs match.", return_tensors="pt"
@@ -172,12 +184,9 @@ class PipelinedModelsTester(TestCase):
 
         inputs = self._generate_input_for_model_class(model_name_or_path, pretrained_class)
         pretrained_model_outputs = pretrained_model(**inputs, return_dict=True)
-        # The forward method can be different in train and eval mode for some models (seq2seq for instance), so we make
-        # sure to use the proper one.
-        pipelined_forward_function = getattr(pipelined_model, "_forward_for_train", pipelined_model.forward)
 
         pipelined_model.parallelize()
-        pipelined_model_outputs = pipelined_forward_function(**inputs, return_dict=True)
+        pipelined_model_outputs = pipelined_model.forward(**inputs, return_dict=True)
         for idx, k in enumerate(pretrained_model_outputs.keys()):
             pretrained_output, pipelined_output = pretrained_model_outputs[k], pipelined_model_outputs[k]
             # Handle tuple outputs. Outputs such as past_key_values are returned as tuples.
@@ -202,7 +211,7 @@ class PipelinedModelsTester(TestCase):
                 )
 
         pipelined_model.deparallelize()
-        pipelined_model_outputs = pipelined_forward_function(**inputs)
+        pipelined_model_outputs = pipelined_model.forward(**inputs)
         for idx, k in enumerate(pretrained_model_outputs.keys()):
             pretrained_output, pipelined_output = pretrained_model_outputs[k], pipelined_model_outputs[k]
             # Handle tuple outputs. Outputs such as past_key_values are returned as tuples.
