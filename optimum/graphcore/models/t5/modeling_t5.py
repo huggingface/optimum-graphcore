@@ -285,7 +285,7 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
             block.layer[0].dropout = UpCastWrapper(block.layer[0].dropout)
             # Scale down the weights for the T5LayerFF down-projection and
             # then scale its output back up again after it is cast to FP32
-            scale = 10.0
+            scale = 8.0
             with torch.no_grad():
                 block.layer[1].DenseReluDense.wo.weight /= scale
             block.layer[1].dropout = UpCastWrapper(block.layer[-1].dropout, scale)
