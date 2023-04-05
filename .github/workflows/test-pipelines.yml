@@ -41,3 +41,10 @@ jobs:
         . ${SDK_PATH}/popart-ubuntu_20_04*/enable.sh
         export RUN_SLOW=true
         pytest tests/pipelines/ -n 8
+    - name: Upload PopTorch error log if present
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: poptorch_error
+        path: poptorch_error.log
+
