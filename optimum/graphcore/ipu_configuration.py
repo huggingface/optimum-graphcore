@@ -124,9 +124,14 @@ class IPUConfig(BaseConfig):
     def __init__(self, **kwargs):
         self.seed = kwargs.pop("seed", None)
 
-        self.layers_per_ipu = kwargs.pop("layers_per_ipu", [-1])
-        self.inference_layers_per_ipu = kwargs.pop("inference_layers_per_ipu", self.layers_per_ipu)
-        self.ipus_per_replica = kwargs.pop("ipus_per_replica", len(self.layers_per_ipu))
+        self._layers_per_ipu = kwargs.pop("layers_per_ipu", [-1])
+        self._ipus_per_replica = kwargs.pop("ipus_per_replica", len(self._layers_per_ipu))
+
+        self.for_training = True
+        self.training_layers_per_ipu = kwargs.pop("training_layers_per_ipu", self._layers_per_ipu)
+        self.training_ipus_per_replica = kwargs.pop("training_ipus_per_replica", len(self.training_layers_per_ipu))
+        self.inference_layers_per_ipu = kwargs.pop("inference_layers_per_ipu", self._layers_per_ipu)
+        self.inference_ipus_per_replica = kwargs.pop("inference_ipus_per_replica", len(self.inference_layers_per_ipu))
 
         self.replication_factor = kwargs.pop("replication_factor", 1)
         self.inference_replication_factor = kwargs.pop("inference_replication_factor", 1)
@@ -162,6 +167,20 @@ class IPUConfig(BaseConfig):
 
         # TODO: remove this if unnecessary.
         self.execute_encoder_on_cpu_for_generation = kwargs.pop("execute_encoder_on_cpu_for_generation", False)
+
+    @property
+    def layers_per_ipu(self):
+        if self.for_training:
+            return self.training_layers_per_ipu
+        else:
+            return self.inference_layers_per_ipu
+
+    @property
+    def ipus_per_replica(self):
+        if self.for_training:
+            return self.training_ipus_per_replica
+        else:
+            return self.inference_ipus_per_replica
 
     def _prepare_config_attribute_for_pod_type(
         self, config_attribute_name: str, config_attribute: Union[Any, Dict[str, Any]], pod_type: Optional[str]
