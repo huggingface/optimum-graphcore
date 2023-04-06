@@ -211,7 +211,7 @@ def _expand_layers_per_ipu_wildcard(
     ```
     this function will expand the wildcard values to `layers_per_ipu = [4, 5]`
     """
-    layers_per_ipu = copy.deepcopy(ipu_config.layers_per_ipu if for_training else ipu_config.inference_layers_per_ipu)
+    layers_per_ipu = copy.deepcopy(ipu_config.layers_per_ipu)
     ipus_per_replica = ipu_config.ipus_per_replica
 
     # Check inputs are valid
@@ -304,8 +304,8 @@ def split_encoder_decoder_ipu_config(
 
     ipu_configs = {name: copy.deepcopy(ipu_config) for name in ["encoder", "decoder"]}
 
-    # Split inference_layers_per_ipu between the given num layers (this function is only called for generation)
-    layers_per_ipu = _expand_layers_per_ipu_wildcard(ipu_config, num_encoder_layers + num_decoder_layers, for_training=False)
+    # Split layers_per_ipu between the given num layers
+    layers_per_ipu = _expand_layers_per_ipu_wildcard(ipu_config, num_encoder_layers + num_decoder_layers)
     cumsum = [sum(layers_per_ipu[: i + 1]) for i in range(len(layers_per_ipu))]
     try:
         cut = [i + 1 for i, c in enumerate(cumsum) if c == num_encoder_layers]
@@ -338,10 +338,10 @@ def split_encoder_decoder_ipu_config(
     return ipu_configs.values()
 
 
-def get_layer_ipu(ipu_config: IPUConfig, target_number_of_layers: Optional[Union[int, List]] = None, for_training = True) -> List[int]:
+def get_layer_ipu(ipu_config: IPUConfig, target_number_of_layers: Optional[Union[int, List]] = None) -> List[int]:
     layers_per_ipu = _expand_layers_per_ipu_wildcard(ipu_config, target_number_of_layers, for_training)
 
-    # List of the IPU Id for each encoder layer
+    # List of the IPU Id for each layer
     layer_ipu: List[int] = []
     for ipu, n_layers in enumerate(layers_per_ipu):
         layer_ipu += [ipu] * n_layers
