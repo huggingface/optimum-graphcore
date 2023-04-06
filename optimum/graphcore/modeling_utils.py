@@ -199,10 +199,10 @@ class PipelineMixin:
 
 
 def _expand_layers_per_ipu_wildcard(
-    ipu_config: IPUConfig, target_number_of_layers: Optional[Union[int, List]] = None, for_training: bool = True
+    ipu_config: IPUConfig, target_number_of_layers: Optional[Union[int, List]] = None
 ) -> List[int]:
     """
-    Expand any wildcard values in `ipu_config.layers_per_ipu` (or `inference_layers_per_ipu` if `for_training=False`).
+    Expand any wildcard values in `ipu_config.layers_per_ipu`.
 
     For example, if we have:
     ```
@@ -339,7 +339,7 @@ def split_encoder_decoder_ipu_config(
 
 
 def get_layer_ipu(ipu_config: IPUConfig, target_number_of_layers: Optional[Union[int, List]] = None) -> List[int]:
-    layers_per_ipu = _expand_layers_per_ipu_wildcard(ipu_config, target_number_of_layers, for_training)
+    layers_per_ipu = _expand_layers_per_ipu_wildcard(ipu_config, target_number_of_layers)
 
     # List of the IPU Id for each layer
     layer_ipu: List[int] = []
