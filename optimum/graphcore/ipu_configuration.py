@@ -84,7 +84,7 @@ class IPUConfig(BaseConfig):
             Whether to use the off chip memory to store the optimizer state or to use the on chip memory.
         replicated_tensor_sharding (`bool`, *optional*, defaults to `False`):
             Shards the optimizer between replicas with zero-redundancy.
-        matmul_proportion (`List[float]` or `float`, *optional*, defaults to 0.6):
+        matmul_proportion (`List[float]` or `float`, *optional*, defaults to 0.2):
             Sets the amount of temporary memory made available on per-IPU basis.
             Use this setting to control the amount of temporary memory available to operations such as:
               - convolution
@@ -159,10 +159,18 @@ class IPUConfig(BaseConfig):
         # Get execution mode specific arguments (if available)
         for mode in self.modes:
             setattr(self, f"{mode}_layers_per_ipu", kwargs.pop(f"{mode}_layers_per_ipu", layers_per_ipu))
-            # For ipus_per_replica, default to whichever is most specific
-            default_ipus_per_replica = max(ipus_per_replica, len(getattr(self, f"{mode}_layers_per_ipu")))
+            default_ipus_per_replica = ipus_per_replica 
+            # If ipus_per_replica is default, calculate default_ipus_per_replica from {mode}_layers_per_ipu instead
+            if ipus_per_replica == len(layers_per_ipu):
+                default_ipus_per_replica = len(getattr(self, f"{mode}_layers_per_ipu"))
             setattr(self, f"{mode}_ipus_per_replica", kwargs.pop(f"{mode}_ipus_per_replica", default_ipus_per_replica))
-            setattr(self, f"{mode}_matmul_proportion", kwargs.pop(f"{mode}_matmul_proportion", matmul_proportion))
+            default_matmul_prop = matmul_proportion
+            # If matmul_proportion is non-default and its length is not equal to {mode}_ipus_per_replica, use the
+            # default float value for default_matmul_prop instead
+            if (isinstance(default_matmul_prop, list) and
+            len(default_matmul_prop) != getattr(self, f"{mode}_ipus_per_replica")):
+                default_matmul_prop = 0.2
+            setattr(self, f"{mode}_matmul_proportion", kwargs.pop(f"{mode}_matmul_proportion", default_matmul_prop))
 
         self.replication_factor = kwargs.pop("replication_factor", 1)
         self.inference_replication_factor = kwargs.pop("inference_replication_factor", 1)
