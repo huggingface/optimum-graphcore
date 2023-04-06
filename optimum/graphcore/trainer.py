@@ -889,12 +889,18 @@ class IPUTrainer:
             wrapped = model
         elif training:
             if self.training_model is None:
+                model.deparallelize()
+                model.ipu_config.mode = "training"
+                model.parallelize()
                 self.training_model = poptorch.trainingModel(
                     model.train(), options=self.opts, optimizer=self.optimizer
                 )
             wrapped = self.training_model
         else:
             if self.inference_model is None:
+                model.deparallelize()
+                model.ipu_config.mode = "inference"
+                model.parallelize()
                 self.inference_model = poptorch.inferenceModel(model.eval(), options=self.eval_opts)
             wrapped = self.inference_model
 

@@ -34,6 +34,19 @@ IPU_CONFIG_NAME = "ipu_config.json"
 ALLOWED_POD_TYPES = ["pod4", "pod8", "pod16", "pod32", "pod64"]
 
 
+class Descriptor:
+    def __init__(self, attr) -> None:
+        self.attr = attr
+
+    def __set__(self, obj, value):
+        assert isinstance(obj, IPUConfig), "This class can only be used inside IPUConfig"
+        return setattr(obj, f"{obj.mode}_{self.attr}", value)
+
+    def __get__(self, obj, objtype=None) -> None:
+        assert isinstance(obj, IPUConfig), "This class can only be used inside IPUConfig"
+        return getattr(obj, f"{obj.mode}_{self.attr}")
+
+
 class IPUConfig(BaseConfig):
     """
     Class for PopArt and PopTorch configuration. Handles the conversion to poptorch options as well as configuration
@@ -123,17 +136,27 @@ class IPUConfig(BaseConfig):
     CONFIG_NAME = "ipu_config.json"
     FULL_CONFIGURATION_FILE = "ipu_config.json"
 
+    # Create descriptor based attributes which will either return the
+    # `training_` or `inference_` versions of the attribute depending
+    # on the value of `self.mode` ("training" by default)
+    layers_per_ipu = Descriptor("layers_per_ipu")
+    ipus_per_replica = Descriptor("ipus_per_replica")
+
     def __init__(self, **kwargs):
         self.seed = kwargs.pop("seed", None)
 
-        self._layers_per_ipu = kwargs.pop("layers_per_ipu", [-1])
-        self._ipus_per_replica = kwargs.pop("ipus_per_replica", len(self._layers_per_ipu))
+        # Set mode for Descriptors
+        self.mode = "training"
 
-        self.for_training = True
-        self.training_layers_per_ipu = kwargs.pop("training_layers_per_ipu", self._layers_per_ipu)
-        self.training_ipus_per_replica = kwargs.pop("training_ipus_per_replica", len(self.training_layers_per_ipu))
-        self.inference_layers_per_ipu = kwargs.pop("inference_layers_per_ipu", self._layers_per_ipu)
-        self.inference_ipus_per_replica = kwargs.pop("inference_ipus_per_replica", len(self.inference_layers_per_ipu))
+        # Get execution mode agnostic arguments
+        layers_per_ipu = kwargs.pop("layers_per_ipu", [-1])
+        ipus_per_replica = kwargs.pop("ipus_per_replica", len(layers_per_ipu))
+
+        # Get execition mode specific arguments (if available)
+        self.training_layers_per_ipu = kwargs.pop("training_layers_per_ipu", layers_per_ipu)
+        self.training_ipus_per_replica = kwargs.pop("training_ipus_per_replica", ipus_per_replica)
+        self.inference_layers_per_ipu = kwargs.pop("inference_layers_per_ipu", layers_per_ipu)
+        self.inference_ipus_per_replica = kwargs.pop("inference_ipus_per_replica", ipus_per_replica)
 
         self.replication_factor = kwargs.pop("replication_factor", 1)
         self.inference_replication_factor = kwargs.pop("inference_replication_factor", 1)
@@ -171,18 +194,13 @@ class IPUConfig(BaseConfig):
         self.execute_encoder_on_cpu_for_generation = kwargs.pop("execute_encoder_on_cpu_for_generation", False)
 
     @property
-    def layers_per_ipu(self):
-        if self.for_training:
-            return self.training_layers_per_ipu
-        else:
-            return self.inference_layers_per_ipu
+    def mode(self):
+        return self._mode
 
-    @property
-    def ipus_per_replica(self):
-        if self.for_training:
-            return self.training_ipus_per_replica
-        else:
-            return self.inference_ipus_per_replica
+    @mode.setter
+    def mode(self, value: str):
+        assert value in ("training", "inference"), "mode must be one of `training` or `inference`"
+        self._mode = value
 
     def _prepare_config_attribute_for_pod_type(
         self, config_attribute_name: str, config_attribute: Union[Any, Dict[str, Any]], pod_type: Optional[str]
