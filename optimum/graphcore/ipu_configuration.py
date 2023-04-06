@@ -40,11 +40,11 @@ class Descriptor:
 
     def __set__(self, obj, value):
         assert isinstance(obj, IPUConfig), "This class can only be used inside IPUConfig"
-        return setattr(obj, f"{obj.mode}_{self.attr}", value)
+        return setattr(obj, f"_{obj.mode}_{self.attr}", value)
 
     def __get__(self, obj, objtype=None) -> None:
         assert isinstance(obj, IPUConfig), "This class can only be used inside IPUConfig"
-        return getattr(obj, f"{obj.mode}_{self.attr}")
+        return getattr(obj, f"_{obj.mode}_{self.attr}")
 
 
 class IPUConfig(BaseConfig):
@@ -139,8 +139,10 @@ class IPUConfig(BaseConfig):
     # Create descriptor based attributes which will either return the
     # `training_` or `inference_` versions of the attribute depending
     # on the value of `self.mode` ("training" by default)
+    modes = ("training", "inference")
     layers_per_ipu = Descriptor("layers_per_ipu")
     ipus_per_replica = Descriptor("ipus_per_replica")
+    matmul_proportion = Descriptor("matmul_proportion")
 
     def __init__(self, **kwargs):
         self.seed = kwargs.pop("seed", None)
@@ -151,12 +153,13 @@ class IPUConfig(BaseConfig):
         # Get execution mode agnostic arguments
         layers_per_ipu = kwargs.pop("layers_per_ipu", [-1])
         ipus_per_replica = kwargs.pop("ipus_per_replica", len(layers_per_ipu))
+        matmul_proportion = kwargs.pop("matmul_proportion", 0.2)
 
         # Get execution mode specific arguments (if available)
-        self.training_layers_per_ipu = kwargs.pop("training_layers_per_ipu", layers_per_ipu)
-        self.training_ipus_per_replica = kwargs.pop("training_ipus_per_replica", ipus_per_replica)
-        self.inference_layers_per_ipu = kwargs.pop("inference_layers_per_ipu", layers_per_ipu)
-        self.inference_ipus_per_replica = kwargs.pop("inference_ipus_per_replica", ipus_per_replica)
+        for mode in self.modes:
+            setattr(self, f"_{mode}_layers_per_ipu", kwargs.pop(f"{mode}_layers_per_ipu", layers_per_ipu))
+            setattr(self, f"_{mode}_ipus_per_replica", kwargs.pop(f"{mode}_ipus_per_replica", ipus_per_replica))
+            setattr(self, f"_{mode}_matmul_proportion", kwargs.pop(f"{mode}_matmul_proportion", matmul_proportion))
 
         self.replication_factor = kwargs.pop("replication_factor", 1)
         self.inference_replication_factor = kwargs.pop("inference_replication_factor", 1)
@@ -175,8 +178,6 @@ class IPUConfig(BaseConfig):
             warnings.warn(
                 'The "sharded_execution_for_inference" parameter is deprecated, sharded execution is always used during inference'
             )
-
-        self.matmul_proportion = kwargs.pop("matmul_proportion", 0.2)
 
         if "enable_half_first_order_momentum" in kwargs:
             warnings.warn('The "enable_half_first_order_momentum" parameter is deprecated')
@@ -199,7 +200,7 @@ class IPUConfig(BaseConfig):
 
     @mode.setter
     def mode(self, value: str):
-        assert value in ("training", "inference"), "mode must be one of `training` or `inference`"
+        assert value in self.modes, f"mode must be one of: {self.modes}"
         self._mode = value
 
     def _prepare_config_attribute_for_pod_type(
