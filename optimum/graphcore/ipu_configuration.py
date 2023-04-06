@@ -73,8 +73,10 @@ class IPUConfig(BaseConfig):
             The wildcard value '-1' can also be used in combination with integers.
             For instance: `[1, 2, -1, -1]` specifies a 4-IPU pipeline, where the first layer is put on IPU0,
             the next two layers on IPU1, and the remaining layers split evenly between IPU2 and IPU3.
+        training_layers_per_ipu (`List[int]`):
+            Same as `layers_per_ipu` for training only.
         inference_layers_per_ipu (`List[int]`):
-            Same as `layers_per_ipu` for inference.
+            Same as `layers_per_ipu` for inference only.
 
         > Parameters for memory management
 
