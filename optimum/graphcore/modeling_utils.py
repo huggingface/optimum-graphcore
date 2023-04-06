@@ -305,7 +305,7 @@ def split_encoder_decoder_ipu_config(
     ipu_configs = {name: copy.deepcopy(ipu_config) for name in ["encoder", "decoder"]}
 
     # Split inference_layers_per_ipu between the given num layers (this function is only called for generation)
-    layers_per_ipu = _expand_layers_per_ipu_wildcard(ipu_config, num_encoder_layers + num_decoder_layers, True)
+    layers_per_ipu = _expand_layers_per_ipu_wildcard(ipu_config, num_encoder_layers + num_decoder_layers, for_training=False)
     cumsum = [sum(layers_per_ipu[: i + 1]) for i in range(len(layers_per_ipu))]
     try:
         cut = [i + 1 for i, c in enumerate(cumsum) if c == num_encoder_layers]
