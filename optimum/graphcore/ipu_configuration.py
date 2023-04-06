@@ -104,6 +104,10 @@ class IPUConfig(BaseConfig):
               - matrix multiplication
               - embedding lookups
               - indexing operations
+        training_matmul_proportion (`List[int]`):
+            Same as `matmul_proportion` for training only.
+        inference_matmul_proportion (`List[int]`):
+            Same as `matmul_proportion` for inference only.
         enable_half_partials (`bool`, *optional*, defaults to `True`):
             Whether the data type of partial results for matrix multiplication and convolution operators should be
             float16 or not.
