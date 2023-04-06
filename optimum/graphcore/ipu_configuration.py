@@ -207,6 +207,17 @@ class IPUConfig(BaseConfig):
 
     @property
     def mode(self):
+        """
+        Determines which value will be returned when a parameter with different
+        values for `training` and inference` is read. These are currently:
+            - `layers_per_ipu`
+            - `ipus_per_replica`
+            - `matmul_proportion
+        The allowed values for `mode` are:
+            - `training`
+            - `inference`
+        Defaults to `training`.
+        """
         return self._mode
 
     @mode.setter
