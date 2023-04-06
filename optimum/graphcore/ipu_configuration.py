@@ -132,10 +132,12 @@ class IPUConfig(BaseConfig):
             self.attr = attr
 
         def __set__(self, obj, value):
-            return setattr(obj, f"{obj.mode}_{self.attr}", value)
+            if isinstance(obj, IPUConfig):
+                return setattr(obj, f"{obj.mode}_{self.attr}", value)
 
-        def __get__(self, obj, objtype=None) -> None:
-            return getattr(obj, f"{obj.mode}_{self.attr}")
+        def __get__(self, obj, objtype=None):
+            if isinstance(obj, IPUConfig):
+                return getattr(obj, f"{obj.mode}_{self.attr}")
 
     # Create descriptor based managed attributes which will either return the
     # `training_` or `inference_` versions of the attribute depending on the value of
@@ -147,9 +149,6 @@ class IPUConfig(BaseConfig):
 
     def __init__(self, **kwargs):
         self.seed = kwargs.pop("seed", None)
-
-        # Set mode for managed attributes
-        self.mode = "training"
 
         # Get execution mode agnostic arguments
         layers_per_ipu = kwargs.pop("layers_per_ipu", [-1])
@@ -218,7 +217,7 @@ class IPUConfig(BaseConfig):
             - `inference`
         Defaults to `training`.
         """
-        return self._mode
+        return getattr(self, "_mode", "training")
 
     @mode.setter
     def mode(self, value: str):
