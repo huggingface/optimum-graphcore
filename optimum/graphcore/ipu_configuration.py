@@ -162,7 +162,9 @@ class IPUConfig(BaseConfig):
         # Get execution mode specific arguments (if available)
         for mode in self.modes:
             setattr(self, f"{mode}_layers_per_ipu", kwargs.pop(f"{mode}_layers_per_ipu", layers_per_ipu))
-            setattr(self, f"{mode}_ipus_per_replica", kwargs.pop(f"{mode}_ipus_per_replica", ipus_per_replica))
+            # For ipus_per_replica, default to whichever is most specific
+            default_ipus_per_replica = max(ipus_per_replica, len(getattr(self, f"{mode}_layers_per_ipu")))
+            setattr(self, f"{mode}_ipus_per_replica", kwargs.pop(f"{mode}_ipus_per_replica", default_ipus_per_replica))
             setattr(self, f"{mode}_matmul_proportion", kwargs.pop(f"{mode}_matmul_proportion", matmul_proportion))
 
         self.replication_factor = kwargs.pop("replication_factor", 1)

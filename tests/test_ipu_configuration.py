@@ -347,6 +347,16 @@ class IPUConfigTester(unittest.TestCase):
         with pytest.raises(AssertionError, match=r"mode must be one of:"):
             ipu_config.mode = "invalid"
 
+        # ipus_per_replica not specified
+        ipu_config = IPUConfig(training_layers_per_ipu=[1, 2, 3, 4])
+        self.assertEqual(ipu_config.ipus_per_replica, 4)
+
+        # training_layers_per_ipu wildcard
+        ipu_config = IPUConfig(ipus_per_replica=4, training_layers_per_ipu=[-1])
+        layer_ipu = get_layer_ipu(ipu_config, 8)
+        self.assertEqual(ipu_config.ipus_per_replica, 4)
+        self.assertEqual(layer_ipu, [0, 0, 1, 1, 2, 2, 3, 3])
+
     def test_split_encoder_decoder_ipu_config(self):
         # Test splitting two IPUs
         ipu_config = IPUConfig(layers_per_ipu=[1, 2])
