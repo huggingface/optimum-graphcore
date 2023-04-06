@@ -218,6 +218,8 @@ def get_poplar_executor(
         ipu_config = IPUConfig.from_dict(ipu_config)
     elif not isinstance(ipu_config, IPUConfig):
         raise ValueError("ipu_config must be an IPUConfig, string, or a dictionary.")
+    if ipu_config.inference_layers_per_ipu != [-1]:
+        ipu_config.layers_per_ipu = ipu_config.inference_layers_per_ipu
     ipu_config.inference_device_iterations = 1
     # TODO: inference_replication_factor should be adaptive, especially for batching.
     ipu_config.inference_replication_factor = 1

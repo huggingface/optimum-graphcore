@@ -73,6 +73,8 @@ class IPUConfig(BaseConfig):
             The wildcard value '-1' can also be used in combination with integers.
             For instance: `[1, 2, -1, -1]` specifies a 4-IPU pipeline, where the first layer is put on IPU0,
             the next two layers on IPU1, and the remaining layers split evenly between IPU2 and IPU3.
+        inference_layers_per_ipu (`List[int]`):
+            Same as `layers_per_ipu` for inference.
 
         > Parameters for memory management
 
@@ -123,6 +125,7 @@ class IPUConfig(BaseConfig):
         self.seed = kwargs.pop("seed", None)
 
         self.layers_per_ipu = kwargs.pop("layers_per_ipu", [-1])
+        self.inference_layers_per_ipu = kwargs.pop("infereence_layers_per_ipu", [-1])
         self.ipus_per_replica = kwargs.pop("ipus_per_replica", len(self.layers_per_ipu))
 
         self.replication_factor = kwargs.pop("replication_factor", 1)
