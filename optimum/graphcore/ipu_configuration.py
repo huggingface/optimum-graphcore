@@ -34,19 +34,6 @@ IPU_CONFIG_NAME = "ipu_config.json"
 ALLOWED_POD_TYPES = ["pod4", "pod8", "pod16", "pod32", "pod64"]
 
 
-class Descriptor:
-    def __init__(self, attr) -> None:
-        self.attr = attr
-
-    def __set__(self, obj, value):
-        assert isinstance(obj, IPUConfig), "This class can only be used inside IPUConfig"
-        return setattr(obj, f"{obj.mode}_{self.attr}", value)
-
-    def __get__(self, obj, objtype=None) -> None:
-        assert isinstance(obj, IPUConfig), "This class can only be used inside IPUConfig"
-        return getattr(obj, f"{obj.mode}_{self.attr}")
-
-
 class IPUConfig(BaseConfig):
     """
     Class for PopArt and PopTorch configuration. Handles the conversion to poptorch options as well as configuration
@@ -140,9 +127,19 @@ class IPUConfig(BaseConfig):
     CONFIG_NAME = "ipu_config.json"
     FULL_CONFIGURATION_FILE = "ipu_config.json"
 
-    # Create descriptor based attributes which will either return the
-    # `training_` or `inference_` versions of the attribute depending
-    # on the value of `self.mode` ("training" by default)
+    class Descriptor:
+        def __init__(self, attr) -> None:
+            self.attr = attr
+
+        def __set__(self, obj, value):
+            return setattr(obj, f"{obj.mode}_{self.attr}", value)
+
+        def __get__(self, obj, objtype=None) -> None:
+            return getattr(obj, f"{obj.mode}_{self.attr}")
+
+    # Create descriptor based managed attributes which will either return the
+    # `training_` or `inference_` versions of the attribute depending on the value of
+    # `self.mode` ("training" by default)
     modes = ("training", "inference")
     layers_per_ipu = Descriptor("layers_per_ipu")
     ipus_per_replica = Descriptor("ipus_per_replica")
