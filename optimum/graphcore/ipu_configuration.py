@@ -152,7 +152,7 @@ class IPUConfig(BaseConfig):
         layers_per_ipu = kwargs.pop("layers_per_ipu", [-1])
         ipus_per_replica = kwargs.pop("ipus_per_replica", len(layers_per_ipu))
 
-        # Get execition mode specific arguments (if available)
+        # Get execution mode specific arguments (if available)
         self.training_layers_per_ipu = kwargs.pop("training_layers_per_ipu", layers_per_ipu)
         self.training_ipus_per_replica = kwargs.pop("training_ipus_per_replica", ipus_per_replica)
         self.inference_layers_per_ipu = kwargs.pop("inference_layers_per_ipu", layers_per_ipu)
