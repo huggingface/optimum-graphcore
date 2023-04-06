@@ -736,11 +736,11 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
             # because we run the encoder and decoder as separate Poplar executors.
             ipu_configs = split_encoder_decoder_ipu_config(self.ipu_config, num_encoder_layers, num_decoder_layers)
             self.encoder_ipu_config, self.decoder_ipu_config = ipu_configs
-            encoder_layer_ipu = get_layer_ipu(self.encoder_ipu_config, num_encoder_layers)
-            decoder_layer_ipu = get_layer_ipu(self.decoder_ipu_config, num_decoder_layers)
+            encoder_layer_ipu = get_layer_ipu(self.encoder_ipu_config, num_encoder_layers, self.training)
+            decoder_layer_ipu = get_layer_ipu(self.decoder_ipu_config, num_decoder_layers, self.training)
         else:
             number_of_layers = num_encoder_layers + num_decoder_layers
-            layer_ipu = get_layer_ipu(self.ipu_config, number_of_layers)
+            layer_ipu = get_layer_ipu(self.ipu_config, number_of_layers, self.training)
             encoder_layer_ipu = layer_ipu[:num_encoder_layers]
             decoder_layer_ipu = layer_ipu[num_encoder_layers:]
 
@@ -880,7 +880,7 @@ class PipelinedBartForSequenceClassification(BartForSequenceClassification, Pipe
             self.model.encoder.layernorm_embedding, "Embedding", ipu_id=0
         )
         number_of_layers = len(self.model.encoder.layers) + len(self.model.decoder.layers)
-        layer_ipu = get_layer_ipu(self.ipu_config, number_of_layers)
+        layer_ipu = get_layer_ipu(self.ipu_config, number_of_layers, self.training)
         for index, layer in enumerate(self.model.encoder.layers):
             ipu = layer_ipu[index]
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
@@ -902,7 +902,7 @@ class PipelinedBartForSequenceClassification(BartForSequenceClassification, Pipe
             self.model.decoder.layers[index] = poptorch.BeginBlock(layer, f"Decoder{index}", ipu_id=ipu)
             logger.info(f"Decoder {index:<2} --> IPU {ipu}")
 
-        last_ipu = len(self.ipu_config.layers_per_ipu) - 1
+        last_ipu = layer_ipu[-1]
         logger.info(f"Classification Head Output --> IPU {last_ipu}")
         self.classification_head = poptorch.BeginBlock(
             self.classification_head, "Classification Head Output", ipu_id=last_ipu

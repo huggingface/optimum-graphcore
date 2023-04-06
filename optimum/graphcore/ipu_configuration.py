@@ -125,7 +125,7 @@ class IPUConfig(BaseConfig):
         self.seed = kwargs.pop("seed", None)
 
         self.layers_per_ipu = kwargs.pop("layers_per_ipu", [-1])
-        self.inference_layers_per_ipu = kwargs.pop("infereence_layers_per_ipu", [-1])
+        self.inference_layers_per_ipu = kwargs.pop("inference_layers_per_ipu", self.layers_per_ipu)
         self.ipus_per_replica = kwargs.pop("ipus_per_replica", len(self.layers_per_ipu))
 
         self.replication_factor = kwargs.pop("replication_factor", 1)
