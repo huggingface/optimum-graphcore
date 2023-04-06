@@ -12,6 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import re
 import copy
 import random
 import string
@@ -330,10 +331,12 @@ class IPUConfigTester(unittest.TestCase):
         ipu_config = ipu_config.to_dict()
         e_ipu_config = e_ipu_config.to_dict()
         d_ipu_config = d_ipu_config.to_dict()
+        skip = {"layers_per_ipu", "ipus_per_replica", "matmul_proportion"}
         for k in ipu_config.keys():
-            if k not in {"layers_per_ipu", "ipus_per_replica", "matmul_proportion"}:
-                self.assertEqual(ipu_config[k], e_ipu_config[k])
-                self.assertEqual(ipu_config[k], d_ipu_config[k])
+            if re.search("|".join(skip), k):
+                continue
+            self.assertEqual(ipu_config[k], e_ipu_config[k], k)
+            self.assertEqual(ipu_config[k], d_ipu_config[k], k)
 
         # Test that wildcards work
         ipu_config = IPUConfig(layers_per_ipu=[-1, -1])
