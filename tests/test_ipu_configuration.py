@@ -312,6 +312,41 @@ class IPUConfigTester(unittest.TestCase):
         with pytest.raises(IncompatibleIPUConfigError, match=r"Invalid value for ipus_per_replica"):
             layer_ipu = get_layer_ipu(ipu_config, 6)
 
+    def test_execution_mode_specific_options(self):
+        ipu_config = IPUConfig(
+            training_layers_per_ipu=[1, 2, 3, 4],
+            training_matmul_proportion=[0.1, 0.2, 0.3, 0.4],
+            training_ipus_per_replica=4,
+            inference_layers_per_ipu=[3, 7],
+            inference_matmul_proportion=[0.3, 0.7],
+            inference_ipus_per_replica=2,
+        )
+
+        # Default mode is training
+        self.assertEqual(ipu_config.mode, "training")
+
+        # Training versions retreived
+        self.assertEqual(ipu_config.layers_per_ipu, [1, 2, 3, 4])
+        self.assertEqual(ipu_config.matmul_proportion, [0.1, 0.2, 0.3, 0.4])
+        self.assertEqual(ipu_config.ipus_per_replica, 4)
+
+        # Inference versions retreived
+        ipu_config.mode = "inference"
+        self.assertEqual(ipu_config.layers_per_ipu, [3, 7])
+        self.assertEqual(ipu_config.matmul_proportion, [0.3, 0.7])
+        self.assertEqual(ipu_config.ipus_per_replica, 2)
+
+        # Test splitting two IPUs
+        e_ipu_config, d_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 3, 7)
+        self.assertEqual(e_ipu_config.layers_per_ipu, [3])
+        self.assertEqual(e_ipu_config.ipus_per_replica, 1)
+        self.assertEqual(d_ipu_config.layers_per_ipu, [7])
+        self.assertEqual(d_ipu_config.ipus_per_replica, 1)
+
+        # Invalid mode
+        with pytest.raises(AssertionError, match=r"mode must be one of:"):
+            ipu_config.mode = "invalid"
+
     def test_split_encoder_decoder_ipu_config(self):
         # Test splitting two IPUs
         ipu_config = IPUConfig(layers_per_ipu=[1, 2])
