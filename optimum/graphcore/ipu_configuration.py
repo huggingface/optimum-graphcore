@@ -40,11 +40,11 @@ class Descriptor:
 
     def __set__(self, obj, value):
         assert isinstance(obj, IPUConfig), "This class can only be used inside IPUConfig"
-        return setattr(obj, f"_{obj.mode}_{self.attr}", value)
+        return setattr(obj, f"{obj.mode}_{self.attr}", value)
 
     def __get__(self, obj, objtype=None) -> None:
         assert isinstance(obj, IPUConfig), "This class can only be used inside IPUConfig"
-        return getattr(obj, f"_{obj.mode}_{self.attr}")
+        return getattr(obj, f"{obj.mode}_{self.attr}")
 
 
 class IPUConfig(BaseConfig):
@@ -157,9 +157,9 @@ class IPUConfig(BaseConfig):
 
         # Get execution mode specific arguments (if available)
         for mode in self.modes:
-            setattr(self, f"_{mode}_layers_per_ipu", kwargs.pop(f"{mode}_layers_per_ipu", layers_per_ipu))
-            setattr(self, f"_{mode}_ipus_per_replica", kwargs.pop(f"{mode}_ipus_per_replica", ipus_per_replica))
-            setattr(self, f"_{mode}_matmul_proportion", kwargs.pop(f"{mode}_matmul_proportion", matmul_proportion))
+            setattr(self, f"{mode}_layers_per_ipu", kwargs.pop(f"{mode}_layers_per_ipu", layers_per_ipu))
+            setattr(self, f"{mode}_ipus_per_replica", kwargs.pop(f"{mode}_ipus_per_replica", ipus_per_replica))
+            setattr(self, f"{mode}_matmul_proportion", kwargs.pop(f"{mode}_matmul_proportion", matmul_proportion))
 
         self.replication_factor = kwargs.pop("replication_factor", 1)
         self.inference_replication_factor = kwargs.pop("inference_replication_factor", 1)
