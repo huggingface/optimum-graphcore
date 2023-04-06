@@ -75,7 +75,7 @@ class _IndexedInputLinear(nn.Module):
     def __init__(self, linear_layer):
         super().__init__()
         self.wrapped_linear = linear_layer
-        self.register_buffer("index", torch.tensor([0], dtype=torch.int32))
+        self.register_buffer("index", torch.tensor([0], dtype=torch.int32), persistent=False)
 
     def forward(self, x):
         x = poptorch.dynamic_slice(x, 1, self.index, 1, 1)
@@ -119,7 +119,14 @@ class IPUGenerationMixin(GenerationMixin):
 
     def _call_generate(self, *args, cur_token_id: int, **kwargs):
         t = self._get_cur_token_logits_tensor(cur_token_id)
-        if not hasattr(self, "poptorch_decoder"):
+
+        if hasattr(self, "poptorch_decoder"):
+            # make sure that the projection layer is still wrapped. it can be unwrapped
+            # on model deparallelization calls
+            projection_layer = self.poptorch_decoder.pipelined_model.get_output_embeddings()
+            if projection_layer.__class__ != _IndexedInputLinear:
+                self.poptorch_decoder.pipelined_model.set_output_embeddings(_IndexedInputLinear(projection_layer))
+        else:
             wrapper = DecoderWrapper(self.eval())
             decoder_ipu_config = getattr(self, "decoder_ipu_config", self.ipu_config)
             self.poptorch_decoder = poptorch.inferenceModel(wrapper, decoder_ipu_config.to_options(for_inference=True))
