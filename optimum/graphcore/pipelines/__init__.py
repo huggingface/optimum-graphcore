@@ -347,6 +347,10 @@ def pipeline(
     if ipu_config is None and not isinstance(model, poptorch._poplar_executor.PoplarExecutor):
         ipu_config = SUPPORTED_TASKS[targeted_task]["default"]["ipu_config"]
 
+    # So that IPUConfig returns inference versions of any parameters
+    # that are different in training and inference
+    ipu_config.for_training = False
+
     if model is None:
         model_id, revision = SUPPORTED_TASKS[targeted_task]["default"]["model"]
         logger.warning(
