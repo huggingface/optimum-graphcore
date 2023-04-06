@@ -127,7 +127,7 @@ class IPUConfig(BaseConfig):
     CONFIG_NAME = "ipu_config.json"
     FULL_CONFIGURATION_FILE = "ipu_config.json"
 
-    class Descriptor:
+    class ManagedAttribute:
         def __init__(self, attr) -> None:
             self.attr = attr
 
@@ -141,14 +141,14 @@ class IPUConfig(BaseConfig):
     # `training_` or `inference_` versions of the attribute depending on the value of
     # `self.mode` ("training" by default)
     modes = ("training", "inference")
-    layers_per_ipu = Descriptor("layers_per_ipu")
-    ipus_per_replica = Descriptor("ipus_per_replica")
-    matmul_proportion = Descriptor("matmul_proportion")
+    layers_per_ipu = ManagedAttribute("layers_per_ipu")
+    ipus_per_replica = ManagedAttribute("ipus_per_replica")
+    matmul_proportion = ManagedAttribute("matmul_proportion")
 
     def __init__(self, **kwargs):
         self.seed = kwargs.pop("seed", None)
 
-        # Set mode for Descriptors
+        # Set mode for managed attributes
         self.mode = "training"
 
         # Get execution mode agnostic arguments
