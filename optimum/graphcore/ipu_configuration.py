@@ -34,7 +34,7 @@ IPU_CONFIG_NAME = "ipu_config.json"
 ALLOWED_POD_TYPES = ["pod4", "pod8", "pod16", "pod32", "pod64"]
 
 
-class Descriptor:
+class _Descriptor:
     def __init__(self, attr) -> None:
         self.attr = attr
 
@@ -144,9 +144,9 @@ class IPUConfig(BaseConfig):
     # `training_` or `inference_` versions of the attribute depending
     # on the value of `self.mode` ("training" by default)
     modes = ("training", "inference")
-    layers_per_ipu = Descriptor("layers_per_ipu")
-    ipus_per_replica = Descriptor("ipus_per_replica")
-    matmul_proportion = Descriptor("matmul_proportion")
+    layers_per_ipu = _Descriptor("layers_per_ipu")
+    ipus_per_replica = _Descriptor("ipus_per_replica")
+    matmul_proportion = _Descriptor("matmul_proportion")
 
     def __init__(self, **kwargs):
         self.seed = kwargs.pop("seed", None)
