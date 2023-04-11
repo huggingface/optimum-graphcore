@@ -563,14 +563,13 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
             self.model.decoder.layers[index] = poptorch.BeginBlock(layer, f"Decoder{index}", ipu_id=ipu)
             logger.info(f"Decoder {index:<2} --> IPU {ipu}")
 
-        last_ipu = ipu
-
-        logger.info(f"Head       --> IPU {last_ipu}")
-        logger.info("---------------------------------------")
         self.model.decoder.layer_norm = poptorch.BeginBlock(
-            self.model.decoder.layer_norm, "Decoder Layer Norm", ipu_id=last_ipu
+            self.model.decoder.layer_norm, "Decoder Layer Norm", ipu_id=ipu
         )
-        self.proj_out = poptorch.BeginBlock(self.proj_out, "Output Projection", ipu_id=last_ipu)
+
+        logger.info(f"Head       --> IPU 0")
+        logger.info("---------------------------------------")
+        self.proj_out = poptorch.BeginBlock(self.proj_out, "Output Projection", ipu_id=0)
         return self
 
     def deparallelize(self):
