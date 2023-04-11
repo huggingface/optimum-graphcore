@@ -166,8 +166,7 @@ class IPUConfig(BaseConfig):
 
             # If matmul_proportion is a list and its length is not equal to {mode}_ipus_per_replica, use the
             # default float value for default_matmul_prop instead
-            if (isinstance(matmul_prop, list) and
-                len(matmul_prop) != getattr(self, f"{mode}_ipus_per_replica")):
+            if isinstance(matmul_prop, list) and len(matmul_prop) != getattr(self, f"{mode}_ipus_per_replica"):
                 matmul_prop = 0.2
             setattr(self, f"{mode}_matmul_proportion", kwargs.pop(f"{mode}_matmul_proportion", matmul_prop))
 
