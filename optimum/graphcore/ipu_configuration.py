@@ -158,18 +158,18 @@ class IPUConfig(BaseConfig):
         # Get execution mode specific arguments (if available)
         for mode in self.modes:
             setattr(self, f"{mode}_layers_per_ipu", kwargs.pop(f"{mode}_layers_per_ipu", layers_per_ipu))
-            default_ipus_per_replica = ipus_per_replica
-            # If ipus_per_replica is default, calculate default_ipus_per_replica from {mode}_layers_per_ipu instead
+
+            # If ipus_per_replica is default, recalculate ipus_per_replica from {mode}_layers_per_ipu instead
             if ipus_per_replica == len(layers_per_ipu):
-                default_ipus_per_replica = len(getattr(self, f"{mode}_layers_per_ipu"))
-            setattr(self, f"{mode}_ipus_per_replica", kwargs.pop(f"{mode}_ipus_per_replica", default_ipus_per_replica))
-            default_matmul_prop = matmul_proportion
-            # If matmul_proportion is non-default and its length is not equal to {mode}_ipus_per_replica, use the
+                ipus_per_replica = len(getattr(self, f"{mode}_layers_per_ipu"))
+            setattr(self, f"{mode}_ipus_per_replica", kwargs.pop(f"{mode}_ipus_per_replica", ipus_per_replica))
+
+            # If matmul_proportion is a list and its length is not equal to {mode}_ipus_per_replica, use the
             # default float value for default_matmul_prop instead
-            if (isinstance(default_matmul_prop, list) and  # fmt: skip
-                len(default_matmul_prop) != getattr(self, f"{mode}_ipus_per_replica")):  # fmt: skip
-                default_matmul_prop = 0.2
-            setattr(self, f"{mode}_matmul_proportion", kwargs.pop(f"{mode}_matmul_proportion", default_matmul_prop))
+            if (isinstance(matmul_prop, list) and
+                len(matmul_prop) != getattr(self, f"{mode}_ipus_per_replica")):
+                matmul_prop = 0.2
+            setattr(self, f"{mode}_matmul_proportion", kwargs.pop(f"{mode}_matmul_proportion", matmul_prop))
 
         self.replication_factor = kwargs.pop("replication_factor", 1)
         self.inference_replication_factor = kwargs.pop("inference_replication_factor", 1)
