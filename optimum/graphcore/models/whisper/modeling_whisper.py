@@ -362,6 +362,7 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         self.change_decoder_class(restore=False)
         self.change_decoder_positional_embedding(restore=False)
         self.change_attention_class(restore=False, use_cache=use_cache and for_generation, **kwargs)
+        self.change_lm_head_to_indexed_input_linear(restore=use_cache or not for_generation)
 
         logger.info("---------- Device Allocation -----------")
         logger.info("conv1, conv2, embed_positions  --> IPU 0")
@@ -421,9 +422,7 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         self.change_decoder_class(restore=True)
         self.change_decoder_positional_embedding(restore=True)
         self.change_attention_class(restore=True)
-
-        if self.proj_out.__class__ == _IndexedInputLinear:
-            self.proj_out = self.lm_head.wrapped_linear
+        self.change_lm_head_to_indexed_input_linear(restore=True)
 
     def prepare_inputs_for_generation(
         self, decoder_input_ids, past=None, use_cache=None, encoder_outputs=None, attention_mask=None, **kwargs
