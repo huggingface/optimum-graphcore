@@ -133,10 +133,12 @@ class IPUConfig(BaseConfig):
 
         def __set__(self, obj, value):
             if isinstance(obj, IPUConfig):
+                logger.info(f"ManagedAttribute {self.attr} writing to {obj.mode}_{self.attr}")
                 return setattr(obj, f"{obj.mode}_{self.attr}", value)
 
         def __get__(self, obj, objtype=None):
             if isinstance(obj, IPUConfig):
+                logger.info(f"ManagedAttribute {self.attr} reading from {obj.mode}_{self.attr}")
                 return getattr(obj, f"{obj.mode}_{self.attr}")
 
     # Create descriptor based managed attributes which will either return the
