@@ -45,9 +45,9 @@ If the environment variable is not set, the training script might freeze, *i.e.*
 
 ---
 
-### Base
+## Base
 
-To fine-tune`"base-sized"` Wav2Vec2 model, *e.g.* [facebook/wav2vec2-base](https://huggingface.co/facebook/wav2vec2-base)
+To fine-tune`"base-sized"` Wav2Vec2 model, *e.g.* [facebook/wav2vec2-base-960h](https://huggingface.co/facebook/wav2vec2-base-960h)
 on 100h of training data from the [librispeech_asr](https://huggingface.co/datasets/librispeech_asr), the following command can be run:
 
 ```bash
@@ -60,6 +60,46 @@ python run_speech_recognition_ctc.py \
     --ipu_config_name "Graphcore/wav2vec2-ctc-base-ipu" \
     --mask_time_prob 0.0 \
     --output_dir "./wav2vec2-base-960h" \
+    --overwrite_output_dir \
+    --length_column_name "input_length" \
+    --num_train_epochs 5 \
+    --learning_rate "3e-4" \
+    --warmup_steps 400 \
+    --evaluation_strategy "steps" \
+    --text_column_name "text" \
+    --save_steps 400 \
+    --eval_steps 400 \
+    --logging_steps 10 \
+    --save_total_limit 1 \
+    --freeze_feature_encoder \
+    --do_train \
+    --do_eval \
+    --layerdrop 0.0 \
+    --per_device_train_batch_size 1 \
+    --per_device_eval_batch_size 1 \
+    --adam_beta1 0.9 \
+    --adam_beta2 0.98 \
+    --adam_epsilon 0.0001 \
+    --dataloader_drop_last \
+    --dataloader_mode "async_rebatched" \
+    --dataloader_num_workers 8 
+```
+
+## Large
+
+To fine-tune`"large-sized"` Wav2Vec2 model, *e.g.* [facebook/wav2vec2-large-960h](https://huggingface.co/facebook/wav2vec2-large-960h)
+on 100h of training data from the [librispeech_asr](https://huggingface.co/datasets/librispeech_asr), the following command can be run:
+
+```bash
+python run_speech_recognition_ctc.py \
+    --dataset_name "librispeech_asr" \
+    --dataset_config_name "clean" \
+    --train_split_name "train.100" \
+    --eval_split_name "validation" \
+    --model_name_or_path "facebook/wav2vec2-large-960h" \
+    --ipu_config_name "Graphcore/wav2vec2-ctc-large-ipu" \
+    --mask_time_prob 0.0 \
+    --output_dir "./wav2vec2-large-960h" \
     --overwrite_output_dir \
     --length_column_name "input_length" \
     --num_train_epochs 5 \
