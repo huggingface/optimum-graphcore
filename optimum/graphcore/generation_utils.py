@@ -42,8 +42,10 @@ from transformers.generation.utils import (
     SampleOutput,
     StoppingCriteriaList,
 )
-from transformers.modeling_outputs import ModelOutput
+from transformers.modeling_outputs import ModelOutput, Seq2SeqLMOutput, BaseModelOutput
 from transformers.pytorch_utils import torch_int_div
+
+from poptorch import poptorch_core
 
 
 logger = logging.get_logger(__name__)
@@ -88,11 +90,11 @@ class DecoderWrapper(nn.Module):
     Only returns the logits from the last generated token to reduce IO costs.
     """
 
-    def __init__(self, pipelined_model):
+    def __init__(self, pipelined_model, encoder_outputs, attention_mask):
         super().__init__()
         self.pipelined_model = pipelined_model
-        # Replace the LM-head with the faster _IndexedInputLinear layer
-        self.pipelined_model.set_output_embeddings(_IndexedInputLinear(self.pipelined_model.get_output_embeddings()))
+        self.register_buffer("encoder_last_hidden_state", encoder_outputs.last_hidden_state)
+        self.register_buffer("encoder_attention_mask", attention_mask)
 
     def forward(self, t, **model_inputs):
         """
@@ -106,7 +108,10 @@ class DecoderWrapper(nn.Module):
         self.pipelined_model.get_output_embeddings().index.copy_(t)
 
         # Run the decoder
-        outputs = self.pipelined_model(**model_inputs)
+        encoder_outputs = BaseModelOutput(last_hidden_state=self.encoder_last_hidden_state)
+        # outputs = self.pipelined_model._forward_for_decoder_generate(t, **model_inputs, encoder_outputs=encoder_outputs, attention_mask=self.encoder_attention_mask)
+        # outputs = self.pipelined_model(**model_inputs, encoder_outputs=encoder_outputs, attention_mask=self.encoder_attention_mask)
+        outputs = self.pipelined_model(**model_inputs, encoder_outputs=encoder_outputs, attention_mask=self.encoder_attention_mask)
         return type(outputs)(
             loss=None,
             logits=outputs.logits,
@@ -120,13 +125,35 @@ class IPUGenerationMixin(GenerationMixin):
     def _call_generate(self, *args, cur_token_id: int, **kwargs):
         t = self._get_cur_token_logits_tensor(cur_token_id)
         if not hasattr(self, "poptorch_decoder"):
-            wrapper = DecoderWrapper(self.eval())
+            wrapper = DecoderWrapper(self.eval(), kwargs["encoder_outputs"], kwargs["decoder_attention_mask"])
             decoder_ipu_config = getattr(self, "decoder_ipu_config", self.ipu_config)
-            self.poptorch_decoder = poptorch.inferenceModel(wrapper, decoder_ipu_config.to_options(for_inference=True))
+
+            poptorch_options = decoder_ipu_config.to_options(for_inference=True)
+            poptorch_options.updatableNamedBuffers(["encoder_last_hidden_state", "encoder_attention_mask"])
+
+            self.poptorch_decoder = poptorch.inferenceModel(wrapper, poptorch_options)
+        
+        del kwargs["encoder_outputs"]
+        del kwargs["decoder_attention_mask"]
+
+        print("args:", args)
+
+        print("kwargs:", kwargs)
 
         # This will trigger a compile first time it's ran
         with graph_profile_dir_append("/decoder"):
             return self.poptorch_decoder(*args, t=t, **kwargs)
+
+    def _update_model_buffers_if_needed(self, model_kwargs):
+        """
+        If decoder model then we cache the encoder values inside pytorch buffers to reduce the IO cost
+        """
+        print("in update model buffers")
+        if not self.config.is_encoder_decoder or not hasattr(self, "poptorch_decoder"):
+            return
+        self.poptorch_decoder.encoder_last_hidden_state.copy_(model_kwargs["encoder_outputs"]["last_hidden_state"])
+        self.poptorch_decoder.encoder_attention_mask.copy_(model_kwargs["attention_mask"])
+        poptorch.copyBuffersToDevice(self.poptorch_decoder)
 
     def _prepare_encoder_decoder_kwargs_for_generation(
         self, inputs_tensor: torch.Tensor, model_kwargs, model_input_name: Optional[str] = None
@@ -155,6 +182,7 @@ class IPUGenerationMixin(GenerationMixin):
         with graph_profile_dir_append("/encoder"):
             model_kwargs["encoder_outputs"]: ModelOutput = self.poptorch_encoder(**encoder_kwargs)
 
+        self._update_model_buffers_if_needed(model_kwargs)
         return model_kwargs
 
     def detachFromDevice(self):
@@ -324,6 +352,8 @@ class IPUGenerationMixin(GenerationMixin):
 
             # prepare model inputs
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
+
+            print("MODEL_INPUTS:", model_inputs)
 
             # forward pass to get next token
             outputs = self._call_generate(
