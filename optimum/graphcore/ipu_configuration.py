@@ -132,16 +132,14 @@ class IPUConfig(BaseConfig):
             self.attr = attr
 
         def __set__(self, obj, value):
-            if isinstance(obj, IPUConfig):
-                logger.info(f"ManagedAttribute {self.attr} writing to {obj.mode}_{self.attr}")
-                assert obj.mode in obj.modes, f"IPUConfig.mode is invalid, must be one of: {obj.modes}"
-                return setattr(obj, f"{obj.mode}_{self.attr}", value)
+            logger.info(f"ManagedAttribute {self.attr} writing to {obj.mode}_{self.attr}")
+            assert obj.mode in obj.modes, f"IPUConfig.mode is invalid, must be one of: {obj.modes}"
+            return setattr(obj, f"{obj.mode}_{self.attr}", value)
 
         def __get__(self, obj, objtype=None):
-            if isinstance(obj, IPUConfig):
-                logger.info(f"ManagedAttribute {self.attr} reading from {obj.mode}_{self.attr}")
-                assert obj.mode in obj.modes, f"IPUConfig.mode is invalid, must be one of: {obj.modes}"
-                return getattr(obj, f"{obj.mode}_{self.attr}")
+            logger.info(f"ManagedAttribute {self.attr} reading from {obj.mode}_{self.attr}")
+            assert obj.mode in obj.modes, f"IPUConfig.mode is invalid, must be one of: {obj.modes}"
+            return getattr(obj, f"{obj.mode}_{self.attr}")
 
     # Create descriptor based managed attributes which will either return the
     # `training_` or `inference_` versions of the attribute depending on the value of
