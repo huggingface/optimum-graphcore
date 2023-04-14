@@ -349,7 +349,7 @@ def pipeline(
 
     # So that IPUConfig returns inference versions of any parameters
     # that are different in training and inference
-    ipu_config.mode = "inference"
+    ipu_config.eval()
 
     if model is None:
         model_id, revision = SUPPORTED_TASKS[targeted_task]["default"]["model"]

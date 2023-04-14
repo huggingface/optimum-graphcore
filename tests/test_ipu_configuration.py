@@ -331,7 +331,7 @@ class IPUConfigTester(unittest.TestCase):
         self.assertEqual(ipu_config.ipus_per_replica, 4)
 
         # Inference versions retreived
-        ipu_config.mode = "inference"
+        ipu_config.eval()
         self.assertEqual(ipu_config.layers_per_ipu, [3, 7])
         self.assertEqual(ipu_config.matmul_proportion, [0.3, 0.7])
         self.assertEqual(ipu_config.ipus_per_replica, 2)
@@ -343,9 +343,12 @@ class IPUConfigTester(unittest.TestCase):
         self.assertEqual(d_ipu_config.layers_per_ipu, [7])
         self.assertEqual(d_ipu_config.ipus_per_replica, 1)
 
-        # Invalid mode
-        with pytest.raises(AssertionError, match=r"mode must be one of:"):
-            ipu_config.mode = "invalid"
+        # Reading and writing `ManagedAttribute`s when mode is invalid
+        ipu_config.mode = "invalid"
+        with pytest.raises(AssertionError, match=r"IPUConfig\.mode is invalid, must be one of:"):
+            ipu_config.layers_per_ipu
+        with pytest.raises(AssertionError, match=r"IPUConfig\.mode is invalid, must be one of:"):
+            ipu_config.layers_per_ipu = [1]
 
         # ipus_per_replica not specified
         ipu_config = IPUConfig(training_layers_per_ipu=[1, 2, 3, 4])

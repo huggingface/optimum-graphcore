@@ -134,11 +134,13 @@ class IPUConfig(BaseConfig):
         def __set__(self, obj, value):
             if isinstance(obj, IPUConfig):
                 logger.info(f"ManagedAttribute {self.attr} writing to {obj.mode}_{self.attr}")
+                assert obj.mode in obj.modes, f"IPUConfig.mode is invalid, must be one of: {obj.modes}"
                 return setattr(obj, f"{obj.mode}_{self.attr}", value)
 
         def __get__(self, obj, objtype=None):
             if isinstance(obj, IPUConfig):
                 logger.info(f"ManagedAttribute {self.attr} reading from {obj.mode}_{self.attr}")
+                assert obj.mode in obj.modes, f"IPUConfig.mode is invalid, must be one of: {obj.modes}"
                 return getattr(obj, f"{obj.mode}_{self.attr}")
 
     # Create descriptor based managed attributes which will either return the
@@ -151,6 +153,9 @@ class IPUConfig(BaseConfig):
 
     def __init__(self, **kwargs):
         self.seed = kwargs.pop("seed", None)
+
+        # Default mode to `training`
+        self.mode = "training"
 
         # Get execution mode agnostic arguments
         layers_per_ipu = kwargs.pop("layers_per_ipu", [-1])
@@ -206,25 +211,13 @@ class IPUConfig(BaseConfig):
         # TODO: remove this if unnecessary.
         self.execute_encoder_on_cpu_for_generation = kwargs.pop("execute_encoder_on_cpu_for_generation", False)
 
-    @property
-    def mode(self):
-        """
-        Determines which value will be returned when a parameter with different
-        values for `training` and inference` is read. These are currently:
-            - `layers_per_ipu`
-            - `ipus_per_replica`
-            - `matmul_proportion
-        The allowed values for `mode` are:
-            - `training`
-            - `inference`
-        Defaults to `training`.
-        """
-        return getattr(self, "_mode", "training")
+    def train(self):
+        self.mode = "training"
+        return self
 
-    @mode.setter
-    def mode(self, value: str):
-        assert value in self.modes, f"mode must be one of: {self.modes}"
-        self._mode = value
+    def eval(self):
+        self.mode = "inference"
+        return self
 
     def _prepare_config_attribute_for_pod_type(
         self, config_attribute_name: str, config_attribute: Union[Any, Dict[str, Any]], pod_type: Optional[str]
