@@ -317,10 +317,20 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
         self.encoder.__class__ = T5Stack
         self.decoder.__class__ = T5Stack
 
+        self.encoder.embed_tokens = self.encoder.embed_tokens.module
+
         for block in self.encoder.block:
             block.__class__ = T5Block
+            block.layer[0].dropout = block.layer[0].dropout.module
+            with torch.no_grad():
+                block.layer[1].DenseReluDense.wo.weight *= block.layer[1].dropout.scale
+            block.layer[1].dropout = block.layer[1].dropout.module
+            if self.config.dense_act_fn == "gelu_new":
+                block.layer[1].DenseReluDense.act = NewGELUActivation
         for block in self.decoder.block:
             block.__class__ = T5Block
+            if self.config.dense_act_fn == "gelu_new":
+                block.layer[1].DenseReluDense.act = NewGELUActivation
 
         if self.lm_head.__class__ == _IndexedInputLinear:
             self.lm_head = self.lm_head.wrapped_linear
