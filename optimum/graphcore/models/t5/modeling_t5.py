@@ -248,7 +248,7 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
             scale = 8.0
             with torch.no_grad():
                 block.layer[1].DenseReluDense.wo.weight /= scale
-            block.layer[1].dropout = UpCastWrapper(block.layer[-1].dropout, scale)
+            block.layer[1].dropout = UpCastWrapper(block.layer[1].dropout, scale)
             # Prevent overflow in NewGELUActivation
             if self.config.dense_act_fn == "gelu_new":
                 # TODO: Work-around bug with torch.nn.GELU(approximate="tanh"). Replace
