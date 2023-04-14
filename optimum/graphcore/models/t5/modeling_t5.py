@@ -187,45 +187,6 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
             else:
                 self.shared = self.shared.shared
 
-    def scale_down_weights(self, factor: float = 1, restore: bool = False):
-        self.lm_scale_modifier = 1 if not restore else None
-        # self.lm_scale_modifier = nn.Parameter(torch.ones(self.config.d_model, dtype=torch.float16)) if not restore else None
-
-        emb_scaling = 1 / 32.0 * factor
-        att_v_scaling = 1 / 4.0 * factor
-        att_o_scaling = 1 / 8.0 * factor
-        ff_wi_scaling = 1 / 4.0 * factor
-        ff_wo_scaling = 1 / 4.0 * factor
-        ff_ln_scaling = 1 / 2.0 * factor
-
-        if restore:
-            emb_scaling = 1 / emb_scaling
-            att_v_scaling = 1 / att_v_scaling
-            att_o_scaling = 1 / att_o_scaling
-            ff_wi_scaling = 1 / ff_wi_scaling
-            ff_wo_scaling = 1 / ff_wo_scaling
-            ff_ln_scaling = 1 / ff_ln_scaling
-
-        with torch.no_grad():
-            self.shared.weight *= emb_scaling
-            for unit in self.encoder.block:
-                unit.layer[0].SelfAttention.v.weight *= att_v_scaling
-                unit.layer[0].SelfAttention.o.weight *= att_o_scaling
-                unit.layer[1].DenseReluDense.wi.weight *= ff_wi_scaling
-                unit.layer[1].DenseReluDense.wo.weight *= ff_wo_scaling
-                unit.layer[1].layer_norm.weight *= ff_ln_scaling
-            for unit in self.decoder.block:
-                unit.layer[0].SelfAttention.v.weight *= att_v_scaling
-                unit.layer[0].SelfAttention.o.weight *= att_o_scaling
-                unit.layer[1].EncDecAttention.v.weight *= att_v_scaling
-                unit.layer[1].EncDecAttention.o.weight *= att_o_scaling
-                unit.layer[2].DenseReluDense.wi.weight *= ff_wi_scaling
-                unit.layer[2].DenseReluDense.wo.weight *= ff_wo_scaling
-                unit.layer[2].layer_norm.weight *= ff_ln_scaling
-
-            if not restore:
-                self.lm_scale_modifier /= emb_scaling
-
     def parallelize(self, for_generation=False):
         """
         Transform the model to run in an IPU pipeline.
@@ -257,7 +218,6 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
             if self.config.tie_word_embeddings:
                 self.tie_weights()
 
-        # self.scale_down_weights(factor=1)
         self.encoder_and_decoder_embeddings_computation(True)
         self.shared = poptorch.BeginBlock(self.shared, "Embedding", ipu_id=0)
 
@@ -351,7 +311,6 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
         PipelineMixin.deparallelize(self)
 
         self.encoder_and_decoder_embeddings_computation(False)
-        # self.scale_down_weights(factor=1, restore=True)
 
         self.encoder.__class__ = T5Stack
         self.decoder.__class__ = T5Stack
