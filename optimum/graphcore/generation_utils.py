@@ -17,7 +17,7 @@ import copy
 import json
 import os
 import warnings
-from typing import Any, Dict, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Optional, Tuple, Union
 
 import torch
 from torch import nn
@@ -75,10 +75,15 @@ def graph_profile_dir_append(append: str):
 
 class IPUAttentionMixin:
     _kv_cache_initialised: bool = False
+    _cross_kv_cache_initialised: bool = False
 
     @property
     def kv_cache_initialised(self) -> bool:
         return self._kv_cache_initialised
+
+    @property
+    def cross_kv_cache_initialised(self) -> bool:
+        return self._cross_kv_cache_initialised
 
     def _create_kv_cache(self, cache_shape: Tuple[int], dtype: torch.dtype, uses_beams=False):
         self.register_buffer("_generation_step", torch.tensor([0], dtype=torch.int32), persistent=False)
@@ -99,6 +104,27 @@ class IPUAttentionMixin:
             del self._beam_idx
         del self._kv_cache_initialised
 
+    def _create_cross_kv_cache(self, cache_shape: Tuple[int], dtype: torch.dtype, uses_beams=False):
+        if not hasattr(self, "_generation_step"):
+            self.register_buffer("_generation_step", torch.tensor([0], dtype=torch.int32), persistent=False)
+        self.register_buffer("_cross_k_cache", torch.zeros(cache_shape, dtype=dtype), persistent=False)
+        self.register_buffer("_cross_v_cache", torch.zeros(cache_shape, dtype=dtype), persistent=False)
+        if uses_beams and not hasattr(self, "_beam_idx"):
+            self.register_buffer("_beam_idx", torch.arange(cache_shape[0], dtype=torch.int32), persistent=False)
+        self._cross_kv_cache_initialised = True
+
+    def _delete_cross_kv_cache(self):
+        if not self._cross_kv_cache_initialised:
+            return
+
+        if hasattr(self, "_generation_step"):
+            del self._generation_step
+        del self._cross_k_cache
+        del self._cross_v_cache
+        if hasattr(self, "_beam_idx"):
+            del self._beam_idx
+        del self._cross_kv_cache_initialised
+
     @classmethod
     def from_model(
         cls,
@@ -108,6 +134,8 @@ class IPUAttentionMixin:
         max_length: int = 128,
         num_beams: int = 1,
         dtype: torch.dtype = torch.float16,
+        use_cross_cache=False,
+        encoder_max_length: int = 128,
     ):
         clone = copy.deepcopy(attention_layer)
         clone.__class__ = cls
@@ -118,11 +146,18 @@ class IPUAttentionMixin:
                 dtype=dtype,
                 uses_beams=num_beams > 1,
             )
+        if use_cross_cache:
+            clone._create_cross_kv_cache(
+                (batch_size * num_beams, clone.num_heads, encoder_max_length, clone.head_dim),
+                dtype=dtype,
+                uses_beams=num_beams > 1,
+            )
 
         return clone
 
     def to_model(self, cls) -> torch.nn.Module:
         self._delete_kv_cache()
+        self._delete_cross_kv_cache()
 
         original = copy.deepcopy(self)
         original.__class__ = cls
@@ -187,6 +222,58 @@ class IPUAttentionMixin:
             mask = mask + attention_mask
 
         return mask
+
+    def add_to_cross_kv_cache(
+        self,
+        cross_input: torch.Tensor,
+        key_fn: Callable[[torch.Tensor], torch.Tensor],
+        value_fn: Callable[[torch.Tensor], torch.Tensor],
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        if not self.cross_kv_cache_initialised:
+            raise ValueError(
+                f"{self.__class__.__name__} assumes that cross-attention has cross KV caching enabled. "
+                f"Please instantiate using `{self.__class__.__name__}.from_model()` so the cross KV "
+                "cache can be created."
+            )
+
+        if self.training:
+            raise RuntimeError("Cross KV caching is currently only supported for inference.")
+
+        if not hasattr(poptorch, "cond"):
+            raise AttributeError("Cross KV caching requires `poptorch.cond` which appears to be missing.")
+
+        # For now assume that generation will always start from step 0.
+        reset_kv_cache = self._generation_step == 0
+        self._cross_k_cache *= 1 - reset_kv_cache.to(self._cross_k_cache.dtype)
+        self._cross_v_cache *= 1 - reset_kv_cache.to(self._cross_v_cache.dtype)
+
+        if hasattr(self, "_beam_idx"):
+            # For beam search, permute the cache since inputs are permuted on host.
+            _cross_k_cache = torch.index_select(self._cross_k_cache, 0, self._beam_idx)
+            _cross_v_cache = torch.index_select(self._cross_v_cache, 0, self._beam_idx)
+            self._cross_k_cache.copy_(_cross_k_cache)
+            self._cross_v_cache.copy_(_cross_v_cache)
+
+        def then_k_body(x):
+            return key_fn(x)
+
+        def else_k_body(_):
+            return self._cross_k_cache
+
+        def then_v_body(x):
+            return value_fn(x)
+
+        def else_v_body(_):
+            return self._cross_v_cache
+
+        self._cross_k_cache.copy_(
+            poptorch.cond(reset_kv_cache, then_k_body, [cross_input], else_k_body, [cross_input])[0]
+        )
+        self._cross_v_cache.copy_(
+            poptorch.cond(reset_kv_cache, then_v_body, [cross_input], else_v_body, [cross_input])[0]
+        )
+
+        return self._cross_k_cache, self._cross_v_cache
 
 
 class _IndexedInputLinear(nn.Module):
