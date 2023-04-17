@@ -336,7 +336,7 @@ class IPUConfigTester(unittest.TestCase):
         self.assertEqual(ipu_config.matmul_proportion, [0.3, 0.7])
         self.assertEqual(ipu_config.ipus_per_replica, 2)
 
-        # Test splitting two IPUs
+        # Test encoder decoder model IPUConfig splitting for generation
         e_ipu_config, d_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 3, 7)
         self.assertEqual(e_ipu_config.layers_per_ipu, [3])
         self.assertEqual(e_ipu_config.ipus_per_replica, 1)
