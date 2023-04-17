@@ -326,11 +326,11 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
                 block.layer[1].DenseReluDense.wo.weight *= block.layer[1].dropout.scale
             block.layer[1].dropout = block.layer[1].dropout.module
             if self.config.dense_act_fn == "gelu_new":
-                block.layer[1].DenseReluDense.act = NewGELUActivation
+                block.layer[1].DenseReluDense.act = NewGELUActivation()
         for block in self.decoder.block:
             block.__class__ = T5Block
             if self.config.dense_act_fn == "gelu_new":
-                block.layer[1].DenseReluDense.act = NewGELUActivation
+                block.layer[2].DenseReluDense.act = NewGELUActivation()
 
         if self.lm_head.__class__ == _IndexedInputLinear:
             self.lm_head = self.lm_head.wrapped_linear
