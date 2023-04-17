@@ -245,6 +245,8 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
             if self.config.tie_word_embeddings:
                 self.tie_weights()
 
+        self.change_lm_head_to_indexed_input_linear(restore=not for_generation)
+
         # self.scale_down_weights(factor=1)
         self.encoder_and_decoder_embeddings_computation(True)
         self.shared = poptorch.BeginBlock(self.shared, "Embedding", ipu_id=0)
@@ -320,8 +322,7 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
         for block in self.decoder.block:
             block.__class__ = T5Block
 
-        if self.lm_head.__class__ == _IndexedInputLinear:
-            self.lm_head = self.lm_head.wrapped_linear
+        self.change_lm_head_to_indexed_input_linear(restore=True)
 
         if self.ipu_config.embedding_serialization_factor > 1:
             old_lm_head = nn.Linear(

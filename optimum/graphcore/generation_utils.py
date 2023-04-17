@@ -216,15 +216,9 @@ class DecoderWrapper(nn.Module):
     Only returns the logits from the last generated token to reduce IO costs.
     """
 
-    def __init__(self, pipelined_model, use_cache=False):
+    def __init__(self, pipelined_model):
         super().__init__()
         self.pipelined_model = pipelined_model
-
-        if not use_cache:
-            # Replace the LM-head with the faster _IndexedInputLinear layer
-            self.pipelined_model.set_output_embeddings(
-                _IndexedInputLinear(self.pipelined_model.get_output_embeddings())
-            )
 
         # With KV caching, some modules may need to know the current decoding step and beam indices.
         # Getting this information to them can either be done by copying it into buffers, or
@@ -270,7 +264,7 @@ class IPUGenerationMixin(GenerationMixin):
     def _call_generate(self, *args, generation_step: int, **kwargs):
         t = self._get_generation_step_tensor(generation_step)
         if not hasattr(self, "poptorch_decoder"):
-            wrapper = DecoderWrapper(self.eval(), kwargs.get("use_cache", False))
+            wrapper = DecoderWrapper(self.eval())
             decoder_ipu_config = getattr(self, "decoder_ipu_config", self.ipu_config)
             if os.getenv("DEBUG_RUN_DECODER_ON_CPU", False):
                 self.poptorch_decoder = wrapper
@@ -329,6 +323,19 @@ class IPUGenerationMixin(GenerationMixin):
             torch.ones(self.ipu_config.inference_device_iterations * self.ipu_config.inference_replication_factor)
             * generation_step
         )
+
+    def change_lm_head_to_indexed_input_linear(self, restore: bool):
+        """Changes the LM head with the faster _IndexedInputLinear layer.
+
+        Args:
+            restore: whether to restore the LM head to the original version or not.
+        """
+        if restore:
+            lm_head = self.get_output_embeddings()
+            if lm_head.__class__ == _IndexedInputLinear:
+                self.set_output_embeddings(lm_head.wrapped_linear)
+        else:
+            self.set_output_embeddings(_IndexedInputLinear(self.get_output_embeddings()))
 
     # Modified from https://github.com/huggingface/transformers/blob/v4.20.1/src/transformers/generation_utils.py#L1532
     def greedy_search(
