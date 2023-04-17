@@ -109,7 +109,7 @@ class GPT2PipelineMixin(PipelineMixin):
 
 @register(GPT2LMHeadModel)
 class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin, IPUGenerationMixin):
-    def parallelize(self):
+    def parallelize(self, for_generation=False):
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model
@@ -148,6 +148,8 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin, IPUGenerationMixi
             self.lm_head = serialized_lm_head
             self.tie_weights()
 
+        self.change_lm_head_to_indexed_input_linear(restore=not for_generation)
+
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Token Embedding     --> IPU 0")
         self.transformer.wte = poptorch.BeginBlock(self.transformer.wte, "Token embedding", ipu_id=0)
@@ -173,8 +175,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin, IPUGenerationMixi
     def deparallelize(self):
         PipelineMixin.deparallelize(self)
 
-        if self.lm_head.__class__ == _IndexedInputLinear:
-            self.lm_head = self.lm_head.wrapped_linear
+        self.change_lm_head_to_indexed_input_linear(restore=True)
 
         if self.ipu_config.embedding_serialization_factor > 1:
             # Deserialize the serialized linear layer
