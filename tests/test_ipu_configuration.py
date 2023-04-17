@@ -330,6 +330,11 @@ class IPUConfigTester(unittest.TestCase):
         self.assertEqual(ipu_config.matmul_proportion, [0.1, 0.2, 0.3, 0.4])
         self.assertEqual(ipu_config.ipus_per_replica, 4)
 
+        # Inference options created when mode is training
+        opts = ipu_config.train().to_options(for_inference=True)
+        self.assertEqual(opts._values["available_memory_proportion"], {0: 0.3, 1: 0.7})
+        self.assertEqual(ipu_config.mode, "training")
+
         # Inference versions retreived
         ipu_config.eval()
         self.assertEqual(ipu_config.layers_per_ipu, [3, 7])

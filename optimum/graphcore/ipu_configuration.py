@@ -279,6 +279,9 @@ class IPUConfig(BaseConfig):
         if self.execute_encoder_on_cpu_for_generation:
             raise NotImplementedError("execute_encoder_on_cpu_for_generation is not supported yet.")
 
+        old_mode = self.mode
+        self.eval() if for_inference else self.train()
+
         opts = Options()
         opts.autoRoundNumIPUs(True)
         opts.replicationFactor(self.inference_replication_factor if for_inference else self.replication_factor)
@@ -381,6 +384,7 @@ class IPUConfig(BaseConfig):
 
         opts._Popart.set("engineOptions", engine_options)
 
+        self.mode = old_mode
         return opts
 
     def to_options(
