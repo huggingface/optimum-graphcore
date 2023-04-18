@@ -107,7 +107,11 @@ class CustomT5Block(T5Block):
         hidden_states, present_key_value_state = self_attention_outputs[:2]
         attention_outputs = self_attention_outputs[2:]  # Keep self-attention outputs and relative position weights
 
-        # Change: Remove check for inf and fp16 clamping
+        # clamp inf values to enable fp16 training
+        # Custom: Remove check for inf
+        if hidden_states.dtype == torch.float16:
+            clamp_value = torch.tensor(torch.finfo(hidden_states.dtype).max - 1000, dtype=hidden_states.dtype)
+            hidden_states = torch.clamp(hidden_states, min=-clamp_value, max=clamp_value)
 
         do_cross_attention = self.is_decoder and encoder_hidden_states is not None
         if do_cross_attention:
@@ -131,7 +135,11 @@ class CustomT5Block(T5Block):
             )
             hidden_states = cross_attention_outputs[0]
 
-            # Change: Remove check for inf and fp16 clamping
+            # clamp inf values to enable fp16 training
+            # Custom: Remove check for inf
+            if hidden_states.dtype == torch.float16:
+                clamp_value = torch.tensor(torch.finfo(hidden_states.dtype).max - 1000, dtype=hidden_states.dtype)
+                hidden_states = torch.clamp(hidden_states, min=-clamp_value, max=clamp_value)
 
             # Combine self attn and cross attn key value states
             if present_key_value_state is not None:
@@ -143,7 +151,11 @@ class CustomT5Block(T5Block):
         # Apply Feed Forward layer
         hidden_states = self.layer[-1](hidden_states)
 
-        # Change: Remove check for inf and fp16 clamping
+        # clamp inf values to enable fp16 training
+        # Custom: Remove check for inf
+        if hidden_states.dtype == torch.float16:
+            clamp_value = torch.tensor(torch.finfo(hidden_states.dtype).max - 1000, dtype=hidden_states.dtype)
+            hidden_states = torch.clamp(hidden_states, min=-clamp_value, max=clamp_value)
 
         outputs = (hidden_states,)
 
@@ -217,6 +229,8 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
             # TODO: is it needed to check?
             if self.config.tie_word_embeddings:
                 self.tie_weights()
+
+        self.change_lm_head_to_indexed_input_linear(restore=not for_generation)
 
         self.encoder_and_decoder_embeddings_computation(True)
         self.shared = poptorch.BeginBlock(self.shared, "Embedding", ipu_id=0)
@@ -332,8 +346,7 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
             if self.config.dense_act_fn == "gelu_new":
                 block.layer[2].DenseReluDense.act = NewGELUActivation()
 
-        if self.lm_head.__class__ == _IndexedInputLinear:
-            self.lm_head = self.lm_head.wrapped_linear
+        self.change_lm_head_to_indexed_input_linear(restore=True)
 
         if self.ipu_config.embedding_serialization_factor > 1:
             old_lm_head = nn.Linear(
