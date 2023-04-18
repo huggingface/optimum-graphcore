@@ -12,4 +12,5 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .utils import IPUAttentionMixin, IPUGenerationMixin, supports_kv_cache
+from .attention_mixin import IPUAttentionMixin
+from .utils import IPUGenerationMixin, supports_kv_cache
