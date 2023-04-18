@@ -28,7 +28,7 @@ from transformers.models.whisper.modeling_whisper import (
     WhisperPositionalEmbedding,
 )
 
-from ...generation_utils import IPUAttentionMixin, IPUGenerationMixin, _IndexedInputLinear, supports_kv_cache
+from ...generation import IPUAttentionMixin, IPUGenerationMixin, supports_kv_cache
 from ...modeling_utils import (
     PipelineMixin,
     get_layer_ipu,
