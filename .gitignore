@@ -131,3 +131,4 @@ dmypy.json
 # PyTorch models
 *.bin
 *.popart
+*.popef
