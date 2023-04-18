@@ -55,10 +55,14 @@ class PipelinedMT5ForConditionalGeneration(MT5ForConditionalGeneration, Pipeline
         self.shared = SerializedEmbedding(self.shared, self.ipu_config.embedding_serialization_factor)
 
         if for_generation:
-            self.lm_head = SplitLinear(self.lm_head, splits=1, serialization_factor=self.ipu_config.embedding_serialization_factor)
+            self.lm_head = SplitLinear(
+                self.lm_head, splits=1, serialization_factor=self.ipu_config.embedding_serialization_factor
+            )
         else:
-            self.lm_head = SplitLinear(self.lm_head, splits=4, serialization_factor=self.ipu_config.embedding_serialization_factor)
-        
+            self.lm_head = SplitLinear(
+                self.lm_head, splits=4, serialization_factor=self.ipu_config.embedding_serialization_factor
+            )
+
         if self.config.tie_word_embeddings:
             raise ValueError("Tied input and output embeddings for MT5 are currently not supported on the IPU.")
 
@@ -73,18 +77,24 @@ class PipelinedMT5ForConditionalGeneration(MT5ForConditionalGeneration, Pipeline
         if for_generation:
             last_ipu = self.decoder_ipu_config.ipus_per_replica - 1
             logger.info(f"Ammendment: LM Head Output --> IPU {last_ipu}")
-            self.lm_head.split_linear_layers[0] = poptorch.BeginBlock(self.lm_head.split_linear_layers[0], f"LM Head Output {0}", ipu_id=last_ipu)
+            self.lm_head.split_linear_layers[0] = poptorch.BeginBlock(
+                self.lm_head.split_linear_layers[0], f"LM Head Output {0}", ipu_id=last_ipu
+            )
         else:
             last_ipu = self.ipu_config.ipus_per_replica - 1
             # TODO: need to make sure that splitting the lm head does not exceed ipus per replica for training
             logger.info(f"Ammendment: LM Head Output --> IPU {last_ipu - 1}-{last_ipu}")
-            self.lm_head.split_linear_layers[0] = poptorch.BeginBlock(self.lm_head.split_linear_layers[0], f"LM Head Output {0}", ipu_id=last_ipu - 1)
+            self.lm_head.split_linear_layers[0] = poptorch.BeginBlock(
+                self.lm_head.split_linear_layers[0], f"LM Head Output {0}", ipu_id=last_ipu - 1
+            )
             for i, _ in enumerate(self.lm_head.split_linear_layers[1:]):
-                self.lm_head.split_linear_layers[i+1] = poptorch.BeginBlock(self.lm_head.split_linear_layers[i+1], f"LM Head Output {i+1}", ipu_id=last_ipu)
-        
+                self.lm_head.split_linear_layers[i + 1] = poptorch.BeginBlock(
+                    self.lm_head.split_linear_layers[i + 1], f"LM Head Output {i+1}", ipu_id=last_ipu
+                )
+
         logger.info("-----------------------------------------------------------")
         return self
-    
+
     def deparallelize(self):
         """
         Undo the changes to the model done by `parallelize`.
