@@ -20,10 +20,9 @@ from torch import nn
 from torch.utils.data import Dataset
 
 from optimum.utils import logging
+from poptorch._impl import rewrapModelIfNecessary, unwrapModelIfNecessary
 
 from .trainer import IPUTrainer
-
-from poptorch._impl import unwrapModelIfNecessary, rewrapModelIfNecessary
 
 
 logger = logging.get_logger(__name__)
