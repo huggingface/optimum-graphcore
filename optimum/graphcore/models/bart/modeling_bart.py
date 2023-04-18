@@ -902,7 +902,7 @@ class PipelinedBartForSequenceClassification(BartForSequenceClassification, Pipe
             self.model.decoder.layers[index] = poptorch.BeginBlock(layer, f"Decoder{index}", ipu_id=ipu)
             logger.info(f"Decoder {index:<2} --> IPU {ipu}")
 
-        last_ipu = len(self.ipu_config.layers_per_ipu) - 1
+        last_ipu = layer_ipu[-1]
         logger.info(f"Classification Head Output --> IPU {last_ipu}")
         self.classification_head = poptorch.BeginBlock(
             self.classification_head, "Classification Head Output", ipu_id=last_ipu

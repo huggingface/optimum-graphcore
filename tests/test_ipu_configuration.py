@@ -14,6 +14,7 @@
 # limitations under the License.
 import copy
 import random
+import re
 import string
 import unittest
 from collections.abc import Iterable
@@ -311,6 +312,69 @@ class IPUConfigTester(unittest.TestCase):
         with pytest.raises(IncompatibleIPUConfigError, match=r"Invalid value for ipus_per_replica"):
             layer_ipu = get_layer_ipu(ipu_config, 6)
 
+    def test_execution_mode_specific_options(self):
+        ipu_config = IPUConfig(
+            training_layers_per_ipu=[1, 2, 3, 4],
+            training_matmul_proportion=[0.1, 0.2, 0.3, 0.4],
+            training_ipus_per_replica=4,
+            inference_layers_per_ipu=[3, 7],
+            inference_matmul_proportion=[0.3, 0.7],
+            inference_ipus_per_replica=2,
+        )
+
+        # Default mode is training
+        self.assertEqual(ipu_config.mode, "training")
+
+        # Training versions retreived
+        self.assertEqual(ipu_config.layers_per_ipu, [1, 2, 3, 4])
+        self.assertEqual(ipu_config.matmul_proportion, [0.1, 0.2, 0.3, 0.4])
+        self.assertEqual(ipu_config.ipus_per_replica, 4)
+
+        # Inference options created when mode is training
+        opts = ipu_config.train().to_options(for_inference=True)
+        self.assertEqual(opts._values["available_memory_proportion"], {0: 0.3, 1: 0.7})
+        self.assertEqual(ipu_config.mode, "training")
+
+        # Inference versions retreived
+        ipu_config.eval()
+        self.assertEqual(ipu_config.layers_per_ipu, [3, 7])
+        self.assertEqual(ipu_config.matmul_proportion, [0.3, 0.7])
+        self.assertEqual(ipu_config.ipus_per_replica, 2)
+
+        # Test encoder decoder model IPUConfig splitting for generation
+        e_ipu_config, d_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 3, 7)
+        self.assertEqual(e_ipu_config.layers_per_ipu, [3])
+        self.assertEqual(e_ipu_config.ipus_per_replica, 1)
+        self.assertEqual(d_ipu_config.layers_per_ipu, [7])
+        self.assertEqual(d_ipu_config.ipus_per_replica, 1)
+
+        # Reading and writing `ManagedAttribute`s when mode is invalid
+        ipu_config.mode = "invalid"
+        with pytest.raises(AssertionError, match=r"IPUConfig\.mode is invalid, must be one of:"):
+            ipu_config.layers_per_ipu
+        with pytest.raises(AssertionError, match=r"IPUConfig\.mode is invalid, must be one of:"):
+            ipu_config.layers_per_ipu = [1]
+
+        # ipus_per_replica not specified
+        ipu_config = IPUConfig(training_layers_per_ipu=[1, 2, 3, 4])
+        self.assertEqual(ipu_config.ipus_per_replica, 4)
+
+        # training_layers_per_ipu wildcard
+        ipu_config = IPUConfig(ipus_per_replica=4, training_layers_per_ipu=[-1])
+        layer_ipu = get_layer_ipu(ipu_config, 8)
+        self.assertEqual(ipu_config.ipus_per_replica, 4)
+        self.assertEqual(layer_ipu, [0, 0, 1, 1, 2, 2, 3, 3])
+
+        # inference_matmul_proportion not specified but matmul_proportion is
+        ipu_config = IPUConfig(
+            layers_per_ipu=[1, 2, 3, 4],
+            matmul_proportion=[0.1, 0.2, 0.3, 0.4],
+            inference_layers_per_ipu=[3, 7],
+        )
+        self.assertEqual(ipu_config.training_layers_per_ipu, [1, 2, 3, 4])
+        self.assertEqual(ipu_config.training_matmul_proportion, [0.1, 0.2, 0.3, 0.4])
+        self.assertEqual(ipu_config.inference_matmul_proportion, 0.2)
+
     def test_split_encoder_decoder_ipu_config(self):
         # Test splitting two IPUs
         ipu_config = IPUConfig(layers_per_ipu=[1, 2])
@@ -330,10 +394,12 @@ class IPUConfigTester(unittest.TestCase):
         ipu_config = ipu_config.to_dict()
         e_ipu_config = e_ipu_config.to_dict()
         d_ipu_config = d_ipu_config.to_dict()
+        skip = {"layers_per_ipu", "ipus_per_replica", "matmul_proportion"}
         for k in ipu_config.keys():
-            if k not in {"layers_per_ipu", "ipus_per_replica", "matmul_proportion"}:
-                self.assertEqual(ipu_config[k], e_ipu_config[k])
-                self.assertEqual(ipu_config[k], d_ipu_config[k])
+            if re.search("|".join(skip), k):
+                continue
+            self.assertEqual(ipu_config[k], e_ipu_config[k], k)
+            self.assertEqual(ipu_config[k], d_ipu_config[k], k)
 
         # Test that wildcards work
         ipu_config = IPUConfig(layers_per_ipu=[-1, -1])
