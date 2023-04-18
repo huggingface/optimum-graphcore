@@ -508,16 +508,17 @@ class SerializedLinear(nn.Linear):
                 output += self.bias
         return output
 
+
 class SplitLinear(torch.nn.Module):
     """
-    Exactly equivalent to `nn.Linear` layer, but with the linear layer split into 
+    Exactly equivalent to `nn.Linear` layer, but with the linear layer split into
     partial linear layers in order to reduce resident memory. The linear layer
-    is split along the reducing dimension `nn.Linear.in_features` in equal parts. 
+    is split along the reducing dimension `nn.Linear.in_features` in equal parts.
     The forward call aggregates the partial sums obtained from each linear layer.
 
     Args:
         linear: A `nn.Linear` to wrap
-        splits: The number of partitions of the linear layer. This must be a factor of 
+        splits: The number of partitions of the linear layer. This must be a factor of
             linear.in_features.
         serialization_factor: The number of serialized multiplications in a single linear layer.
         mode: Which dimension of the matmul to serialize on:
@@ -527,41 +528,49 @@ class SplitLinear(torch.nn.Module):
             * OutputChannels: Split across the output channels (dimension p).
             * Disabled: Same as an ordinary matrix multiplication.
     """
-    
-    def __init__(self, linear: torch.nn.Linear, splits: int, serialization_factor: int, mode: poptorch.MatMulSerializationMode = poptorch.MatMulSerializationMode.OutputChannels) -> None:
+
+    def __init__(
+        self,
+        linear: torch.nn.Linear,
+        splits: int,
+        serialization_factor: int,
+        mode: poptorch.MatMulSerializationMode = poptorch.MatMulSerializationMode.OutputChannels,
+    ) -> None:
         super().__init__()
-        
+
         self.in_features = linear.in_features
         self.out_features = linear.out_features
         input_linear_dtype = linear.weight.dtype
         if self.in_features % splits != 0:
             raise ValueError(f"Input dimension of :{self.in_features} must be divisible by {splits}")
-        
+
         self.split_size = int(self.in_features / splits)
         split_lin_layers = []
         for i in range(splits):
             start = i * self.split_size
             end = (i + 1) * self.split_size
-            lin = SerializedLinear(self.split_size, self.out_features, factor=serialization_factor, bias=False, mode=mode)
+            lin = SerializedLinear(
+                self.split_size, self.out_features, factor=serialization_factor, bias=False, mode=mode
+            )
             if input_linear_dtype == torch.float16:
                 lin = lin.half()
-            # initialise linear layer using a section of`linear` weight, 
+            # initialise linear layer using a section of`linear` weight,
             with torch.no_grad():
                 lin.weight.copy_(linear.weight[:, start:end].detach())
             split_lin_layers.append(lin)
         self.split_linear_layers = torch.nn.ModuleList(split_lin_layers)
-            
+
         self.bias = None
         if linear.bias is not None:
             self.bias = torch.nn.Parameter(torch.zeros_like(linear.bias))
             with torch.no_grad():
                 self.bias.copy_(linear.bias.detach())
-                
+
     def forward(self, x):
         # each linear layer processes a partition of the input
         out = None
         for i, lin in enumerate(self.split_linear_layers):
-            h = lin(x[:, :, i * self.split_size:(i+1) * self.split_size])
+            h = lin(x[:, :, i * self.split_size : (i + 1) * self.split_size])
             if out is None:
                 out = h
             else:
@@ -569,7 +578,7 @@ class SplitLinear(torch.nn.Module):
         if self.bias is not None:
             out += self.bias
         return out
-    
+
     def deserialize(self):
         """
         Deserialize the internal wrapped linear layer and return it as a
@@ -587,7 +596,8 @@ class SplitLinear(torch.nn.Module):
             if self.bias is not None:
                 layer.bias.copy_(self.bias)
         return layer
-    
+
+
 class SharedEmbedding(nn.Module):
     """Wrapper around the shared embedding between the encoder and the decoder stacks.
 
