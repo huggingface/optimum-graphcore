@@ -221,7 +221,6 @@ class DecoderWrapper(nn.Module):
     def __init__(self, pipelined_model, encoder_outputs):
         super().__init__()
         self.pipelined_model = pipelined_model
-        self.pipelined_model.set_output_embeddings(_IndexedInputLinear(self.pipelined_model.get_output_embeddings())) 
         self.register_buffer("encoder_last_hidden_state", encoder_outputs.last_hidden_state)
 
         # With KV caching, some modules may need to know the current decoding step and beam indices.

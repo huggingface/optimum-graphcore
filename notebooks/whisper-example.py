@@ -119,17 +119,21 @@ ipu_config = IPUConfig(executable_cache_dir=executable_cache_dir, ipus_per_repli
 
 # In[14]:
 
-
+use_cache = True
+batch_size = 1
+num_beams = 1
 # Adapt whisper to run on the IPU
 pipelined_model = to_pipelined(model, ipu_config)
-pipelined_model = pipelined_model.parallelize(for_generation=True).half()
+pipelined_model = pipelined_model.parallelize(
+    for_generation=True, use_cache=use_cache, batch_size=batch_size, max_length=max_length, min_length=3, num_beams=num_beams
+)
 
 
 # In[15]:
 
 
 # This triggers a compilation the first time around (unless a precompiled model is available)
-sample_output = pipelined_model.generate(input_features, max_length=max_length, min_length=3)
+sample_output = pipelined_model.generate(input_features, use_cache=use_cache, max_length=max_length, min_length=3, num_beams=num_beams)
 transcription = processor.batch_decode(sample_output, skip_special_tokens=True)[0]
 print("Transcription:",transcription)
 print("The transcription consisted of",sample_output.shape[-1],"tokens.")
@@ -139,7 +143,7 @@ print("The transcription consisted of",sample_output.shape[-1],"tokens.")
 import time
 start = time.time()
 for _ in range(100):
-    sample_output = pipelined_model.generate(input_features, max_length=max_length, min_length=3)
+    sample_output = pipelined_model.generate(input_features, use_cache=use_cache, max_length=max_length, min_length=3, num_beams=num_beams)
     transcription = processor.batch_decode(sample_output, skip_special_tokens=True)[0]
 print(f"Elapsed time for 100 transcriptions: {time.time()-start:0.1f}")
 
