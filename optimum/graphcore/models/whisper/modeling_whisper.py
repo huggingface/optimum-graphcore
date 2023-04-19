@@ -28,7 +28,7 @@ from transformers.models.whisper.modeling_whisper import (
     WhisperPositionalEmbedding,
 )
 
-from ...generation_utils import IPUGenerationMixin, IPUKVCacheMixin, _IndexedInputLinear, supports_kv_cache
+from ...generation_utils import IPUAttentionMixin, IPUGenerationMixin, _IndexedInputLinear, supports_kv_cache
 from ...modeling_utils import (
     PipelineMixin,
     get_layer_ipu,
@@ -77,7 +77,7 @@ def _expand_mask(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] 
     return inverted_mask.masked_fill(inverted_mask.to(torch.bool), -FLOAT16_LIMIT)
 
 
-class IPUWhisperAttention(WhisperAttention, IPUKVCacheMixin):
+class IPUWhisperAttention(WhisperAttention, IPUAttentionMixin):
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -87,25 +87,40 @@ class IPUWhisperAttention(WhisperAttention, IPUKVCacheMixin):
         layer_head_mask: Optional[torch.Tensor] = None,
         output_attentions: bool = False,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
-        # We handle the KV cache via buffers, ignoring the eager approach of passing the cache around.
-        # Use dummy values here so upstream DecoderLayer can stay as is.
-        past_key_value = (torch.tensor(0), torch.tensor(0))
-
         bsz, tgt_len, _ = hidden_states.size()
 
         query_states = self.q_proj(hidden_states) * self.scaling
         if key_value_states is not None:
-            key_states = self._shape(self.k_proj(key_value_states), -1, bsz)
-            value_states = self._shape(self.v_proj(key_value_states), -1, bsz)
-        else:
+            if self.cross_kv_cache_initialised:
+                # cross attention with cross kv cache
+                key_states, value_states = self.add_to_cross_kv_cache(
+                    key_value_states,
+                    lambda x: self._shape(self.k_proj(x), -1, bsz),
+                    lambda x: self._shape(self.v_proj(x), -1, bsz),
+                )
+            else:
+                # cross attention
+                key_states = self._shape(self.k_proj(key_value_states), -1, bsz)
+                value_states = self._shape(self.v_proj(key_value_states), -1, bsz)
+        elif self.kv_cache_initialised:
+            # self attention with kv cache
             key_states = self._shape(self.k_proj(hidden_states), -1, bsz)
             value_states = self._shape(self.v_proj(hidden_states), -1, bsz)
 
             if tgt_len != 1:
-                raise ValueError(f"KV cache mask expects tgt_len = 1, received {tgt_len}.")
+                raise ValueError(f"KV cache expects tgt_len = 1, received {tgt_len}.")
 
             key_states, value_states = self.add_to_kv_cache(key_states, value_states)
             attention_mask = self.update_attention_mask(attention_mask)
+        else:
+            # self attention
+            key_states = self._shape(self.k_proj(hidden_states), -1, bsz)
+            value_states = self._shape(self.v_proj(hidden_states), -1, bsz)
+
+        if self.is_decoder:
+            # We handle the KV cache via buffers, not via the eager approach of passing the cache around.
+            # This is retained so upstream DecoderLayer can stay as is and that tests pass.
+            past_key_value = (key_states, value_states)
 
         proj_shape = (bsz * self.num_heads, -1, self.head_dim)
         query_states = self._shape(query_states, tgt_len, bsz).view(*proj_shape)
@@ -324,42 +339,51 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         Args:
             restore: whether to restore the attention layers to their original version or not.
         """
+        use_cache = kwargs.get("use_cache", False)
+        batch_size = kwargs.get("batch_size", 1)
+        max_length = kwargs.get("max_length", 448)
+        num_beams = kwargs.get("num_beams", 1)
+        use_cross_cache = kwargs.get("use_cross_cache", False)
+        encoder_max_length = kwargs.get("encoder_max_length", 1500)
+
         for decoder_layer in self.model.decoder.layers:
             if restore:
-                if isinstance(decoder_layer.self_attn, IPUWhisperAttention):
-                    decoder_layer.self_attn.to_model(WhisperAttention)
-                if isinstance(decoder_layer.encoder_attn, IPUWhisperAttention):
-                    decoder_layer.encoder_attn.to_model(WhisperAttention)
+                decoder_layer.self_attn = decoder_layer.self_attn.to_model(WhisperAttention)
+                decoder_layer.encoder_attn = decoder_layer.encoder_attn.to_model(WhisperAttention)
                 continue
 
-            if not isinstance(decoder_layer.self_attn, WhisperAttention):
-                raise ValueError(
-                    f"Unexpected self_attn layer type {decoder_layer.self_attn.__class__}, "
-                    "expected WhisperAttention."
-                )
-            if not isinstance(decoder_layer.encoder_attn, WhisperAttention):
-                raise ValueError(
-                    f"Unexpected encoder_attn layer type {decoder_layer.encoder_attn.__class__}, "
-                    "expected WhisperAttention."
-                )
-
-            batch_size = kwargs.get("batch_size", 1)
-            max_length = kwargs.get("max_length", 448)
-            dtype = decoder_layer.self_attn.k_proj.weight.dtype
             decoder_layer.self_attn = IPUWhisperAttention.from_model(
-                decoder_layer.self_attn, batch_size, max_length, dtype=dtype
+                decoder_layer.self_attn,
+                use_cache=use_cache,
+                use_cross_cache=False,
+                batch_size=batch_size,
+                max_length=max_length,
+                num_beams=num_beams,
+                dtype=decoder_layer.self_attn.k_proj.weight.dtype,
             )
             decoder_layer.encoder_attn = IPUWhisperAttention.from_model(
-                decoder_layer.encoder_attn, batch_size, max_length, dtype=dtype
+                decoder_layer.encoder_attn,
+                use_cache=False,
+                use_cross_cache=use_cross_cache,
+                batch_size=batch_size,
+                encoder_max_length=encoder_max_length,
+                num_beams=num_beams,
+                dtype=decoder_layer.encoder_attn.k_proj.weight.dtype,
             )
 
-    def parallelize(self, for_generation=False, use_cache=False, **kwargs):
+    def parallelize(self, for_generation=False, use_cache=False, use_cross_cache=False, **kwargs):
         super().parallelize()
 
         self.change_encoder_layer_class(restore=False)
         self.change_decoder_class(restore=False)
         self.change_decoder_positional_embedding(restore=False)
-        self.change_attention_class(restore=not (use_cache and for_generation), **kwargs)
+        self.change_attention_class(
+            restore=False,
+            use_cache=use_cache and for_generation,
+            use_cross_cache=use_cross_cache and for_generation,
+            **kwargs,
+        )
+        self.change_lm_head_to_indexed_input_linear(restore=use_cache or not for_generation)
 
         logger.info("---------- Device Allocation -----------")
         logger.info("conv1, conv2, embed_positions  --> IPU 0")
@@ -403,14 +427,13 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
             self.model.decoder.layers[index] = poptorch.BeginBlock(layer, f"Decoder{index}", ipu_id=ipu)
             logger.info(f"Decoder {index:<2} --> IPU {ipu}")
 
-        last_ipu = ipu
-
-        logger.info(f"Head       --> IPU {last_ipu}")
-        logger.info("---------------------------------------")
         self.model.decoder.layer_norm = poptorch.BeginBlock(
-            self.model.decoder.layer_norm, "Decoder Layer Norm", ipu_id=last_ipu
+            self.model.decoder.layer_norm, "Decoder Layer Norm", ipu_id=ipu
         )
-        self.proj_out = poptorch.BeginBlock(self.proj_out, "Output Projection", ipu_id=last_ipu)
+
+        logger.info(f"Head       --> IPU 0")
+        logger.info("---------------------------------------")
+        self.proj_out = poptorch.BeginBlock(self.proj_out, "Output Projection", ipu_id=0)
         return self
 
     def deparallelize(self):
@@ -420,9 +443,7 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         self.change_decoder_class(restore=True)
         self.change_decoder_positional_embedding(restore=True)
         self.change_attention_class(restore=True)
-
-        if self.proj_out.__class__ == _IndexedInputLinear:
-            self.proj_out = self.lm_head.wrapped_linear
+        self.change_lm_head_to_indexed_input_linear(restore=True)
 
     def prepare_inputs_for_generation(
         self, decoder_input_ids, past=None, use_cache=None, encoder_outputs=None, attention_mask=None, **kwargs
@@ -441,3 +462,4 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
             "decoder_attention_mask": None,
             "beam_idx": beam_idx,
         }
+
