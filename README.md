@@ -1,3 +1,5 @@
+![Examples CI](https://github.com/huggingface/optimum-graphcore/actions/workflows/test-examples.yml/badge.svg) ![Pipelines CI](https://github.com/huggingface/optimum-graphcore/actions/workflows/test-pipelines.yml/badge.svg)
+
 <p align="center">
     <img src="readme_logo.png" />
 </p>
