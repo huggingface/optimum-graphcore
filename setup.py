@@ -18,7 +18,7 @@ INSTALL_REQUIRES = [
     "diffusers[torch]==0.12.1",
     "datasets",
     "tokenizers",
-    "torch @ https://download.pytorch.org/whl/cpu/torch-1.13.1%2Bcpu-cp38-cp38-linux_x86_64.whl",
+    "torch @ https://download.pytorch.org/whl/cpu/torch-2.0.0%2Bcpu-cp38-cp38-linux_x86_64.whl",
     "sentencepiece",
     "scipy",
     "pillow",
