@@ -20,6 +20,7 @@ from torch import nn
 from torch.utils.data import Dataset
 
 from optimum.utils import logging
+from poptorch._impl import rewrapModelIfNecessary, unwrapModelIfNecessary
 
 from .trainer import IPUTrainer
 
@@ -32,6 +33,11 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         if prediction_loss_only:
             return super()._wrap_and_compile_model_for_evaluation(dataloader, prediction_loss_only)
 
+        # Unwrap the model, including parameter and buffer annotations and the
+        # model as a whole. This is needed to avoid issues with persistent buffers
+        # when compiling an inference model for generation
+        unwrapModelIfNecessary(self.model)
+
         # reparallelize for generation
         self.model.deparallelize().ipu_config.eval()
         self.model.parallelize(for_generation=True)
@@ -41,6 +47,11 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         # (attribute added by IPUGenerationMixin::_call_generate)
         # are the actual models attached to the device
         return self.model
+
+    def _rewrap_model_for_training(self):
+        self.model = self.model.deparallelize().parallelize()
+        # Restores the PoptorchParameter and PoptorchBuffer annotations in the model
+        rewrapModelIfNecessary(self.model)
 
     def evaluate(
         self,
@@ -81,7 +92,9 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         """
         self._max_length = max_length if max_length is not None else self.args.generation_max_length
         self._num_beams = num_beams if num_beams is not None else self.args.generation_num_beams
-        return super().evaluate(eval_dataset, ignore_keys=ignore_keys, metric_key_prefix=metric_key_prefix)
+        results = super().evaluate(eval_dataset, ignore_keys=ignore_keys, metric_key_prefix=metric_key_prefix)
+        self._rewrap_model_for_training()
+        return results
 
     def predict(
         self,
@@ -130,7 +143,9 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         """
         self._max_length = max_length if max_length is not None else self.args.generation_max_length
         self._num_beams = num_beams if num_beams is not None else self.args.generation_num_beams
-        return super().predict(test_dataset, ignore_keys=ignore_keys, metric_key_prefix=metric_key_prefix)
+        results = super().predict(test_dataset, ignore_keys=ignore_keys, metric_key_prefix=metric_key_prefix)
+        self._rewrap_model_for_training()
+        return results
 
     def prediction_step(
         self,
