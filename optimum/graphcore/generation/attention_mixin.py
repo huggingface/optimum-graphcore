@@ -18,9 +18,20 @@ from typing import Callable, Optional, Tuple
 import torch
 
 import poptorch
+from transformers.utils.versions import require_version
 
 
 FLOAT16_LIMIT = 1e4
+
+
+def assert_poptorch_supports_cond(context: Optional[str] = None):
+    context = context or ""
+    require_version("poptorch>=3.3", "Require poptorch>=3.3 for `poptorch.cond`. " + context)
+    if not hasattr(poptorch, "cond"):
+        raise AttributeError(
+            "`poptorch.cond` appears to be missing, perhaps you are using a candidate release "
+            "which does not support it yet? " + context
+        )
 
 
 class IPUAttentionMixin:
@@ -45,7 +56,7 @@ class IPUAttentionMixin:
     @property
     def kv_cache_initialized(self) -> bool:
         return self._kv_cache_initialized
-    
+
     @property
     def cross_kv_cache_initialized(self) -> bool:
         return self._cross_kv_cache_initialized
@@ -101,7 +112,7 @@ class IPUAttentionMixin:
         dtype: torch.dtype = torch.float16,
         batch_serialization_factor: int = 1,
         sequence_serialization_factor: int = 1,
-        use_cross_cache=False,
+        use_cross_cache: bool = False,
         encoder_max_length: int = 128,
     ):
         """
@@ -122,8 +133,11 @@ class IPUAttentionMixin:
                 dtype=dtype,
                 uses_beams=num_beams > 1,
             )
-        
+
         if use_cross_cache:
+            assert_poptorch_supports_cond(
+                context="Cross-attention KV caching has been enabled with `use_cross_cache=True`."
+            )
             clone._create_cross_kv_cache(
                 (batch_size * num_beams, clone.num_heads, encoder_max_length, clone.head_dim),
                 dtype=dtype,
@@ -230,7 +244,7 @@ class IPUAttentionMixin:
             mask = mask + attention_mask
 
         return mask
-    
+
     def add_to_cross_kv_cache(
         self,
         cross_input: torch.Tensor,
@@ -249,6 +263,10 @@ class IPUAttentionMixin:
 
         if not hasattr(poptorch, "cond"):
             raise AttributeError("Cross KV caching requires `poptorch.cond` which appears to be missing.")
+
+        assert_poptorch_supports_cond(
+            context="Cross-attention KV caching has been enabled with `use_cross_cache=True`."
+        )
 
         # For now assume that generation will always start from step 0.
         reset_kv_cache = self._generation_step == 0
