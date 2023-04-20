@@ -889,20 +889,20 @@ class IPUTrainer:
             wrapped = model
         elif training:
             if self.training_model is None:
-                if not self.model.pipeline_mode == "train":
+                if self.model.parallelized:
                     model.deparallelize()
-                    model.ipu_config.train()
-                    model.parallelize()
+                model.ipu_config.train()
+                model.parallelize()
                 self.training_model = poptorch.trainingModel(
                     model.train(), options=self.opts, optimizer=self.optimizer
                 )
             wrapped = self.training_model
         else:
             if self.inference_model is None:
-                if not self.model.pipeline_mode == "evaluation":
+                if self.model.parallelized:
                     model.deparallelize()
-                    model.ipu_config.eval()
-                    model.parallelize()
+                model.ipu_config.eval()
+                model.parallelize()
                 self.inference_model = poptorch.inferenceModel(model.eval(), options=self.eval_opts)
             wrapped = self.inference_model
 
@@ -1600,7 +1600,7 @@ class IPUTrainer:
             torch.save(state_dict, os.path.join(output_dir, WEIGHTS_NAME))
         else:
             rng_state = torch.random.get_rng_state()
-            if not self.model.pipeline_mode == "deparallelized":
+            if self.model.parallelized:
                 self.model.deparallelize()
             self.model.save_pretrained(output_dir, state_dict=state_dict)
             self.model.parallelize()

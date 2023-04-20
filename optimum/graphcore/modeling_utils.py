@@ -80,20 +80,9 @@ def to_pipelined(model: nn.Module, ipu_config: IPUConfig, force: bool = False):
 
 
 class PipelineMixin:
-    ALLOWED_PIPELINE_MODES = ("train", "generation", "evaluation", "deparallelized")
-    _pipeline_mode = "deparallelized"
-
     @property
-    def pipeline_mode(self):
-        return self._pipeline_mode
-
-    @pipeline_mode.setter
-    def pipeline_mode(self, new_mode):
-        assert (
-            new_mode in self.ALLOWED_PIPELINE_MODES
-        ), f"`new_mode` can only be one of {self.ALLOWED_PIPELINE_MODES=}. You provided {new_mode}."
-        self._pipeline_mode = new_mode
-        return self
+    def parallelized(self):
+        return getattr(self, "_parallelized", False)
 
     @classmethod
     def from_transformers(cls, model: PreTrainedModel, ipu_config: IPUConfig):
@@ -167,16 +156,7 @@ class PipelineMixin:
         """Transforms the model to run in an IPU pipeline."""
         self._hooks = []
         self._has_ipu_config_check()
-
-        # Set appropriate parallelization mode
-        if self._ipu_config.mode == "training":
-            self.pipeline_mode = "train"
-        else:
-            if for_generation:
-                self.pipeline_mode = "generation"
-            else:
-                self.pipeline_mode = "evaluation"
-
+        self._parallelized = True
         return self
 
     def deparallelize(self):
@@ -193,8 +173,7 @@ class PipelineMixin:
         for m in self.modules():
             if m is not self:
                 poptorch.removeBlocks(m)
-        # Model is no longer parallelized
-        self.pipeline_mode = "deparallelized"
+        self._parallelized = False
         return self
 
     def num_parameters(self, only_trainable: bool = False, exclude_embeddings: bool = False) -> int:

@@ -120,7 +120,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin, IPUGenerationMixi
         model = PipelinedGPT2LMHeadModel(config).parallelize().half()
         ```
         """
-        PipelineMixin.parallelize(self, for_generation=for_generation)
+        PipelineMixin.parallelize(self)
 
         # Use optimized attention
         for layer in self.transformer.h:
