@@ -64,7 +64,6 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         self.model.deparallelize()
         self.model.parallelize(for_generation=True)
 
-
     def evaluate(
         self,
         eval_dataset: Optional[Dataset] = None,
