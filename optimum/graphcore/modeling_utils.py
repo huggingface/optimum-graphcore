@@ -440,7 +440,7 @@ class SerializedEmbedding(nn.Module):
 
         freeze = not self.split_embeddings[0].weight.requires_grad
         return nn.Embedding.from_pretrained(
-            torch.vstack([l.weight.detach() for l in self.split_embeddings]), padding_idx=0, freeze=freeze
+            torch.vstack([l.weight for l in self.split_embeddings]), padding_idx=0, freeze=freeze
         )
 
     def forward(self, indices):
