@@ -62,7 +62,7 @@ class IPUSeq2SeqTrainer(IPUTrainer):
 
     def _save(self, output_dir: Optional[str] = None, state_dict=None):
         super()._save(output_dir, state_dict)
-        # By `_save` will `parallelize` with `for_generation=False`, we fix that here
+        # By default `_save` will `parallelize` with `for_generation=False`, we fix that here
         self.model.deparallelize()
         self.model.parallelize(for_generation=True)
 
