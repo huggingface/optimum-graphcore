@@ -84,6 +84,10 @@ class PipelineMixin:
     def parallelized(self):
         return getattr(self, "_parallelized", False)
 
+    @parallelized.setter
+    def parallelized(self, value: bool):
+        logger.warn("parallelized cannot be set manually, ignoring new value")
+
     @classmethod
     def from_transformers(cls, model: PreTrainedModel, ipu_config: IPUConfig):
         """
