@@ -38,11 +38,13 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         # when compiling an inference model for generation
         unwrapModelIfNecessary(self.model)
 
-        # reparallelize for generation
-        if self.model.parallelized:
-            self.model.deparallelize()
-        self.model.ipu_config.eval()
-        self.model.parallelize(for_generation=True)
+        # reparallelize for generation, `poptorch_encoder` and `poptorch_decoder`
+        # attributes only exist for generation models
+        if not hasattr(self.model, "poptorch_decoder"):
+            if self.model.parallelized:
+                self.model.deparallelize()
+            self.model.ipu_config.eval()
+            self.model.parallelize(for_generation=True)
 
         # let IPUGenerationMixin::_call_generate handle compilation of the model
         # note though that self.model.poptorch_decoder and self.model.poptorch_encoder
