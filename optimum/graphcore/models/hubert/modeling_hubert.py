@@ -14,13 +14,14 @@
 
 from typing import Optional, Tuple, Union
 
-import poptorch
 import torch
 from torch import nn
+
+import poptorch
 from optimum.utils import logging
-from transformers import HubertForSequenceClassification, HubertForCTC
-from transformers.models.hubert.modeling_hubert import HubertEncoder, HubertEncoderStableLayerNorm
+from transformers import HubertForCTC, HubertForSequenceClassification
 from transformers.modeling_outputs import CausalLMOutput
+from transformers.models.hubert.modeling_hubert import HubertEncoder, HubertEncoderStableLayerNorm
 
 from ...modeling_utils import PipelineMixin, get_layer_ipu, recomputation_checkpoint, register
 from .ipu_layer_drop import IPUHubertEncoder, IPUHubertEncoderStableLayerNorm
