@@ -15,7 +15,6 @@
 from typing import Optional, Tuple, Union
 
 import torch
-from torch import nn
 
 import poptorch
 from optimum.utils import logging
@@ -98,21 +97,6 @@ class PipelinedHubertCTC(HubertForCTC, PipelineMixin):
         self.freeze_feature_encoder()
         self.change_hubert_encoder_class(False)
 
-        # self.hubert.feature_extractor = poptorch.BeginBlock(self.hubert.feature_extractor, ipu_id=0)
-        # self.hubert.feature_projection = poptorch.BeginBlock(self.hubert.feature_projection, ipu_id=0)
-        # self.hubert.encoder = poptorch.BeginBlock(self.hubert.encoder, ipu_id=0)
-
-        # layer_ipu = get_layer_ipu(self.ipu_config, self.hubert.encoder.layers)
-        # for index, layer in enumerate(self.hubert.encoder.layers):
-        #     # Put checkpoints on every encoder layer
-        #     h = recomputation_checkpoint(layer)
-        #     self._hooks.append(h)
-        #     ipu = layer_ipu[index]
-        #     self.hubert.encoder.layers[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
-
-        # last_ipu = self.ipu_config.ipus_per_replica - 1
-        # self.lm_head = poptorch.BeginBlock(self.lm_head, ipu_id=last_ipu)
-        # return self
         if self.ipu_config.ipus_per_replica != 1:
             logger.info("---------- Device Allocation -----------")
             layers = []
@@ -135,6 +119,7 @@ class PipelinedHubertCTC(HubertForCTC, PipelineMixin):
                 self._add_begin_block(layer, name, ipu_id=layer_ipu[i])
 
             logger.info("---------------------------------------")
+        return self
 
     def deparallelize(self):
         """
@@ -176,45 +161,6 @@ class PipelinedHubertCTC(HubertForCTC, PipelineMixin):
 
         logits = self.lm_head(hidden_states)
 
-        # loss = None
-        # if labels is not None:
-
-        #     if labels.max() >= self.config.vocab_size:
-        #         raise ValueError(f"Label values must be <= vocab_size: {self.config.vocab_size}")
-
-        #     # retrieve loss input_lengths from attention_mask
-        #     attention_mask = (
-        #         attention_mask if attention_mask is not None else torch.ones_like(input_values, dtype=torch.long)
-        #     )
-        #     input_lengths = self._get_feat_extract_output_lengths(attention_mask.sum(-1)).to(torch.long)
-
-        #     # assuming that padded tokens are filled with -100
-        #     # when not being attended to
-        #     labels_mask = labels >= 0
-        #     target_lengths = labels_mask.sum(-1)
-        #     flattened_targets = labels.masked_select(labels_mask)
-
-        #     # ctc_loss doesn't support fp16
-        #     log_probs = nn.functional.log_softmax(logits, dim=-1, dtype=torch.float32).transpose(0, 1)
-
-        #     with torch.backends.cudnn.flags(enabled=False):
-        #         loss = nn.functional.ctc_loss(
-        #             log_probs,
-        #             flattened_targets,
-        #             input_lengths,
-        #             target_lengths,
-        #             blank=self.config.pad_token_id,
-        #             reduction=self.config.ctc_loss_reduction,
-        #             zero_infinity=self.config.ctc_zero_infinity,
-        #         )
-
-        # if not return_dict:
-        #     output = (logits,) + outputs[_HIDDEN_STATES_START_POSITION:]
-        #     return ((loss,) + output) if loss is not None else output
-
-        # return CausalLMOutput(
-        #     loss=loss, logits=logits, hidden_states=outputs.hidden_states, attentions=outputs.attentions
-        # )
         loss = None
         if labels is not None:
             # retrieve loss input_lengths from attention_mask
@@ -233,16 +179,7 @@ class PipelinedHubertCTC(HubertForCTC, PipelineMixin):
             log_probs = torch.nn.functional.log_softmax(logits.float(), dim=-1).transpose(0, 1)
 
             loss_fn = torch.nn.CTCLoss(blank=self.config.pad_token_id, reduction=self.config.ctc_loss_reduction)
-            # loss = nn.functional.ctc_loss(
-            #     log_probs,
-            #     flattened_targets,
-            #     input_lengths,
-            #     target_lengths,
-            #     blank=self.config.pad_token_id,
-            #     reduction=self.config.ctc_loss_reduction,
-            #     zero_infinity=self.config.ctc_zero_infinity,
-            # )
-            loss = loss_fn(log_probs.float(), labels, input_lengths, target_lengths)
+            loss = loss_fn(log_probs, labels, input_lengths, target_lengths)
             loss = poptorch.identity_loss(loss, "sum")
 
         if not return_dict:
