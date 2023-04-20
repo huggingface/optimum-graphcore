@@ -191,7 +191,7 @@ class PipelineMixin:
             if m is not self:
                 poptorch.removeBlocks(m)
         # Model is no longer parallelized
-        self.pipeline_mode = "default"
+        self.pipeline_mode = "deparallelized"
         return self
 
     def num_parameters(self, only_trainable: bool = False, exclude_embeddings: bool = False) -> int:

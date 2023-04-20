@@ -1600,7 +1600,7 @@ class IPUTrainer:
             torch.save(state_dict, os.path.join(output_dir, WEIGHTS_NAME))
         else:
             rng_state = torch.random.get_rng_state()
-            if not self.model.pipeline_mode == "default":
+            if not self.model.pipeline_mode == "deparallelized":
                 self.model.deparallelize()
             self.model.save_pretrained(output_dir, state_dict=state_dict)
             self.model.parallelize()
