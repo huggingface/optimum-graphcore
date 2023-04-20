@@ -50,6 +50,7 @@ from .models.roberta import (
     PipelinedRobertaForSequenceClassification,
     PipelinedRobertaForTokenClassification,
 )
+from .models.mt5 import PipelinedMT5ForConditionalGeneration
 from .models.t5 import PipelinedT5ForConditionalGeneration
 from .models.vit import PipelinedViTForImageClassification
 from .models.wav2vec2 import PipelinedWav2Vec2ForPreTraining
