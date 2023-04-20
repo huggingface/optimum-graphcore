@@ -51,9 +51,9 @@ class PipelinedMT5ForConditionalGeneration(MT5ForConditionalGeneration, Pipeline
         # this requires training and inference specific settings in the IPUConfig
         if self.ipu_config.embedding_serialization_factor < 2:
             raise ValueError("Embedding serialization factor must be greater than 1 for MT5 to run on the IPU.")
-
         self.shared = SerializedEmbedding(self.shared, self.ipu_config.embedding_serialization_factor)
-
+        self.shared = poptorch.BeginBlock(self.shared, "Embedding", 0)
+    
         if for_generation:
             self.lm_head = SplitLinear(
                 self.lm_head, splits=1, serialization_factor=self.ipu_config.embedding_serialization_factor
@@ -77,8 +77,8 @@ class PipelinedMT5ForConditionalGeneration(MT5ForConditionalGeneration, Pipeline
         if for_generation:
             last_ipu = self.decoder_ipu_config.ipus_per_replica - 1
             logger.info(f"Ammendment: LM Head Output --> IPU {last_ipu}")
-            self.lm_head.split_linear_layers[0] = poptorch.BeginBlock(
-                self.lm_head.split_linear_layers[0], f"LM Head Output {0}", ipu_id=last_ipu
+            self.lm_head.wrapped_linear.split_linear_layers[0] = poptorch.BeginBlock(
+                self.lm_head.wrapped_linear.split_linear_layers[0], f"LM Head Output {0}", ipu_id=last_ipu
             )
         else:
             last_ipu = self.ipu_config.ipus_per_replica - 1
@@ -107,9 +107,7 @@ class PipelinedMT5ForConditionalGeneration(MT5ForConditionalGeneration, Pipeline
         self.ipu_config.embedding_serialization_factor = 1
         PipelinedT5ForConditionalGeneration.deparallelize(self)
         self.ipu_config.embedding_serialization_factor = original_embedding_serialization_factor
-
-        if self.lm_head.__class__ == _IndexedInputLinear:
-            self.lm_head = self.lm_head.wrapped_linear
+        
         self.lm_head = self.lm_head.deserialize()
         self.shared = self.shared.deserialize()
 
