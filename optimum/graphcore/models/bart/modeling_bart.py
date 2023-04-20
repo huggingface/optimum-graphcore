@@ -698,7 +698,7 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
         model = PipelinedBartForConditionalGeneration(config).parallelize().half()
         ```
         """
-        super().parallelize()
+        super().parallelize(for_generation=for_generation)
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding  --> IPU 0")

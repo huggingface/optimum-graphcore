@@ -78,8 +78,48 @@ def to_pipelined(model: nn.Module, ipu_config: IPUConfig, force: bool = False):
         else:
             raise KeyError(f"{model_cls.__name__} pipelined version not found in registry.")
 
-
 class PipelineMixin:
+    ALLOWED_PIPELINE_MODES = ("train", "generation", "evaluation", "default")
+    _pipeline_mode = "default"
+    
+    @property
+    def pipeline_mode(self):
+        return self._pipeline_mode
+    
+    @pipeline_mode.setter
+    def pipeline_mode(self, new_mode):
+        assert new_mode in self.ALLOWED_PIPELINE_MODES, f"`new_mode` can only be one of {self.ALLOWED_PIPELINE_MODES=}. You provided {new_mode}."
+        self._pipeline_mode = new_mode 
+        return self
+    
+    def _set_pipeline_mode_train(self):
+        self.pipeline_mode = "train"
+        return self
+
+    def _set_pipeline_mode_generation(self):
+        self.pipeline_mode = "generation"
+        return self
+    
+    def _set_pipeline_mode_evaluation(self):
+        self.pipeline_mode = "evaluation"
+        return self
+
+    def _set_pipeline_mode_default(self):
+        self.pipeline_mode = "default"
+        return self
+    
+    def _is_pipeline_mode_train(self) -> bool:
+        return self.pipeline_mode == "train"
+    
+    def _is_pipeline_mode_generation(self) -> bool:
+        return self.pipeline_mode == "generation"
+    
+    def _is_pipeline_mode_evaluation(self) -> bool:
+        return self.pipeline_mode == "evaluation"
+    
+    def _is_pipeline_mode_default(self) -> bool:
+        return self.pipeline_mode == "default"
+    
     @classmethod
     def from_transformers(cls, model: PreTrainedModel, ipu_config: IPUConfig):
         """
@@ -148,10 +188,20 @@ class PipelineMixin:
             raise TypeError(f"ipu_config must be an instance of IPUConfig, but {type(value)} was provided")
         self._ipu_config = value
 
-    def parallelize(self):
+    def parallelize(self, for_generation=False):
         """Transforms the model to run in an IPU pipeline."""
         self._hooks = []
         self._has_ipu_config_check()
+        
+        # Set appropriate parallelization mode
+        if self._ipu_config.mode == "training":
+            self._set_pipeline_mode_train()
+        else: 
+            if for_generation:
+                self._set_pipeline_mode_generation()
+            else:
+                self._set_pipeline_mode_evaluation()
+            
         return self
 
     def deparallelize(self):
@@ -168,6 +218,8 @@ class PipelineMixin:
         for m in self.modules():
             if m is not self:
                 poptorch.removeBlocks(m)
+        # Model is no longer parallelized
+        self._set_pipeline_mode_default()
         return self
 
     def num_parameters(self, only_trainable: bool = False, exclude_embeddings: bool = False) -> int:
@@ -434,7 +486,7 @@ class SerializedEmbedding(nn.Module):
 
         freeze = not self.split_embeddings[0].weight.requires_grad
         return nn.Embedding.from_pretrained(
-            torch.vstack([l.weight for l in self.split_embeddings]), padding_idx=0, freeze=freeze
+            torch.vstack([l.weight.detach() for l in self.split_embeddings]), padding_idx=0, freeze=freeze
         )
 
     def forward(self, indices):

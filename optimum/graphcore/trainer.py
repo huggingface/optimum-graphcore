@@ -889,18 +889,22 @@ class IPUTrainer:
             wrapped = model
         elif training:
             if self.training_model is None:
-                model.deparallelize()
-                model.ipu_config.train()
-                model.parallelize()
+                if not self.model._is_pipeline_mode_train():
+                    model.deparallelize()
+                    model.ipu_config.train()
+                    model.parallelize()
+                if self.optimizer is None:
+                    self.optimizer =  self.create_optimizer()                    
                 self.training_model = poptorch.trainingModel(
                     model.train(), options=self.opts, optimizer=self.optimizer
                 )
             wrapped = self.training_model
         else:
             if self.inference_model is None:
-                model.deparallelize()
-                model.ipu_config.eval()
-                model.parallelize()
+                if not self.model._is_pipeline_mode_evaluation():
+                    model.deparallelize()
+                    model.ipu_config.eval()
+                    model.parallelize()
                 self.inference_model = poptorch.inferenceModel(model.eval(), options=self.eval_opts)
             wrapped = self.inference_model
 
@@ -1032,8 +1036,6 @@ class IPUTrainer:
         if DebugOption.UNDERFLOW_OVERFLOW in self.args.debug:
             debug_overflow = DebugUnderflowOverflow(self.model)  # noqa
 
-        self.create_optimizer_and_scheduler(num_training_steps=max_steps)
-
         self.state = IPUTrainerState()
         if trial is not None:
             raise ValueError("Hyperparameter tuning is not supported by the IPUTrainer.")
@@ -1041,6 +1043,8 @@ class IPUTrainer:
         self.state.is_hyper_param_search = trial is not None
 
         self.training_model = self.wrap_model(self.model)
+        
+        self.create_scheduler(num_training_steps=max_steps)
 
         # TODO: handle optimizer and scheduler creation
         # if delay_optimizer_creation:
@@ -1598,7 +1602,8 @@ class IPUTrainer:
             torch.save(state_dict, os.path.join(output_dir, WEIGHTS_NAME))
         else:
             rng_state = torch.random.get_rng_state()
-            self.model.deparallelize()
+            if not self.model._is_pipeline_mode_default():
+                self.model.deparallelize()
             self.model.save_pretrained(output_dir, state_dict=state_dict)
             self.model.parallelize()
             torch.random.set_rng_state(rng_state)

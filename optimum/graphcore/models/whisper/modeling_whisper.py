@@ -356,7 +356,7 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
             )
 
     def parallelize(self, for_generation=False, use_cache=False, **kwargs):
-        super().parallelize()
+        super().parallelize(for_generation=for_generation)
 
         self.change_encoder_layer_class(restore=False)
         self.change_decoder_class(restore=False)
