@@ -79,8 +79,8 @@ def to_pipelined(model: nn.Module, ipu_config: IPUConfig, force: bool = False):
             raise KeyError(f"{model_cls.__name__} pipelined version not found in registry.")
 
 class PipelineMixin:
-    ALLOWED_PIPELINE_MODES = ("train", "generation", "evaluation", "default")
-    _pipeline_mode = "default"
+    ALLOWED_PIPELINE_MODES = ("train", "generation", "evaluation", "deparallelized")
+    _pipeline_mode = "deparallelized"
     
     @property
     def pipeline_mode(self):
