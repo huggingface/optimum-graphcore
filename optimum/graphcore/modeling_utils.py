@@ -152,7 +152,7 @@ class PipelineMixin:
             raise TypeError(f"ipu_config must be an instance of IPUConfig, but {type(value)} was provided")
         self._ipu_config = value
 
-    def parallelize(self, for_generation=False):
+    def parallelize(self):
         """Transforms the model to run in an IPU pipeline."""
         self._hooks = []
         self._has_ipu_config_check()
