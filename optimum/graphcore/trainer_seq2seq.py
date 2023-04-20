@@ -39,7 +39,7 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         unwrapModelIfNecessary(self.model)
 
         # reparallelize for generation
-        if not self.model._is_pipeline_mode_generation():
+        if not self.model.pipeline_mode == "generation":
             self.model.deparallelize().ipu_config.eval()
             self.model.parallelize(for_generation=True)
 
@@ -50,7 +50,7 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         return self.model
 
     def _rewrap_model_for_training(self):
-        if not self.model._is_pipeline_mode_train():
+        if not self.model.pipeline_mode == "train":
             self.model = self.model.deparallelize().ipu_config.train().parallelize()
         # Restores the PoptorchParameter and PoptorchBuffer annotations in the model
         rewrapModelIfNecessary(self.model)

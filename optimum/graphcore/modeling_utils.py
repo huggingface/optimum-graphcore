@@ -92,34 +92,6 @@ class PipelineMixin:
         self._pipeline_mode = new_mode 
         return self
     
-    def _set_pipeline_mode_train(self):
-        self.pipeline_mode = "train"
-        return self
-
-    def _set_pipeline_mode_generation(self):
-        self.pipeline_mode = "generation"
-        return self
-    
-    def _set_pipeline_mode_evaluation(self):
-        self.pipeline_mode = "evaluation"
-        return self
-
-    def _set_pipeline_mode_default(self):
-        self.pipeline_mode = "default"
-        return self
-    
-    def _is_pipeline_mode_train(self) -> bool:
-        return self.pipeline_mode == "train"
-    
-    def _is_pipeline_mode_generation(self) -> bool:
-        return self.pipeline_mode == "generation"
-    
-    def _is_pipeline_mode_evaluation(self) -> bool:
-        return self.pipeline_mode == "evaluation"
-    
-    def _is_pipeline_mode_default(self) -> bool:
-        return self.pipeline_mode == "default"
-    
     @classmethod
     def from_transformers(cls, model: PreTrainedModel, ipu_config: IPUConfig):
         """
@@ -195,12 +167,12 @@ class PipelineMixin:
         
         # Set appropriate parallelization mode
         if self._ipu_config.mode == "training":
-            self._set_pipeline_mode_train()
+            self.pipeline_mode = "train"
         else: 
             if for_generation:
-                self._set_pipeline_mode_generation()
+                self.pipeline_mode = "generation"
             else:
-                self._set_pipeline_mode_evaluation()
+                self.pipeline_mode = "evaluation"
             
         return self
 
@@ -219,7 +191,7 @@ class PipelineMixin:
             if m is not self:
                 poptorch.removeBlocks(m)
         # Model is no longer parallelized
-        self._set_pipeline_mode_default()
+        self.pipeline_mode = "default"
         return self
 
     def num_parameters(self, only_trainable: bool = False, exclude_embeddings: bool = False) -> int:

@@ -889,7 +889,7 @@ class IPUTrainer:
             wrapped = model
         elif training:
             if self.training_model is None:
-                if not self.model._is_pipeline_mode_train():
+                if not self.model.pipeline_mode == "train":
                     model.deparallelize()
                     model.ipu_config.train()
                     model.parallelize()                   
@@ -899,7 +899,7 @@ class IPUTrainer:
             wrapped = self.training_model
         else:
             if self.inference_model is None:
-                if not self.model._is_pipeline_mode_evaluation():
+                if not self.model.pipeline_mode == "evaluation":
                     model.deparallelize()
                     model.ipu_config.eval()
                     model.parallelize()
@@ -1600,7 +1600,7 @@ class IPUTrainer:
             torch.save(state_dict, os.path.join(output_dir, WEIGHTS_NAME))
         else:
             rng_state = torch.random.get_rng_state()
-            if not self.model._is_pipeline_mode_default():
+            if not self.model.pipeline_mode == "default":
                 self.model.deparallelize()
             self.model.save_pretrained(output_dir, state_dict=state_dict)
             self.model.parallelize()
