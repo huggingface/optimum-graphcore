@@ -364,19 +364,17 @@ class IPUTrainer:
         # very last
         self._memory_tracker.stop_and_update_metrics()
 
-        self.training_model = self.wrap_model(self.model, training=True)
-        self.inference_model = self.wrap_model(self.model, training=False)
-
         # If compile-only then compile and exit
         if args.compile_only:
             logger.info("Called with compile_only=True. Compiling models then exiting.")
             if args.do_train:
                 train_dl = self.get_train_dataloader()
-                self.compile_model(self.training_model, next(iter(train_dl)), log=True)
+                model = self.wrap_model(self.model)
+                self.compile_model(model, next(iter(train_dl)), log=True)
             if args.do_eval:
                 # Same thing with _wrap_and_compile_for_evaluation
                 eval_dl = self.get_eval_dataloader()
-                _ = self._wrap_and_compile_model_for_evaluation(eval_dl, False)
+                model = self._wrap_and_compile_model_for_evaluation(eval_dl, False)
             logger.info("Exiting after compiling models with compile_only=True")
             sys.exit(0)
 
@@ -1039,6 +1037,8 @@ class IPUTrainer:
             raise ValueError("Hyperparameter tuning is not supported by the IPUTrainer.")
             trial = None
         self.state.is_hyper_param_search = trial is not None
+
+        self.training_model = self.wrap_model(self.model)
 
         self.create_scheduler(num_training_steps=max_steps)
 
