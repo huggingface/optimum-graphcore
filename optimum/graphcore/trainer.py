@@ -892,7 +892,7 @@ class IPUTrainer:
                 if not self.model.pipeline_mode == "train":
                     model.deparallelize()
                     model.ipu_config.train()
-                    model.parallelize()                   
+                    model.parallelize()
                 self.training_model = poptorch.trainingModel(
                     model.train(), options=self.opts, optimizer=self.optimizer
                 )
@@ -1035,7 +1035,7 @@ class IPUTrainer:
             debug_overflow = DebugUnderflowOverflow(self.model)  # noqa
 
         self.create_optimizer_and_scheduler(num_training_steps=max_steps)
-        
+
         self.state = IPUTrainerState()
         if trial is not None:
             raise ValueError("Hyperparameter tuning is not supported by the IPUTrainer.")
@@ -1043,7 +1043,7 @@ class IPUTrainer:
         self.state.is_hyper_param_search = trial is not None
 
         self.training_model = self.wrap_model(self.model)
-        
+
         # TODO: handle optimizer and scheduler creation
         # if delay_optimizer_creation:
         #     self.create_optimizer_and_scheduler(num_training_steps=max_steps)
