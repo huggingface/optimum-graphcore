@@ -1,4 +1,4 @@
-![Examples CI](https://github.com/huggingface/optimum-graphcore/actions/workflows/test-examples.yml/badge.svg) ![Pipelines CI](https://github.com/huggingface/optimum-graphcore/actions/workflows/test-pipelines.yml/badge.svg)
+[![examples](https://github.com/huggingface/optimum-graphcore/actions/workflows/test-examples.yml/badge.svg)](https://github.com/huggingface/optimum-graphcore/actions/workflows/test-examples.yml) [![pipelines](https://github.com/huggingface/optimum-graphcore/actions/workflows/test-pipelines.yml/badge.svg)](https://github.com/huggingface/optimum-graphcore/actions/workflows/test-pipelines.yml)
 
 <p align="center">
     <img src="readme_logo.png" />
