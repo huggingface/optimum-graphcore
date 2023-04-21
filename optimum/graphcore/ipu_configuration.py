@@ -133,13 +133,13 @@ class IPUConfig(BaseConfig):
 
         def __set__(self, obj, value):
             if isinstance(obj, IPUConfig):
-                logger.info(f"ManagedAttribute {self.attr} writing to {obj.mode}_{self.attr}")
+                logger.debug(f"ManagedAttribute {self.attr} writing to {obj.mode}_{self.attr}")
                 assert obj.mode in obj.modes, f"IPUConfig.mode is invalid, must be one of: {obj.modes}"
                 return setattr(obj, f"{obj.mode}_{self.attr}", value)
 
         def __get__(self, obj, objtype=None):
             if isinstance(obj, IPUConfig):
-                logger.info(f"ManagedAttribute {self.attr} reading from {obj.mode}_{self.attr}")
+                logger.debug(f"ManagedAttribute {self.attr} reading from {obj.mode}_{self.attr}")
                 assert obj.mode in obj.modes, f"IPUConfig.mode is invalid, must be one of: {obj.modes}"
                 return getattr(obj, f"{obj.mode}_{self.attr}")
 
