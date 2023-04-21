@@ -13,10 +13,11 @@
 #  limitations under the License.
 
 import contextlib
+import copy
 import json
 import os
 import warnings
-from typing import Any, Dict, Optional, Union
+from typing import Any, Callable, Dict, Optional, Union
 
 import torch
 from torch import nn
@@ -46,9 +47,11 @@ from transformers.modeling_outputs import BaseModelOutput, ModelOutput
 from transformers.pytorch_utils import torch_int_div
 from transformers.utils.versions import require_version
 
+from .logits_process import IPULogitsProcessors
+from .on_device_generation import OnDeviceGenerationModel, OnDeviceGreedySearch
+
 
 logger = logging.get_logger(__name__)
-
 
 MODELS_SUPPORTING_KV_CACHE = set()
 
@@ -147,10 +150,11 @@ class DecoderWrapper(nn.Module):
         # Run the decoder
         kwargs = self._get_buffered_outputs()
         outputs = self.pipelined_model(**model_inputs, **kwargs)
-        return type(outputs)(
-            loss=None,
-            logits=outputs.logits,
-        )
+        if isinstance(outputs, ModelOutput):
+            outputs = type(outputs)(
+                logits=outputs.logits,
+            )
+        return outputs
 
 
 class IPUGenerationMixin(GenerationMixin):
@@ -165,15 +169,35 @@ class IPUGenerationMixin(GenerationMixin):
     def _pad_tensors_to_max_len(self, tensor: torch.Tensor, max_length: int, pad_token_id: int) -> torch.Tensor:
         return nn.functional.pad(tensor, (0, max_length - tensor.shape[1]), "constant", pad_token_id)
 
-    def _call_generate(self, *args, generation_step: int, **kwargs):
-        t = self._get_generation_step_tensor(generation_step)
+    def _ensure_generation_step_progression(self, generation_step):
+        if not hasattr(self, "_previous_generation_step"):
+            self._previous_generation_step = generation_step
+            return
+        if generation_step <= self._previous_generation_step and generation_step != 0:
+            raise ValueError("`generation_step` must increase, or begin from 0.")
+        self._previous_generation_step = generation_step
+
+    def _call_generate(
+        self,
+        *args,
+        generation_step: int,
+        on_device_generation_model_ctr: Optional[Callable[[torch.nn.Module], torch.nn.Module]] = None,
+        **kwargs,
+    ):
+        self._ensure_generation_step_progression(generation_step)
+        t = self._get_generation_step_tensor(generation_step, ascending=on_device_generation_model_ctr is not None)
         if not hasattr(self, "poptorch_decoder"):
-            wrapper = DecoderWrapper(self.eval())
-            decoder_ipu_config = getattr(self, "decoder_ipu_config", self.ipu_config)
+            generation_model = self
+            if on_device_generation_model_ctr is not None:
+                generation_model = on_device_generation_model_ctr(self)
+            decoder_wrapper = DecoderWrapper(generation_model.eval())
+
             if os.getenv("DEBUG_RUN_DECODER_ON_CPU", False):
-                self.poptorch_decoder = wrapper
+                self.poptorch_decoder = decoder_wrapper
             else:
+                decoder_ipu_config = getattr(self, "decoder_ipu_config", self.ipu_config)
                 decoder_options = decoder_ipu_config.to_options(for_inference=True)
+
                 if self.config.is_encoder_decoder and self.use_encoder_output_buffer:
                     require_version(
                         "poptorch>=3.3", "Updatable encoder output buffer optimization only available in poptorch>=3.3"
@@ -181,9 +205,10 @@ class IPUGenerationMixin(GenerationMixin):
                     named_buffers = {"encoder_last_hidden_state": kwargs["encoder_outputs"]["last_hidden_state"]}
                     if kwargs.get("attention_mask") is not None:
                         named_buffers["encoder_attention_mask"] = kwargs["attention_mask"].half()
-                    wrapper.register_encoder_output_buffers(named_buffers)
+                    decoder_wrapper.register_encoder_output_buffers(named_buffers)
                     decoder_options.updatableNamedBuffers(list(named_buffers.keys()))
-                self.poptorch_decoder = poptorch.inferenceModel(wrapper, decoder_options)
+
+                self.poptorch_decoder = poptorch.inferenceModel(decoder_wrapper, decoder_options)
 
         if self.config.is_encoder_decoder and self.use_encoder_output_buffer:
             del kwargs["encoder_outputs"]
@@ -248,14 +273,17 @@ class IPUGenerationMixin(GenerationMixin):
         if hasattr(self, "poptorch_decoder"):
             self.poptorch_decoder.detachFromDevice()
 
-    def _get_generation_step_tensor(self, generation_step):
+    def _get_generation_step_tensor(self, generation_step, ascending=False):
         # Returns a 1 dimensional tensor of the form [device_iterations * replication factor]
         # with all elements equal to generation_step.
         # This ensures the dimensions are as expected by any parallelism options.
-        return (
-            torch.ones(self.ipu_config.inference_device_iterations * self.ipu_config.inference_replication_factor)
-            * generation_step
+        decoder_ipu_config = getattr(self, "decoder_ipu_config", self.ipu_config)
+        per_replica = (
+            torch.arange(decoder_ipu_config.inference_device_iterations) + generation_step
+            if ascending
+            else torch.ones(decoder_ipu_config.inference_device_iterations) * generation_step
         )
+        return per_replica.repeat(decoder_ipu_config.inference_replication_factor)
 
     def change_lm_head_to_indexed_input_linear(self, restore: bool):
         """Changes the LM head with the faster _IndexedInputLinear layer.
@@ -405,6 +433,19 @@ class IPUGenerationMixin(GenerationMixin):
             raise ValueError(
                 f"{self.__class__} does not support KV caching. Pipelined models can be "
                 "decorated using `supports_kv_cache` once they support static KV caching."
+            )
+
+        # Change: intercept to optionally run the entire generation loop on device
+        if self.on_device_generation_steps > 1:
+            return self._on_device_greedy_search(
+                input_ids,
+                logits_processor=logits_processor,
+                stopping_criteria=stopping_criteria,
+                pad_token_id=pad_token_id,
+                eos_token_id=eos_token_id,
+                max_length=max_length,
+                return_dict_in_generate=return_dict_in_generate,
+                **model_kwargs,
             )
 
         # keep track of which sequences are already finished
@@ -680,6 +721,10 @@ class IPUGenerationMixin(GenerationMixin):
                 f"{self.__class__} does not support KV caching. Pipelined models can be "
                 "decorated using `supports_kv_cache` once they support static KV caching."
             )
+
+        # Change: intercept to optionally run the entire generation loop on device
+        if self.on_device_generation_steps > 1:
+            return self._on_device_beam_search()
 
         beam_scores = torch.zeros((batch_size, num_beams), dtype=torch.float, device=input_ids.device)
         beam_scores[:, 1:] = -1e9
@@ -983,6 +1028,10 @@ class IPUGenerationMixin(GenerationMixin):
                 "decorated using `supports_kv_cache` once they support static KV caching."
             )
 
+        # Change: intercept to optionally run the entire generation loop on device
+        if self.on_device_generation_steps > 1:
+            return self._on_device_sample()
+
         # keep track of which sequences are already finished
         unfinished_sequences = input_ids.new(input_ids.shape[0]).fill_(1)
         cur_len = input_ids.shape[-1]
@@ -1265,6 +1314,10 @@ class IPUGenerationMixin(GenerationMixin):
                 "decorated using `supports_kv_cache` once they support static KV caching."
             )
 
+        # Change: intercept to optionally run the entire generation loop on device
+        if self.on_device_generation_steps > 1:
+            return self._on_device_beam_sample()
+
         beam_scores = torch.zeros((batch_size, num_beams), dtype=torch.float, device=input_ids.device)
         beam_scores = beam_scores.view((batch_size * num_beams,))
 
@@ -1415,3 +1468,162 @@ class IPUGenerationMixin(GenerationMixin):
                 )
         else:
             return sequence_outputs["sequences"]
+
+    on_device_generation_steps: int = 0
+
+    def set_on_device_generation_steps(self, value: Optional[int] = 0):
+        self.on_device_generation_steps = value
+        if value == 0:
+            del self.on_device_generation_steps
+
+    def _adapt_logits_processor_for_on_device_generation(self, logits_processor: LogitsProcessorList):
+        adapted_processors = []
+        for processor in logits_processor:
+            ipu_processor_cls = IPULogitsProcessors.get(processor.__class__, None)
+            if ipu_processor_cls is None:
+                raise NotImplementedError(f"{processor.__class__.__name__} is not supported yet to run on IPU.")
+
+            ipu_processor = copy.deepcopy(processor)
+            ipu_processor.__class__ = ipu_processor_cls
+            adapted_processors.append(ipu_processor)
+        return LogitsProcessorList(adapted_processors)
+
+    def _adapt_stopping_criteria_for_on_device_generation(
+        self, stopping_criteria: StoppingCriteriaList, on_device_generation_steps: int
+    ):
+        adapted_stopping_criteria = []
+        for stopping_criterion in stopping_criteria:
+            if hasattr(stopping_criterion, "max_length"):
+                max_length = stopping_criterion.max_length
+                new_max_length = max_length - on_device_generation_steps
+                logger.info(
+                    f"Temporarily adapting `max_length` from {max_length} to {new_max_length} for on device generation."
+                )
+                stopping_criterion = copy.deepcopy(stopping_criterion)
+                stopping_criterion.max_length = new_max_length
+            adapted_stopping_criteria.append(stopping_criterion)
+        return StoppingCriteriaList(adapted_stopping_criteria)
+
+    def _prepare_inputs_for_on_device_generation(self, model_inputs, on_device_generation_steps, batch_size):
+        adapted_model_inputs = {}
+        for k, v in model_inputs.items():
+            if torch.is_tensor(v):
+                if v.shape[0] != batch_size:
+                    raise ValueError(f"Unexpected size in dim 0 for {k}, expected {batch_size}.")
+                v = v.repeat(on_device_generation_steps, *(1 for _ in range(v.ndim - 1)))
+            elif k == "encoder_outputs":
+                v_type = type(v)
+                if not isinstance(v, BaseModelOutput):
+                    raise ValueError(
+                        "Expected `encoder_outputs` to be an instance of `BaseModelOutput`, " f"received {v_type}."
+                    )
+                v = v.last_hidden_state
+                v = v.repeat(on_device_generation_steps, *(1 for _ in range(v.ndim - 1)))
+                v = v_type(last_hidden_state=v)
+            elif v is None:
+                pass
+            elif isinstance(v, (int, float, str, bool)):
+                pass
+            else:
+                raise TypeError(
+                    f"Unexpected type {type(v)} received for decoder input {k}. On device generation enforces "
+                    "stricter input validation to minimise unexpected errors. Improvements are always welcome."
+                )
+            adapted_model_inputs[k] = v
+        return adapted_model_inputs
+
+    def _on_device_greedy_search(
+        self,
+        input_ids: torch.Tensor,
+        logits_processor: LogitsProcessorList,
+        stopping_criteria: StoppingCriteriaList,
+        pad_token_id: int,
+        eos_token_id: int,
+        max_length: int,
+        return_dict_in_generate: Optional[bool] = False,
+        **model_kwargs,
+    ):
+        if not model_kwargs.get("use_cache", False):
+            raise NotImplementedError("On device greedy search assumes `use_cache=True`.")
+
+        if return_dict_in_generate:
+            raise NotImplementedError("On device greedy search assumes `return_dict_in_generate=False`.")
+
+        batch_size, context_length = input_ids.shape
+        if (max_length - context_length) % self.on_device_generation_steps != 0:
+            logger.info(
+                "`max_length - context_length` does not evenly divide `on_device_generation_steps` "
+                f"({max_length - context_length} vs {self.on_device_generation_steps}). Generation will be done "
+                f"{self.on_device_generation_steps} tokens at a time and stop short of `max_length` so as not to exceed it."
+            )
+
+        if self.ipu_config.inference_device_iterations != 1:
+            raise ValueError(
+                "On device generation expects `inference_device_iterations=1`, "
+                f"received {self.ipu_config.inference_device_iterations}. "
+                "For on device generation, `inference_device_iterations` will be set to "
+                f"`on_device_generation_steps={self.on_device_generation_steps}`."
+            )
+        if hasattr(self, "decoder_ipu_config"):
+            self.decoder_ipu_config.inference_device_iterations = self.on_device_generation_steps
+        else:
+            self.ipu_config.inference_device_iterations = self.on_device_generation_steps
+
+        logits_processor = self._adapt_logits_processor_for_on_device_generation(logits_processor)
+        stopping_criteria = self._adapt_stopping_criteria_for_on_device_generation(
+            stopping_criteria, self.on_device_generation_steps
+        )
+
+        # This function only has to be called at the beginning of generation since
+        # all necessary state should be stored in buffers on device.
+        model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
+
+        # A model-agnostic version of above mainly to duplicate inputs for device iterations.
+        model_inputs = self._prepare_inputs_for_on_device_generation(
+            model_inputs, self.on_device_generation_steps, batch_size
+        )
+
+        on_device_generation_model_ctr = lambda inst: OnDeviceGenerationModel(
+            inst,
+            generation_strategy=OnDeviceGreedySearch(logits_processor),
+            batch_size=batch_size,
+            max_sequence_length=max_length,
+            pad_token_id=pad_token_id,
+            eos_token_id=eos_token_id,
+            context_length=context_length,
+            num_beams=1,
+            use_cache=True,
+        )
+
+        generation_step = 0
+        while True:
+            next_tokens = self._call_generate(
+                generation_step=generation_step,  # NB: intentionally different to `cur_len - 1`s
+                on_device_generation_model_ctr=on_device_generation_model_ctr,
+                **model_inputs,
+                return_dict=True,
+                output_attentions=False,
+                output_hidden_states=False,
+            )
+            next_tokens = next_tokens.view(self.on_device_generation_steps, batch_size).T
+
+            # update generated ids, model inputs, and length for next step
+            input_ids = torch.cat([input_ids, next_tokens], dim=-1)
+
+            generation_step += self.on_device_generation_steps
+
+            # stop when each sentence is finished, or if we exceed the maximum length
+            all_eos = False if eos_token_id is None else torch.all(next_tokens[:, -1] == eos_token_id)
+            if all_eos or stopping_criteria(input_ids, ()):
+                break
+
+        return input_ids
+
+    def _on_device_beam_search(self):
+        raise NotImplementedError("On device beam search is not supported.")
+
+    def _on_device_sample(self):
+        raise NotImplementedError("On device sampling is not supported.")
+
+    def _on_device_beam_sample(self):
+        raise NotImplementedError("On device beam sampling is not supported.")
