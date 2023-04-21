@@ -341,7 +341,7 @@ def split_encoder_decoder_ipu_config(
 def get_layer_ipu(ipu_config: IPUConfig, target_number_of_layers: Optional[Union[int, List]] = None) -> List[int]:
     layers_per_ipu = _expand_layers_per_ipu_wildcard(ipu_config, target_number_of_layers)
 
-    # List of the IPU Id for each encoder layer
+    # List of the IPU Id for each layer
     layer_ipu: List[int] = []
     for ipu, n_layers in enumerate(layers_per_ipu):
         layer_ipu += [ipu] * n_layers
