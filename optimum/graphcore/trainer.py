@@ -291,7 +291,6 @@ class IPUTrainer:
                 self.eval_data_collator = data_collator_wrapper(self.eval_data_collator)
 
         self.model = to_pipelined(model, self.ipu_config, force=force_to_pipelined)
-        self.model.parallelize()
 
         self.original_model = model
 
@@ -889,12 +888,18 @@ class IPUTrainer:
             wrapped = model
         elif training:
             if self.training_model is None:
+                model.deparallelize()
+                model.ipu_config.train()
+                model.parallelize()
                 self.training_model = poptorch.trainingModel(
                     model.train(), options=self.opts, optimizer=self.optimizer
                 )
             wrapped = self.training_model
         else:
             if self.inference_model is None:
+                model.deparallelize()
+                model.ipu_config.eval()
+                model.parallelize()
                 self.inference_model = poptorch.inferenceModel(model.eval(), options=self.eval_opts)
             wrapped = self.inference_model
 
