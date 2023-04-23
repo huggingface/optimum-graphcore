@@ -338,19 +338,21 @@ def split_encoder_decoder_ipu_config(
             "Encoder and decoder layers cannot be placed on the same IPUs.\n"
             f"The encoder and decoder {layers_per_ipu_mode_str} splits each need a number of devices that's a power of 2."
         )
-
     ipu_configs["encoder"]._layers_per_ipu = layers_per_ipu[:cut]
     ipu_configs["decoder"]._layers_per_ipu = layers_per_ipu[cut:]
-    
-    # Also split the pipelines for layers such as SerializedEmbedding and 
+
+    # Also split the pipelines for layers such as SerializedEmbedding and
     # SplitLinear if they have been provided
-    # note that serialized layers across IPUs cannot be present 
-    # in both the encoder and decoder 
-    if ipu_config._serialized_embedding_splits_per_ipu is not None:
-        enc_split, dec_split = ipu_configs["encoder"]._serialized_embedding_splits_per_ipu[:cut], ipu_configs["encoder"]._serialized_embedding_splits_per_ipu[cut:]
+    # note that serialized layers across IPUs cannot be present
+    # in both the encoder and decoder
+    if ipu_config.)serialized_embedding_splits_per_ipu is not None:
+        enc_split, dec_split = (
+            ipu_configs["encoder"]._serialized_embedding_splits_per_ipu[:cut],
+            ipu_configs["encoder"]._serialized_embedding_splits_per_ipu[cut:],
+        )
         # dec_split must contain all zeros, otherwise
         # have splits crossing the boundary
-        if (sum(dec_split) > 0):
+        if sum(dec_split) > 0:
             raise ValueError(
                 f"Attempting to split serialized_embedding_splits_per_ipu={enc_split + dec_split} for generation"
                 f" into encoder={enc_split} and decoder={dec_split}. `SerializedEmbedding` must have all embeddings"
@@ -358,10 +360,13 @@ def split_encoder_decoder_ipu_config(
             )
         ipu_configs["encoder"]._serialized_embedding_splits_per_ipu = enc_split
         ipu_configs["decoder"]._serialized_embedding_splits_per_ipu = None
-    
+
     if ipu_config._serialized_linear_splits_per_ipu is not None:
-        enc_split, dec_split = ipu_configs["encoder"]._serialized_linear_splits_per_ipu[:cut], ipu_configs["encoder"]._serialized_linear_splits_per_ipu[cut:]
-        if (sum(enc_split) > 0):
+        enc_split, dec_split = (
+            ipu_configs["encoder"]._serialized_linear_splits_per_ipu[:cut],
+            ipu_configs["encoder"]._serialized_linear_splits_per_ipu[cut:],
+        )
+        if sum(enc_split) > 0:
             raise ValueError(
                 f"Attempting to split serialized_linear_splits_per_ipu={enc_split + dec_split} for generation"
                 f" into encoder={enc_split} and decoder={dec_split}. `SplitLinear` must have all linear layers"
@@ -369,8 +374,7 @@ def split_encoder_decoder_ipu_config(
             )
         ipu_configs["encoder"]._serialized_linear_splits_per_ipu = None
         ipu_configs["decoder"]._serialized_linear_splits_per_ipu = dec_split
-        
-        
+
     # Modify the ipus_per_replica
     ipu_configs["encoder"]._ipus_per_replica = len(ipu_configs["encoder"]._layers_per_ipu)
     ipu_configs["decoder"]._ipus_per_replica = len(ipu_configs["decoder"]._layers_per_ipu)

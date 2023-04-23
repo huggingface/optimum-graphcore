@@ -321,18 +321,22 @@ class IPUConfigTester(unittest.TestCase):
         )
         self.assertEqual(ipu_config.inference_matmul_proportion, 0.2)
 
-        # tests for serialized_{linear/embedding}_splits_per_ipu 
+        # tests for serialized_{linear/embedding}_splits_per_ipu
         # both linear and embedding layers are tested in the same way
 
         # Cannot contain negative values
-        with pytest.raises(ValueError, match="serialized_linear_splits_per_ipu=\\[0, 0, -1, 1\\] should be of type"):
+        with pytest.raises(
+            ValueError, match="training_serialized_linear_splits_per_ipu=\\[0, 0, -1, 1\\] should be of type"
+        ):
             ipu_config = IPUConfig(
                 ipus_per_replica=4,
                 serialized_linear_splits_per_ipu=[0, 0, -1, 1],
             )
 
         # Must have atleast 1 split on 1 IPU
-        with pytest.raises(ValueError, match="serialized_linear_splits_per_ipu=\\[0, 0, 0, 0\\] should be of type.*"):
+        with pytest.raises(
+            ValueError, match="training_serialized_linear_splits_per_ipu=\\[0, 0, 0, 0\\] should be of type.*"
+        ):
             ipu_config = IPUConfig(
                 ipus_per_replica=4,
                 serialized_linear_splits_per_ipu=[0, 0, 0, 0],
@@ -376,7 +380,6 @@ class IPUConfigTester(unittest.TestCase):
                 serialized_linear_splits_per_ipu=[0, 3, 0, 2],
             )
 
-
     def test_split_encoder_decoder_ipu_config(self):
         # Test splitting two IPUs
         ipu_config = IPUConfig(layers_per_ipu=[1, 2])
@@ -391,7 +394,7 @@ class IPUConfigTester(unittest.TestCase):
         e_ipu_config, d_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 4, 4)
         self.assertEqual(e_ipu_config.matmul_proportion, [0.1, 0.2])
         self.assertEqual(d_ipu_config.matmul_proportion, [0.3, 0.4])
-        
+
         # For generation using encoder decoder models and layers `SplitLinear`
         # and `SerializedEmbedding` placed on different IPUs, cannot
         # have serialized_{linear/embedding}_splits_per_ipu present in

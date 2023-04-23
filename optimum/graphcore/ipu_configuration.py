@@ -116,10 +116,10 @@ class IPUConfig(BaseConfig):
             `embedding_serialization_factor > 1`, the `torch.nn.Embedding` layer is replaced with a
             `optimum.graphcore.modeling_utils.SerializedEmbedding` layer.
         linear_serialization_factor (`int`, *optional*, defaults to 1):
-            The factor to use to either serialize the matmuls that are performed in a linear layer, or, 
+            The factor to use to either serialize the matmuls that are performed in a linear layer, or,
             serialize a linear layer into a set of individual linear layers that can be optionally placed on different IPUs.
             Nothing happens if `linear_serialization_factor = 1`. If `linear_serialization_factor > 1`,
-            the `torch.nn.Linear` layer is replaced by a `optimum.graphcore.modeling_utils.SpltLinear` layer 
+            the `torch.nn.Linear` layer is replaced by a `optimum.graphcore.modeling_utils.SpltLinear` layer
             if `serialized_linear_splits_per_ipu` is provided and the linear layer's weights are not tied to another layer.
             Otherwise it is replaced by a `optimum.graphcore.modeling_utils.SerializedLinear` layer.
         serialized_linear_splits_per_ipu (`List[int]`, *optional*, defaults to None):
@@ -134,7 +134,7 @@ class IPUConfig(BaseConfig):
             - have the same pipeline length as `ipus_per_replica`
             - have no zeros between splits e.g. `[3, 0, 2, 0]` is invalid
             - for generation, splits must lie entirely on the encoder or decoder portion of the pipeline.
-            For example the 4-IPU pipeline `[0, 0, 1, 2]` for an encoder-decoder model can be split into 
+            For example the 4-IPU pipeline `[0, 0, 1, 2]` for an encoder-decoder model can be split into
             `[0, 0]` and `[1, 2]`, however `[0, 1, 2, 0]` split into `[0, 1]` and `[2, 0]` is invalid.
         serialized_embedding_splits_per_ipu (`List[int]`, *optional*, defaults to None):
             Analogous to `serialized_linear_splits_per_ipu` but for serialized embeddings.
