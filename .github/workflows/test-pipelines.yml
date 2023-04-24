@@ -31,20 +31,30 @@ jobs:
         export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_20_04-3.2*
         pip install ${SDK_PATH}/poptorch-*.whl
         pip install .[testing]
+        pip install memory-profiler matplotlib
     - name: Test with Pytest
       env:
         POPTORCH_WAIT_FOR_IPU: 1
+        RUN_SLOW: true
       run: |
         source base/bin/activate
         export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_20_04-3.2*
         . ${SDK_PATH}/poplar-ubuntu_20_04*/enable.sh
         . ${SDK_PATH}/popart-ubuntu_20_04*/enable.sh
-        export RUN_SLOW=true
-        pytest tests/pipelines/ -v -n 8
+        mprof run --interval 1 --include-children --multiprocess \
+          pytest tests/pipelines/ -v -n 4
+        mprof plot -o memory_profile.png
+    - name: Upload memory profile
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: memory_profile
+        path: memory_profile.png
     - name: Upload PopTorch error log if present
       if: always()
       uses: actions/upload-artifact@v3
       with:
         name: poptorch_error
         path: poptorch_error.log
+        if-no-files-found: ignore
 
