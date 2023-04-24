@@ -221,8 +221,8 @@ class DecoderWrapper(nn.Module):
     def __init__(self, pipelined_model, encoder_outputs, attention_mask):
         super().__init__()
         self.pipelined_model = pipelined_model
-        self.register_buffer("encoder_last_hidden_state", encoder_outputs.last_hidden_state)
-        self.register_buffer("encoder_attention_mask", attention_mask)
+        self.register_buffer("encoder_attention_mask", attention_mask, persistent=False)
+        self.register_buffer("encoder_last_hidden_state", encoder_outputs.last_hidden_state, persistent=False)
 
         # With KV caching, some modules may need to know the current decoding step and beam indices.
         # Getting this information to them can either be done by copying it into buffers, or
@@ -269,17 +269,14 @@ class IPUGenerationMixin(GenerationMixin):
     def _call_generate(self, *args, generation_step: int, **kwargs):
         t = self._get_generation_step_tensor(generation_step)
         if not hasattr(self, "poptorch_decoder"):
-            wrapper = DecoderWrapper(self.eval(), kwargs["encoder_outputs"], kwargs["attention_mask"])
+            wrapper = DecoderWrapper(self.eval(), kwargs["encoder_outputs"], kwargs["attention_mask"].half())
             decoder_ipu_config = getattr(self, "decoder_ipu_config", self.ipu_config)
             if os.getenv("DEBUG_RUN_DECODER_ON_CPU", False):
                 self.poptorch_decoder = wrapper
             else:
                 decoder_options = decoder_ipu_config.to_options(for_inference=True)
-                decoder_options.updatableNamedBuffers(["encoder_last_hidden_state"])
-                decoder_options.updatableNamedBuffers(["encoder_attention_mask"])
-                self.poptorch_decoder = poptorch.inferenceModel(
-                    wrapper, decoder_ipu_config.to_options(for_inference=True)
-                )
+                decoder_options.updatableNamedBuffers(["encoder_last_hidden_state", "encoder_attention_mask"])
+                self.poptorch_decoder = poptorch.inferenceModel(wrapper, decoder_options)
         
         del kwargs["encoder_outputs"]
         del kwargs["attention_mask"]
@@ -295,7 +292,7 @@ class IPUGenerationMixin(GenerationMixin):
         if not self.config.is_encoder_decoder or not hasattr(self, "poptorch_decoder"):
             return
         self.poptorch_decoder.encoder_last_hidden_state.copy_(model_kwargs["encoder_outputs"]["last_hidden_state"])
-        self.poptorch_decoder.encoder_attention_mask.copy_(model_kwargs["attention_mask"])
+        self.poptorch_decoder.encoder_attention_mask.copy_(model_kwargs["attention_mask"].half())
         self.poptorch_decoder.copyNamedBuffersToDevice()
 
     def _prepare_encoder_decoder_kwargs_for_generation(
