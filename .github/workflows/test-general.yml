@@ -40,9 +40,9 @@ jobs:
         . ${SDK_PATH}/poplar-ubuntu_20_04*/enable.sh
         . ${SDK_PATH}/popart-ubuntu_20_04*/enable.sh
         export POPTORCH_WAIT_FOR_IPU=1
-        memprof run --interval 1 --include-children --multiprocess \
+        mprof run --interval 1 --include-children --multiprocess \
           pytest tests/ -v -n 16 --ignore=tests/pipelines/ --ignore=tests/test_examples_match_transformers.py
-        memprof plot -o memory_profile.png
+        mprof plot -o memory_profile.png
         pytest tests/test_examples_match_transformers.py -v
     - name: Upload memory profile
       if: always()
