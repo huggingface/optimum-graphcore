@@ -32,7 +32,7 @@ jobs:
         export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_20_04-3.2*
         pip install ${SDK_PATH}/poptorch-*.whl
         pip install .[testing]
-        pip install memory-profiler
+        pip install memory-profiler matplotlib
     - name: Test with Pytest
       run: |
         source venv/bin/activate
