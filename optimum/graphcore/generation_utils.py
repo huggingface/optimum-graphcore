@@ -257,16 +257,23 @@ class IPUAttentionMixin:
             self._cross_v_cache.copy_(_cross_v_cache)
 
         def then_k_body(x):
+            print("******************* REPLACED key_fn()")
+            return x*0.5
             return key_fn(x)
 
         def else_k_body(_):
             return self._cross_k_cache
 
         def then_v_body(x):
+            print("******************* REPLACED value_fn()")
+            return x*0.2
             return value_fn(x)
 
         def else_v_body(_):
             return self._cross_v_cache
+
+        # print("*************************************************** COMMENTED OUT cond()")
+
 
         self._cross_k_cache.copy_(
             poptorch.cond(reset_kv_cache, then_k_body, [cross_input], else_k_body, [cross_input])[0]
@@ -275,6 +282,8 @@ class IPUAttentionMixin:
             poptorch.cond(reset_kv_cache, then_v_body, [cross_input], else_v_body, [cross_input])[0]
         )
 
+        # print("*************************************************** returning cache + cross_input")
+        # return self._cross_k_cache+key_fn(cross_input), self._cross_v_cache+value_fn(cross_input)
         return self._cross_k_cache, self._cross_v_cache
 
 
@@ -305,10 +314,14 @@ class DecoderWrapper(nn.Module):
     Only returns the logits from the last generated token to reduce IO costs.
     """
 
-    def __init__(self, pipelined_model, encoder_outputs, use_cache=False):
+    def __init__(self, pipelined_model, encoder_outputs, use_cache=False):    #PTO
+    # def __init__(self, pipelined_model, use_cache=False):                   #!PTO
         super().__init__()
         self.pipelined_model = pipelined_model
-        self.register_buffer("encoder_last_hidden_state", encoder_outputs.last_hidden_state)
+        self.register_buffer("encoder_last_hidden_state", encoder_outputs.last_hidden_state)     #PTO
+        # self.encoder_last_hidden_state = encoder_outputs.last_hidden_state    #!PTO
+        # print("Make encoder_last_hidden_state just a data member")
+        # self.encoder_last_hidden_state = torch.zeros(1,1500,384).half()    #!PTO try
 
         # With KV caching, some modules may need to know the current decoding step and beam indices.
         # Getting this information to them can either be done by copying it into buffers, or
@@ -340,10 +353,11 @@ class DecoderWrapper(nn.Module):
             module._beam_idx.copy_(beam_idx)
 
         # Run the decoder
-        encoder_outputs = BaseModelOutput(last_hidden_state=self.encoder_last_hidden_state)
+        encoder_outputs = BaseModelOutput(last_hidden_state=self.encoder_last_hidden_state)   #PTO
         # outputs = self.pipelined_model._forward_for_decoder_generate(t, **model_inputs, encoder_outputs=encoder_outputs, attention_mask=self.encoder_attention_mask)
         # outputs = self.pipelined_model(**model_inputs, encoder_outputs=encoder_outputs, attention_mask=self.encoder_attention_mask)
-        outputs = self.pipelined_model(**model_inputs, encoder_outputs=encoder_outputs)
+        outputs = self.pipelined_model(**model_inputs, encoder_outputs=encoder_outputs)   #PTO
+        # outputs = self.pipelined_model(**model_inputs)   #!PTO
         return type(outputs)(
             loss=None,
             logits=outputs.logits,
@@ -357,17 +371,19 @@ class IPUGenerationMixin(GenerationMixin):
     def _call_generate(self, *args, generation_step: int, **kwargs):
         t = self._get_generation_step_tensor(generation_step)
         if not hasattr(self, "poptorch_decoder"):
-            wrapper = DecoderWrapper(self.eval(), encoder_outputs=kwargs["encoder_outputs"], use_cache=kwargs.get("use_cache", False))
+            wrapper = DecoderWrapper(self.eval(), encoder_outputs=kwargs["encoder_outputs"], use_cache=kwargs.get("use_cache", False))      #PTO
+            # wrapper = DecoderWrapper(self.eval(), use_cache=kwargs.get("use_cache", False))   #!PTO
             decoder_ipu_config = getattr(self, "decoder_ipu_config", self.ipu_config)
             if os.getenv("DEBUG_RUN_DECODER_ON_CPU", False):
                 self.poptorch_decoder = wrapper
             else:
                 poptorch_options = decoder_ipu_config.to_options(for_inference=True)
-                poptorch_options.updatableNamedBuffers(["encoder_last_hidden_state"])
+                print("******************* Not making encoder_last_hidden_state updatable")
+                # poptorch_options.updatableNamedBuffers(["encoder_last_hidden_state"])  #PTO
 
                 self.poptorch_decoder = poptorch.inferenceModel(wrapper, poptorch_options)
 
-        del kwargs["encoder_outputs"]
+        del kwargs["encoder_outputs"]    #PTO
 
         # This will trigger a compile first time it's ran
         with graph_profile_dir_append("/decoder"):
@@ -379,8 +395,8 @@ class IPUGenerationMixin(GenerationMixin):
         """
         if not self.config.is_encoder_decoder or not hasattr(self, "poptorch_decoder"):
             return
-        self.poptorch_decoder.encoder_last_hidden_state.copy_(model_kwargs["encoder_outputs"]["last_hidden_state"])
-        self.poptorch_decoder.copyNamedBuffersToDevice()
+        self.poptorch_decoder.encoder_last_hidden_state.copy_(model_kwargs["encoder_outputs"]["last_hidden_state"])    #PTO
+        self.poptorch_decoder.copyNamedBuffersToDevice()   #PTO
 
     def _prepare_encoder_decoder_kwargs_for_generation(
         self, inputs_tensor: torch.Tensor, model_kwargs, model_input_name: Optional[str] = None
@@ -412,7 +428,8 @@ class IPUGenerationMixin(GenerationMixin):
         with graph_profile_dir_append("/encoder"):
             model_kwargs["encoder_outputs"]: ModelOutput = self.poptorch_encoder(**encoder_kwargs)
 
-        self._update_model_buffers_if_needed(model_kwargs)
+        print("********************* Not updating buffers")
+        # self._update_model_buffers_if_needed(model_kwargs)    #PTO
         return model_kwargs
 
     def detachFromDevice(self):
