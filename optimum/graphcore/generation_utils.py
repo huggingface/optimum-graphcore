@@ -210,16 +210,6 @@ class _IndexedInputLinear(nn.Module):
         return self.wrapped_linear(x)
 
 
-def copyBuffersToDevice(poplar_executor):
-    weights = {
-        **dict(poplar_executor._model.named_parameters()),
-        **dict(poplar_executor._model.named_buffers())
-    }
-    poptorch_core.copyWeightsToDevice_impl(poplar_executor._executable,
-                                           tuple(weights.keys()),
-                                           tuple(weights.values()))
-
-
 class DecoderWrapper(nn.Module):
     """
     Fast wrapper for decoder part of text generation models.
@@ -265,7 +255,6 @@ class DecoderWrapper(nn.Module):
 
         # Run the decoder
         encoder_outputs = BaseModelOutput(last_hidden_state=self.encoder_last_hidden_state)
-        # outputs = self.pipelined_model._forward_for_decoder_generate(t, **model_inputs, encoder_outputs=encoder_outputs, attention_mask=self.encoder_attention_mask)
         outputs = self.pipelined_model(**model_inputs, encoder_outputs=encoder_outputs, attention_mask=self.encoder_attention_mask)
         return type(outputs)(
             loss=None,
@@ -285,6 +274,9 @@ class IPUGenerationMixin(GenerationMixin):
             if os.getenv("DEBUG_RUN_DECODER_ON_CPU", False):
                 self.poptorch_decoder = wrapper
             else:
+                decoder_options = decoder_ipu_config.to_options(for_inference=True)
+                decoder_options.updatableNamedBuffers(["encoder_last_hidden_state"])
+                decoder_options.updatableNamedBuffers(["encoder_attention_mask"])
                 self.poptorch_decoder = poptorch.inferenceModel(
                     wrapper, decoder_ipu_config.to_options(for_inference=True)
                 )
@@ -300,12 +292,11 @@ class IPUGenerationMixin(GenerationMixin):
         """
         If decoder model then we cache the encoder values inside pytorch buffers to reduce the IO cost
         """
-        print("in update model buffers")
         if not self.config.is_encoder_decoder or not hasattr(self, "poptorch_decoder"):
             return
         self.poptorch_decoder.encoder_last_hidden_state.copy_(model_kwargs["encoder_outputs"]["last_hidden_state"])
         self.poptorch_decoder.encoder_attention_mask.copy_(model_kwargs["attention_mask"])
-        copyBuffersToDevice(self.poptorch_decoder)
+        self.poptorch_decoder.copyNamedBuffersToDevice()
 
     def _prepare_encoder_decoder_kwargs_for_generation(
         self, inputs_tensor: torch.Tensor, model_kwargs, model_input_name: Optional[str] = None
