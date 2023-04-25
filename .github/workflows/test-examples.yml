@@ -42,7 +42,7 @@ jobs:
         . ${SDK_PATH}/poplar-ubuntu_20_04*/enable.sh
         . ${SDK_PATH}/popart-ubuntu_20_04*/enable.sh
         pytest tests/test_examples_match_transformers.py -v
-        mprof run --interval 1 --include-children --multiprocess \
+        mprof run --exit-code --interval 1 --include-children --multiprocess \
           pytest tests/test_examples.py -v -n 4
         mprof plot -o memory_profile.png
     - name: Upload memory profile
