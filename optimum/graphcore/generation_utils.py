@@ -221,6 +221,8 @@ class DecoderWrapper(nn.Module):
         self.pipelined_model = pipelined_model
         if attention_mask is not None:
             self.register_buffer("encoder_attention_mask", attention_mask.half(), persistent=False)
+        else:
+            self.encoder_attention_mask = None
         self.register_buffer("encoder_last_hidden_state", encoder_outputs.last_hidden_state, persistent=False)
 
         # With KV caching, some modules may need to know the current decoding step and beam indices.
@@ -253,8 +255,11 @@ class DecoderWrapper(nn.Module):
             module._beam_idx.copy_(beam_idx)
 
         # Run the decoder
-        encoder_outputs = BaseModelOutput(last_hidden_state=self.encoder_last_hidden_state)
-        outputs = self.pipelined_model(**model_inputs, encoder_outputs=encoder_outputs, attention_mask=self.encoder_attention_mask)
+        kwargs = {}
+        kwargs["encoder_outputs"] = BaseModelOutput(last_hidden_state=self.encoder_last_hidden_state)
+        if self.encoder_attention_mask is not None:
+            kwargs["attention_mask"] = self.encoder_attention_mask
+        outputs = self.pipelined_model(**model_inputs, **kwargs)
         return type(outputs)(
             loss=None,
             logits=outputs.logits,
@@ -274,7 +279,10 @@ class IPUGenerationMixin(GenerationMixin):
                 self.poptorch_decoder = wrapper
             else:
                 decoder_options = decoder_ipu_config.to_options(for_inference=True)
-                decoder_options.updatableNamedBuffers(["encoder_last_hidden_state", "encoder_attention_mask"])
+                named_buffers = ["encoder_last_hidden_state"]
+                if wrapper.encoder_attention_mask is not None:
+                    named_buffers.append("encoder_attention_mask")
+                decoder_options.updatableNamedBuffers(named_buffers)
                 self.poptorch_decoder = poptorch.inferenceModel(wrapper, decoder_options)
         
         del kwargs["encoder_outputs"]
