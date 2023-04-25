@@ -22,6 +22,7 @@ from torch import Tensor
 import poptorch
 from optimum.utils import logging
 from transformers import T5ForConditionalGeneration
+from transformers.activations import NewGELUActivation
 from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
 from transformers.models.t5.modeling_t5 import __HEAD_MASK_WARNING_MSG, T5Block, T5Stack
 
@@ -38,6 +39,27 @@ from ...modeling_utils import (
 
 
 logger = logging.get_logger(__name__)
+
+
+class UpCastWrapper(nn.Module):
+    def __init__(self, module: nn.Module, scale: float = 1.0):
+        super().__init__()
+        self.module = module
+        self.scale = scale
+
+    def forward(self, input):
+        return self.module(input).to(torch.float32) * self.scale
+
+
+class CustomGELU(NewGELUActivation):
+    # Work-around bug with torch.nn.GELU(approximate="tanh")
+    # TODO: Remove this when bug is fixed
+    def forward(self, input: Tensor) -> Tensor:
+        safe = torch.logical_and(-39 < input, input < 39)
+        safe_input = torch.where(safe, input, 0.0)
+        gelu = super().forward(safe_input)
+        relu = nn.functional.relu(input)
+        return torch.where(safe, gelu, relu)
 
 
 class CustomT5Block(T5Block):
@@ -146,21 +168,11 @@ class CustomT5Block(T5Block):
 
 
 class CustomT5Stack(T5Stack):
-    def invert_attention_mask(self, encoder_attention_mask: Tensor) -> Tensor:
-        if encoder_attention_mask.dim() == 3:
-            encoder_extended_attention_mask = encoder_attention_mask[:, None, :, :]
-        if encoder_attention_mask.dim() == 2:
-            encoder_extended_attention_mask = encoder_attention_mask[:, None, None, :]
-        # T5 has a mask that can compare sequence ids, we can simulate this here with this transposition
-        # Cf. https://github.com/tensorflow/mesh/blob/8d2465e9bc93129b913b5ccc6a59aa97abd96ec6/mesh_tensorflow
-        # /transformer/transformer_layers.py#L270
-        # encoder_extended_attention_mask = (encoder_extended_attention_mask ==
-        # encoder_extended_attention_mask.transpose(-1, -2))
-        encoder_extended_attention_mask = encoder_extended_attention_mask.to(dtype=self.dtype)  # fp16 compatibility
+    def invert_attention_mask(self, *args, **kwargs) -> Tensor:
+        return super().invert_attention_mask(*args, **kwargs) * 0.75
 
-        # Always use -1e4 to avoid NaN issues.
-        encoder_extended_attention_mask = (1.0 - encoder_extended_attention_mask) * -1e4
-        return encoder_extended_attention_mask
+    def get_extended_attention_mask(self, *args, **kwargs) -> Tensor:
+        return super().get_extended_attention_mask(*args, **kwargs) * 0.75
 
 
 @register(T5ForConditionalGeneration)
@@ -186,45 +198,6 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
                 logger.warning("encoder and decoder embeddings computation is not shared")
             else:
                 self.shared = self.shared.shared
-
-    def scale_down_weights(self, factor: float = 1, restore: bool = False):
-        self.lm_scale_modifier = 1 if not restore else None
-        # self.lm_scale_modifier = nn.Parameter(torch.ones(self.config.d_model, dtype=torch.float16)) if not restore else None
-
-        emb_scaling = 1 / 32.0 * factor
-        att_v_scaling = 1 / 4.0 * factor
-        att_o_scaling = 1 / 8.0 * factor
-        ff_wi_scaling = 1 / 4.0 * factor
-        ff_wo_scaling = 1 / 4.0 * factor
-        ff_ln_scaling = 1 / 2.0 * factor
-
-        if restore:
-            emb_scaling = 1 / emb_scaling
-            att_v_scaling = 1 / att_v_scaling
-            att_o_scaling = 1 / att_o_scaling
-            ff_wi_scaling = 1 / ff_wi_scaling
-            ff_wo_scaling = 1 / ff_wo_scaling
-            ff_ln_scaling = 1 / ff_ln_scaling
-
-        with torch.no_grad():
-            self.shared.weight *= emb_scaling
-            for unit in self.encoder.block:
-                unit.layer[0].SelfAttention.v.weight *= att_v_scaling
-                unit.layer[0].SelfAttention.o.weight *= att_o_scaling
-                unit.layer[1].DenseReluDense.wi.weight *= ff_wi_scaling
-                unit.layer[1].DenseReluDense.wo.weight *= ff_wo_scaling
-                unit.layer[1].layer_norm.weight *= ff_ln_scaling
-            for unit in self.decoder.block:
-                unit.layer[0].SelfAttention.v.weight *= att_v_scaling
-                unit.layer[0].SelfAttention.o.weight *= att_o_scaling
-                unit.layer[1].EncDecAttention.v.weight *= att_v_scaling
-                unit.layer[1].EncDecAttention.o.weight *= att_o_scaling
-                unit.layer[2].DenseReluDense.wi.weight *= ff_wi_scaling
-                unit.layer[2].DenseReluDense.wo.weight *= ff_wo_scaling
-                unit.layer[2].layer_norm.weight *= ff_ln_scaling
-
-            if not restore:
-                self.lm_scale_modifier /= emb_scaling
 
     def parallelize(self, for_generation=False):
         """
@@ -259,7 +232,6 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
 
         self.change_lm_head_to_indexed_input_linear(restore=not for_generation)
 
-        # self.scale_down_weights(factor=1)
         self.encoder_and_decoder_embeddings_computation(True)
         self.shared = poptorch.BeginBlock(self.shared, "Embedding", ipu_id=0)
 
@@ -267,11 +239,42 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
         self.encoder.__class__ = CustomT5Stack
         self.decoder.__class__ = CustomT5Stack
 
+        # Upcast input embeddings so that the residuals remain in FP32. This
+        # cast is reversed where necessary by the T5LayerNorm layers in:
+        # - first layer of T5LayerSelfAttention
+        # - first layer of T5LayerFF
+        # - final_layer_norm
+        # Which, conveniently, are all the places that this needs to happen.
+        # Therefore, so we just need to upcast immediately before the residual
+        # adds in T5LayerSelfAttention and T5LayerFF. This is handled in the
+        # for loop below.
+        self.encoder.embed_tokens = UpCastWrapper(self.encoder.embed_tokens)
+
         # Use a custom T5Block implementation that removes a dynamic if blocks that can't be statically traced
         for block in self.encoder.block:
             block.__class__ = CustomT5Block
+            # Dropout happens immediately before the residual add. Inserting a
+            # cast in T5LayerSelfAttention and T5LayerFF keeps the residual
+            # structure in FP32
+            block.layer[0].dropout = UpCastWrapper(block.layer[0].dropout)
+            # Scale down the weights for the T5LayerFF down-projection and
+            # then scale its output back up again after it is cast to FP32
+            scale = 8.0
+            with torch.no_grad():
+                block.layer[1].DenseReluDense.wo.weight /= scale
+            block.layer[1].dropout = UpCastWrapper(block.layer[1].dropout, scale)
+            # Prevent overflow in NewGELUActivation
+            if self.config.dense_act_fn == "gelu_new":
+                # TODO: Work-around bug with torch.nn.GELU(approximate="tanh"). Replace
+                # this with block.layer[1].DenseReluDense.act = torch.nn.GELU(approximate="tanh")
+                # when bug is fixed
+                block.layer[1].DenseReluDense.act = CustomGELU()
         for block in self.decoder.block:
             block.__class__ = CustomT5Block
+            # Work-around bug with torch.nn.GELU(approximate="tanh")
+            # TODO: Remove this when bug is fixed
+            if self.config.dense_act_fn == "gelu_new":
+                block.layer[2].DenseReluDense.act = CustomGELU()
 
         num_encoder_layers = len(self.encoder.block)
         num_decoder_layers = len(self.decoder.block)
@@ -324,15 +327,24 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
         PipelineMixin.deparallelize(self)
 
         self.encoder_and_decoder_embeddings_computation(False)
-        # self.scale_down_weights(factor=1, restore=True)
 
         self.encoder.__class__ = T5Stack
         self.decoder.__class__ = T5Stack
 
+        self.encoder.embed_tokens = self.encoder.embed_tokens.module
+
         for block in self.encoder.block:
             block.__class__ = T5Block
+            block.layer[0].dropout = block.layer[0].dropout.module
+            with torch.no_grad():
+                block.layer[1].DenseReluDense.wo.weight *= block.layer[1].dropout.scale
+            block.layer[1].dropout = block.layer[1].dropout.module
+            if self.config.dense_act_fn == "gelu_new":
+                block.layer[1].DenseReluDense.act = NewGELUActivation()
         for block in self.decoder.block:
             block.__class__ = T5Block
+            if self.config.dense_act_fn == "gelu_new":
+                block.layer[2].DenseReluDense.act = NewGELUActivation()
 
         self.change_lm_head_to_indexed_input_linear(restore=True)
 
