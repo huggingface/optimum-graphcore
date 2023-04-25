@@ -23,7 +23,7 @@ The script [`run_pretraining.py`](./run_pretraining.py) can be used to pre-train
 
 In the script [`run_pretraining.py`](./run_pretraining.py), a Wav2Vec2 model is pre-trained on audio data alone using [Wav2Vec2's contrastive loss objective](https://arxiv.org/abs/2006.11477).
 
-The following examples show how to pre-train a `"base"`-sized Wav2Vec2 model.
+The following examples show how to pre-train `"base"`- and `"large"`-sized Wav2Vec2 models.
 
 
 ---
@@ -47,13 +47,59 @@ can easily be loaded on each distributed device.
 
 ---
 
-### Demo
+## Poplar SDK setup
+To check if your Poplar SDK has already been enabled, run:
+```bash
+ echo $POPLAR_SDK_ENABLED
+```
+
+If no path is provided, then follow these steps:
+1. Navigate to your Poplar SDK root directory
+
+2. Enable the Poplar SDK with:
+```bash
+source enable
+```
+
+More detailed instructions on setting up your Poplar environment are available in the [Poplar quick start guide](https://docs.graphcore.ai/projects/poplar-quick-start).
+
+
+## Environment setup
+To prepare your environment, follow these steps:
+
+1. Create and activate a Python3 virtual environment:
+```bash
+python3 -m venv <venv name>
+source <venv path>/bin/activate
+```
+
+2. Navigate to the Poplar SDK root directory
+
+3. Install the PopTorch (PyTorch) wheel:
+```bash
+cd <poplar sdk root dir>
+pip3 install poptorch...x86_64.whl
+```
+
+4. Navigate to this example's root directory
+
+5. Install the Python requirements:
+```bash
+pip3 install -r requirements.txt
+```
+
+6. Install the latest release of the `optimum-graphcore` package as described in [optimum-graphcore/#install](https://github.com/huggingface/optimum-graphcore/#install). For example, to install from source:
+```
+pip install git+https://github.com/huggingface/optimum-graphcore.git
+```
+
+## Demo
 
 In this demo run we pre-train a `"base-sized"` Wav2Vec2 model simply only on the validation
 data of [librispeech_asr](https://huggingface.co/datasets/librispeech_asr).
 
 ```bash
-python examples/speech-pretraining/run_pretraining.py \
+python run_pretraining.py \
 	--model_name_or_path "facebook/wav2vec2-base" \
 	--dataset_name "librispeech_asr" \
 	--dataset_config_name "clean" \
@@ -82,13 +128,13 @@ python examples/speech-pretraining/run_pretraining.py \
 	--pod_type pod16
 ```
 
-### Base
+## Base
 
 To pre-train `"base-sized"` Wav2Vec2 model, *e.g.* [facebook/wav2vec2-base](https://huggingface.co/facebook/wav2vec2-base)
 on 100h of training data from the [librispeech_asr](https://huggingface.co/datasets/librispeech_asr), the following command can be run:
 
 ```bash
-python examples/speech-pretraining/run_pretraining.py \
+python run_pretraining.py \
 	--model_name_or_path "facebook/wav2vec2-base" \
 	--dataset_name "librispeech_asr" \
 	--dataset_config_name "clean" \
@@ -117,5 +163,41 @@ python examples/speech-pretraining/run_pretraining.py \
 	--pod_type pod16
 ```
 
-If you increase the effective `batch_size`, for example by increasing the `gradient_accumulation_steps`,
+If you increase the effective batch size, for example by increasing the `gradient_accumulation_steps`,
 it is recommended to increase the `learning_rate` to `0.005` for faster convergence.
+
+## Large
+
+To pre-train `"large-sized"` Wav2Vec2 model, *e.g.* [facebook/wav2vec2-large](https://huggingface.co/facebook/wav2vec2-large)
+on 100h of training data from the [librispeech_asr](https://huggingface.co/datasets/librispeech_asr), the following command can be run:
+
+```bash
+python run_pretraining.py \
+	--model_name_or_path "facebook/wav2vec2-large-960h" \
+	--dataset_name "librispeech_asr" \
+	--dataset_config_name "clean" \
+	--train_split_name "train.100" \
+	--ipu_config_name "Graphcore/wav2vec2-large-ipu" \
+	--output_dir "./wav2vec2-pretrained-large" \
+	--max_duration_in_seconds 15.6 \
+	--min_duration_in_seconds 2.0 \
+	--do_train \
+	--overwrite_output_dir \
+	--layerdrop 0.05 \
+	--per_device_train_batch_size 1 \
+	--dataloader_num_workers 64 \
+	--num_train_epochs 10 \
+	--warmup_steps 1000 \
+	--weight_decay 0.01 \
+	--learning_rate 0.001 \
+	--adam_beta1 0.9 \
+	--adam_beta2 0.98 \
+	--adam_epsilon 1e-04 \
+	--max_gumbel_temperature 2.0 \
+	--min_gumbel_temperature 0.5 \
+	--gumbel_temperature_decay 0.999995 \
+	--logging_steps 10 \
+	--pod_type pod16
+```
+
+Similarly to the `"base-sized"` model above, be sure to select optimal `learning_rate` given the effective batch size of your configuration. The effective batch size is defined as `gradient_accumulation_steps * per_device_train_batch_size * replication_factor`. The `replication_factor` is calculated as number of IPUs (`pod_type`) divided by `ipus_per_replica`. See [Graphcore/wav2vec2-large](https://huggingface.co/Graphcore/wav2vec2-large-ipu) for configuration parameters in addition to the command line arguments.
