@@ -274,7 +274,7 @@ class IPUGenerationMixin(GenerationMixin):
                 )
 
         # This will trigger a compile first time it's ran
-        with graph_profile_dir_append("/decoder"):
+        with graph_profile_dir_append("/decoder" if self.config.is_encoder_decoder else ""):
             return self.poptorch_decoder(*args, t=t, **kwargs)
 
     def _prepare_encoder_decoder_kwargs_for_generation(
