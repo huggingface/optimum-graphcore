@@ -27,7 +27,7 @@ from typing import Optional, Union
 
 import numpy as np
 
-from huggingface_hub import HfFolder, Repository, delete_repo, set_access_token
+from huggingface_hub import HfFolder, Repository, delete_repo
 from optimum.graphcore import IPUConfig, IPUTrainingArguments
 from optimum.utils import logging
 from requests.exceptions import HTTPError
@@ -1312,7 +1312,6 @@ class IPUTrainerIntegrationWithHubTester(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls._token = TOKEN
-        set_access_token(TOKEN)
         HfFolder.save_token(TOKEN)
 
     @classmethod
