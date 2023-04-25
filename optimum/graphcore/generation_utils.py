@@ -45,6 +45,7 @@ from transformers.generation.utils import (
 )
 from transformers.modeling_outputs import BaseModelOutput, ModelOutput
 from transformers.pytorch_utils import torch_int_div
+from transformers.utils.versions import require_version
 
 
 logger = logging.get_logger(__name__)
@@ -216,14 +217,9 @@ class DecoderWrapper(nn.Module):
     Only returns the logits from the last generated token to reduce IO costs.
     """
 
-    def __init__(self, pipelined_model, encoder_outputs, attention_mask=None):
+    def __init__(self, pipelined_model):
         super().__init__()
         self.pipelined_model = pipelined_model
-        if attention_mask is not None:
-            self.register_buffer("encoder_attention_mask", attention_mask.half(), persistent=False)
-        else:
-            self.encoder_attention_mask = None
-        self.register_buffer("encoder_last_hidden_state", encoder_outputs.last_hidden_state, persistent=False)
 
         # With KV caching, some modules may need to know the current decoding step and beam indices.
         # Getting this information to them can either be done by copying it into buffers, or
@@ -233,6 +229,18 @@ class DecoderWrapper(nn.Module):
             attr: [module for module in self.pipelined_model.modules() if hasattr(module, attr)]
             for attr in ["_beam_idx", "_generation_step"]
         }
+
+    def register_encoder_output_buffers(self, output_buffers : Dict[str, torch.Tensor]):
+        for name in sorted(output_buffers):
+            self.register_buffer(name, output_buffers[name], persistent=False)
+
+    def _get_buffered_outputs(self) -> Dict:
+        kwargs = {}
+        if hasattr(self, "encoder_last_hidden_state"):
+            kwargs["encoder_outputs"] = BaseModelOutput(last_hidden_state=self.encoder_last_hidden_state)
+        if hasattr(self, "encoder_attention_mask"):
+            kwargs["attention_mask"] = self.encoder_attention_mask
+        return kwargs
 
     def forward(self, t, beam_idx=None, **model_inputs):
         """
@@ -255,10 +263,7 @@ class DecoderWrapper(nn.Module):
             module._beam_idx.copy_(beam_idx)
 
         # Run the decoder
-        kwargs = {}
-        kwargs["encoder_outputs"] = BaseModelOutput(last_hidden_state=self.encoder_last_hidden_state)
-        if self.encoder_attention_mask is not None:
-            kwargs["attention_mask"] = self.encoder_attention_mask
+        kwargs = self._get_buffered_outputs()
         outputs = self.pipelined_model(**model_inputs, **kwargs)
         return type(outputs)(
             loss=None,
@@ -267,27 +272,38 @@ class DecoderWrapper(nn.Module):
 
 
 class IPUGenerationMixin(GenerationMixin):
+
+    """
+    Enable optimization for encoder-decoder text generation where the encoder outputs
+    are cached on the Decoder device using buffers.
+    """
+    use_encoder_output_buffer = False
+
     def _pad_tensors_to_max_len(self, tensor: torch.Tensor, max_length: int, pad_token_id: int) -> torch.Tensor:
         return nn.functional.pad(tensor, (0, max_length - tensor.shape[1]), "constant", pad_token_id)
 
     def _call_generate(self, *args, generation_step: int, **kwargs):
         t = self._get_generation_step_tensor(generation_step)
         if not hasattr(self, "poptorch_decoder"):
-            wrapper = DecoderWrapper(self.eval(), kwargs["encoder_outputs"], kwargs.get("attention_mask"))
+            wrapper = DecoderWrapper(self.eval())
             decoder_ipu_config = getattr(self, "decoder_ipu_config", self.ipu_config)
             if os.getenv("DEBUG_RUN_DECODER_ON_CPU", False):
                 self.poptorch_decoder = wrapper
             else:
                 decoder_options = decoder_ipu_config.to_options(for_inference=True)
-                named_buffers = ["encoder_last_hidden_state"]
-                if wrapper.encoder_attention_mask is not None:
-                    named_buffers.append("encoder_attention_mask")
-                decoder_options.updatableNamedBuffers(named_buffers)
+                if self.config.is_encoder_decoder and self.use_encoder_output_buffer:
+                    require_version("poptorch>=3.3", "Updatable encoder output buffer optimization only available in poptorch>=3.3")
+                    named_buffers = {"encoder_last_hidden_state": kwargs["encoder_outputs"]["last_hidden_state"]}
+                    if kwargs.get("attention_mask") is not None:
+                        named_buffers["encoder_attention_mask"] = kwargs["attention_mask"].half()
+                    wrapper.register_encoder_output_buffers(named_buffers)
+                    decoder_options.updatableNamedBuffers(list(named_buffers.keys()))
                 self.poptorch_decoder = poptorch.inferenceModel(wrapper, decoder_options)
 
-        del kwargs["encoder_outputs"]
-        if kwargs.get("attention_mask") is not None:
-            del kwargs["attention_mask"]
+        if self.config.is_encoder_decoder and self.use_encoder_output_buffer:
+            del kwargs["encoder_outputs"]
+            if kwargs.get("attention_mask") is not None:
+                del kwargs["attention_mask"]
 
         # This will trigger a compile first time it's ran
         with graph_profile_dir_append("/decoder" if self.config.is_encoder_decoder else ""):
@@ -297,7 +313,7 @@ class IPUGenerationMixin(GenerationMixin):
         """
         If decoder model then we cache the encoder values inside pytorch buffers to reduce the IO cost
         """
-        if not self.config.is_encoder_decoder or not hasattr(self, "poptorch_decoder"):
+        if not self.config.is_encoder_decoder or not self.use_encoder_output_buffer or not hasattr(self, "poptorch_decoder"):
             return
         self.poptorch_decoder.encoder_last_hidden_state.copy_(model_kwargs["encoder_outputs"]["last_hidden_state"])
         if model_kwargs.get("attention_mask") is not None:
