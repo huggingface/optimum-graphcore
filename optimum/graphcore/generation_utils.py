@@ -230,7 +230,7 @@ class DecoderWrapper(nn.Module):
             for attr in ["_beam_idx", "_generation_step"]
         }
 
-    def register_encoder_output_buffers(self, output_buffers : Dict[str, torch.Tensor]):
+    def register_encoder_output_buffers(self, output_buffers: Dict[str, torch.Tensor]):
         for name in sorted(output_buffers):
             self.register_buffer(name, output_buffers[name], persistent=False)
 
@@ -277,6 +277,7 @@ class IPUGenerationMixin(GenerationMixin):
     Enable optimization for encoder-decoder text generation where the encoder outputs
     are cached on the Decoder device using buffers.
     """
+
     use_encoder_output_buffer = False
 
     def _pad_tensors_to_max_len(self, tensor: torch.Tensor, max_length: int, pad_token_id: int) -> torch.Tensor:
@@ -292,7 +293,9 @@ class IPUGenerationMixin(GenerationMixin):
             else:
                 decoder_options = decoder_ipu_config.to_options(for_inference=True)
                 if self.config.is_encoder_decoder and self.use_encoder_output_buffer:
-                    require_version("poptorch>=3.3", "Updatable encoder output buffer optimization only available in poptorch>=3.3")
+                    require_version(
+                        "poptorch>=3.3", "Updatable encoder output buffer optimization only available in poptorch>=3.3"
+                    )
                     named_buffers = {"encoder_last_hidden_state": kwargs["encoder_outputs"]["last_hidden_state"]}
                     if kwargs.get("attention_mask") is not None:
                         named_buffers["encoder_attention_mask"] = kwargs["attention_mask"].half()
@@ -313,7 +316,11 @@ class IPUGenerationMixin(GenerationMixin):
         """
         If decoder model then we cache the encoder values inside pytorch buffers to reduce the IO cost
         """
-        if not self.config.is_encoder_decoder or not self.use_encoder_output_buffer or not hasattr(self, "poptorch_decoder"):
+        if (
+            not self.config.is_encoder_decoder
+            or not self.use_encoder_output_buffer
+            or not hasattr(self, "poptorch_decoder")
+        ):
             return
         self.poptorch_decoder.encoder_last_hidden_state.copy_(model_kwargs["encoder_outputs"]["last_hidden_state"])
         if model_kwargs.get("attention_mask") is not None:

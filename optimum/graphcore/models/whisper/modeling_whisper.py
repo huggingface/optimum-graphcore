@@ -365,7 +365,6 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         self.change_lm_head_to_indexed_input_linear(restore=use_cache or not for_generation)
         self.use_encoder_output_buffer = kwargs.get("use_encoder_output_buffer", False)
 
-
         logger.info("---------- Device Allocation -----------")
         logger.info("conv1, conv2, embed_positions  --> IPU 0")
         self.model.encoder.conv1 = poptorch.BeginBlock(self.model.encoder.conv1, "Conv1", ipu_id=0)
