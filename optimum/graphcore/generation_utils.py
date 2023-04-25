@@ -43,7 +43,7 @@ from transformers.generation.utils import (
     SampleOutput,
     StoppingCriteriaList,
 )
-from transformers.modeling_outputs import ModelOutput, BaseModelOutput
+from transformers.modeling_outputs import BaseModelOutput, ModelOutput
 from transformers.pytorch_utils import torch_int_div
 
 
@@ -284,7 +284,7 @@ class IPUGenerationMixin(GenerationMixin):
                     named_buffers.append("encoder_attention_mask")
                 decoder_options.updatableNamedBuffers(named_buffers)
                 self.poptorch_decoder = poptorch.inferenceModel(wrapper, decoder_options)
-        
+
         del kwargs["encoder_outputs"]
         if kwargs.get("attention_mask") is not None:
             del kwargs["attention_mask"]
