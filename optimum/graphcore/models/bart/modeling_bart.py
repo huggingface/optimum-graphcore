@@ -686,7 +686,7 @@ class _BartModelWithSharedEmbedding(BartModel):
 
 @register(BartForConditionalGeneration)
 class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, PipelineMixin, IPUGenerationMixin):
-    def parallelize(self, for_generation=False):
+    def parallelize(self, for_generation=False, **kwargs):
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model
@@ -720,6 +720,7 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
         self.model.change_bart_encoder_and_decoder_classes(False)
         self.model.change_bart_attention_class(False)
         self.change_lm_head_to_indexed_input_linear(restore=not for_generation)
+        self.use_encoder_output_buffer = kwargs.get("use_encoder_output_buffer", False)
 
         self.model.shared = poptorch.BeginBlock(self.model.shared, "Embedding", ipu_id=0)
         self.model.encoder.embed_positions = poptorch.BeginBlock(

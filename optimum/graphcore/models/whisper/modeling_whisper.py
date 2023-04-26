@@ -363,6 +363,7 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         self.change_decoder_positional_embedding(restore=False)
         self.change_attention_class(restore=False, use_cache=use_cache and for_generation, **kwargs)
         self.change_lm_head_to_indexed_input_linear(restore=use_cache or not for_generation)
+        self.use_encoder_output_buffer = kwargs.get("use_encoder_output_buffer", False)
 
         logger.info("---------- Device Allocation -----------")
         logger.info("conv1, conv2, embed_positions  --> IPU 0")
