@@ -166,6 +166,10 @@ class IPUGenerationMixin(GenerationMixin):
 
     use_encoder_output_buffer = False
 
+    @property
+    def encoder_output_buffer_enabled(self) -> bool:
+        return self.config.is_encoder_decoder and self.use_encoder_output_buffer
+
     def _pad_tensors_to_max_len(self, tensor: torch.Tensor, max_length: int, pad_token_id: int) -> torch.Tensor:
         return nn.functional.pad(tensor, (0, max_length - tensor.shape[1]), "constant", pad_token_id)
 
@@ -198,7 +202,7 @@ class IPUGenerationMixin(GenerationMixin):
                 decoder_ipu_config = getattr(self, "decoder_ipu_config", self.ipu_config)
                 decoder_options = decoder_ipu_config.to_options(for_inference=True)
 
-                if self.config.is_encoder_decoder and self.use_encoder_output_buffer:
+                if self.encoder_output_buffer_enabled:
                     require_version(
                         "poptorch>=3.3", "Updatable encoder output buffer optimization only available in poptorch>=3.3"
                     )
@@ -210,10 +214,9 @@ class IPUGenerationMixin(GenerationMixin):
 
                 self.poptorch_decoder = poptorch.inferenceModel(decoder_wrapper, decoder_options)
 
-        if self.config.is_encoder_decoder and self.use_encoder_output_buffer:
-            del kwargs["encoder_outputs"]
-            if kwargs.get("attention_mask") is not None:
-                del kwargs["attention_mask"]
+        if self.encoder_output_buffer_enabled:
+            kwargs.pop("encoder_outputs", None)
+            kwargs.pop("attention_mask", None)
 
         # This will trigger a compile first time it's ran
         with graph_profile_dir_append("/decoder" if self.config.is_encoder_decoder else ""):
@@ -223,11 +226,7 @@ class IPUGenerationMixin(GenerationMixin):
         """
         If decoder model then we cache the encoder values inside pytorch buffers to reduce the IO cost
         """
-        if (
-            not self.config.is_encoder_decoder
-            or not self.use_encoder_output_buffer
-            or not hasattr(self, "poptorch_decoder")
-        ):
+        if not (self.encoder_output_buffer_enabled and hasattr(self, "poptorch_decoder")):
             return
         self.poptorch_decoder.encoder_last_hidden_state.copy_(model_kwargs["encoder_outputs"]["last_hidden_state"])
         if model_kwargs.get("attention_mask") is not None:
@@ -1513,6 +1512,11 @@ class IPUGenerationMixin(GenerationMixin):
         """
         adapted_model_inputs = {}
         for k, v in model_inputs.items():
+            if k in ("attention_mask", "encoder_outputs") and self.encoder_output_buffer_enabled:
+                # These inputs will copied onto device via buffers, so we don't need to duplicate them.
+                adapted_model_inputs[k] = v
+                continue
+
             if torch.is_tensor(v):
                 if v.shape[0] != batch_size:
                     raise ValueError(f"Unexpected size in dim 0 for {k}, expected {batch_size}.")
