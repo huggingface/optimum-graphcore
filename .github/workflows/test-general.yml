@@ -16,9 +16,9 @@ jobs:
 
     runs-on: self-hosted
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - name: Setup Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v3
       with:
         python-version: ${{ matrix.python-version }}
     - name: Create and start a virtual environment
@@ -33,17 +33,19 @@ jobs:
         pip install ${SDK_PATH}/poptorch-*.whl
         pip install .[testing]
     - name: Test with Pytest
+      env:
+        POPTORCH_WAIT_FOR_IPU: 1
       run: |
         source venv/bin/activate
         export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_20_04-3.2*
         . ${SDK_PATH}/poplar-ubuntu_20_04*/enable.sh
         . ${SDK_PATH}/popart-ubuntu_20_04*/enable.sh
-        export POPTORCH_WAIT_FOR_IPU=1
-        pytest tests/ -n 16 --ignore=tests/pipelines/ --ignore=tests/test_examples_match_transformers.py
-        pytest tests/test_examples_match_transformers.py
+        pytest tests/ -v -n 16 --ignore=tests/pipelines/ --ignore=tests/test_examples_match_transformers.py
+        pytest tests/test_examples_match_transformers.py -v
     - name: Upload PopTorch error log if present
       if: always()
       uses: actions/upload-artifact@v3
       with:
         name: poptorch_error
         path: poptorch_error.log
+        if-no-files-found: ignore

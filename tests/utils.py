@@ -21,7 +21,10 @@ MODELS_TO_TEST_MAPPING = {
     "distilbert": ("distilbert-base-uncased", "Graphcore/distilbert-base-ipu"),
     "gpt2": ("gpt2", "Graphcore/gpt2-small-ipu"),
     "groupbert": ("Graphcore/groupbert-base-uncased", "Graphcore/groupbert-base-uncased"),
-    "hubert": ("facebook/hubert-base-ls960", "Graphcore/hubert-base-ipu"),
+    "hubert": {
+        "default": ("facebook/hubert-base-ls960", "Graphcore/hubert-base-ipu"),
+        "ctc": ("facebook/hubert-base-ls960", "Graphcore/wav2vec2-ctc-base-ipu"),
+    },
     "lxmert": ("unc-nlp/lxmert-base-uncased", "Graphcore/lxmert-base-ipu"),
     "roberta": ("roberta-base", "Graphcore/roberta-base-ipu"),
     "t5": ("t5-small", "Graphcore/t5-small-ipu"),
