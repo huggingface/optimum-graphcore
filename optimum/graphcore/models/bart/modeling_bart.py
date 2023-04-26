@@ -36,7 +36,7 @@ from transformers.models.bart.modeling_bart import (
     shift_tokens_right,
 )
 
-from ...generation_utils import IPUGenerationMixin, _IndexedInputLinear
+from ...generation import IPUGenerationMixin
 from ...modeling_utils import (
     PipelineMixin,
     SerializedLinear,
