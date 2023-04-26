@@ -22,6 +22,21 @@ FLOAT16_LIMIT = 1e4
 
 
 class IPUAttentionMixin:
+    """
+    The aim of this class is to provide common, model-agnostic functionality such as KV caching and attention
+    serialization to transformer attention layers.
+
+    Currently, KV caching is implemented for self-attention, with more to follow.
+
+    The intended usage is best demonstrated with an existing example, Whisper. There are roughly two steps:
+    1. subclass the parent attention layer to inject this mixin, e.g. `class IPUWhisperAttention(WhisperAttention, IPUAttentionMixin)`
+    and use the `add_to_kv_cache` and `update_attention_mask` methods to add the KV values at the current time
+    step to the cache.
+
+    2. replace the existing attention layers with above via the provided class method `from_model`, e.g.
+    `decoder_layer.self_attn = IPUWhisperAttention.from_model(decoder_layer.self_attn, use_cache=True, **kwargs)`.
+    """
+
     _kv_cache_initialised: bool = False
 
     @property
@@ -77,6 +92,10 @@ class IPUAttentionMixin:
         return original
 
     def add_to_kv_cache(self, key: torch.Tensor, value: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Copies the key-value pair into their corresponding key-value caches. Each copy, cache pair is assumed
+        to be of shape [batch_size, num_heads, 1, head_dim] and [batch_size, num_heads, max_length, head_dim] respectively.
+        """
         if not self.kv_cache_initialised:
             raise ValueError(
                 f"{self.__class__.__name__} assumes that self-attention has KV caching enabled. "
@@ -119,6 +138,10 @@ class IPUAttentionMixin:
         return self._k_cache, self._v_cache
 
     def update_attention_mask(self, attention_mask: Optional[torch.Tensor] = None):
+        """
+        Creates a default mask up to and including the current generation step, marking the point
+        up to which the caches have been populated.
+        """
         bsz, _, src_len, _ = self._k_cache.shape
         mask = torch.full((1, src_len), -FLOAT16_LIMIT)
         mask_cond = torch.arange(src_len).view(1, src_len)

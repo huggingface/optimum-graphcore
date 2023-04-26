@@ -1505,6 +1505,12 @@ class IPUGenerationMixin(GenerationMixin):
         return StoppingCriteriaList(adapted_stopping_criteria)
 
     def _prepare_inputs_for_on_device_generation(self, model_inputs, on_device_generation_steps, batch_size):
+        """
+        A model-agnostic version of `prepare_inputs_for_generation` whose main purpose is to duplicate
+        decoder inputs by `on_device_generation_steps=inference_device_iterations` and perform additional input validation.
+        Since we are duplicating tensors, we restrict duplication to `torch.Tensor` and the exceptional case of
+        `encoder_outputs.last_hidden_state`.
+        """
         adapted_model_inputs = {}
         for k, v in model_inputs.items():
             if torch.is_tensor(v):
