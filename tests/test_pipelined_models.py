@@ -123,6 +123,7 @@ class PipelinedModelsTester(TestCase):
         if model_class in [
             *MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING.values(),
             *MODEL_FOR_AUDIO_CLASSIFICATION_MAPPING.values(),
+            *MODEL_FOR_CTC_MAPPING.values(),
         ]:
             extractor = AutoFeatureExtractor.from_pretrained(model_name_or_path)
         else:
