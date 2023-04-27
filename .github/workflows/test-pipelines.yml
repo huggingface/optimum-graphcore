@@ -16,9 +16,9 @@ jobs:
     runs-on: self-hosted
     timeout-minutes: 720
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - name: Setup Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v3
       with:
         python-version: ${{ matrix.python-version }}
     - name: Create and start a virtual environment
@@ -41,7 +41,7 @@ jobs:
         export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_20_04-3.2*
         . ${SDK_PATH}/poplar-ubuntu_20_04*/enable.sh
         . ${SDK_PATH}/popart-ubuntu_20_04*/enable.sh
-        mprof run --interval 1 --include-children --multiprocess \
+        mprof run --exit-code --interval 1 --include-children --multiprocess \
           pytest tests/pipelines/ -v -n 4
         mprof plot -o memory_profile.png
     - name: Upload memory profile
