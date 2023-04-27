@@ -194,7 +194,6 @@ class IPUConfig(BaseConfig):
     _projection_serialization_factor = ManagedAttribute("linear_serialization_factor")
     _serialized_embedding_splits_per_ipu = ManagedAttribute("serialized_embedding_splits_per_ipu")
     _serialized_projection_splits_per_ipu = ManagedAttribute("serialized_linear_splits_per_ipu")
-    
 
     def contents_geq_value_validator(
         name: str, value: Union[float, int, Sequence], floor_value: Union[float, int]
@@ -205,7 +204,10 @@ class IPUConfig(BaseConfig):
         For Union[float, int], ensure the scalar is >= floor_value
         """
 
-        if isinstance(value, Sequence):
+        # Do nothing for optional types
+        if value is None:
+            return
+        elif isinstance(value, Sequence):
             if not all([elem >= floor_value for elem in value]):
                 raise ValueError(
                     f"`IPUConfig` attribute `{name}` must have all elements >= {floor_value}. You provided {value=}"
@@ -231,6 +233,9 @@ class IPUConfig(BaseConfig):
         ("ipus_per_replica", 1),
         ("inference_ipus_per_replica", 1),
         ("embedding_serialization_factor", 1),
+        ("inference_embedding_serialization_factor", 1),
+        ("projection_serialization_factor", 1),
+        ("inference_projection_serialization_factor", 1),
         ("device_iterations", 1),
         ("inference_device_iterations", 1),
     ):
@@ -245,9 +250,36 @@ class IPUConfig(BaseConfig):
             )
 
     attribute_validators["output_mode"].append(output_mode_validator)
-    
+
     def serialized_layer_splits_per_ipu_validator(name: str, value: str):
-        pass
+        """
+        Validates serialized_{projection/embedding}_splits_per_ipu attributes.
+        If `value` is not None. `value` must be of type List[int>=0] with
+        atleast 1 split on 1 IPU. Further splits in the pipeline must be
+        consecutive.
+        """
+
+        if value is None:
+            return
+
+        IPUConfig.contents_geq_value_validator(name, value, floor_value=0)
+
+        # There must be atleast 1 split when the pipeline is provided
+        if sum(value) < 1:
+            raise ValueError(f"`{name}` must have atleast 1 split on 1 IPU.")
+
+        # Check that splits are on consecutive IPUs (e.g. [3,0,2,0] is not allowed)
+        for i, splits in enumerate(value[:-1]):
+            if splits and value[i + 1] == 0 and sum(value[i + 1 :]) == 0:
+                raise ValueError(f"{name}={value} must have its splits on consecutive IPUs")
+
+    for attr in (
+        "serialized_projection_splits_per_ipu",
+        "inference_serialized_projection_splits_per_ipu",
+        "serialized_embedding_splits_per_ipu",
+        "inference_serialized_embedding_splits_per_ipu",
+    ):
+        attribute_validators[attr].append(serialized_layer_splits_per_ipu_validator)
 
     def __init__(
         self,
@@ -339,22 +371,17 @@ class IPUConfig(BaseConfig):
 
         check_and_set_replication_factor("replication_factor", replication_factor)
         check_and_set_replication_factor("inference_replication_factor", inference_replication_factor)
-        
+
+        # Non-transformer layers initialisation
         self.embedding_serialization_factor = embedding_serialization_factor
         self.inference_embedding_serialization_factor = inference_embedding_serialization_factor
         self.serialized_embedding_splits_per_ipu = serialized_embedding_splits_per_ipu
         self.inference_serialized_embedding_splits_per_ipu = inference_serialized_embedding_splits_per_ipu
+
         self.projection_serialization_factor = projection_serialization_factor
         self.inference_projection_serialization_factor = inference_projection_serialization_factor
         self.serialized_projection_splits_per_ipu = serialized_projection_splits_per_ipu
-        self.inference_serialized_projection_splits_per_ipu = inference_serialized_projection_splits_per_ipu    
-
-        self.gradient_accumulation_steps = gradient_accumulation_steps
-        self.device_iterations = device_iterations
-        self.inference_device_iterations = inference_device_iterations
-        self.optimizer_state_offchip = optimizer_state_offchip
-        self.replicated_tensor_sharding = replicated_tensor_sharding
-        self.auto_loss_scaling = auto_loss_scaling
+        self.inference_serialized_projection_splits_per_ipu = inference_serialized_projection_splits_per_ipu
 
         if "sharded_execution_for_inference" in kwargs:
             warnings.warn(
@@ -364,11 +391,18 @@ class IPUConfig(BaseConfig):
         if "enable_half_first_order_momentum" in kwargs:
             warnings.warn('The "enable_half_first_order_momentum" parameter is deprecated')
 
+        self.gradient_accumulation_steps = gradient_accumulation_steps
+        self.device_iterations = device_iterations
+        self.inference_device_iterations = inference_device_iterations
+        self.optimizer_state_offchip = optimizer_state_offchip
+        self.replicated_tensor_sharding = replicated_tensor_sharding
+        self.auto_loss_scaling = auto_loss_scaling
         self.enable_half_partials = enable_half_partials
         self.executable_cache_dir = executable_cache_dir
         self.embedding_serialization_factor = embedding_serialization_factor
         self.recompute_checkpoint_every_layer = recompute_checkpoint_every_layer
         self.output_mode = output_mode
+
         # TODO: remove this if unnecessary.
         self.execute_encoder_on_cpu_for_generation = kwargs.pop("execute_encoder_on_cpu_for_generation", False)
 
@@ -469,7 +503,7 @@ class IPUConfig(BaseConfig):
                     f" same number of IPUs as {ipus_per_replica_mode_str}={self._ipus_per_replica}"
                 )
 
-            # layers_per_ipu must have the same length as ipus per replica.
+            # Layers_per_ipu must have the same length as ipus per replica.
             # If wildcards are present in layers_per_ipu, let the call to `model.parallelize`
             # handle the validation
             if -1 not in self._layers_per_ipu and len(self._layers_per_ipu) != self._ipus_per_replica:
@@ -478,6 +512,36 @@ class IPUConfig(BaseConfig):
                     f"{layers_per_ipu_mode_str}={self._layers_per_ipu} should use the"
                     f" same number of IPUs as {ipus_per_replica_mode_str}={self._ipus_per_replica}"
                 )
+
+            # Validate non-transformer layer placement configuration
+            for layer in ("embedding", "projection"):
+                mode_layer_splits_per_ipu_str = self._get_managed_attr_mode_name(f"serialized_{layer}_splits_per_ipu")
+                mode_layer_splits_per_ipu = getattr(self, mode_layer_splits_per_ipu_str)
+                mode_layer_serialisation_factor_str = self._get_managed_attr_mode_name(f"{layer}_serialization_factor")
+                mode_layer_serialization_factor = getattr(self, mode_layer_serialisation_factor_str)
+
+                # If the user has not provided either the layer_serialization_factor or
+                # layer_splits_per_ipu, default the layer_serialization_factor to 1
+                if not (mode_layer_splits_per_ipu or mode_layer_serialization_factor):
+                    setattr(self, mode_layer_serialisation_factor_str, 1)
+
+                # If the user provides both options, tell them only one is allowed and what each option is for
+                if mode_layer_splits_per_ipu and mode_layer_serialization_factor:
+                    raise ValueError(
+                        f"Only one of `{mode_layer_serialisation_factor_str}` and `{mode_layer_splits_per_ipu_str}` should"
+                        f" be used at once. `{mode_layer_serialisation_factor_str}` should be used when you want your"
+                        f" {layer} layer serialised on the same IPU (which IPU depends on the model)."
+                        f" `{mode_layer_splits_per_ipu_str}` should be used when you want your {layer} layer to be split"
+                        " across multiple IPUs of your choice (or to choose which single IPU the layer is serialised on)."
+                    )
+
+                # Serialized layer splits per ipu pipeline must have the same length
+                # as the number of ipus per replica
+                if mode_layer_splits_per_ipu and len(mode_layer_splits_per_ipu) != self._ipus_per_replica:
+                    raise ValueError(
+                        f"{mode_layer_splits_per_ipu_str}={mode_layer_splits_per_ipu}"
+                        f" should use the same number of IPUs as {ipus_per_replica_mode_str}={self._ipus_per_replica}"
+                    )
 
         self.mode = old_mode
 

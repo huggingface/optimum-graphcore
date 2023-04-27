@@ -362,18 +362,14 @@ class IPUConfigTester(unittest.TestCase):
 
         # The number of splits in the pipeline must equal the corresponding serialization factor
         # the default values are 1, so the user has to provide them
-        with pytest.raises(
-            ValueError, match="The number of splits in serialized_linear_splits_per_ipu=\\[3, 2\\]"
-        ):
+        with pytest.raises(ValueError, match="The number of splits in serialized_linear_splits_per_ipu=\\[3, 2\\]"):
             ipu_config = IPUConfig(
                 ipus_per_replica=2,
                 serialized_linear_splits_per_ipu=[3, 2],
             )
 
         # Cannot have zeros between positive splits e.g. [0, 3, 0, 2]
-        with pytest.raises(
-            ValueError, match="serialized_linear_splits_per_ipu=\\[0, 3, 0, 2\\] cannot contain zeros"
-        ):
+        with pytest.raises(ValueError, match="serialized_linear_splits_per_ipu=\\[0, 3, 0, 2\\] cannot contain zeros"):
             ipu_config = IPUConfig(
                 ipus_per_replica=4,
                 linear_serialization_factor=5,
