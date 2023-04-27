@@ -473,6 +473,18 @@ class SerializedEmbedding(nn.Module):
     @classmethod
     def from_model(cls, embedding: nn.Embedding, serialization_factor: int) -> SerializedEmbedding:
         return cls(embedding, serialization_factor)
+    
+    def parallelize(self, splits_per_ipu: List[int]):
+        for ipu_id, splits in enumerate(splits_per_ipu):
+            if splits:
+                from_split = sum(splits_per_ipu[:ipu_id])
+                to_split = from_split + splits - 1
+                shard_range = f"{from_split}-{to_split}" if from_split != to_split else f"{from_split}"
+                logger.info(f"Embedding splits: {shard_range} --> IPU {ipu_id}")
+                self.split_embeddings[from_split] = poptorch.BeginBlock(
+                    self.split_embeddings[from_split], ipu_id=ipu_id, user_id=f"Embedding-{shard_range}"
+                )
+        return self
 
     def to_model(self) -> nn.Embedding:
         """
@@ -633,16 +645,15 @@ class SplitLinear(torch.nn.Module):
         return out
 
     def parallelize(self, splits_per_ipu: List[int]):
-        splits_offset = 0
-        for ipu_ind, splits in enumerate(splits_per_ipu):
-            if splits != 0:
-                layer_ind = splits_offset + splits - 1
-                shard_range = f"{splits_offset}-{layer_ind}" if layer_ind != splits_offset else f"{layer_ind}"
-                logger.info(f"Linear splits: {shard_range} --> IPU {ipu_ind}")
-                self.split_linear_layers[layer_ind] = poptorch.BeginBlock(
-                    self.split_linear_layers[layer_ind], ipu_id=ipu_ind, user_id=f"Linear-{splits_offset}-{layer_ind}"
+        for ipu_id, splits in enumerate(splits_per_ipu):
+            if splits:
+                from_split = sum(splits_per_ipu[:ipu_id])
+                to_split = from_split + splits - 1
+                shard_range = f"{from_split}-{to_split}" if from_split != to_split else f"{from_split}"
+                logger.info(f"Linear splits: {shard_range} --> IPU {ipu_id}")
+                self.split_linear_layers[from_split] = poptorch.BeginBlock(
+                    self.split_linear_layers[from_split], ipu_id=ipu_id, user_id=f"Linear-{shard_range}"
                 )
-                splits_offset += splits
         return self
 
     def deserialize(self):
