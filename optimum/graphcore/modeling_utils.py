@@ -607,23 +607,17 @@ class SplitLinear(torch.nn.Module):
 
         self.in_features = linear.in_features
         self.out_features = linear.out_features
-        input_linear_dtype = linear.weight.dtype
         if self.in_features % serialization_factor != 0:
-            raise ValueError(f"Input dimension of :{self.in_features} must be divisible by {serialization_factor}")
+            raise ValueError(f"{linear.in_features=} must be divisible by {serialization_factor=}")
 
         self.split_size = int(self.in_features / serialization_factor)
-        split_lin_layers = []
-        for i in range(serialization_factor):
-            start = i * self.split_size
-            end = (i + 1) * self.split_size
-            lin = torch.nn.Linear(self.split_size, self.out_features, bias=False)
-            if input_linear_dtype == torch.float16:
-                lin = lin.half()
+        self.split_linear_layers = torch.nn.ModuleList()
+        for i in range(0, self.in_features, self.split_size):
+            split_linear = torch.nn.Linear(self.split_size, self.out_features, bias=False, dtype=linear.weight.dtype)
             # initialise linear layer using a section of`linear` weight,
             with torch.no_grad():
-                lin.weight.copy_(linear.weight[:, start:end].detach())
-            split_lin_layers.append(lin)
-        self.split_linear_layers = torch.nn.ModuleList(split_lin_layers)
+                split_linear.weight.copy_(linear.weight[:, i:i + self.split_size].detach())
+            self.split_linear_layers.append(split_linear)
 
         self.bias = None
         if linear.bias is not None:
@@ -634,8 +628,8 @@ class SplitLinear(torch.nn.Module):
     def forward(self, x):
         # each linear layer processes a partition of the input
         out = None
-        for i, lin in enumerate(self.split_linear_layers):
-            h = lin(x[:, :, i * self.split_size : (i + 1) * self.split_size])
+        for i, split_linear_layer in enumerate(self.split_linear_layers):
+            h = split_linear_layer(x[:, :, i * self.split_size : (i + 1) * self.split_size])
             if out is None:
                 out = h
             else:
