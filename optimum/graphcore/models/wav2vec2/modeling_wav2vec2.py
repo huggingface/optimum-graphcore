@@ -157,7 +157,7 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
         layers.append(("Positional Embedding", self.wav2vec2.encoder.pos_conv_embed))
         # Encoder layers
         for index, layer in enumerate(self.wav2vec2.encoder.layers):
-            recomputation_checkpoint(layer)
+            self._hooks.append(recomputation_checkpoint(layer))
             layers.append((f"Encoder {index:<2}", layer))
         # Project Hidden
         layers.append(("Project Hidden", self.project_hid))
@@ -443,7 +443,7 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
             layers.append(("Positional Embedding", self.wav2vec2.encoder.pos_conv_embed))
             # Encoder layers
             for index, layer in enumerate(self.wav2vec2.encoder.layers):
-                recomputation_checkpoint(layer)
+                self._hooks.append(recomputation_checkpoint(layer))
                 layers.append((f"Encoder {index:<2}", layer))
             # Project Hidden
             layers.append(("Project Hidden", self.lm_head))

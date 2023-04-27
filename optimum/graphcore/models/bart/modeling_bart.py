@@ -36,7 +36,7 @@ from transformers.models.bart.modeling_bart import (
     shift_tokens_right,
 )
 
-from ...generation_utils import IPUGenerationMixin, _IndexedInputLinear
+from ...generation import IPUGenerationMixin
 from ...modeling_utils import (
     PipelineMixin,
     SerializedLinear,
@@ -686,7 +686,7 @@ class _BartModelWithSharedEmbedding(BartModel):
 
 @register(BartForConditionalGeneration)
 class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, PipelineMixin, IPUGenerationMixin):
-    def parallelize(self, for_generation=False):
+    def parallelize(self, for_generation=False, **kwargs):
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model
@@ -719,6 +719,8 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
         self.model.encoder_and_decoder_embeddings_computation(True)
         self.model.change_bart_encoder_and_decoder_classes(False)
         self.model.change_bart_attention_class(False)
+        self.change_lm_head_to_indexed_input_linear(restore=not for_generation)
+        self.use_encoder_output_buffer = kwargs.get("use_encoder_output_buffer", False)
 
         self.model.shared = poptorch.BeginBlock(self.model.shared, "Embedding", ipu_id=0)
         self.model.encoder.embed_positions = poptorch.BeginBlock(
@@ -780,8 +782,7 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
         self.model.change_bart_attention_class(True)
         self.model.__class__ = BartModel
 
-        if self.lm_head.__class__ == _IndexedInputLinear:
-            self.lm_head = self.lm_head.wrapped_linear
+        self.change_lm_head_to_indexed_input_linear(restore=True)
 
         if self.ipu_config.embedding_serialization_factor > 1:
             old_lm_head = nn.Linear(
@@ -902,7 +903,7 @@ class PipelinedBartForSequenceClassification(BartForSequenceClassification, Pipe
             self.model.decoder.layers[index] = poptorch.BeginBlock(layer, f"Decoder{index}", ipu_id=ipu)
             logger.info(f"Decoder {index:<2} --> IPU {ipu}")
 
-        last_ipu = len(self.ipu_config.layers_per_ipu) - 1
+        last_ipu = layer_ipu[-1]
         logger.info(f"Classification Head Output --> IPU {last_ipu}")
         self.classification_head = poptorch.BeginBlock(
             self.classification_head, "Classification Head Output", ipu_id=last_ipu
