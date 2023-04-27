@@ -534,8 +534,8 @@ class IPUConfig(BaseConfig):
                         f" `{mode_layer_splits_per_ipu_str}` should be used when you want your {layer} layer to be split"
                         " across multiple IPUs of your choice (or to choose which single IPU the layer is serialised on)."
                     )
-
-                # Serialized layer splits per ipu pipeline must have the same length
+                    
+                # Serialized layer splits per ipu pipeline must have the same pipeline length
                 # as the number of ipus per replica
                 if mode_layer_splits_per_ipu and len(mode_layer_splits_per_ipu) != self._ipus_per_replica:
                     raise ValueError(
