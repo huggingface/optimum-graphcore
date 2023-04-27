@@ -487,6 +487,7 @@ class IPUGenerationMixin(GenerationMixin):
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
             )
+            # import ipdb; ipdb.set_trace()
 
             # Change: Remove padding and restore to actual length
             if not use_cache:

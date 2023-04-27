@@ -17,12 +17,17 @@ import torch
 from transformers.generation.utils import (
     ForceTokensLogitsProcessor,
     MinLengthLogitsProcessor,
+    NoRepeatNGramLogitsProcessor,
     SuppressTokensAtBeginLogitsProcessor,
     SuppressTokensLogitsProcessor,
 )
 
 
 VERY_LARGE_NEGATIVE_CONST = -1e18
+
+def _get_ngrams(ngram_size: int, prev_input_ids: torch.Tensor, num_hypos: int): pass
+def _get_generated_ngrams(): pass
+def _calc_banned_ngram_tokens(): pass
 
 
 class IPUMinLengthLogitsProcessor(MinLengthLogitsProcessor):
@@ -42,6 +47,10 @@ class IPUMinLengthLogitsProcessor(MinLengthLogitsProcessor):
         cond = absolute_step >= self.min_length
         mask |= cond
         return mask * scores + (1 - mask) * VERY_LARGE_NEGATIVE_CONST
+
+class IPUNoRepeatNGramLogitsProcessor(NoRepeatNGramLogitsProcessor):
+    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.FloatTensor:
+        return super().__call__(input_ids, scores)
 
 
 class IPUSuppressTokensLogitsProcessor(SuppressTokensLogitsProcessor):

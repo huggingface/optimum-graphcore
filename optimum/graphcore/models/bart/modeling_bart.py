@@ -12,6 +12,7 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+import copy
 import random
 from typing import List, Optional, Tuple, Union
 
@@ -33,10 +34,11 @@ from transformers.models.bart.modeling_bart import (
     BartDecoder,
     BartEncoder,
     BartEncoderLayer,
+    BartLearnedPositionalEmbedding,
     shift_tokens_right,
 )
 
-from ...generation import IPUGenerationMixin
+from ...generation import IPUAttentionMixin, IPUGenerationMixin, supports_kv_cache
 from ...modeling_utils import (
     PipelineMixin,
     SerializedLinear,
@@ -83,7 +85,7 @@ def _expand_mask(mask: torch.Tensor, dtype: torch.dtype, tgt_len: Optional[int] 
     return inverted_mask.to(dtype)
 
 
-class _BartAttentionWithoutException(BartAttention):
+class IPUBartAttention(BartAttention, IPUAttentionMixin):
     """The same as BartAttention without the attention mask shape check.
 
     This is needed because the original BartAttention checks that the attention mask shape is [bs, 1, tgt_len, src_len]
@@ -110,21 +112,20 @@ class _BartAttentionWithoutException(BartAttention):
 
         # get query proj
         query_states = self.q_proj(hidden_states) * self.scaling
-        # get key, value proj
-        if is_cross_attention and past_key_value is not None:
-            # reuse k,v, cross_attentions
-            key_states = past_key_value[0]
-            value_states = past_key_value[1]
-        elif is_cross_attention:
-            # cross_attentions
+        if key_value_states is not None:
+            # cross attention
             key_states = self._shape(self.k_proj(key_value_states), -1, bsz)
             value_states = self._shape(self.v_proj(key_value_states), -1, bsz)
-        elif past_key_value is not None:
-            # reuse k, v, self_attention
+        elif self.kv_cache_initialised:
+            # self attention with kv cache
             key_states = self._shape(self.k_proj(hidden_states), -1, bsz)
             value_states = self._shape(self.v_proj(hidden_states), -1, bsz)
-            key_states = torch.cat([past_key_value[0], key_states], dim=2)
-            value_states = torch.cat([past_key_value[1], value_states], dim=2)
+
+            if tgt_len != 1:
+                raise ValueError(f"KV cache expects tgt_len = 1, received {tgt_len}.")
+
+            key_states, value_states = self.add_to_kv_cache(key_states, value_states)
+            attention_mask = self.update_attention_mask(attention_mask)
         else:
             # self_attention
             key_states = self._shape(self.k_proj(hidden_states), -1, bsz)
@@ -538,6 +539,41 @@ class _BartDecoderWithCustomMakeCausalAndExpandMask(BartDecoder):
         )
 
 
+class IPUBartPositionalLearnedEmbedding(nn.Embedding):
+    """
+    This module learns positional embeddings up to a fixed maximum size.
+    """
+
+    def __init__(self, num_embeddings: int, embedding_dim: int):
+        # Bart is set up so that if padding_idx is specified then offset the embedding ids by 2
+        # and adjust num_embeddings appropriately. Other models don't have this hack
+        self.offset = 2
+        super().__init__(num_embeddings + self.offset, embedding_dim)
+
+    @classmethod
+    def from_model(cls, model: BartLearnedPositionalEmbedding):
+        clone = copy.deepcopy(model)
+        clone.__class__ = cls
+        clone.register_buffer("_generation_step", torch.tensor([0], dtype=torch.int32), persistent=False)
+        return clone
+
+    def to_model(self) -> BartLearnedPositionalEmbedding:
+        del self._generation_step
+
+        original = copy.deepcopy(self)
+        original.__class__ = BartLearnedPositionalEmbedding 
+        return original
+
+    def forward(self, input_ids: torch.Tensor, past_key_values_length: int = 0):
+        del past_key_values_length
+
+        if input_ids.shape[-1] == 1:
+            # KV cache enabled.
+            return poptorch.dynamic_slice(self.weight, 0, self._generation_step + self.offset, 1, 1)
+        else:
+            return self.weight[self.offset: self.offset + input_ids.shape[-1]]
+
+
 class _BartModelWithSharedEmbedding(BartModel):
     @property
     def is_encoder_and_decoder_embeddings_computation_shared(self):
@@ -573,17 +609,57 @@ class _BartModelWithSharedEmbedding(BartModel):
         for layer in self.encoder.layers:
             layer.__class__ = BartEncoderLayer if restore else _BartEncoderLayerNoClamp
 
-    def change_bart_attention_class(self, restore: bool):
+    def change_bart_attention_class(self, restore: bool, **kwargs):
         """Changes the attention layers to either use the original BartAttention forward or
         BartAttentionWithoutException forward.
 
         Args:
             restore: whether to restore the attention layers to their original version or not.
         """
-        new_cls = BartAttention if restore else _BartAttentionWithoutException
-        for mod in self.modules():
-            if isinstance(mod, BartAttention):
-                mod.__class__ = new_cls
+        use_cache = kwargs.get("use_cache", False)
+        batch_size = kwargs.get("batch_size", 1)
+        max_length = kwargs.get("max_length", 448)
+        num_beams = kwargs.get("num_beams", 1)
+
+        for encoder_layer in self.encoder.layers:
+            if restore:
+                encoder_layer.self_attn = encoder_layer.self_attn.to_model(BartAttention)
+                continue
+
+            encoder_layer.self_attn = IPUBartAttention.from_model(
+                encoder_layer.self_attn,
+                use_cache=False,
+            )
+
+        for decoder_layer in self.decoder.layers:
+            if restore:
+                decoder_layer.self_attn = decoder_layer.self_attn.to_model(BartAttention)
+                decoder_layer.encoder_attn = decoder_layer.encoder_attn.to_model(BartAttention)
+                continue
+
+            decoder_layer.self_attn = IPUBartAttention.from_model(
+                decoder_layer.self_attn,
+                use_cache=use_cache,
+                batch_size=batch_size,
+                max_length=max_length,
+                num_beams=num_beams,
+                dtype=decoder_layer.self_attn.k_proj.weight.dtype,
+            )
+            decoder_layer.encoder_attn = IPUBartAttention.from_model(
+                decoder_layer.encoder_attn,
+                use_cache=False,
+            )
+
+    def change_decoder_positional_embedding(self, restore: bool):
+        """Changes the decoder positional embedding to support an optional static KV cache.
+
+        Args:
+            restore: whether to restore the decoder positional embedding to their original version or not.
+        """
+        position_embedding = self.decoder.embed_positions
+        self.decoder.embed_positions = (
+            position_embedding.to_model() if restore else IPUBartPositionalLearnedEmbedding.from_model(position_embedding)
+        )
 
     def forward(
         self,
@@ -684,9 +760,10 @@ class _BartModelWithSharedEmbedding(BartModel):
         )
 
 
+@supports_kv_cache
 @register(BartForConditionalGeneration)
 class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, PipelineMixin, IPUGenerationMixin):
-    def parallelize(self, for_generation=False, **kwargs):
+    def parallelize(self, for_generation=False, use_cache=False, **kwargs):
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model
@@ -716,11 +793,13 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
             self.tie_weights()
 
         self.model.__class__ = _BartModelWithSharedEmbedding
-        self.model.encoder_and_decoder_embeddings_computation(True)
-        self.model.change_bart_encoder_and_decoder_classes(False)
-        self.model.change_bart_attention_class(False)
-        self.change_lm_head_to_indexed_input_linear(restore=not for_generation)
+        self.model.encoder_and_decoder_embeddings_computation(use_shared_embedding=True)
+        self.model.change_bart_encoder_and_decoder_classes(restore=False)
+        self.model.change_bart_attention_class(restore=False, use_cache=use_cache and for_generation, **kwargs)
+        self.model.change_decoder_positional_embedding(restore=False)
+        # self.change_lm_head_to_indexed_input_linear(restore=not for_generation)
         self.use_encoder_output_buffer = kwargs.get("use_encoder_output_buffer", False)
+        self.set_on_device_generation_steps(kwargs.get("on_device_generation_steps", 0))
 
         self.model.shared = poptorch.BeginBlock(self.model.shared, "Embedding", ipu_id=0)
         self.model.encoder.embed_positions = poptorch.BeginBlock(
@@ -780,9 +859,11 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
         self.model.encoder_and_decoder_embeddings_computation(False)
         self.model.change_bart_encoder_and_decoder_classes(True)
         self.model.change_bart_attention_class(True)
+        self.model.change_decoder_positional_embedding(restore=True)
         self.model.__class__ = BartModel
 
-        self.change_lm_head_to_indexed_input_linear(restore=True)
+        # self.change_lm_head_to_indexed_input_linear(restore=True)
+        self.set_on_device_generation_steps(0)
 
         if self.ipu_config.embedding_serialization_factor > 1:
             old_lm_head = nn.Linear(
@@ -795,6 +876,24 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
             self.tie_weights()
 
         return self
+
+    def prepare_inputs_for_generation(
+        self, decoder_input_ids, past=None, use_cache=None, encoder_outputs=None, attention_mask=None, **kwargs
+    ):
+        # We don't use `past` for KV caching, and rely on `use_cache` instead.
+        beam_idx = None
+        if use_cache:
+            decoder_input_ids = decoder_input_ids[:, -1:]
+            beam_idx = kwargs.get("beam_idx", torch.arange(decoder_input_ids.shape[0], dtype=torch.long))
+
+        return {
+            "encoder_outputs": encoder_outputs,
+            "past_key_values": None,
+            "attention_mask": attention_mask,
+            "decoder_input_ids": decoder_input_ids,
+            "decoder_attention_mask": None,
+            "beam_idx": beam_idx,
+        }
 
     def forward(
         self,
@@ -867,9 +966,9 @@ class PipelinedBartForSequenceClassification(BartForSequenceClassification, Pipe
         super().parallelize()
 
         self.model.__class__ = _BartModelWithSharedEmbedding
-        self.model.encoder_and_decoder_embeddings_computation(True)
-        self.model.change_bart_encoder_and_decoder_classes(False)
-        self.model.change_bart_attention_class(False)
+        self.model.encoder_and_decoder_embeddings_computation(use_shared_embedding=True)
+        self.model.change_bart_encoder_and_decoder_classes(restore=False)
+        self.model.change_bart_attention_class(restore=False)
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding --> IPU 0")
