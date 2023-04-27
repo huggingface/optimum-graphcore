@@ -225,12 +225,30 @@ class IPUAttentionMixin:
 
         return mask
 
+    def then_k_body(self, x):
+        print("******************* REPLACED key_fn()")
+        # return x+0
+        return self.key_fn(x)
+
+    def else_k_body(self, _):
+        return self._cross_k_cache
+
+    def then_v_body(self, x):
+        print("******************* REPLACED value_fn()")
+        # return x+0
+        return self.value_fn(x)
+
+    def else_v_body(self, _):
+        return self._cross_v_cache
+
     def add_to_cross_kv_cache(
         self,
         cross_input: torch.Tensor,
         key_fn: Callable[[torch.Tensor], torch.Tensor],
         value_fn: Callable[[torch.Tensor], torch.Tensor],
     ) -> Tuple[torch.Tensor, torch.Tensor]:
+        self.key_fn = key_fn
+        self.value_fn = value_fn
         if not self.cross_kv_cache_initialised:
             raise ValueError(
                 f"{self.__class__.__name__} assumes that cross-attention has cross KV caching enabled. "
@@ -256,32 +274,19 @@ class IPUAttentionMixin:
             self._cross_k_cache.copy_(_cross_k_cache)
             self._cross_v_cache.copy_(_cross_v_cache)
 
-        def then_k_body(x):
-            print("******************* REPLACED key_fn()")
-            return x*0.5
-            return key_fn(x)
 
-        def else_k_body(_):
-            return self._cross_k_cache
-
-        def then_v_body(x):
-            print("******************* REPLACED value_fn()")
-            return x*0.2
-            return value_fn(x)
-
-        def else_v_body(_):
-            return self._cross_v_cache
 
         # print("*************************************************** COMMENTED OUT cond()")
 
 
         self._cross_k_cache.copy_(
-            poptorch.cond(reset_kv_cache, then_k_body, [cross_input], else_k_body, [cross_input])[0]
+            poptorch.cond(reset_kv_cache, self.then_k_body, [cross_input], self.else_k_body, [cross_input])[0]
         )
         self._cross_v_cache.copy_(
-            poptorch.cond(reset_kv_cache, then_v_body, [cross_input], else_v_body, [cross_input])[0]
+            poptorch.cond(reset_kv_cache, self.then_v_body, [cross_input], self.else_v_body, [cross_input])[0]
         )
-
+        # self._cross_k_cache.copy_(key_fn(cross_input))
+        # self._cross_v_cache.copy_(value_fn(cross_input))
         # print("*************************************************** returning cache + cross_input")
         # return self._cross_k_cache+key_fn(cross_input), self._cross_v_cache+value_fn(cross_input)
         return self._cross_k_cache, self._cross_v_cache
