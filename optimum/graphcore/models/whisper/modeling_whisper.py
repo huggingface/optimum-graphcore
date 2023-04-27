@@ -28,7 +28,7 @@ from transformers.models.whisper.modeling_whisper import (
     WhisperPositionalEmbedding,
 )
 
-from ...generation_utils import IPUAttentionMixin, IPUGenerationMixin, _IndexedInputLinear, supports_kv_cache
+from ...generation import IPUAttentionMixin, IPUGenerationMixin, supports_kv_cache
 from ...modeling_utils import (
     PipelineMixin,
     get_layer_ipu,
@@ -363,6 +363,8 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         self.change_decoder_positional_embedding(restore=False)
         self.change_attention_class(restore=False, use_cache=use_cache and for_generation, **kwargs)
         self.change_lm_head_to_indexed_input_linear(restore=use_cache or not for_generation)
+        self.use_encoder_output_buffer = kwargs.get("use_encoder_output_buffer", False)
+        self.set_on_device_generation_steps(kwargs.get("on_device_generation_steps", 0))
 
         logger.info("---------- Device Allocation -----------")
         logger.info("conv1, conv2, embed_positions  --> IPU 0")
@@ -423,6 +425,7 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         self.change_decoder_positional_embedding(restore=True)
         self.change_attention_class(restore=True)
         self.change_lm_head_to_indexed_input_linear(restore=True)
+        self.set_on_device_generation_steps(0)
 
     def prepare_inputs_for_generation(
         self, decoder_input_ids, past=None, use_cache=None, encoder_outputs=None, attention_mask=None, **kwargs
@@ -437,7 +440,6 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
             "encoder_outputs": encoder_outputs,
             "past_key_values": None,
             "decoder_input_ids": decoder_input_ids,
-            "use_cache": use_cache,
             "decoder_attention_mask": None,
             "beam_idx": beam_idx,
         }
