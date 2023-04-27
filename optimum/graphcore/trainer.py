@@ -368,7 +368,6 @@ class IPUTrainer:
         if args.compile_only:
             logger.info("Called with compile_only=True. Compiling models then exiting.")
             if args.do_train:
-                self.optimizer = self.create_optimizer()
                 train_dl = self.get_train_dataloader()
                 model = self.wrap_model(self.model)
                 self.compile_model(model, next(iter(train_dl)), log=True)
@@ -892,6 +891,7 @@ class IPUTrainer:
                 model.deparallelize()
                 model.ipu_config.train()
                 model.parallelize()
+                self.create_optimizer()
                 self.training_model = poptorch.trainingModel(
                     model.train(), options=self.opts, optimizer=self.optimizer
                 )
@@ -1032,8 +1032,6 @@ class IPUTrainer:
         if DebugOption.UNDERFLOW_OVERFLOW in self.args.debug:
             debug_overflow = DebugUnderflowOverflow(self.model)  # noqa
 
-        self.create_optimizer_and_scheduler(num_training_steps=max_steps)
-
         self.state = IPUTrainerState()
         if trial is not None:
             raise ValueError("Hyperparameter tuning is not supported by the IPUTrainer.")
@@ -1041,6 +1039,8 @@ class IPUTrainer:
         self.state.is_hyper_param_search = trial is not None
 
         self.training_model = self.wrap_model(self.model)
+
+        self.create_scheduler(num_training_steps=max_steps)
 
         # TODO: handle optimizer and scheduler creation
         # if delay_optimizer_creation:
