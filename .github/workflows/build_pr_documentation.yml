@@ -19,12 +19,12 @@ jobs:
       PR_CLONE_NAME: ${{ github.event.pull_request.head.repo.name }}
 
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           repository: 'huggingface/doc-builder'
           path: doc-builder
 
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
         with:
           repository: 'huggingface/optimum-graphcore'
           path: optimum-graphcore
