@@ -28,7 +28,7 @@ from unittest import skipIf
 
 import numpy as np
 
-from huggingface_hub import HfFolder, Repository, delete_repo, set_access_token
+from huggingface_hub import HfFolder, Repository, delete_repo
 from optimum.graphcore import pipeline
 from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
 from requests.exceptions import HTTPError
@@ -920,7 +920,6 @@ class PipelineUtilsTest(unittest.TestCase):
 #     @classmethod
 #     def setUpClass(cls):
 #         cls._token = TOKEN
-#         set_access_token(TOKEN)
 #         HfFolder.save_token(TOKEN)
 
 #     @classmethod
