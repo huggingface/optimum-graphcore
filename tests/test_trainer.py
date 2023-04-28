@@ -27,7 +27,7 @@ from typing import Optional, Union
 
 import numpy as np
 
-from huggingface_hub import HfFolder, Repository, delete_repo, set_access_token
+from huggingface_hub import HfFolder, Repository, delete_repo
 from optimum.graphcore import IPUConfig, IPUTrainingArguments
 from optimum.utils import logging
 from requests.exceptions import HTTPError
@@ -266,7 +266,7 @@ if is_torch_available():
         eval_len=EVAL_LEN,
         pretrained=True,
         half_precision=False,
-        **kwargs
+        **kwargs,
     ):
         label_names = kwargs.get("label_names", None)
         train_dataset = RegressionDataset(length=train_len, label_names=label_names)
@@ -610,6 +610,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
 
         ipu_config = get_ipu_config()
         ipu_config.layers_per_ipu = [3]
+        ipu_config.ipus_per_replica = 1
         ipu_config.gradient_accumulation_steps = 8
 
         trainer = IPUTrainer(tiny_gpt2, ipu_config, args, train_dataset=train_dataset)
@@ -1311,7 +1312,6 @@ class IPUTrainerIntegrationWithHubTester(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls._token = TOKEN
-        set_access_token(TOKEN)
         HfFolder.save_token(TOKEN)
 
     @classmethod

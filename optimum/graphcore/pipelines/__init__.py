@@ -19,10 +19,11 @@ import torch
 import poptorch
 import transformers.pipelines
 from optimum.graphcore import IPUConfig
-from optimum.graphcore.generation_utils import IPUGenerationMixin
-from optimum.graphcore.modeling_utils import to_pipelined
+from optimum.graphcore.generation.utils import IPUGenerationMixin
+from optimum.graphcore.modeling_utils import IncompatibleIPUConfigError, to_pipelined
 from transformers import (
     AudioClassificationPipeline,
+    AutoFeatureExtractor,
     AutomaticSpeechRecognitionPipeline,
     AutoModelForAudioClassification,
     AutoModelForCausalLM,
@@ -33,17 +34,16 @@ from transformers import (
     AutoModelForSeq2SeqLM,
     AutoModelForSequenceClassification,
     AutoModelForTokenClassification,
+    AutoTokenizer,
     ImageClassificationPipeline,
     Pipeline,
     PreTrainedTokenizer,
-    ProcessorMixin,
     QuestionAnsweringPipeline,
     TextClassificationPipeline,
     TextGenerationPipeline,
 )
 from transformers.feature_extraction_utils import PreTrainedFeatureExtractor
 from transformers.modeling_utils import PreTrainedModel
-from transformers.onnx.utils import get_preprocessor
 from transformers.pipelines import get_task
 from transformers.utils import HUGGINGFACE_CO_RESOLVE_ENDPOINT, logging
 
@@ -51,12 +51,6 @@ from .fill_mask import IPUFillMaskPipeline
 from .text2text_generation import IPUSummarizationPipeline, IPUText2TextGenerationPipeline, IPUTranslationPipeline
 from .token_classification import IPUTokenClassificationPipeline
 from .zero_shot_classification import IPUZeroShotClassificationPipeline
-
-
-class IncompatibleIPUConfigError(Exception):
-    """An exception used when an IPU Config is incompatible with a model"""
-
-    pass
 
 
 logger = logging.get_logger(__name__)
@@ -90,7 +84,7 @@ SUPPORTED_TASKS = {
         "class": (AutoModelForMaskedLM,),
         "default": {
             "model": ("distilroberta-base", "ec58a5b"),
-            "ipu_config": "Graphcore/roberta-base-ipu",
+            "ipu_config": "Graphcore/distilroberta-base-ipu",
             "max_length": 128,
         },
         "type": "text",
@@ -138,7 +132,7 @@ SUPPORTED_TASKS = {
         "class": (AutoModelForCausalLM,),
         "default": {
             "model": ("gpt2", "e7da7f2"),
-            "ipu_config": "Graphcore/gpt2-small-ipu",
+            "ipu_config": IPUConfig(),
             "max_length": 50,
         },
         "type": "text",
@@ -148,7 +142,7 @@ SUPPORTED_TASKS = {
         "class": (AutoModelForSeq2SeqLM,),
         "default": {
             "model": ("ainize/bart-base-cnn", "b90bc9a"),
-            "ipu_config": "Graphcore/bart-base-ipu",
+            "ipu_config": IPUConfig(ipus_per_replica=2),
             "max_input_length": 50,
             "max_length": 20,
             "truncation": "only_first",
@@ -161,7 +155,7 @@ SUPPORTED_TASKS = {
         "class": (AutoModelForSeq2SeqLM,),
         "default": {
             "model": ("t5-small", "9507060"),
-            "ipu_config": "Graphcore/t5-small-ipu",
+            "ipu_config": IPUConfig(ipus_per_replica=2),
             "max_length": 50,
             "max_input_length": 45,
             "truncation": "only_first",
@@ -173,7 +167,7 @@ SUPPORTED_TASKS = {
         "class": (AutoModelForSeq2SeqLM,),
         "default": {
             "model": ("t5-small", "9507060"),
-            "ipu_config": "Graphcore/t5-small-ipu",
+            "ipu_config": IPUConfig(ipus_per_replica=2),
             "max_length": 50,
             "max_input_length": 50,
             "truncation": "only_first",
@@ -191,6 +185,8 @@ SUPPORTED_TASKS = {
         "type": "text",
     },
 }
+SUPPORTED_GENERATION_TASKS = {"summarization", "text-generation", "text2text-generation", "translation"}
+SUPPORTED_SEQ2SEQ_GENERATION_TASKS = {"summarization", "text2text-generation", "translation"}
 
 NO_FEATURE_EXTRACTOR_TASKS = set()
 NO_TOKENIZER_TASKS = set()
@@ -209,8 +205,9 @@ def list_tasks() -> List[str]:
 
 
 def get_poplar_executor(
+    task: str,
     model: PreTrainedModel,
-    ipu_config: Union[str, dict] = None,
+    ipu_config: Union[IPUConfig, str, dict] = None,
     fp16: bool = True,
 ) -> PreTrainedModel:
     ipu_config_arg = ipu_config
@@ -219,19 +216,30 @@ def get_poplar_executor(
         ipu_config = IPUConfig.from_pretrained(ipu_config)
     elif isinstance(ipu_config, dict):
         ipu_config = IPUConfig.from_dict(ipu_config)
-    else:
-        raise ValueError("ipu_config must be a string or a dictionary.")
+    elif not isinstance(ipu_config, IPUConfig):
+        raise ValueError("ipu_config must be an IPUConfig, string, or a dictionary.")
+
+    # So that IPUConfig returns inference versions of any parameters
+    # that are different in training and inference
+    ipu_config.eval()
+
     ipu_config.inference_device_iterations = 1
     # TODO: inference_replication_factor should be adaptive, especially for batching.
     ipu_config.inference_replication_factor = 1
+    if not fp16:
+        ipu_config.enable_half_partials = False
     try:
         model = to_pipelined(model, ipu_config, force=False)
-        model.parallelize()
+        if model.config.is_encoder_decoder and isinstance(model, IPUGenerationMixin):
+            model.parallelize(for_generation=True)
+        else:
+            model.parallelize()
     except Exception as error:
         new_message = (
             "The model and ipu_config seem to be incompatible,"
             " please try a different IPU config or customizing it for the model."
-            f" The config provided is '{ipu_config_arg}'"
+            f" The config provided is '{ipu_config_arg}'\n"
+            f"{error}"
         )
         raise IncompatibleIPUConfigError(new_message) from error
     if fp16:
@@ -240,7 +248,7 @@ def get_poplar_executor(
     opts.setExecutionStrategy(poptorch.ShardedExecution())
 
     # Text generation models have an internal Poplar executor so don't wrap model in that case
-    if not isinstance(model, IPUGenerationMixin):
+    if task not in SUPPORTED_GENERATION_TASKS:
         model = poptorch.inferenceModel(model.eval(), opts)
     return model
 
@@ -280,7 +288,7 @@ def check_model_type(self, supported_models: Union[List[str], dict]):
 def pipeline(
     task: str = None,
     model: Optional[Any] = None,
-    ipu_config: Union[str, dict] = None,
+    ipu_config: Union[IPUConfig, str, dict] = None,
     tokenizer: Optional[Union[str, PreTrainedTokenizer]] = None,
     feature_extractor: Optional[Union[str, PreTrainedFeatureExtractor]] = None,
     revision: Optional[str] = None,
@@ -352,13 +360,13 @@ def pipeline(
             "Using a pipeline without specifying a model name and revision in production is not recommended."
         )
         model = SUPPORTED_TASKS[targeted_task]["class"][0].from_pretrained(model_id, revision=revision)
-        model = get_poplar_executor(model, ipu_config, fp16)
+        model = get_poplar_executor(targeted_task, model, ipu_config, fp16)
     elif isinstance(model, str):
         model_id = model
         model = SUPPORTED_TASKS[targeted_task]["class"][0].from_pretrained(model_id, revision=revision)
-        model = get_poplar_executor(model, ipu_config, fp16)
+        model = get_poplar_executor(targeted_task, model, ipu_config, fp16)
     elif isinstance(model, PreTrainedModel):
-        model = get_poplar_executor(model, ipu_config, fp16)
+        model = get_poplar_executor(targeted_task, model, ipu_config, fp16)
         if tokenizer is None and load_tokenizer:
             raise ValueError("If you pass a model as a PreTrainedModel, you must pass a tokenizer as well")
         if feature_extractor is None and load_feature_extractor:
@@ -378,18 +386,13 @@ def pipeline(
             poptorch._poplar_executor.PoplarExecutor. You can also provide non model then a default one will be used"""
         )
 
-    if (tokenizer is None and load_tokenizer) or (feature_extractor is None and load_feature_extractor):
-        preprocessor = get_preprocessor(model_id)
-        if tokenizer is None and load_tokenizer:
-            if isinstance(preprocessor, ProcessorMixin):
-                tokenizer = preprocessor.tokenizer
-            else:
-                tokenizer = preprocessor
-        if feature_extractor is None and load_feature_extractor:
-            if isinstance(preprocessor, ProcessorMixin):
-                feature_extractor = preprocessor.feature_extractor
-            else:
-                feature_extractor = preprocessor
+    # Upstream pipeline creation does not easily support loading these when an actual model
+    # is provided, so we load them here.
+    if tokenizer is None and load_tokenizer:
+        tokenizer = AutoTokenizer.from_pretrained(model_id)
+
+    if feature_extractor is None and load_feature_extractor:
+        feature_extractor = AutoFeatureExtractor.from_pretrained(model_id)
 
     # Override Pipeline methods
     Pipeline.check_model_type = check_model_type
@@ -398,6 +401,21 @@ def pipeline(
     old_forward = pipeline_class._forward
 
     def new_forward(self, model_inputs, *args, **kwargs):
+        if isinstance(self.model, poptorch.PoplarExecutor) and targeted_task not in SUPPORTED_GENERATION_TASKS:
+            # For non-text generation models, support batch size changes.
+            poplar_executor = self.model
+            if poplar_executor._executable_inputs:
+                for arg in poplar_executor._executable_inputs.args:
+                    if isinstance(arg, torch.Tensor):
+                        compiled_bs = arg.shape[0]
+                        break
+                for input in model_inputs.values():
+                    if isinstance(input, torch.Tensor):
+                        input_bs = input.shape[0]
+                        break
+                if compiled_bs != input_bs:
+                    poplar_executor.destroy()
+
         if isinstance(self.model, poptorch.PoplarExecutor) or isinstance(self.model, IPUGenerationMixin):
             if fp16:
                 # Support fp16
@@ -410,16 +428,18 @@ def pipeline(
 
     # Implement pipelines __del__ to clean up poplar exector
     def _del(self):
-        # For text generation models, deallocate the internal poplar executor
-        if hasattr(self.model, "poptorch_model"):
-            self.model.poptorch_model.destroy()
+        # For text generation models, deallocate the internal poplar executors
+        if hasattr(self.model, "poptorch_decoder"):
+            self.model.poptorch_decoder.destroy()
+        if hasattr(self.model, "poptorch_encoder"):
+            self.model.poptorch_encoder.destroy()
 
     pipeline_class.__del__ = _del
 
     # Auto padding for some tasks
     if "max_length" in SUPPORTED_TASKS[targeted_task]["default"]:
         default_max_length = SUPPORTED_TASKS[targeted_task]["default"]["max_length"]
-        if targeted_task not in {"summarization", "text-generation", "text2text-generation", "translation"}:
+        if targeted_task not in SUPPORTED_GENERATION_TASKS:
             kwargs["padding"] = kwargs.get("padding", "max_length")
             if kwargs.get("max_length") is None:
                 logger.warning(
@@ -430,7 +450,7 @@ def pipeline(
                 )
         kwargs["max_length"] = kwargs.get("max_length", default_max_length)
 
-    if targeted_task in {"summarization", "text2text-generation", "translation"}:
+    if targeted_task in SUPPORTED_SEQ2SEQ_GENERATION_TASKS:
         default_max_input_length = SUPPORTED_TASKS[targeted_task]["default"]["max_input_length"]
         kwargs["max_input_length"] = kwargs.get("max_input_length", default_max_input_length)
         default_truncation = SUPPORTED_TASKS[targeted_task]["default"]["truncation"]

@@ -24,7 +24,7 @@ from transformers import GPT2ForSequenceClassification, GPT2ForTokenClassificati
 from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions, SequenceClassifierOutputWithPast
 from transformers.models.gpt2.modeling_gpt2 import GPT2Attention
 
-from ...generation_utils import IPUGenerationMixin
+from ...generation import IPUGenerationMixin
 from ...modeling_utils import (
     PipelineMixin,
     SerializedEmbedding,
@@ -75,7 +75,7 @@ class GPT2PipelineMixin(PipelineMixin):
         hs = outline_attribute(self.transformer.ln_f, "LayerNorm")
         self._hooks.extend(hs)
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, self.transformer.h)
+        layer_ipu = get_layer_ipu(self.ipu_config, self.transformer.h)
         for index, layer in enumerate(self.transformer.h):
             ipu = layer_ipu[index]
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
@@ -109,7 +109,7 @@ class GPT2PipelineMixin(PipelineMixin):
 
 @register(GPT2LMHeadModel)
 class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin, IPUGenerationMixin):
-    def parallelize(self):
+    def parallelize(self, for_generation=False):
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model
@@ -148,6 +148,8 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin, IPUGenerationMixi
             self.lm_head = serialized_lm_head
             self.tie_weights()
 
+        self.change_lm_head_to_indexed_input_linear(restore=not for_generation)
+
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Token Embedding     --> IPU 0")
         self.transformer.wte = poptorch.BeginBlock(self.transformer.wte, "Token embedding", ipu_id=0)
@@ -156,7 +158,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin, IPUGenerationMixi
         hs = outline_attribute(self.transformer.ln_f, "LayerNorm")
         self._hooks.extend(hs)
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, self.transformer.h)
+        layer_ipu = get_layer_ipu(self.ipu_config, self.transformer.h)
         for index, layer in enumerate(self.transformer.h):
             ipu = layer_ipu[index]
             if self.ipu_config.recompute_checkpoint_every_layer:
@@ -172,6 +174,8 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin, IPUGenerationMixi
 
     def deparallelize(self):
         PipelineMixin.deparallelize(self)
+
+        self.change_lm_head_to_indexed_input_linear(restore=True)
 
         if self.ipu_config.embedding_serialization_factor > 1:
             # Deserialize the serialized linear layer

@@ -23,6 +23,7 @@ from tempfile import TemporaryDirectory
 from typing import Callable, Dict, List, Optional, Tuple, Union
 from unittest import TestCase
 
+from filelock import FileLock
 from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
 from transformers import (
     CONFIG_MAPPING,
@@ -171,9 +172,8 @@ class ExampleTestMeta(type):
                 joined_cmd_line = " ".join(cmd_line)
                 print(joined_cmd_line)
                 print()
-                p = subprocess.Popen(joined_cmd_line, shell=True)
-                return_code = p.wait()
-                self.assertEqual(return_code, 0)
+                p = subprocess.run(joined_cmd_line, shell=True)
+                self.assertEqual(p.returncode, 0)
 
                 if self.EVAL_IS_SUPPORTED:
                     with open(Path(tmp_dir) / "all_results.json") as fp:
@@ -266,7 +266,7 @@ class ExampleTesterBase(TestCase):
         )
 
         cmd_line = [
-            "venv/bin/python" if self.venv_was_created else "python",
+            f"{self.VENV_DIR.name}/bin/python" if self.venv_was_created else "python",
             f"{script}",
             f"--model_name_or_path {model_name}",
             f"--ipu_config_name {ipu_config_name}",
@@ -299,26 +299,23 @@ class ExampleTesterBase(TestCase):
 
     @property
     def venv_was_created(self):
-        return os.path.isdir("venv")
+        return os.path.isdir(self.VENV_DIR.name)
 
     def _create_venv(self):
         """
         Creates the virtual environment for the example.
         """
-        cmd_line = "python -m venv venv".split()
-        p = subprocess.Popen(cmd_line)
-        return_code = p.wait()
-        self.assertEqual(return_code, 0)
+        self.VENV_DIR = TemporaryDirectory(prefix="venv_")
+        cmd_line = f"python -m venv {self.VENV_DIR.name}".split()
+        p = subprocess.run(cmd_line)
+        self.assertEqual(p.returncode, 0)
 
     def _remove_venv(self):
         """
         Creates the virtual environment for the example.
         """
         if self.venv_was_created:
-            cmd_line = "rm -rf venv".split()
-            p = subprocess.Popen(cmd_line)
-            return_code = p.wait()
-            self.assertEqual(return_code, 0)
+            self.VENV_DIR.cleanup()
 
     def _get_poptorch_wheel_path(self, sdk_path: Optional[str] = None) -> str:
         """
@@ -360,36 +357,33 @@ class ExampleTesterBase(TestCase):
         """
         Installs the necessary requirements to run the example if the provided file exists, otherwise does nothing.
         """
-        pip_name = "venv/bin/pip" if self.venv_was_created else "pip"
+        pip_name = f"{self.VENV_DIR.name}/bin/pip" if self.venv_was_created else "pip"
 
         # Update pip
         cmd_line = f"{pip_name} install --upgrade pip".split()
-        p = subprocess.Popen(cmd_line)
-        return_code = p.wait()
-        self.assertEqual(return_code, 0)
+        p = subprocess.run(cmd_line)
+        self.assertEqual(p.returncode, 0)
 
         # Install SDK
         cmd_line = f"{pip_name} install .[testing] {self._get_poptorch_wheel_path()}".split()
-        p = subprocess.Popen(cmd_line)
-        return_code = p.wait()
-        self.assertEqual(return_code, 0)
+        with FileLock("install_optimum_graphcore.lock"):
+            p = subprocess.run(cmd_line)
+            self.assertEqual(p.returncode, 0)
 
         # Install requirements
         if not Path(requirements_filename).exists():
             return
         cmd_line = f"{pip_name} install -r {requirements_filename}".split()
-        p = subprocess.Popen(cmd_line)
-        return_code = p.wait()
-        self.assertEqual(return_code, 0)
+        p = subprocess.run(cmd_line)
+        self.assertEqual(p.returncode, 0)
 
     def _cleanup_dataset_cache(self):
         """
         Cleans up the dataset cache to free up space for other tests.
         """
         cmd_line = ["rm" "-r", "/nethome/michaelb/.cache/huggingface/datasets"]
-        p = subprocess.Popen(cmd_line)
-        return_code = p.wait()
-        self.assertEqual(return_code, 0)
+        p = subprocess.run(cmd_line)
+        self.assertEqual(p.returncode, 0)
 
 
 class TextClassificationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_glue"):

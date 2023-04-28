@@ -133,7 +133,7 @@ class ZeroShotClassificationPipelineTests(unittest.TestCase, metaclass=PipelineT
         zero_shot_classifier = pipeline(
             "zero-shot-classification",
             model="sshleifer/tiny-distilbert-base-cased-distilled-squad",
-            ipu_config="Graphcore/distilbert-base-ipu",
+            ipu_config={"layers_per_ipu": [2], "ipus_per_replica": 1},
         )
         # There was a regression in 4.10 for this
         # Adding a test so we don't make the mistake again.
@@ -147,7 +147,7 @@ class ZeroShotClassificationPipelineTests(unittest.TestCase, metaclass=PipelineT
         zero_shot_classifier = pipeline(
             "zero-shot-classification",
             model="sshleifer/tiny-distilbert-base-cased-distilled-squad",
-            ipu_config="Graphcore/distilbert-base-ipu",
+            ipu_config={"layers_per_ipu": [2], "ipus_per_replica": 1},
         )
         outputs = zero_shot_classifier(
             "Who are you voting for in 2020?", candidate_labels=["politics", "public health", "science"]
@@ -169,6 +169,9 @@ class ZeroShotClassificationPipelineTests(unittest.TestCase, metaclass=PipelineT
             "zero-shot-classification",
             model="roberta-large-mnli",
             ipu_config="Graphcore/roberta-large-ipu",
+            fp16=False,
+            padding="max_length",
+            max_length=512,
         )
         outputs = zero_shot_classifier(
             "Who are you voting for in 2020?", candidate_labels=["politics", "public health", "science"]
@@ -197,8 +200,6 @@ class ZeroShotClassificationPipelineTests(unittest.TestCase, metaclass=PipelineT
             " large and limited training data.",
             candidate_labels=["machine learning", "statistics", "translation", "vision"],
             multi_label=True,
-            padding="max_length",
-            max_length=512,
         )
         self.assertEqual(
             nested_simplify(outputs),
@@ -219,6 +220,6 @@ class ZeroShotClassificationPipelineTests(unittest.TestCase, metaclass=PipelineT
                     " limited training data."
                 ),
                 "labels": ["translation", "machine learning", "vision", "statistics"],
-                "scores": [0.817, 0.713, 0.018, 0.018],
+                "scores": [0.821, 0.715, 0.018, 0.018],  # changed from upstream values of 0.817, 0.713, ...
             },
         )

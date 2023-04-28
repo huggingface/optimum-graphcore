@@ -36,7 +36,7 @@ from transformers.models.bart.modeling_bart import (
     shift_tokens_right,
 )
 
-from ...generation_utils import IPUGenerationMixin
+from ...generation import IPUGenerationMixin
 from ...modeling_utils import (
     PipelineMixin,
     SerializedLinear,
@@ -44,7 +44,7 @@ from ...modeling_utils import (
     get_layer_ipu,
     recomputation_checkpoint,
     register,
-    tied_weight_model,
+    split_encoder_decoder_ipu_config,
 )
 
 
@@ -647,15 +647,11 @@ class _BartModelWithSharedEmbedding(BartModel):
             )
         # If the user passed a tuple for encoder_outputs, we wrap it in a BaseModelOutput when return_dict=True
         elif return_dict and not isinstance(encoder_outputs, BaseModelOutput):
-            # BUG: BaseModelOutput type being lost by poptorch?
-            if isinstance(encoder_outputs, dict):
-                encoder_outputs = BaseModelOutput(encoder_outputs)
-            else:
-                encoder_outputs = BaseModelOutput(
-                    last_hidden_state=encoder_outputs[0],
-                    hidden_states=encoder_outputs[1] if len(encoder_outputs) > 1 else None,
-                    attentions=encoder_outputs[2] if len(encoder_outputs) > 2 else None,
-                )
+            encoder_outputs = BaseModelOutput(
+                last_hidden_state=encoder_outputs[0],
+                hidden_states=encoder_outputs[1] if len(encoder_outputs) > 1 else None,
+                attentions=encoder_outputs[2] if len(encoder_outputs) > 2 else None,
+            )
 
         # decoder outputs consists of (dec_features, past_key_value, dec_hidden, dec_attn)
         decoder_outputs = self.decoder(
@@ -690,7 +686,7 @@ class _BartModelWithSharedEmbedding(BartModel):
 
 @register(BartForConditionalGeneration)
 class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, PipelineMixin, IPUGenerationMixin):
-    def parallelize(self):
+    def parallelize(self, for_generation=False, **kwargs):
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model
@@ -723,6 +719,8 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
         self.model.encoder_and_decoder_embeddings_computation(True)
         self.model.change_bart_encoder_and_decoder_classes(False)
         self.model.change_bart_attention_class(False)
+        self.change_lm_head_to_indexed_input_linear(restore=not for_generation)
+        self.use_encoder_output_buffer = kwargs.get("use_encoder_output_buffer", False)
 
         self.model.shared = poptorch.BeginBlock(self.model.shared, "Embedding", ipu_id=0)
         self.model.encoder.embed_positions = poptorch.BeginBlock(
@@ -732,12 +730,25 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
             self.model.encoder.layernorm_embedding, "Embedding", ipu_id=0
         )
 
-        number_of_layers = len(self.model.encoder.layers) + len(self.model.decoder.layers)
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, number_of_layers)
-        for index, layer in enumerate(self.model.encoder.layers):
-            ipu = layer_ipu[index]
+        num_encoder_layers = len(self.model.encoder.layers)
+        num_decoder_layers = len(self.model.decoder.layers)
+
+        if for_generation:
+            # If running for text generation we split the IPU config into two configs
+            # because we run the encoder and decoder as separate Poplar executors.
+            ipu_configs = split_encoder_decoder_ipu_config(self.ipu_config, num_encoder_layers, num_decoder_layers)
+            self.encoder_ipu_config, self.decoder_ipu_config = ipu_configs
+            encoder_layer_ipu = get_layer_ipu(self.encoder_ipu_config, num_encoder_layers)
+            decoder_layer_ipu = get_layer_ipu(self.decoder_ipu_config, num_decoder_layers)
+        else:
+            number_of_layers = num_encoder_layers + num_decoder_layers
+            layer_ipu = get_layer_ipu(self.ipu_config, number_of_layers)
+            encoder_layer_ipu = layer_ipu[:num_encoder_layers]
+            decoder_layer_ipu = layer_ipu[num_encoder_layers:]
+
+        for index, (layer, ipu) in enumerate(zip(self.model.encoder.layers, encoder_layer_ipu)):
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
-                recomputation_checkpoint(layer)
+                self._hooks.append(recomputation_checkpoint(layer))
             self.model.encoder.layers[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
             logger.info(f"Encoder {index:<2} --> IPU {ipu}")
 
@@ -747,11 +758,10 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
         self.model.decoder.layernorm_embedding = poptorch.BeginBlock(
             self.model.decoder.layernorm_embedding, "Embedding", ipu_id=0
         )
-        shift = len(self.model.encoder.layers)
-        for index, layer in enumerate(self.model.decoder.layers):
-            ipu = layer_ipu[index + shift]
+
+        for index, (layer, ipu) in enumerate(zip(self.model.decoder.layers, decoder_layer_ipu)):
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
-                recomputation_checkpoint(layer)
+                self._hooks.append(recomputation_checkpoint(layer))
             self.model.decoder.layers[index] = poptorch.BeginBlock(layer, f"Decoder{index}", ipu_id=ipu)
             logger.info(f"Decoder {index:<2} --> IPU {ipu}")
 
@@ -771,6 +781,8 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
         self.model.change_bart_encoder_and_decoder_classes(True)
         self.model.change_bart_attention_class(True)
         self.model.__class__ = BartModel
+
+        self.change_lm_head_to_indexed_input_linear(restore=True)
 
         if self.ipu_config.embedding_serialization_factor > 1:
             old_lm_head = nn.Linear(
@@ -839,7 +851,6 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
             return outputs
 
 
-@tied_weight_model(BartForSequenceClassification)
 @register(BartForSequenceClassification)
 class PipelinedBartForSequenceClassification(BartForSequenceClassification, PipelineMixin):
     def parallelize(self):
@@ -870,11 +881,11 @@ class PipelinedBartForSequenceClassification(BartForSequenceClassification, Pipe
             self.model.encoder.layernorm_embedding, "Embedding", ipu_id=0
         )
         number_of_layers = len(self.model.encoder.layers) + len(self.model.decoder.layers)
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, number_of_layers)
+        layer_ipu = get_layer_ipu(self.ipu_config, number_of_layers)
         for index, layer in enumerate(self.model.encoder.layers):
             ipu = layer_ipu[index]
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
-                recomputation_checkpoint(layer)
+                self._hooks.append(recomputation_checkpoint(layer))
             self.model.encoder.layers[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
             logger.info(f"Encoder {index:<2} --> IPU {ipu}")
 
@@ -888,11 +899,11 @@ class PipelinedBartForSequenceClassification(BartForSequenceClassification, Pipe
         for index, layer in enumerate(self.model.decoder.layers):
             ipu = layer_ipu[index + shift]
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
-                recomputation_checkpoint(layer)
+                self._hooks.append(recomputation_checkpoint(layer))
             self.model.decoder.layers[index] = poptorch.BeginBlock(layer, f"Decoder{index}", ipu_id=ipu)
             logger.info(f"Decoder {index:<2} --> IPU {ipu}")
 
-        last_ipu = len(self.ipu_config.layers_per_ipu) - 1
+        last_ipu = layer_ipu[-1]
         logger.info(f"Classification Head Output --> IPU {last_ipu}")
         self.classification_head = poptorch.BeginBlock(
             self.classification_head, "Classification Head Output", ipu_id=last_ipu

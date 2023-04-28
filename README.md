@@ -1,3 +1,5 @@
+[![examples](https://github.com/huggingface/optimum-graphcore/actions/workflows/test-examples.yml/badge.svg)](https://github.com/huggingface/optimum-graphcore/actions/workflows/test-examples.yml) [![pipelines](https://github.com/huggingface/optimum-graphcore/actions/workflows/test-pipelines.yml/badge.svg)](https://github.com/huggingface/optimum-graphcore/actions/workflows/test-pipelines.yml)
+
 <p align="center">
     <img src="readme_logo.png" />
 </p>
@@ -29,21 +31,13 @@ Optimum Graphcore is a fast-moving project, and you may want to install from sou
 
 ### Installing in developer mode
 
-If you are working on the `optimum-graphcore` code then you should use an editable install.
-First clone and install `optimum`:
+If you are working on the `optimum-graphcore` code then you should use an editable install
+by cloning and installing `optimum` and `optimum-graphcore`:
 
 ```
-git clone https://github.com/huggingface/optimum
-cd optimum
-pip install -e .
-cd ..
-```
-
-The clone and install `optimum-graphcore`:
-```
+git clone https://github.com/huggingface/optimum --branch v1.6.1-release
 git clone https://github.com/huggingface/optimum-graphcore
-cd optimum-graphcore
-pip install -e .
+pip install -e optimum -e optimum-graphcore
 ```
 
 Now whenever you change the code, you'll be able to run with those changes instantly.
@@ -110,20 +104,22 @@ For more information, check our [documentation](https://huggingface.co/docs/opti
 
 ## Supported Models
 The following model architectures and tasks are currently supported by 🤗 Optimum Graphcore:
-|            | Pre-Training | Masked LM | Causal LM | Seq2Seq LM (Summarization, Translation, etc) | Text Classification | Token Classification | Question Answering | Multiple Choice | Image Classification |
-|------------|--------------|-----------|-----------|----------------------------------------------|-------------------------|----------------------|--------------------|-----------------|----------------------|
-| BART       | ✅            |           | ❌         | ✅                                            | ✅                       |                      | ❌                  |                 |                      |
-| BERT       | ✅            | ✅         | ❌         |                                              | ✅                       | ✅                    | ✅                  | ✅               |                      |
-| ConvNeXt   | ✅            |           |           |                                              |                         |                      |                    |                 | ✅                    |
-| DeBERTa    | ✅            | ✅         |           |                                              | ✅                       | ✅                    | ✅                  |                 |                      |
-| DistilBERT | ❌            | ✅         |           |                                              | ✅                       | ✅                    | ✅                  | ✅               |                      |
-| GPT-2      | ✅            |           | ✅         |                                              | ✅                       | ✅                    |                    |                 |                      |
-| [GroupBERT](https://arxiv.org/abs/2106.05822)   | ✅            | ✅         | ❌         |                                              | ✅                       | ✅                    | ✅                  | ✅               |                      |
-| HuBERT     | ❌            |           |           |                                              | ✅                       |                      |                    |                 |                      |
-| LXMERT     | ❌            |           |           |                                              |                         |                      | ✅                  |                 |                      |
-| RoBERTa    | ✅            | ✅         | ❌         |                                              | ✅                       | ✅                    | ✅                  | ✅               |                      |
-| T5         | ✅            |           |           | ✅                                            |                         |                      |                    |                 |                      |
-| ViT        | ❌            |           |           |                                              |                         |                      |                    |                 | ✅                    |
-| Wav2Vec2   | ✅            |           |           |                                              |                         |                      |                    |                 |                      |
+|            | Pre-Training | Masked LM | Causal LM | Seq2Seq LM (Summarization, Translation, etc) | Sequence Classification | Token Classification | Question Answering | Multiple Choice | Image Classification | CTC |
+|------------|--------------|-----------|-----------|----------------------------------------------|-------------------------|----------------------|--------------------|-----------------|----------------------| ------------ | 
+| BART       | ✅            |           | ❌         | ✅                                            | ✅                       |                      | ❌                  |                 |                      |             |
+| BERT       | ✅            | ✅         | ❌         |                                              | ✅                       | ✅                    | ✅                  | ✅               |                      |             |
+| ConvNeXt   | ✅            |           |           |                                              |                         |                      |                    |                 | ✅                    |             |
+| DeBERTa    | ✅            | ✅         |           |                                              | ✅                       | ✅                    | ✅                  |                 |                      |             |
+| DistilBERT | ❌            | ✅         |           |                                              | ✅                       | ✅                    | ✅                  | ✅               |                      |             |
+| GPT-2      | ✅            |           | ✅         |                                              | ✅                       | ✅                    |                    |                 |                      |             |
+| [GroupBERT](https://arxiv.org/abs/2106.05822)   | ✅            | ✅         | ❌         |                                              | ✅                       | ✅                    | ✅                  | ✅               |                      |             |
+| HuBERT     | ❌            |           |           |                                              | ✅                       |                      |                    |                 |                      |       ✅      |
+| LXMERT     | ❌            |           |           |                                              |                         |                      | ✅                  |                 |                      |             |
+| RoBERTa    | ✅            | ✅         | ❌         |                                              | ✅                       | ✅                    | ✅                  | ✅               |                      |             |
+| T5         | ✅            |           |           | ✅                                            |                         |                      |                    |                 |                      |             |
+| ViT        | ❌            |           |           |                                              |                         |                      |                    |                 | ✅                    |             |
+| Wav2Vec2   | ✅            |           |           |                                              |                         |                      |                    |                 |                      |      ✅        |
+| Whisper   |    ❌          |           |           |                    ✅                           |                          |                      |                    |                 |                      |              |
+
 
 If you find any issue while using those, please open an issue or a pull request.

@@ -157,7 +157,7 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
         layers.append(("Positional Embedding", self.wav2vec2.encoder.pos_conv_embed))
         # Encoder layers
         for index, layer in enumerate(self.wav2vec2.encoder.layers):
-            recomputation_checkpoint(layer)
+            self._hooks.append(recomputation_checkpoint(layer))
             layers.append((f"Encoder {index:<2}", layer))
         # Project Hidden
         layers.append(("Project Hidden", self.project_hid))
@@ -166,7 +166,7 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
         # Project Quantizer
         layers.append(("Project Quantizer", self.project_q))
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, layers)
+        layer_ipu = get_layer_ipu(self.ipu_config, layers)
 
         for i, (name, layer) in enumerate(layers):
             logger.info(f"{name} --> IPU {layer_ipu[i]}")
@@ -404,8 +404,8 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
                 conv_layer.layer_norm.eps = self.original_eps[i]
         else:
             self.original_eps = []
-            eps = 1e-4
             for conv_layer in self.wav2vec2.feature_extractor.conv_layers:
+                eps = 1e-4 if conv_layer.layer_norm.weight.dtype == torch.float16 else conv_layer.layer_norm.eps
                 # Save the original values, to restore later
                 self.original_eps.append(conv_layer.layer_norm.eps)
                 conv_layer.layer_norm.eps = eps
@@ -443,12 +443,12 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
             layers.append(("Positional Embedding", self.wav2vec2.encoder.pos_conv_embed))
             # Encoder layers
             for index, layer in enumerate(self.wav2vec2.encoder.layers):
-                recomputation_checkpoint(layer)
+                self._hooks.append(recomputation_checkpoint(layer))
                 layers.append((f"Encoder {index:<2}", layer))
             # Project Hidden
             layers.append(("Project Hidden", self.lm_head))
 
-            layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, layers)
+            layer_ipu = get_layer_ipu(self.ipu_config, layers)
 
             for i, (name, layer) in enumerate(layers):
                 logger.info(f"{name} --> IPU {layer_ipu[i]}")

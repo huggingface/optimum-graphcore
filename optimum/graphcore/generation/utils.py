@@ -12,8 +12,12 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+import contextlib
+import copy
+import json
+import os
 import warnings
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, Optional, Union
 
 import torch
 from torch import nn
@@ -39,23 +43,195 @@ from transformers.generation.utils import (
     SampleOutput,
     StoppingCriteriaList,
 )
-from transformers.modeling_outputs import ModelOutput
+from transformers.modeling_outputs import BaseModelOutput, ModelOutput
 from transformers.pytorch_utils import torch_int_div
+from transformers.utils.versions import require_version
+
+from .logits_process import IPULogitsProcessors
+from .on_device_generation import OnDeviceGenerationModel, OnDeviceGreedySearch
 
 
 logger = logging.get_logger(__name__)
 
+MODELS_SUPPORTING_KV_CACHE = set()
+
+
+def supports_kv_cache(pipelined_cls):
+    MODELS_SUPPORTING_KV_CACHE.add(pipelined_cls)
+    return pipelined_cls
+
+
+@contextlib.contextmanager
+def graph_profile_dir_append(append: str):
+    if poplar_engine_options_original := os.getenv("POPLAR_ENGINE_OPTIONS"):
+        poplar_engine_options_modified = json.loads(poplar_engine_options_original)
+        if autoreport_directory := poplar_engine_options_modified.get("autoReport.directory"):
+            poplar_engine_options_modified["autoReport.directory"] = autoreport_directory + append
+            os.environ["POPLAR_ENGINE_OPTIONS"] = json.dumps(poplar_engine_options_modified)
+    try:
+        yield
+    finally:
+        if poplar_engine_options_original:
+            os.environ["POPLAR_ENGINE_OPTIONS"] = poplar_engine_options_original
+
+
+class _IndexedInputLinear(nn.Module):
+    """
+    Wrapper layer for `Linear` that performs a `dynamic_slice` on the input
+    before executing the linear. The intended use is as an optimized replacement of the
+    LM Head in the Decoder for text generation inference when KV caching is disabled.
+    The slice is performed on the position `self._generation_step` of the input tensor, where
+    `self._generation_step` is a PyTorch buffer.
+    """
+
+    def __init__(self, linear_layer):
+        super().__init__()
+        self.wrapped_linear = linear_layer
+        self.register_buffer("_generation_step", torch.tensor([0], dtype=torch.int32), persistent=False)
+
+    def forward(self, x):
+        x = poptorch.dynamic_slice(x, 1, self._generation_step, 1, 1)
+        return self.wrapped_linear(x)
+
+
+class DecoderWrapper(nn.Module):
+    """
+    Fast wrapper for decoder part of text generation models.
+
+    Updates the appropriate buffers for the modules which need to know the current generation step.
+    Only returns the logits from the last generated token to reduce IO costs.
+    """
+
+    def __init__(self, pipelined_model):
+        super().__init__()
+        self.pipelined_model = pipelined_model
+
+        # With KV caching, some modules may need to know the current decoding step and beam indices.
+        # Getting this information to them can either be done by copying it into buffers, or
+        # by subclassing the entire decoder model just to change the forward signatures and passing these
+        # as arguments. For now, go with the former, but it's not set in stone.
+        self._modules_with_attributes_in_buffers = {
+            attr: [module for module in self.pipelined_model.modules() if hasattr(module, attr)]
+            for attr in ["_beam_idx", "_generation_step"]
+        }
+
+    def register_encoder_output_buffers(self, output_buffers: Dict[str, torch.Tensor]):
+        for name in sorted(output_buffers):
+            self.register_buffer(name, output_buffers[name], persistent=False)
+
+    def _get_buffered_outputs(self) -> Dict:
+        kwargs = {}
+        if hasattr(self, "encoder_last_hidden_state"):
+            kwargs["encoder_outputs"] = BaseModelOutput(last_hidden_state=self.encoder_last_hidden_state)
+        if hasattr(self, "encoder_attention_mask"):
+            kwargs["attention_mask"] = self.encoder_attention_mask
+        return kwargs
+
+    def forward(self, t, beam_idx=None, **model_inputs):
+        """
+        Args:
+            t : (`torch.Tensor(int)`) Tensor with single int representing the current length of the sequence being generated
+            beam_idx: (`torch.LongTensor` of shape `(batch_size * num_beams,)`):
+                Beam indices indicating to which beam the tokens were added, required for reordering the on-device KV cache.
+            model_inputs : Regular model_inputs passed to the wrapped model.
+        Returns:
+            The output logits at position `t` only
+        """
+        for module in self._modules_with_attributes_in_buffers["_generation_step"]:
+            module._generation_step.copy_(t)
+        for module in self._modules_with_attributes_in_buffers["_beam_idx"]:
+            if beam_idx is None:
+                raise ValueError(
+                    "A module registered a `beam_idx` buffer, but the pipelined model is not called with such. "
+                    "`beam_idx` can be provided to the model via `prepare_inputs_for_generation`."
+                )
+            module._beam_idx.copy_(beam_idx)
+
+        # Run the decoder
+        kwargs = self._get_buffered_outputs()
+        outputs = self.pipelined_model(**model_inputs, **kwargs)
+        if isinstance(outputs, ModelOutput):
+            outputs = type(outputs)(
+                logits=outputs.logits,
+            )
+        return outputs
+
 
 class IPUGenerationMixin(GenerationMixin):
+
+    """
+    Enable optimization for encoder-decoder text generation where the encoder outputs
+    are cached on the Decoder device using buffers.
+    """
+
+    use_encoder_output_buffer = False
+
+    @property
+    def encoder_output_buffer_enabled(self) -> bool:
+        return self.config.is_encoder_decoder and self.use_encoder_output_buffer
+
     def _pad_tensors_to_max_len(self, tensor: torch.Tensor, max_length: int, pad_token_id: int) -> torch.Tensor:
         return nn.functional.pad(tensor, (0, max_length - tensor.shape[1]), "constant", pad_token_id)
 
-    def _call_generate(self, *args, **kwargs):
-        if not hasattr(self, "poptorch_model"):
-            self.poptorch_model = poptorch.inferenceModel(self.eval(), self.ipu_config.to_options(for_inference=True))
+    def _ensure_generation_step_progression(self, generation_step):
+        if not hasattr(self, "_previous_generation_step"):
+            self._previous_generation_step = generation_step
+            return
+        if generation_step <= self._previous_generation_step and generation_step != 0:
+            raise ValueError("`generation_step` must increase, or begin from 0.")
+        self._previous_generation_step = generation_step
+
+    def _call_generate(
+        self,
+        *args,
+        generation_step: int,
+        on_device_generation_model_ctr: Optional[Callable[[torch.nn.Module], torch.nn.Module]] = None,
+        **kwargs,
+    ):
+        self._ensure_generation_step_progression(generation_step)
+        t = self._get_generation_step_tensor(generation_step, ascending=on_device_generation_model_ctr is not None)
+        if not hasattr(self, "poptorch_decoder"):
+            generation_model = self
+            if on_device_generation_model_ctr is not None:
+                generation_model = on_device_generation_model_ctr(self)
+            decoder_wrapper = DecoderWrapper(generation_model.eval())
+
+            if os.getenv("DEBUG_RUN_DECODER_ON_CPU", False):
+                self.poptorch_decoder = decoder_wrapper
+            else:
+                decoder_ipu_config = getattr(self, "decoder_ipu_config", self.ipu_config)
+                decoder_options = decoder_ipu_config.to_options(for_inference=True)
+
+                if self.encoder_output_buffer_enabled:
+                    require_version(
+                        "poptorch>=3.3", "Updatable encoder output buffer optimization only available in poptorch>=3.3"
+                    )
+                    named_buffers = {"encoder_last_hidden_state": kwargs["encoder_outputs"]["last_hidden_state"]}
+                    if kwargs.get("attention_mask") is not None:
+                        named_buffers["encoder_attention_mask"] = kwargs["attention_mask"].half()
+                    decoder_wrapper.register_encoder_output_buffers(named_buffers)
+                    decoder_options.updatableNamedBuffers(list(named_buffers.keys()))
+
+                self.poptorch_decoder = poptorch.inferenceModel(decoder_wrapper, decoder_options)
+
+        if self.encoder_output_buffer_enabled:
+            kwargs.pop("encoder_outputs", None)
+            kwargs.pop("attention_mask", None)
 
         # This will trigger a compile first time it's ran
-        return self.poptorch_model(*args, **kwargs)
+        with graph_profile_dir_append("/decoder" if self.config.is_encoder_decoder else ""):
+            return self.poptorch_decoder(*args, t=t, **kwargs)
+
+    def _update_model_buffers_if_needed(self, model_kwargs):
+        """
+        If decoder model then we cache the encoder values inside pytorch buffers to reduce the IO cost
+        """
+        if not (self.encoder_output_buffer_enabled and hasattr(self, "poptorch_decoder")):
+            return
+        self.poptorch_decoder.encoder_last_hidden_state.copy_(model_kwargs["encoder_outputs"]["last_hidden_state"])
+        if model_kwargs.get("attention_mask") is not None:
+            self.poptorch_decoder.encoder_attention_mask.copy_(model_kwargs["attention_mask"].half())
+        self.poptorch_decoder.copyNamedBuffersToDevice()
 
     def _prepare_encoder_decoder_kwargs_for_generation(
         self, inputs_tensor: torch.Tensor, model_kwargs, model_input_name: Optional[str] = None
@@ -63,12 +239,7 @@ class IPUGenerationMixin(GenerationMixin):
         # 1. get encoder
         encoder = self.get_encoder()
 
-        # 2. get the model dtype and cast encoder to fp32 for cpu
-        dtype = next(encoder.parameters()).dtype
-        if dtype is torch.float16:
-            encoder.to(torch.float32)
-
-        # 3. prepare encoder args and encoder kwargs from model kwargs
+        # 2. prepare encoder args and encoder kwargs from model kwargs
         irrelevant_prefix = ["decoder_", "cross_attn", "use_cache"]
         encoder_kwargs = {
             argument: value
@@ -76,20 +247,55 @@ class IPUGenerationMixin(GenerationMixin):
             if not any(argument.startswith(p) for p in irrelevant_prefix)
         }
 
-        # 4. make sure that encoder returns `ModelOutput`
+        # 3. make sure that encoder returns `ModelOutput`
         model_input_name = model_input_name if model_input_name is not None else self.main_input_name
         encoder_kwargs["return_dict"] = True
         encoder_kwargs[model_input_name] = inputs_tensor
-        model_kwargs["encoder_outputs"]: ModelOutput = encoder(**encoder_kwargs)
 
-        # 5. undo the casting for cpu
-        if dtype is torch.float16:
-            encoder.to(torch.float16)
-            for key, output in model_kwargs["encoder_outputs"].items():
-                if isinstance(output, torch.Tensor) and output.dtype is torch.float32:
-                    model_kwargs["encoder_outputs"][key] = output.to(torch.float16)
+        if not hasattr(self, "poptorch_encoder"):
+            # Use split encoder ipu_config for encoder/decoder models
+            if os.getenv("DEBUG_RUN_ENCODER_ON_CPU", False):
+                self.poptorch_encoder = encoder.eval()
+            else:
+                self.poptorch_encoder = poptorch.inferenceModel(
+                    encoder.eval(), self.encoder_ipu_config.to_options(for_inference=True)
+                )
+        with graph_profile_dir_append("/encoder"):
+            model_kwargs["encoder_outputs"]: ModelOutput = self.poptorch_encoder(**encoder_kwargs)
 
+        self._update_model_buffers_if_needed(model_kwargs)
         return model_kwargs
+
+    def detachFromDevice(self):
+        if hasattr(self, "poptorch_encoder"):
+            self.poptorch_encoder.detachFromDevice()
+        if hasattr(self, "poptorch_decoder"):
+            self.poptorch_decoder.detachFromDevice()
+
+    def _get_generation_step_tensor(self, generation_step, ascending=False):
+        # Returns a 1 dimensional tensor of the form [device_iterations * replication factor]
+        # with all elements equal to generation_step.
+        # This ensures the dimensions are as expected by any parallelism options.
+        decoder_ipu_config = getattr(self, "decoder_ipu_config", self.ipu_config)
+        per_replica = (
+            torch.arange(decoder_ipu_config.inference_device_iterations) + generation_step
+            if ascending
+            else torch.ones(decoder_ipu_config.inference_device_iterations) * generation_step
+        )
+        return per_replica.repeat(decoder_ipu_config.inference_replication_factor)
+
+    def change_lm_head_to_indexed_input_linear(self, restore: bool):
+        """Changes the LM head with the faster _IndexedInputLinear layer.
+
+        Args:
+            restore: whether to restore the LM head to the original version or not.
+        """
+        if restore:
+            lm_head = self.get_output_embeddings()
+            if lm_head.__class__ == _IndexedInputLinear:
+                self.set_output_embeddings(lm_head.wrapped_linear)
+        else:
+            self.set_output_embeddings(_IndexedInputLinear(self.get_output_embeddings()))
 
     # Modified from https://github.com/huggingface/transformers/blob/v4.20.1/src/transformers/generation_utils.py#L1532
     def greedy_search(
@@ -221,9 +427,25 @@ class IPUGenerationMixin(GenerationMixin):
                 model_kwargs["encoder_outputs"].get("hidden_states") if output_hidden_states else None
             )
 
-        # Change: disable use_cache because it can't be statically compiled
-        if "use_cache" in model_kwargs:
-            model_kwargs["use_cache"] = False
+        use_cache = model_kwargs.get("use_cache", False)
+        if use_cache and self.__class__ not in MODELS_SUPPORTING_KV_CACHE:
+            raise ValueError(
+                f"{self.__class__} does not support KV caching. Pipelined models can be "
+                "decorated using `supports_kv_cache` once they support static KV caching."
+            )
+
+        # Change: intercept to optionally run the entire generation loop on device
+        if self.on_device_generation_steps > 1:
+            return self._on_device_greedy_search(
+                input_ids,
+                logits_processor=logits_processor,
+                stopping_criteria=stopping_criteria,
+                pad_token_id=pad_token_id,
+                eos_token_id=eos_token_id,
+                max_length=max_length,
+                return_dict_in_generate=return_dict_in_generate,
+                **model_kwargs,
+            )
 
         # keep track of which sequences are already finished
         unfinished_sequences = input_ids.new(input_ids.shape[0]).fill_(1)
@@ -232,35 +454,32 @@ class IPUGenerationMixin(GenerationMixin):
         while True:
             # Change: remove synced_gpu code
             # Change: add input max_length padding
-            input_ids = self._pad_tensors_to_max_len(input_ids, stopping_criteria.max_length, pad_token_id)
+            if not use_cache:
+                input_ids = self._pad_tensors_to_max_len(input_ids, stopping_criteria.max_length, pad_token_id)
 
-            # Change: For a seq2seq model such as BART, the "attention_mask" is the encoder/cross attention mask and it does not require padding.
-            if not self.config.is_encoder_decoder:
-                model_kwargs["attention_mask"] = self._pad_tensors_to_max_len(
-                    model_kwargs["attention_mask"], stopping_criteria.max_length, 0
-                )
+                # Change: For a seq2seq model such as BART, the "attention_mask" is the encoder/cross attention mask and it does not require padding.
+                if not self.config.is_encoder_decoder:
+                    model_kwargs["attention_mask"] = self._pad_tensors_to_max_len(
+                        model_kwargs["attention_mask"], stopping_criteria.max_length, 0
+                    )
 
             # prepare model inputs
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
             # forward pass to get next token
             outputs = self._call_generate(
+                generation_step=cur_len - 1,
                 **model_inputs,
                 return_dict=True,
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
             )
-            # Change: Remove padding and restore to actual length
-            input_ids = input_ids[:, :cur_len]
-            if not self.config.is_encoder_decoder:
-                model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
 
-            outputs.logits = outputs.logits[:, :cur_len, :]
-            if outputs.logits.dim() == 3:
-                outputs.logits = outputs.logits[:, :cur_len, :]
-            # If the dimension of logits is 2, then only the logits of the last non-padding token is returned, so no need to slice.
-            else:
-                next_token_logits = outputs.logits
+            # Change: Remove padding and restore to actual length
+            if not use_cache:
+                input_ids = input_ids[:, :cur_len]
+                if not self.config.is_encoder_decoder:
+                    model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
 
             # Change: remove synced_gpu code
 
@@ -311,6 +530,7 @@ class IPUGenerationMixin(GenerationMixin):
             if unfinished_sequences.max() == 0 or stopping_criteria(input_ids, scores):
                 # Change: remove synced_gpu code
                 break
+        # End of while True
 
         if return_dict_in_generate:
             if self.config.is_encoder_decoder:
@@ -494,9 +714,16 @@ class IPUGenerationMixin(GenerationMixin):
                 model_kwargs["encoder_outputs"].get("hidden_states") if output_hidden_states else None
             )
 
-        # Change: disable use_cache because it can't be statically compiled
-        if "use_cache" in model_kwargs:
-            model_kwargs["use_cache"] = False
+        use_cache = model_kwargs.get("use_cache", False)
+        if use_cache and self.__class__ not in MODELS_SUPPORTING_KV_CACHE:
+            raise ValueError(
+                f"{self.__class__} does not support KV caching. Pipelined models can be "
+                "decorated using `supports_kv_cache` once they support static KV caching."
+            )
+
+        # Change: intercept to optionally run the entire generation loop on device
+        if self.on_device_generation_steps > 1:
+            return self._on_device_beam_search()
 
         beam_scores = torch.zeros((batch_size, num_beams), dtype=torch.float, device=input_ids.device)
         beam_scores[:, 1:] = -1e9
@@ -505,33 +732,29 @@ class IPUGenerationMixin(GenerationMixin):
         while True:
             # Change: remove synced_gpu code
             # Change: add input max_length padding
-            input_ids = self._pad_tensors_to_max_len(input_ids, stopping_criteria.max_length, pad_token_id)
+            if not use_cache:
+                input_ids = self._pad_tensors_to_max_len(input_ids, stopping_criteria.max_length, pad_token_id)
 
-            # Change: For a seq2seq model such as BART, the "attention_mask" is the encoder/cross attention mask and it does not require padding.
-            if not self.config.is_encoder_decoder:
-                model_kwargs["attention_mask"] = self._pad_tensors_to_max_len(
-                    model_kwargs["attention_mask"], stopping_criteria.max_length, 0
-                )
+                # Change: For a seq2seq model such as BART, the "attention_mask" is the encoder/cross attention mask and it does not require padding.
+                if not self.config.is_encoder_decoder:
+                    model_kwargs["attention_mask"] = self._pad_tensors_to_max_len(
+                        model_kwargs["attention_mask"], stopping_criteria.max_length, 0
+                    )
 
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
             outputs = self._call_generate(
+                generation_step=cur_len - 1,
                 **model_inputs,
                 return_dict=True,
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
             )
             # Change: Remove padding and restore to actual length
-            input_ids = input_ids[:, :cur_len]
-            if not self.config.is_encoder_decoder:
-                model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
-
-            outputs.logits = outputs.logits[:, :cur_len, :]
-            if outputs.logits.dim() == 3:
-                outputs.logits = outputs.logits[:, :cur_len, :]
-            # If the dimension of logits is 2, then only the logits of the last non-padding token is returned, so no need to slice.
-            else:
-                next_token_logits = outputs.logits
+            if not use_cache:
+                input_ids = input_ids[:, :cur_len]
+                if not self.config.is_encoder_decoder:
+                    model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
 
             # Change: remove synced_gpu code
 
@@ -598,6 +821,8 @@ class IPUGenerationMixin(GenerationMixin):
             )
             if model_kwargs["past"] is not None:
                 model_kwargs["past"] = self._reorder_cache(model_kwargs["past"], beam_idx)
+            # Change: add beam_idx to model_kwargs so KV caching can be made aware of it on device
+            model_kwargs["beam_idx"] = beam_idx
 
             if return_dict_in_generate and output_scores:
                 beam_indices = tuple((beam_indices[beam_idx[i]] + (beam_idx[i],) for i in range(len(beam_indices))))
@@ -795,9 +1020,16 @@ class IPUGenerationMixin(GenerationMixin):
                 model_kwargs["encoder_outputs"].get("hidden_states") if output_hidden_states else None
             )
 
-        # Change: disable use_cache because it can't be statically compiled
-        if "use_cache" in model_kwargs:
-            model_kwargs["use_cache"] = False
+        use_cache = model_kwargs.get("use_cache", False)
+        if use_cache and self.__class__ not in MODELS_SUPPORTING_KV_CACHE:
+            raise ValueError(
+                f"{self.__class__} does not support KV caching. Pipelined models can be "
+                "decorated using `supports_kv_cache` once they support static KV caching."
+            )
+
+        # Change: intercept to optionally run the entire generation loop on device
+        if self.on_device_generation_steps > 1:
+            return self._on_device_sample()
 
         # keep track of which sequences are already finished
         unfinished_sequences = input_ids.new(input_ids.shape[0]).fill_(1)
@@ -807,35 +1039,32 @@ class IPUGenerationMixin(GenerationMixin):
         while True:
             # Change: remove synced_gpu code
             # Change: add input max_length padding
-            input_ids = self._pad_tensors_to_max_len(input_ids, stopping_criteria.max_length, pad_token_id)
+            if not use_cache:
+                input_ids = self._pad_tensors_to_max_len(input_ids, stopping_criteria.max_length, pad_token_id)
 
-            # Change: For a seq2seq model such as BART, the "attention_mask" is the encoder/cross attention mask and it does not require padding.
-            if not self.config.is_encoder_decoder:
-                model_kwargs["attention_mask"] = self._pad_tensors_to_max_len(
-                    model_kwargs["attention_mask"], stopping_criteria.max_length, 0
-                )
+                # Change: For a seq2seq model such as BART, the "attention_mask" is the encoder/cross attention mask and it does not require padding.
+                if not self.config.is_encoder_decoder:
+                    model_kwargs["attention_mask"] = self._pad_tensors_to_max_len(
+                        model_kwargs["attention_mask"], stopping_criteria.max_length, 0
+                    )
 
             # prepare model inputs
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
             # forward pass to get next token
             outputs = self._call_generate(
+                generation_step=cur_len - 1,
                 **model_inputs,
                 return_dict=True,
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
             )
-            # Change: Remove padding and restore to actual length
-            input_ids = input_ids[:, :cur_len]
-            if not self.config.is_encoder_decoder:
-                model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
 
-            outputs.logits = outputs.logits[:, :cur_len, :]
-            if outputs.logits.dim() == 3:
-                outputs.logits = outputs.logits[:, :cur_len, :]
-            # If the dimension of logits is 2, then only the logits of the last non-padding token is returned, so no need to slice.
-            else:
-                next_token_logits = outputs.logits
+            # Change: Remove padding and restore to actual length
+            if not use_cache:
+                input_ids = input_ids[:, :cur_len]
+                if not self.config.is_encoder_decoder:
+                    model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
 
             # Change: remove synced_gpu code
 
@@ -1077,9 +1306,16 @@ class IPUGenerationMixin(GenerationMixin):
                 model_kwargs["encoder_outputs"].get("hidden_states") if output_hidden_states else None
             )
 
-        # Change: disable use_cache because it can't be statically compiled
-        if "use_cache" in model_kwargs:
-            model_kwargs["use_cache"] = False
+        use_cache = model_kwargs.get("use_cache", False)
+        if use_cache and self.__class__ not in MODELS_SUPPORTING_KV_CACHE:
+            raise ValueError(
+                f"{self.__class__} does not support KV caching. Pipelined models can be "
+                "decorated using `supports_kv_cache` once they support static KV caching."
+            )
+
+        # Change: intercept to optionally run the entire generation loop on device
+        if self.on_device_generation_steps > 1:
+            return self._on_device_beam_sample()
 
         beam_scores = torch.zeros((batch_size, num_beams), dtype=torch.float, device=input_ids.device)
         beam_scores = beam_scores.view((batch_size * num_beams,))
@@ -1087,33 +1323,29 @@ class IPUGenerationMixin(GenerationMixin):
         while True:
             # Change: remove synced_gpu code
             # Change: add input max_length padding
-            input_ids = self._pad_tensors_to_max_len(input_ids, stopping_criteria.max_length, pad_token_id)
+            if not use_cache:
+                input_ids = self._pad_tensors_to_max_len(input_ids, stopping_criteria.max_length, pad_token_id)
 
-            # Change: For a seq2seq model such as BART, the "attention_mask" is the encoder/cross attention mask and it does not require padding.
-            if not self.config.is_encoder_decoder:
-                model_kwargs["attention_mask"] = self._pad_tensors_to_max_len(
-                    model_kwargs["attention_mask"], stopping_criteria.max_length, 0
-                )
+                # Change: For a seq2seq model such as BART, the "attention_mask" is the encoder/cross attention mask and it does not require padding.
+                if not self.config.is_encoder_decoder:
+                    model_kwargs["attention_mask"] = self._pad_tensors_to_max_len(
+                        model_kwargs["attention_mask"], stopping_criteria.max_length, 0
+                    )
 
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
 
             outputs = self._call_generate(
+                generation_step=cur_len - 1,
                 **model_inputs,
                 return_dict=True,
                 output_attentions=output_attentions,
                 output_hidden_states=output_hidden_states,
             )
             # Change: Remove padding and restore to actual length
-            input_ids = input_ids[:, :cur_len]
-            if not self.config.is_encoder_decoder:
-                model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
-
-            outputs.logits = outputs.logits[:, :cur_len, :]
-            if outputs.logits.dim() == 3:
-                outputs.logits = outputs.logits[:, :cur_len, :]
-            # If the dimension of logits is 2, then only the logits of the last non-padding token is returned, so no need to slice.
-            else:
-                next_token_logits = outputs.logits
+            if not use_cache:
+                input_ids = input_ids[:, :cur_len]
+                if not self.config.is_encoder_decoder:
+                    model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
 
             # Change: remove synced_gpu code
 
@@ -1185,6 +1417,8 @@ class IPUGenerationMixin(GenerationMixin):
             )
             if model_kwargs["past"] is not None:
                 model_kwargs["past"] = self._reorder_cache(model_kwargs["past"], beam_idx)
+            # Change: add beam_idx to model_kwargs so KV caching can be made aware of it on device
+            model_kwargs["beam_idx"] = beam_idx
 
             if return_dict_in_generate and output_scores:
                 beam_indices = tuple((beam_indices[beam_idx[i]] + (beam_idx[i],) for i in range(len(beam_indices))))
@@ -1233,3 +1467,173 @@ class IPUGenerationMixin(GenerationMixin):
                 )
         else:
             return sequence_outputs["sequences"]
+
+    on_device_generation_steps: int = 0
+
+    def set_on_device_generation_steps(self, value: Optional[int] = 0):
+        self.on_device_generation_steps = value
+        if value == 0:
+            del self.on_device_generation_steps
+
+    def _adapt_logits_processor_for_on_device_generation(self, logits_processor: LogitsProcessorList):
+        adapted_processors = []
+        for processor in logits_processor:
+            ipu_processor_cls = IPULogitsProcessors.get(processor.__class__, None)
+            if ipu_processor_cls is None:
+                raise NotImplementedError(f"{processor.__class__.__name__} is not supported yet to run on IPU.")
+
+            ipu_processor = copy.deepcopy(processor)
+            ipu_processor.__class__ = ipu_processor_cls
+            adapted_processors.append(ipu_processor)
+        return LogitsProcessorList(adapted_processors)
+
+    def _adapt_stopping_criteria_for_on_device_generation(
+        self, stopping_criteria: StoppingCriteriaList, on_device_generation_steps: int
+    ):
+        adapted_stopping_criteria = []
+        for stopping_criterion in stopping_criteria:
+            if hasattr(stopping_criterion, "max_length"):
+                max_length = stopping_criterion.max_length
+                new_max_length = max_length - on_device_generation_steps
+                logger.info(
+                    f"Temporarily adapting `max_length` from {max_length} to {new_max_length} for on device generation."
+                )
+                stopping_criterion = copy.deepcopy(stopping_criterion)
+                stopping_criterion.max_length = new_max_length
+            adapted_stopping_criteria.append(stopping_criterion)
+        return StoppingCriteriaList(adapted_stopping_criteria)
+
+    def _prepare_inputs_for_on_device_generation(self, model_inputs, on_device_generation_steps, batch_size):
+        """
+        A model-agnostic version of `prepare_inputs_for_generation` whose main purpose is to duplicate
+        decoder inputs by `on_device_generation_steps=inference_device_iterations` and perform additional input validation.
+        Since we are duplicating tensors, we restrict duplication to `torch.Tensor` and the exceptional case of
+        `encoder_outputs.last_hidden_state`.
+        """
+        adapted_model_inputs = {}
+        for k, v in model_inputs.items():
+            if k in ("attention_mask", "encoder_outputs") and self.encoder_output_buffer_enabled:
+                # These inputs will copied onto device via buffers, so we don't need to duplicate them.
+                adapted_model_inputs[k] = v
+                continue
+
+            if torch.is_tensor(v):
+                if v.shape[0] != batch_size:
+                    raise ValueError(f"Unexpected size in dim 0 for {k}, expected {batch_size}.")
+                v = v.repeat(on_device_generation_steps, *(1 for _ in range(v.ndim - 1)))
+            elif k == "encoder_outputs":
+                v_type = type(v)
+                if not isinstance(v, BaseModelOutput):
+                    raise ValueError(
+                        "Expected `encoder_outputs` to be an instance of `BaseModelOutput`, " f"received {v_type}."
+                    )
+                v = v.last_hidden_state
+                v = v.repeat(on_device_generation_steps, *(1 for _ in range(v.ndim - 1)))
+                v = v_type(last_hidden_state=v)
+            elif v is None:
+                pass
+            elif isinstance(v, (int, float, str, bool)):
+                pass
+            else:
+                raise TypeError(
+                    f"Unexpected type {type(v)} received for decoder input {k}. On device generation enforces "
+                    "stricter input validation to minimise unexpected errors. Improvements are always welcome."
+                )
+            adapted_model_inputs[k] = v
+        return adapted_model_inputs
+
+    def _on_device_greedy_search(
+        self,
+        input_ids: torch.Tensor,
+        logits_processor: LogitsProcessorList,
+        stopping_criteria: StoppingCriteriaList,
+        pad_token_id: int,
+        eos_token_id: int,
+        max_length: int,
+        return_dict_in_generate: Optional[bool] = False,
+        **model_kwargs,
+    ):
+        if not model_kwargs.get("use_cache", False):
+            raise NotImplementedError("On device greedy search assumes `use_cache=True`.")
+
+        if return_dict_in_generate:
+            raise NotImplementedError("On device greedy search assumes `return_dict_in_generate=False`.")
+
+        batch_size, context_length = input_ids.shape
+        if (max_length - context_length) % self.on_device_generation_steps != 0:
+            logger.info(
+                "`max_length - context_length` does not evenly divide `on_device_generation_steps` "
+                f"({max_length - context_length} vs {self.on_device_generation_steps}). Generation will be done "
+                f"{self.on_device_generation_steps} tokens at a time and stop short of `max_length` so as not to exceed it."
+            )
+
+        if self.ipu_config.inference_device_iterations != 1:
+            raise ValueError(
+                "On device generation expects `inference_device_iterations=1`, "
+                f"received {self.ipu_config.inference_device_iterations}. "
+                "For on device generation, `inference_device_iterations` will be set to "
+                f"`on_device_generation_steps={self.on_device_generation_steps}`."
+            )
+        if hasattr(self, "decoder_ipu_config"):
+            self.decoder_ipu_config.inference_device_iterations = self.on_device_generation_steps
+        else:
+            self.ipu_config.inference_device_iterations = self.on_device_generation_steps
+
+        logits_processor = self._adapt_logits_processor_for_on_device_generation(logits_processor)
+        stopping_criteria = self._adapt_stopping_criteria_for_on_device_generation(
+            stopping_criteria, self.on_device_generation_steps
+        )
+
+        # This function only has to be called at the beginning of generation since
+        # all necessary state should be stored in buffers on device.
+        model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
+
+        # A model-agnostic version of above mainly to duplicate inputs for device iterations.
+        model_inputs = self._prepare_inputs_for_on_device_generation(
+            model_inputs, self.on_device_generation_steps, batch_size
+        )
+
+        on_device_generation_model_ctr = lambda inst: OnDeviceGenerationModel(
+            inst,
+            generation_strategy=OnDeviceGreedySearch(logits_processor),
+            batch_size=batch_size,
+            max_sequence_length=max_length,
+            pad_token_id=pad_token_id,
+            eos_token_id=eos_token_id,
+            context_length=context_length,
+            num_beams=1,
+            use_cache=True,
+        )
+
+        generation_step = 0
+        while True:
+            next_tokens = self._call_generate(
+                generation_step=generation_step,  # NB: intentionally different to `cur_len - 1`s
+                on_device_generation_model_ctr=on_device_generation_model_ctr,
+                **model_inputs,
+                return_dict=True,
+                output_attentions=False,
+                output_hidden_states=False,
+            )
+            next_tokens = next_tokens.view(self.on_device_generation_steps, batch_size).T
+
+            # update generated ids, model inputs, and length for next step
+            input_ids = torch.cat([input_ids, next_tokens], dim=-1)
+
+            generation_step += self.on_device_generation_steps
+
+            # stop when each sentence is finished, or if we exceed the maximum length
+            all_eos = False if eos_token_id is None else torch.all(next_tokens[:, -1] == eos_token_id)
+            if all_eos or stopping_criteria(input_ids, ()):
+                break
+
+        return input_ids
+
+    def _on_device_beam_search(self):
+        raise NotImplementedError("On device beam search is not supported.")
+
+    def _on_device_sample(self):
+        raise NotImplementedError("On device sampling is not supported.")
+
+    def _on_device_beam_sample(self):
+        raise NotImplementedError("On device beam sampling is not supported.")

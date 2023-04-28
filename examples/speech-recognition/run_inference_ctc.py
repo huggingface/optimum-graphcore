@@ -94,7 +94,6 @@ def main():
             matmul_proportion=0.1,
             inference_device_iterations=num_device_iterations,
             layers_per_ipu=[17, 16],
-            ipus_per_replica=2,
         )
     else:
         processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-base-960h")

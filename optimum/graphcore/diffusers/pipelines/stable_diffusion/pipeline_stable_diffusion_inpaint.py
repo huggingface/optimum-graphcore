@@ -1,0 +1,7 @@
+from diffusers import StableDiffusionInpaintPipeline
+
+from .pipeline_stable_diffusion_mixin import IPUStableDiffusionPipelineMixin
+
+
+class IPUStableDiffusionInpaintPipeline(IPUStableDiffusionPipelineMixin, StableDiffusionInpaintPipeline):
+    pass

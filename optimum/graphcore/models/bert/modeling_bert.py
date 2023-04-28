@@ -97,7 +97,7 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
         hs = outline_attribute(self.bert.embeddings.LayerNorm, "embeddings")
         self._hooks.extend(hs)
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, self.bert.encoder.layer)
+        layer_ipu = get_layer_ipu(self.ipu_config, self.bert.encoder.layer)
         for index, layer in enumerate(self.bert.encoder.layer):
             ipu = layer_ipu[index]
             if self.ipu_config.recompute_checkpoint_every_layer:
@@ -269,7 +269,7 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
         hs = outline_attribute(self.bert.embeddings.LayerNorm, "embeddings")
         self._hooks.extend(hs)
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, self.bert.encoder.layer)
+        layer_ipu = get_layer_ipu(self.ipu_config, self.bert.encoder.layer)
         for index, layer in enumerate(self.bert.encoder.layer):
             ipu = layer_ipu[index]
             if self.ipu_config.recompute_checkpoint_every_layer:
@@ -404,7 +404,7 @@ class BertPipelineMixin(PipelineMixin):
         hs = outline_attribute(self.bert.embeddings.LayerNorm, "embedding")
         self._hooks.extend(hs)
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, self.bert.encoder.layer)
+        layer_ipu = get_layer_ipu(self.ipu_config, self.bert.encoder.layer)
         for index, layer in enumerate(self.bert.encoder.layer):
             ipu = layer_ipu[index]
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:

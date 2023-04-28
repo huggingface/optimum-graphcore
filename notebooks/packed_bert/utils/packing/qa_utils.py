@@ -49,11 +49,11 @@ def preprocess_packed_qa(
 
     sample_mapping = tokenized_dataset.pop("overflow_to_sample_mapping")
 
-    dataset_answers = dataset[answer_key]
-    start_positions = []
-    end_positions = []
-
     if train:
+        dataset_answers = dataset[answer_key]
+        start_positions = []
+        end_positions = []
+
         offset_mapping = tokenized_dataset.pop("offset_mapping")
 
         for i, offsets in enumerate(tqdm(offset_mapping)):

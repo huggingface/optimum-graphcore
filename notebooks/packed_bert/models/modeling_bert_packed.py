@@ -159,6 +159,9 @@ class PipelinedPackedBertForSequenceClassification(BertForSequenceClassification
             if labels is not None:
                 logits = output.logits.reshape([-1, self.max_seq_per_pack, self.num_labels])
                 output.logits = logits
+                output = (output.loss, output.logits)
+            else:
+                output = output.logits
 
         else:
             output = self.multi_label_outputs(

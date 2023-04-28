@@ -231,23 +231,27 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
             model=model,
             ipu_config=ipu_config,
             tokenizer=tokenizer,
+            fp16=False,
         )
         output = token_classifier(sentence)
         self.assertEqual(
             nested_simplify(output[:3]),
             [
                 {"entity": "B-PER", "score": 0.999, "word": "Cons", "start": 0, "end": 4, "index": 1},
-                {"entity": "B-PER", "score": 0.803, "word": "##uelo", "start": 4, "end": 8, "index": 2},
+                {
+                    "entity": "B-PER",
+                    "score": 0.800,
+                    "word": "##uelo",
+                    "start": 4,
+                    "end": 8,
+                    "index": 2,
+                },  # changed from upstream value of 0.803
                 {"entity": "I-PER", "score": 0.999, "word": "Ara", "start": 9, "end": 12, "index": 3},
             ],
         )
 
         token_classifier = pipeline(
-            "ner",
-            model=model,
-            ipu_config=ipu_config,
-            tokenizer=tokenizer,
-            aggregation_strategy="simple",
+            "ner", model=model, ipu_config=ipu_config, tokenizer=tokenizer, aggregation_strategy="simple", fp16=False
         )
         output = token_classifier(sentence)
         self.assertEqual(
@@ -299,6 +303,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
             ipu_config=ipu_config,
             tokenizer=tokenizer,
             aggregation_strategy="average",
+            fp16=False,
         )
         output = token_classifier(sentence)
         self.assertEqual(
@@ -399,6 +404,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
             ],
         )
 
+    # enable when XLMRoberta is supported
     # @require_torch
     # @slow
     # def test_aggregation_strategy_byte_level_tokenizer(self):
@@ -415,7 +421,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_aggregation_strategy_no_b_i_prefix(self):
         model_name = "sshleifer/tiny-dbmdz-bert-large-cased-finetuned-conll03-english"
-        ipu_config = "Graphcore/bert-large-ipu"
+        ipu_config = {"layers_per_ipu": [2], "ipus_per_replica": 1}
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
         token_classifier = pipeline(
             task="ner",
@@ -474,7 +480,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_aggregation_strategy(self):
         model_name = "sshleifer/tiny-dbmdz-bert-large-cased-finetuned-conll03-english"
-        ipu_config = "Graphcore/bert-large-ipu"
+        ipu_config = {"layers_per_ipu": [2], "ipus_per_replica": 1}
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
         token_classifier = pipeline(
             task="ner",
@@ -557,7 +563,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_aggregation_strategy_example2(self):
         model_name = "sshleifer/tiny-dbmdz-bert-large-cased-finetuned-conll03-english"
-        ipu_config = "Graphcore/bert-large-ipu"
+        ipu_config = {"layers_per_ipu": [2], "ipus_per_replica": 1}
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
         token_classifier = pipeline(
             task="ner",
@@ -646,8 +652,11 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_gather_pre_entities(self):
         model_name = "sshleifer/tiny-dbmdz-bert-large-cased-finetuned-conll03-english"
+        ipu_config = {"layers_per_ipu": [2], "ipus_per_replica": 1}
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
-        token_classifier = pipeline(task="ner", model=model_name, tokenizer=tokenizer, framework="pt")
+        token_classifier = pipeline(
+            task="ner", model=model_name, ipu_config=ipu_config, tokenizer=tokenizer, framework="pt"
+        )
 
         sentence = "Hello there"
 
@@ -688,6 +697,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
             ],
         )
 
+    # enable when DebertaV2 is supported
     # @require_torch
     # def test_word_heuristic_leading_space(self):
     #     model_name = "hf-internal-testing/tiny-random-deberta-v2"
@@ -726,7 +736,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_no_offset_tokenizer(self):
         model_name = "hf-internal-testing/tiny-bert-for-token-classification"
-        ipu_config = "Graphcore/bert-base-ipu"
+        ipu_config = {"layers_per_ipu": [2], "ipus_per_replica": 1}
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
         token_classifier = pipeline(
             task="token-classification",
@@ -746,7 +756,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_small_model_pt(self):
         model_name = "hf-internal-testing/tiny-bert-for-token-classification"
-        ipu_config = "Graphcore/bert-base-ipu"
+        ipu_config = {"layers_per_ipu": [2], "ipus_per_replica": 1}
         token_classifier = pipeline(
             task="token-classification",
             model=model_name,
@@ -810,7 +820,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_pt_ignore_subwords_slow_tokenizer_raises(self):
         model_name = "sshleifer/tiny-dbmdz-bert-large-cased-finetuned-conll03-english"
-        ipu_config = "Graphcore/bert-large-ipu"
+        ipu_config = {"layers_per_ipu": [2], "ipus_per_replica": 1}
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
 
         with self.assertRaises(ValueError):
@@ -846,6 +856,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
             model="dslim/bert-base-NER",
             ipu_config="Graphcore/bert-base-ipu",
             grouped_entities=True,
+            fp16=False,
         )
         sentence = "Hello Sarah Jessica Parker who Jessica lives in New York"
         sentence2 = "This is a simple test"

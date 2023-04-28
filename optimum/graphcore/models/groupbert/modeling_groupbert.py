@@ -436,7 +436,7 @@ class PipelinedGroupBertForPreTraining(GroupBertForPreTraining, PipelineMixin):
             self.cls.predictions.decoder = serialized_decoder
             self.tie_weights()
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        layer_ipu = get_layer_ipu(self.ipu_config, self.bert.encoder.layer)
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding --> IPU 0")
@@ -601,7 +601,7 @@ class PipelinedGroupBertForMaskedLM(GroupBertForMaskedLM, PipelineMixin):
             self.cls.predictions.decoder = serialized_decoder
             self.tie_weights()
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        layer_ipu = get_layer_ipu(self.ipu_config, self.bert.encoder.layer)
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding  --> IPU 0")
@@ -726,7 +726,7 @@ class BertPipelineMixin(PipelineMixin):
         """
         super().parallelize()
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        layer_ipu = get_layer_ipu(self.ipu_config, self.bert.encoder.layer)
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding --> IPU 0")

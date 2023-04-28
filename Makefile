@@ -16,6 +16,9 @@ CURRENT_DIR = $(shell pwd)
 DEFAULT_CLONE_URL := https://github.com/huggingface/optimum-graphcore.git
 # If CLONE_URL is empty, revert to DEFAULT_CLONE_URL
 REAL_CLONE_URL = $(if $(CLONE_URL),$(CLONE_URL),$(DEFAULT_CLONE_URL))
+DEFAULT_CLONE_NAME := optimum-graphcore
+# If CLONE_NAME is empty, revert to DEFAULT_CLONE_NAME
+REAL_CLONE_NAME = $(if $(CLONE_NAME),$(CLONE_NAME),$(DEFAULT_CLONE_NAME))
 
 .PHONY:	style test
 
@@ -46,13 +49,13 @@ pypi_upload: build_dist
 	python -m twine upload dist/*
 
 build_doc_docker_image:
-	docker build -t doc_maker --build-arg commit_sha=$(COMMIT_SHA_SUBPACKAGE) --build-arg clone_url=$(REAL_CLONE_URL) ./docs
+	docker build -t doc_maker --build-arg commit_sha=$(COMMIT_SHA_SUBPACKAGE) --build-arg clone_url=$(REAL_CLONE_URL) --build-arg clone_name=$(REAL_CLONE_NAME) ./docs
 
 doc: build_doc_docker_image
 	@test -n "$(BUILD_DIR)" || (echo "BUILD_DIR is empty." ; exit 1)
 	@test -n "$(VERSION)" || (echo "VERSION is empty." ; exit 1)
 	docker run -v $(CURRENT_DIR):/doc_folder --workdir=/doc_folder doc_maker \
-	doc-builder build optimum.graphcore /optimum-graphcore/docs/source/ \
+	doc-builder build optimum.graphcore /$(REAL_CLONE_NAME)/docs/source/ \
 		--build_dir $(BUILD_DIR) \
 		--version $(VERSION) \
 		--version_tag_suffix "" \

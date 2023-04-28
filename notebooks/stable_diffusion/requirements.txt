@@ -1,3 +1,2 @@
-diffusers[torch]==0.9
 optimum-graphcore
 matplotlib

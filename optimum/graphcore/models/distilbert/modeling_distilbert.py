@@ -137,11 +137,11 @@ class DistilBertPipelineMixin(PipelineMixin):
             )
         self.distilbert.embeddings = poptorch.BeginBlock(self.distilbert.embeddings, "Embedding", 0)
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, self.distilbert.transformer.layer)
+        layer_ipu = get_layer_ipu(self.ipu_config, self.distilbert.transformer.layer)
         for index, layer in enumerate(self.distilbert.transformer.layer):
             ipu = layer_ipu[index]
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
-                recomputation_checkpoint(layer)
+                self._hooks.append(recomputation_checkpoint(layer))
             self.distilbert.transformer.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
             logger.info(f"Encoder {index:<2} --> IPU {ipu}")
 

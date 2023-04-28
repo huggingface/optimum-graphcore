@@ -16,6 +16,7 @@
 import copy
 import json
 import warnings
+from tempfile import NamedTemporaryFile
 from typing import Any, Dict, Optional, Union
 
 import torch
@@ -68,6 +69,14 @@ class IPUConfig(BaseConfig):
             Specifies the number of layers that will be put on each IPU for pipelined execution.
             For instance: `[2, 3, 4, 2]` specifies a 4-IPU pipeline, where the first two layers will be put on IPU0,
             the following three on IPU1, the next four on IPU2 and the last two on IPU3.
+            If the default of [-1] is used, the layers will be split evenly over `ipus_per_replica` IPUs.
+            The wildcard value '-1' can also be used in combination with integers.
+            For instance: `[1, 2, -1, -1]` specifies a 4-IPU pipeline, where the first layer is put on IPU0,
+            the next two layers on IPU1, and the remaining layers split evenly between IPU2 and IPU3.
+        training_layers_per_ipu (`List[int]`):
+            Same as `layers_per_ipu` for training only.
+        inference_layers_per_ipu (`List[int]`):
+            Same as `layers_per_ipu` for inference only.
 
         > Parameters for memory management
 
@@ -75,13 +84,17 @@ class IPUConfig(BaseConfig):
             Whether to use the off chip memory to store the optimizer state or to use the on chip memory.
         replicated_tensor_sharding (`bool`, *optional*, defaults to `False`):
             Shards the optimizer between replicas with zero-redundancy.
-        matmul_proportion (`List[float]` or `float`, *optional*, defaults to 0.6):
+        matmul_proportion (`List[float]` or `float`, *optional*, defaults to 0.2):
             Sets the amount of temporary memory made available on per-IPU basis.
             Use this setting to control the amount of temporary memory available to operations such as:
               - convolution
               - matrix multiplication
               - embedding lookups
               - indexing operations
+        training_matmul_proportion (`List[int]`):
+            Same as `matmul_proportion` for training only.
+        inference_matmul_proportion (`List[int]`):
+            Same as `matmul_proportion` for inference only.
         enable_half_partials (`bool`, *optional*, defaults to `True`):
             Whether the data type of partial results for matrix multiplication and convolution operators should be
             float16 or not.
@@ -114,11 +127,56 @@ class IPUConfig(BaseConfig):
     CONFIG_NAME = "ipu_config.json"
     FULL_CONFIGURATION_FILE = "ipu_config.json"
 
+    class ManagedAttribute:
+        def __init__(self, attr) -> None:
+            self.attr = attr
+
+        def __set__(self, obj, value):
+            if isinstance(obj, IPUConfig):
+                logger.debug(f"ManagedAttribute {self.attr} writing to {obj.mode}_{self.attr}")
+                assert obj.mode in obj.modes, f"IPUConfig.mode is invalid, must be one of: {obj.modes}"
+                return setattr(obj, f"{obj.mode}_{self.attr}", value)
+
+        def __get__(self, obj, objtype=None):
+            if isinstance(obj, IPUConfig):
+                logger.debug(f"ManagedAttribute {self.attr} reading from {obj.mode}_{self.attr}")
+                assert obj.mode in obj.modes, f"IPUConfig.mode is invalid, must be one of: {obj.modes}"
+                return getattr(obj, f"{obj.mode}_{self.attr}")
+
+    # Create descriptor based managed attributes which will either return the
+    # `training_` or `inference_` versions of the attribute depending on the value of
+    # `self.mode` ("training" by default)
+    modes = ("training", "inference")
+    layers_per_ipu = ManagedAttribute("layers_per_ipu")
+    ipus_per_replica = ManagedAttribute("ipus_per_replica")
+    matmul_proportion = ManagedAttribute("matmul_proportion")
+
     def __init__(self, **kwargs):
         self.seed = kwargs.pop("seed", None)
 
-        self.ipus_per_replica = kwargs.pop("ipus_per_replica", 1)
-        self.layers_per_ipu = kwargs.pop("layers_per_ipu", [1])
+        # Default mode to `training`
+        self.mode = "training"
+
+        # Get execution mode agnostic arguments
+        layers_per_ipu = kwargs.pop("layers_per_ipu", [-1])
+        ipus_per_replica = kwargs.pop("ipus_per_replica", len(layers_per_ipu))
+        matmul_proportion = kwargs.pop("matmul_proportion", 0.2)
+
+        # Get execution mode specific arguments (if available)
+        for mode in self.modes:
+            setattr(self, f"{mode}_layers_per_ipu", kwargs.pop(f"{mode}_layers_per_ipu", layers_per_ipu))
+
+            # If ipus_per_replica is default, recalculate ipus_per_replica from {mode}_layers_per_ipu instead
+            if ipus_per_replica == len(layers_per_ipu):
+                ipus_per_replica = len(getattr(self, f"{mode}_layers_per_ipu"))
+            setattr(self, f"{mode}_ipus_per_replica", kwargs.pop(f"{mode}_ipus_per_replica", ipus_per_replica))
+
+            # If matmul_proportion is a list and its length is not equal to {mode}_ipus_per_replica, use the
+            # default float value for matmul_proportion instead
+            if (isinstance(matmul_proportion, list) and  # fmt: skip
+                len(matmul_proportion) != getattr(self, f"{mode}_ipus_per_replica")):  # fmt: skip
+                matmul_proportion = 0.2
+            setattr(self, f"{mode}_matmul_proportion", kwargs.pop(f"{mode}_matmul_proportion", matmul_proportion))
 
         self.replication_factor = kwargs.pop("replication_factor", 1)
         self.inference_replication_factor = kwargs.pop("inference_replication_factor", 1)
@@ -138,8 +196,6 @@ class IPUConfig(BaseConfig):
                 'The "sharded_execution_for_inference" parameter is deprecated, sharded execution is always used during inference'
             )
 
-        self.matmul_proportion = kwargs.pop("matmul_proportion", 0.6)
-
         if "enable_half_first_order_momentum" in kwargs:
             warnings.warn('The "enable_half_first_order_momentum" parameter is deprecated')
 
@@ -149,11 +205,19 @@ class IPUConfig(BaseConfig):
 
         self.embedding_serialization_factor = kwargs.pop("embedding_serialization_factor", 1)
 
-        self.recompute_checkpoint_every_layer = kwargs.pop("recompute_checkpoint_every_layer", False)
+        self.recompute_checkpoint_every_layer = kwargs.pop("recompute_checkpoint_every_layer", True)
         self.output_mode = kwargs.pop("output_mode", "final")
 
         # TODO: remove this if unnecessary.
         self.execute_encoder_on_cpu_for_generation = kwargs.pop("execute_encoder_on_cpu_for_generation", False)
+
+    def train(self):
+        self.mode = "training"
+        return self
+
+    def eval(self):
+        self.mode = "inference"
+        return self
 
     def _prepare_config_attribute_for_pod_type(
         self, config_attribute_name: str, config_attribute: Union[Any, Dict[str, Any]], pod_type: Optional[str]
@@ -223,6 +287,9 @@ class IPUConfig(BaseConfig):
         if self.execute_encoder_on_cpu_for_generation:
             raise NotImplementedError("execute_encoder_on_cpu_for_generation is not supported yet.")
 
+        old_mode = self.mode
+        self.eval() if for_inference else self.train()
+
         opts = Options()
         opts.autoRoundNumIPUs(True)
         opts.replicationFactor(self.inference_replication_factor if for_inference else self.replication_factor)
@@ -291,6 +358,8 @@ class IPUConfig(BaseConfig):
         if self.executable_cache_dir and self.executable_cache_dir != "disabled":
             opts.enableExecutableCaching(self.executable_cache_dir)
 
+        opts._Popart.set("saveInitializersToFile", NamedTemporaryFile().name)
+
         # Enable stochastic rounding (recommended for training with FP16)
         opts.Precision.enableStochasticRounding(not for_inference)
 
@@ -323,6 +392,7 @@ class IPUConfig(BaseConfig):
 
         opts._Popart.set("engineOptions", engine_options)
 
+        self.mode = old_mode
         return opts
 
     def to_options(

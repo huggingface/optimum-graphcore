@@ -14,10 +14,10 @@ except Exception as error:
 
 INSTALL_REQUIRES = [
     "transformers==4.25.1",
-    "optimum",
+    "optimum==1.6.1",
+    "diffusers[torch]==0.12.1",
     "datasets",
     "tokenizers",
-    "torch",
     "sentencepiece",
     "scipy",
     "pillow",
@@ -31,11 +31,13 @@ QUALITY_REQUIRES = [
 
 EXTRA_REQUIRE = {
     "testing": [
+        "filelock",
         "GitPython",
         "parameterized",
         "psutil",
         "pytest",
         "pytest-pythonpath",
+        "pytest-xdist",
         "librosa",
         "soundfile",
     ],
