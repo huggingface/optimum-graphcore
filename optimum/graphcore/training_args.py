@@ -880,6 +880,6 @@ class IPUTrainingArguments:
         return eval_batch_size
 
     def get_num_ipus_from_podtype(self) -> int:
-        num_ipus = {"pod4": 4, "pod8": 8, "pod16": 16, "pod32": 32, "pod64": 64, "pod128": 128, "pod256": 256}
+        num_ipus = {pod_type: pod_type.strip("pod") for pod_type in ALLOWED_POD_TYPES}
         # default POD4
         return num_ipus.get(self.pod_type, 4)

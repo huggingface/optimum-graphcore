@@ -233,13 +233,11 @@ class IPUConfig(BaseConfig):
         Returns:
             The extracted config attribute value.
         """
-        if config_attribute_name in ["replication_factor", "inference_replication_factor"] and isinstance(
-            config_attribute, dict
-        ):
-            warnings.warn(
-                "Dictionary values in ipu_config.json will be deprecated in the next release. "
-                "`replication_factor` and `inference_replication_factor` will be inferred from the `pod_type` argument."
-            )
+        if isinstance(config_attribute, dict):
+            msg = "Specifying an attribute per `pod_type` using a `dict` in `ipu_config.json` will be deprecated in the next release."
+            if "replication_factor" in config_attribute_name:
+                msg += " `replication_factor` and `inference_replication_factor` will be inferred from the `pod_type` argument."
+            warnings.warn(msg)
 
         if not isinstance(config_attribute, dict) or not config_attribute.keys() <= (
             set(ALLOWED_POD_TYPES) | {"default"}
