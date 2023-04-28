@@ -17,16 +17,17 @@ import copy
 import json
 import warnings
 from tempfile import NamedTemporaryFile
-from typing import Any, Dict, Optional, Union, TypeVar, TypeAlias, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple, TypeVar, Union
 
 import torch
-import typeguard
 
 import popart
 import poptorch
+import typeguard
 from optimum.configuration_utils import BaseConfig
 from optimum.utils import logging
 from poptorch import Options, OutputMode
+from typing_extensions import TypeAlias
 
 
 logger = logging.get_logger(__name__)
