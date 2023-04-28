@@ -32,87 +32,24 @@ from optimum.graphcore.modeling_utils import (
 from poptorch import OutputMode
 
 
-def random_value_from_initial_value(initial_value):
-    if isinstance(initial_value, bool):
-        return bool(random.randint(0, 1))
-    elif isinstance(initial_value, int):
-        return random.randint(1, 10)
-    elif isinstance(initial_value, float):
-        return random.random()
-    elif isinstance(initial_value, str):
-        return "".join(random.choices(string.ascii_lowercase, k=len(initial_value)))
-    elif isinstance(initial_value, Iterable):
-        return type(initial_value)([random_value_from_initial_value(x) for x in initial_value])
-    elif initial_value is None:
-        return None
-    else:
-        raise TypeError(f"cannot create random value from initial value of type {type(initial_value)}")
-
-
-def create_pod_specific_attribute(
-    initial_value: Any, add_default_value: bool = False, remove_pod_types: Optional[Set[str]] = None
-) -> Dict[str, Any]:
-    p = random.random()
-    if p < 0.5:
-        return initial_value
-    if remove_pod_types is None:
-        remove_pod_types = set()
-    values = {k: random_value_from_initial_value(initial_value) for k in set(ALLOWED_POD_TYPES) - remove_pod_types}
-    if add_default_value:
-        values["default"] = random_value_from_initial_value(initial_value)
-    return values
-
-
-def create_ipu_config(with_default_values: bool = False, remove_pod_types: Optional[Set[str]] = None) -> IPUConfig:
+def create_ipu_config() -> IPUConfig:
     initial_dict = IPUConfig().to_dict()
-    initial_dict = {
-        k: create_pod_specific_attribute(v, add_default_value=with_default_values, remove_pod_types=remove_pod_types)
-        for k, v in initial_dict.items()
-    }
     allowed_output_modes = ["all", "sum", "final"]
-    if isinstance(initial_dict["output_mode"], dict):
-        initial_dict["output_mode"] = {k: random.choice(allowed_output_modes) for k in initial_dict["output_mode"]}
-    else:
-        initial_dict["output_mode"] = random.choice(allowed_output_modes)
+    initial_dict["output_mode"] = random.choice(allowed_output_modes)
     # Setting this setting to False as it is currently not supported and will throw an error.
     initial_dict["execute_encoder_on_cpu_for_generation"] = False
-    # Edge case where replication_factor=1 and replicated_tensor_sharding=True which will get overriden to
-    # replicated_tensor_sharding=False.
-    if isinstance(initial_dict["replication_factor"], dict) and isinstance(
-        initial_dict["replicated_tensor_sharding"], dict
-    ):
-        for pod_type in initial_dict["replication_factor"].keys():
-            if initial_dict["replication_factor"][pod_type] == 1:
-                initial_dict["replicated_tensor_sharding"][pod_type] = False
     return IPUConfig.from_dict(initial_dict)
 
 
 class IPUConfigTester(unittest.TestCase):
-    def test_for_pod_type(self):
-        ipu_config = create_ipu_config()
-        for pod_type in ALLOWED_POD_TYPES:
-            pod_type_dict = {k: v[pod_type] if isinstance(v, dict) else v for k, v in ipu_config.to_dict().items()}
-            ipu_config_for_pod_type = ipu_config.for_pod_type(pod_type)
-            self.assertEqual(pod_type_dict, ipu_config_for_pod_type.to_dict())
-
-    def test_for_pod_type_with_default(self):
-        ipu_config = create_ipu_config(with_default_values=True)
-        pod_type_dict = {k: v["default"] if isinstance(v, dict) else v for k, v in ipu_config.to_dict().items()}
-        ipu_config_for_pod_type = ipu_config.for_pod_type()
-        print(pod_type_dict)
-        print(ipu_config_for_pod_type.to_dict())
-        self.assertEqual(pod_type_dict, ipu_config_for_pod_type.to_dict())
-
-    def test_for_pod_type_with_unallowed_pod_type(self):
-        ipu_config = create_ipu_config()
-        with pytest.raises(ValueError):
-            ipu_config.for_pod_type("blablabla")
-
-    def test_for_pod_type_not_in_config_attribute(self):
-        pod_type_to_remove = random.choice(ALLOWED_POD_TYPES)
-        ipu_config = create_ipu_config(remove_pod_types={pod_type_to_remove})
-        with pytest.raises(KeyError):
-            ipu_config.for_pod_type(pod_type_to_remove)
+    def test_deprecation_warnings(self):
+        with pytest.warns(UserWarning, match='The "replication_factor" parameter is deprecated'):
+            ipu_config = IPUConfig(replication_factor=1, seed={"pod4": 42, "pod8": 42})
+        with pytest.warns(
+            UserWarning,
+            match="Specifying an attribute per `pod_type` using a `dict` in `ipu_config.json` will be deprecated",
+        ):
+            ipu_config.for_pod_type("pod4")
 
     def _test_to_options(self, for_inference: bool):
         def make_poptorch_options_comparable_to_ipu_config(options_dict):
@@ -168,26 +105,11 @@ class IPUConfigTester(unittest.TestCase):
             d2 = {k: v for k, v in d2.items() if k in d1}
             return d1, d2
 
-        pod_type = random.choice(ALLOWED_POD_TYPES)
-        # Case 1: the IPUConfig is not "specialized" and contains values for many pod types.
         ipu_config = create_ipu_config()
-        options = ipu_config.to_options(for_inference=for_inference, pod_type=pod_type)
-        ipu_config_dict = ipu_config.for_pod_type(pod_type).to_dict()
-        if for_inference:
-            ipu_config_dict["replication_factor"] = ipu_config_dict["inference_replication_factor"]
-            ipu_config_dict["device_iterations"] = ipu_config_dict["inference_device_iterations"]
-            ipu_config_dict["gradient_accumulation_steps"] = 1
-            ipu_config_dict["output_mode"] = "all"
-        ipu_config_dict, options_dict = intersection_of_dicts(
-            ipu_config_dict, make_poptorch_options_comparable_to_ipu_config(options.toDict())
-        )
-        self.assertEqual(ipu_config_dict, options_dict)
-        # Case 2: the IPUConfig is specialized, no pod type needs to be specified to create the poptorch.Options.
-        ipu_config = create_ipu_config().for_pod_type(pod_type)
         options = ipu_config.to_options(for_inference=for_inference)
         ipu_config_dict = ipu_config.to_dict()
         if for_inference:
-            ipu_config_dict["replication_factor"] = ipu_config_dict["inference_replication_factor"]
+            ipu_config_dict["training_replication_factor"] = ipu_config_dict["inference_replication_factor"]
             ipu_config_dict["device_iterations"] = ipu_config_dict["inference_device_iterations"]
             ipu_config_dict["gradient_accumulation_steps"] = 1
             ipu_config_dict["output_mode"] = "all"
@@ -209,7 +131,7 @@ class IPUConfigTester(unittest.TestCase):
         batch_size_factor = ipu_config.batch_size_factor(for_inference=for_inference, pod_type=pod_type)
         ipu_config = ipu_config.for_pod_type(pod_type)
         replication_factor = (
-            ipu_config.inference_replication_factor if for_inference else ipu_config.replication_factor
+            ipu_config.inference_replication_factor if for_inference else ipu_config.training_replication_factor
         )
         gradient_accumulation_steps = 1 if for_inference else ipu_config.gradient_accumulation_steps
         device_iterations = ipu_config.inference_device_iterations if for_inference else ipu_config.device_iterations
@@ -221,7 +143,7 @@ class IPUConfigTester(unittest.TestCase):
         ipu_config = create_ipu_config().for_pod_type(pod_type)
         batch_size_factor = ipu_config.batch_size_factor(for_inference=for_inference)
         replication_factor = (
-            ipu_config.inference_replication_factor if for_inference else ipu_config.replication_factor
+            ipu_config.inference_replication_factor if for_inference else ipu_config.training_replication_factor
         )
         gradient_accumulation_steps = 1 if for_inference else ipu_config.gradient_accumulation_steps
         device_iterations = ipu_config.inference_device_iterations if for_inference else ipu_config.device_iterations
