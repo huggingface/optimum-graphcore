@@ -311,9 +311,6 @@ class IPUConfigTester(unittest.TestCase):
         ipu_config = IPUConfig(ipus_per_replica=0)
         with pytest.raises(IncompatibleIPUConfigError, match=r"Invalid value for ipus_per_replica"):
             layer_ipu = get_layer_ipu(ipu_config, 6)
-            
-    def test_type_check_attributes_construction(self):
-        
 
     def test_execution_mode_specific_options(self):
         ipu_config = IPUConfig(
