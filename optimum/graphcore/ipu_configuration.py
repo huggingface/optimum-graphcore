@@ -567,7 +567,7 @@ class IPUConfig(BaseConfig):
 
         opts = Options()
         opts.autoRoundNumIPUs(True)
-        opts.replicationFactor(self.inference_replication_factor if for_inference else self.replication_factor)
+        opts.replicationFactor(self.replication_factor)
         opts.deviceIterations(self.inference_device_iterations if for_inference else self.device_iterations)
 
         if not for_inference:

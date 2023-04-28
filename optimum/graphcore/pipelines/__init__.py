@@ -20,7 +20,6 @@ import transformers.pipelines
 from transformers import (
     AudioClassificationPipeline,
     AutoFeatureExtractor,
-    AutomaticSpeechRecognitionPipeline,
     AutoModelForAudioClassification,
     AutoModelForCausalLM,
     AutoModelForCTC,
@@ -29,6 +28,7 @@ from transformers import (
     AutoModelForQuestionAnswering,
     AutoModelForSeq2SeqLM,
     AutoModelForSequenceClassification,
+    AutoModelForSpeechSeq2Seq,
     AutoModelForTokenClassification,
     AutoTokenizer,
     ImageClassificationPipeline,
@@ -47,6 +47,7 @@ from optimum.graphcore.generation.utils import IPUGenerationMixin
 from optimum.graphcore.ipu_configuration import IncompatibleIPUConfigError, IPUConfig
 from optimum.graphcore.modeling_utils import to_pipelined
 
+from .automatic_speech_recognition import IPUAutomaticSpeechRecognitionPipeline
 from .fill_mask import IPUFillMaskPipeline
 from .text2text_generation import IPUSummarizationPipeline, IPUText2TextGenerationPipeline, IPUTranslationPipeline
 from .token_classification import IPUTokenClassificationPipeline
@@ -70,9 +71,8 @@ SUPPORTED_TASKS = {
         "type": "audio",
     },
     "automatic-speech-recognition": {
-        "impl": AutomaticSpeechRecognitionPipeline,
-        # TODO: support AutoModelForSpeechSeq2Seq
-        "class": (AutoModelForCTC,),
+        "impl": IPUAutomaticSpeechRecognitionPipeline,
+        "class": (AutoModelForCTC, AutoModelForSpeechSeq2Seq),
         "default": {
             "model": ("facebook/wav2vec2-base-960h", "55bb623"),
             "ipu_config": "Graphcore/wav2vec2-ctc-base-ipu",
@@ -209,6 +209,7 @@ def get_poplar_executor(
     model: PreTrainedModel,
     ipu_config: Union[IPUConfig, str, dict] = None,
     fp16: bool = True,
+    **parallelize_kwargs,
 ) -> PreTrainedModel:
     ipu_config_arg = ipu_config
 
@@ -231,7 +232,7 @@ def get_poplar_executor(
     try:
         model = to_pipelined(model, ipu_config, force=False)
         if model.config.is_encoder_decoder and isinstance(model, IPUGenerationMixin):
-            model.parallelize(for_generation=task in SUPPORTED_GENERATION_TASKS)
+            model.parallelize(for_generation=task in SUPPORTED_GENERATION_TASKS, **parallelize_kwargs)
         else:
             model.parallelize()
     except Exception as error:
@@ -360,13 +361,18 @@ def pipeline(
             "Using a pipeline without specifying a model name and revision in production is not recommended."
         )
         model = SUPPORTED_TASKS[targeted_task]["class"][0].from_pretrained(model_id, revision=revision)
-        model = get_poplar_executor(targeted_task, model, ipu_config, fp16)
+        model = get_poplar_executor(targeted_task, model, ipu_config, fp16, **kwargs)
     elif isinstance(model, str):
         model_id = model
-        model = SUPPORTED_TASKS[targeted_task]["class"][0].from_pretrained(model_id, revision=revision)
-        model = get_poplar_executor(targeted_task, model, ipu_config, fp16)
+        for cl in SUPPORTED_TASKS[targeted_task]["class"]:
+            try:
+                model = cl.from_pretrained(model_id, revision=revision)
+            except ValueError:
+                continue
+            break
+        model = get_poplar_executor(targeted_task, model, ipu_config, fp16, **kwargs)
     elif isinstance(model, PreTrainedModel):
-        model = get_poplar_executor(targeted_task, model, ipu_config, fp16)
+        model = get_poplar_executor(targeted_task, model, ipu_config, fp16, **kwargs)
         if tokenizer is None and load_tokenizer:
             raise ValueError("If you pass a model as a PreTrainedModel, you must pass a tokenizer as well")
         if feature_extractor is None and load_feature_extractor:
