@@ -1,9 +1,9 @@
 {
   "dataloader_workers": 64,
   "async_dataloader": true,
-  "ipus_per_replica": 4,
+  "training_ipus_per_replica": 4,
   "weight_decay": 0.0,
-  "embedding_serialization_factor": 1,
+  "training_embedding_serialization_factor": 1,
   "recompute_checkpoint_every_layer": true,
   "replicated_tensor_sharding": false,
   "optimizer_state_offchip": true,
@@ -12,9 +12,9 @@
   "attention_probs_dropout_prob": 0.0,
   "mask_tokens": 20,
   "output_mode": "all",
-  "replication_factor": 1,
+  "training_replication_factor": 1,
   "gradient_accumulation_steps": 1,
-  "device_iterations": 1,
+  "training_device_iterations": 1,
   "executable_cache_dir": "disabled",
   "replicated_tensor_sharding": true
 }

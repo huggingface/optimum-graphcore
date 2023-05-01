@@ -117,7 +117,7 @@ class QAPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
         question_answerer = pipeline(
             "question-answering",
             model="sshleifer/tiny-distilbert-base-cased-distilled-squad",
-            ipu_config={"layers_per_ipu": [2], "ipus_per_replica": 1},
+            ipu_config={"training_layers_per_ipu": [2], "training_ipus_per_replica": 1},
         )
 
         outputs = question_answerer(
@@ -132,7 +132,7 @@ class QAPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
         pipe = pipeline(
             model="sshleifer/tiny-distilbert-base-cased-distilled-squad",
             batch_size=16,
-            ipu_config={"layers_per_ipu": [2], "ipus_per_replica": 1},
+            ipu_config={"training_layers_per_ipu": [2], "training_ipus_per_replica": 1},
         )
 
         def data():
@@ -147,7 +147,7 @@ class QAPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
         question_answerer = pipeline(
             "question-answering",
             model="sshleifer/tiny-distilbert-base-cased-distilled-squad",
-            ipu_config={"layers_per_ipu": [2], "ipus_per_replica": 1},
+            ipu_config={"training_layers_per_ipu": [2], "training_ipus_per_replica": 1},
         )
 
         real_postprocess = question_answerer.postprocess

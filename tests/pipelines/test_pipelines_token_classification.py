@@ -421,7 +421,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_aggregation_strategy_no_b_i_prefix(self):
         model_name = "sshleifer/tiny-dbmdz-bert-large-cased-finetuned-conll03-english"
-        ipu_config = {"layers_per_ipu": [2], "ipus_per_replica": 1}
+        ipu_config = {"training_layers_per_ipu": [2], "training_ipus_per_replica": 1}
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
         token_classifier = pipeline(
             task="ner",
@@ -480,7 +480,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_aggregation_strategy(self):
         model_name = "sshleifer/tiny-dbmdz-bert-large-cased-finetuned-conll03-english"
-        ipu_config = {"layers_per_ipu": [2], "ipus_per_replica": 1}
+        ipu_config = {"training_layers_per_ipu": [2], "training_ipus_per_replica": 1}
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
         token_classifier = pipeline(
             task="ner",
@@ -563,7 +563,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_aggregation_strategy_example2(self):
         model_name = "sshleifer/tiny-dbmdz-bert-large-cased-finetuned-conll03-english"
-        ipu_config = {"layers_per_ipu": [2], "ipus_per_replica": 1}
+        ipu_config = {"training_layers_per_ipu": [2], "training_ipus_per_replica": 1}
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
         token_classifier = pipeline(
             task="ner",
@@ -652,7 +652,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_gather_pre_entities(self):
         model_name = "sshleifer/tiny-dbmdz-bert-large-cased-finetuned-conll03-english"
-        ipu_config = {"layers_per_ipu": [2], "ipus_per_replica": 1}
+        ipu_config = {"training_layers_per_ipu": [2], "training_ipus_per_replica": 1}
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=True)
         token_classifier = pipeline(
             task="ner", model=model_name, ipu_config=ipu_config, tokenizer=tokenizer, framework="pt"
@@ -736,7 +736,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_no_offset_tokenizer(self):
         model_name = "hf-internal-testing/tiny-bert-for-token-classification"
-        ipu_config = {"layers_per_ipu": [2], "ipus_per_replica": 1}
+        ipu_config = {"training_layers_per_ipu": [2], "training_ipus_per_replica": 1}
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
         token_classifier = pipeline(
             task="token-classification",
@@ -756,7 +756,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_small_model_pt(self):
         model_name = "hf-internal-testing/tiny-bert-for-token-classification"
-        ipu_config = {"layers_per_ipu": [2], "ipus_per_replica": 1}
+        ipu_config = {"training_layers_per_ipu": [2], "training_ipus_per_replica": 1}
         token_classifier = pipeline(
             task="token-classification",
             model=model_name,
@@ -820,7 +820,7 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     @require_torch
     def test_pt_ignore_subwords_slow_tokenizer_raises(self):
         model_name = "sshleifer/tiny-dbmdz-bert-large-cased-finetuned-conll03-english"
-        ipu_config = {"layers_per_ipu": [2], "ipus_per_replica": 1}
+        ipu_config = {"training_layers_per_ipu": [2], "training_ipus_per_replica": 1}
         tokenizer = AutoTokenizer.from_pretrained(model_name, use_fast=False)
 
         with self.assertRaises(ValueError):

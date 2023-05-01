@@ -561,7 +561,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         eval_dataset = RepeatDataset(x)
         args = IPUTrainingArguments("./test")
         ipu_config = get_ipu_config()
-        ipu_config.layers_per_ipu = [3, 0, 0, 0]
+        ipu_config.training_layers_per_ipu = [3, 0, 0, 0]
         trainer = IPUTrainer(tiny_gpt2, ipu_config, args, eval_dataset=eval_dataset)
         # By default the past_key_values are removed
         result = trainer.predict(eval_dataset)
@@ -609,8 +609,8 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         args = IPUTrainingArguments("./test", learning_rate=1e9, logging_steps=5, logging_nan_inf_filter=False)
 
         ipu_config = get_ipu_config()
-        ipu_config.layers_per_ipu = [3]
-        ipu_config.ipus_per_replica = 1
+        ipu_config.training_layers_per_ipu = [3]
+        ipu_config.training_ipus_per_replica = 1
         ipu_config.gradient_accumulation_steps = 8
 
         trainer = IPUTrainer(tiny_gpt2, ipu_config, args, train_dataset=train_dataset)

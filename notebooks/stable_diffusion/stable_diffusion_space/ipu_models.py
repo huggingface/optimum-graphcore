@@ -113,8 +113,8 @@ class IPUStableDiffusionPipeline(StableDiffusionPipeline):
                 "executable_cache_dir": "./exe_cache",
                 "inference_device_iterations": 1,
                 "inference_replication_factor": {"default": 1},
-                "ipus_per_replica": 4,
-                "matmul_proportion": [0.09, 0.1, 0.1, 0.08],
+                "training_ipus_per_replica": 4,
+                "training_matmul_proportion": [0.09, 0.1, 0.1, 0.08],
             }
             if ipu_config is not None:
                 default_ipu_config_dict.update(ipu_config)

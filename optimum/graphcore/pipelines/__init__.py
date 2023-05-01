@@ -142,7 +142,7 @@ SUPPORTED_TASKS = {
         "class": (AutoModelForSeq2SeqLM,),
         "default": {
             "model": ("ainize/bart-base-cnn", "b90bc9a"),
-            "ipu_config": IPUConfig(ipus_per_replica=2),
+            "ipu_config": IPUConfig(training_ipus_per_replica=2),
             "max_input_length": 50,
             "max_length": 20,
             "truncation": "only_first",
@@ -155,7 +155,7 @@ SUPPORTED_TASKS = {
         "class": (AutoModelForSeq2SeqLM,),
         "default": {
             "model": ("t5-small", "9507060"),
-            "ipu_config": IPUConfig(ipus_per_replica=2),
+            "ipu_config": IPUConfig(training_ipus_per_replica=2),
             "max_length": 50,
             "max_input_length": 45,
             "truncation": "only_first",
@@ -167,7 +167,7 @@ SUPPORTED_TASKS = {
         "class": (AutoModelForSeq2SeqLM,),
         "default": {
             "model": ("t5-small", "9507060"),
-            "ipu_config": IPUConfig(ipus_per_replica=2),
+            "ipu_config": IPUConfig(training_ipus_per_replica=2),
             "max_length": 50,
             "max_input_length": 50,
             "truncation": "only_first",

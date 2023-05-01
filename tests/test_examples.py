@@ -259,7 +259,7 @@ class ExampleTesterBase(TestCase):
         ipu_config_overrides = ",".join(
             [
                 "executable_cache_dir=disabled",
-                "device_iterations=1",
+                "training_device_iterations=1",
                 f"inference_device_iterations={inference_device_iterations}",
                 f"gradient_accumulation_steps={gradient_accumulation_steps}",
             ]

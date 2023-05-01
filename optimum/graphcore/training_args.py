@@ -345,7 +345,7 @@ class IPUTrainingArguments:
             If `True`, the [`IPUTrainer`] will only perform model compilation and stop.
         ipu_config_overrides (`str`, *optional*):
             Overrides some existing IPU config settings.
-            Example: `device_iterations=4,gradient_accumulation_steps=64`
+            Example: `training_device_iterations=4,gradient_accumulation_steps=64`
         pad_on_batch_axis (`bool`, *optional*, defaults to `False`):
             Will pad each batch up to a fixed size. This ensures that the compiled model will have an input with the
             proper shape, and allows to not use `dataloader_drop_last` during training.
@@ -599,7 +599,7 @@ class IPUTrainingArguments:
     ipu_config_overrides: Optional[str] = field(
         default=None,
         metadata={
-            "help": "Override some existing ipu config settings. Example: device_iterations=4,gradient_accumulation_steps=64"
+            "help": "Override some existing ipu config settings. Example: training_device_iterations=4,gradient_accumulation_steps=64"
         },
     )
     pad_on_batch_axis: bool = field(

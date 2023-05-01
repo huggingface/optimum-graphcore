@@ -202,23 +202,28 @@ def _expand_layers_per_ipu_wildcard(
     ipu_config: IPUConfig, target_number_of_layers: Optional[Union[int, List]] = None
 ) -> List[int]:
     """
-    Expand any wildcard values in `ipu_config.layers_per_ipu`.
+    Expand any wildcard values in `ipu_config.{mode}_layers_per_ipu` where mode={training, inference}.
 
     For example, if we have:
     ```
-    layers_per_ipu = [-1, -1]
+    training_layers_per_ipu = [-1, -1]
     target_number_of_layers = 9
     ```
-    this function will expand the wildcard values to `layers_per_ipu = [4, 5]`
+    this function will expand the wildcard values to `training_layers_per_ipu = [4, 5]`
     """
+
     layers_per_ipu = copy.deepcopy(ipu_config.layers_per_ipu)
     ipus_per_replica = ipu_config.ipus_per_replica
 
     # Check inputs are valid
     if not all(isinstance(n, int) and n >= -1 for n in layers_per_ipu):
-        raise IncompatibleIPUConfigError("Invalid values in layers_per_ipu. " f"layers_per_ipu={layers_per_ipu}")
+        raise IncompatibleIPUConfigError(
+            f"Invalid values in {ipu_config.mode}_layers_per_ipu. {ipu_config.mode}_layers_per_ipu={layers_per_ipu}"
+        )
     if ipus_per_replica < 1:
-        raise IncompatibleIPUConfigError("Invalid value for ipus_per_replica. " f"ipus_per_replica={ipus_per_replica}")
+        raise IncompatibleIPUConfigError(
+            f"Invalid value for {ipu_config.mode}_ipus_per_replica. {ipu_config.mode}_ipus_per_replica={ipus_per_replica}"
+        )
 
     if target_number_of_layers is not None:
         if not isinstance(target_number_of_layers, int):
@@ -252,16 +257,16 @@ def _expand_layers_per_ipu_wildcard(
 
             elif len(layers_per_ipu) != ipus_per_replica:
                 raise IncompatibleIPUConfigError(
-                    "layers_per_ipu has non-default value set, but its length does not match ipus_per_replica. "
-                    f"layers_per_ipu={layers_per_ipu}, ipus_per_replica={ipus_per_replica}. "
+                    f"{ipu_config.mode}_layers_per_ipu has non-default value set, but its length does not match {ipu_config.mode}_ipus_per_replica. "
+                    f"{ipu_config.mode}_layers_per_ipu={layers_per_ipu}, {ipu_config.mode}_ipus_per_replica={ipus_per_replica}. "
                 )
             # no wildcards used
             elif sum(layers_per_ipu) != target_number_of_layers:
                 raise IncompatibleIPUConfigError(
-                    "layers_per_ipu does not define the correct number of layers for the current model."
+                    f"{ipu_config.mode}_layers_per_ipu does not define the correct number of layers for the current model."
                     " The current IPU Config specifies IPU assignments for "
                     f"{sum(layers_per_ipu)} layers but there are {target_number_of_layers} layers "
-                    f"in the model. layers_per_ipu={layers_per_ipu}"
+                    f"in the model. {ipu_config.mode}_layers_per_ipu={layers_per_ipu}"
                 )
     return layers_per_ipu
 
@@ -273,19 +278,19 @@ def split_encoder_decoder_ipu_config(
     Given an `ipu_config` for an entire encoder-decoder model and the number of encoder and decoder layers,
     this function will split the `ipu_config` into two separate configs:
       `encoder_ipu_config` and `decoder_ipu_config`.
-    It will split the `ipu_config.layers_per_ipu` into two given the inputted numbers of encoder and decoder
-    layers.
+    It will split the `ipu_config.{mode}_layers_per_ipu` into two given the inputted numbers of encoder and decoder
+    layers where mode={training, inference}.
 
     Example:
     ```
-    >> ipu_config = IPUConfig(layers_per_ipu=[12, 12], ipus_per_replica=2)
+    >> ipu_config = IPUConfig(training_layers_per_ipu=[12, 12], training_ipus_per_replica=2)
     >> encoder_ipu_config, decoder_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 12, 12)
 
     >> encoder_ipu_config
-    => IPUConfig(layers_ler_ipu=[12], ipus_per_replica=1)
+    => IPUConfig(training_layers_ler_ipu=[12], training_ipus_per_replica=1)
 
     >> decoder_ipu_config
-    => IPUConfig(layers_ler_ipu=[12], ipus_per_replica=1)
+    => IPUConfig(training_layers_ler_ipu=[12], training_ipus_per_replica=1)
     ```
 
     Args:
@@ -299,7 +304,7 @@ def split_encoder_decoder_ipu_config(
     # Need at least two IPUs to do the split
     if ipu_config.ipus_per_replica < 2:
         raise IncompatibleIPUConfigError(
-            "Need ipus_per_replica of at least 2 to split ipu_config into encoder and decoder configs"
+            f"Need {ipu_config.mode}_ipus_per_replica of at least 2 to split ipu_config into encoder and decoder configs"
         )
 
     ipu_configs = {name: copy.deepcopy(ipu_config) for name in ["encoder", "decoder"]}
@@ -313,14 +318,14 @@ def split_encoder_decoder_ipu_config(
         cut = max([num for num in cut if num & (num - 1) == 0])
     except:
         raise IncompatibleIPUConfigError(
-            f"Unable to find valid split of ipu_config.layers_per_ipu\n"
+            f"Unable to find valid split of ipu_config.{ipu_config.mode}_layers_per_ipu\n"
             "Arguments: \n"
-            f"\tipu_config.layers_per_ipu={ipu_config.layers_per_ipu}\n"
+            f"\tipu_config.{ipu_config.mode}_layers_per_ipu={ipu_config.layers_per_ipu}\n"
             f"\tnum_encoder_layers={num_encoder_layers}\n"
             f"\tnum_decoder_layers={num_decoder_layers}\n"
             "Possible causes: \n"
             "Encoder and decoder layers cannot be placed on the same IPUs.\n"
-            "The encoder and decoder layers_per_ipu splits each need a number of devices that's a power of 2."
+            f"The encoder and decoder {ipu_config.mode}_layers_per_ipu splits each need a number of devices that's a power of 2."
         )
     ipu_configs["encoder"].layers_per_ipu = layers_per_ipu[:cut]
     ipu_configs["decoder"].layers_per_ipu = layers_per_ipu[cut:]

@@ -76,13 +76,13 @@ def create_ipu_config(with_default_values: bool = False, remove_pod_types: Optio
         initial_dict["output_mode"] = random.choice(allowed_output_modes)
     # Setting this setting to False as it is currently not supported and will throw an error.
     initial_dict["execute_encoder_on_cpu_for_generation"] = False
-    # Edge case where replication_factor=1 and replicated_tensor_sharding=True which will get overriden to
+    # Edge case where training_replication_factor=1 and replicated_tensor_sharding=True which will get overriden to
     # replicated_tensor_sharding=False.
-    if isinstance(initial_dict["replication_factor"], dict) and isinstance(
+    if isinstance(initial_dict["training_replication_factor"], dict) and isinstance(
         initial_dict["replicated_tensor_sharding"], dict
     ):
-        for pod_type in initial_dict["replication_factor"].keys():
-            if initial_dict["replication_factor"][pod_type] == 1:
+        for pod_type in initial_dict["training_replication_factor"].keys():
+            if initial_dict["training_replication_factor"][pod_type] == 1:
                 initial_dict["replicated_tensor_sharding"][pod_type] = False
     return IPUConfig.from_dict(initial_dict)
 
@@ -139,7 +139,7 @@ class IPUConfigTester(unittest.TestCase):
                 # one value in d["available_memory_proportion"].values(), which should be equal to
                 # ipu_config.matmul_proportion
                 "available_memory_proportion": lambda d: (
-                    "matmul_proportion",
+                    "training_matmul_proportion",
                     set(d["available_memory_proportion"].values()).pop(),
                 ),
                 "cachePath": "executable_cache_dir",
@@ -174,8 +174,8 @@ class IPUConfigTester(unittest.TestCase):
         options = ipu_config.to_options(for_inference=for_inference, pod_type=pod_type)
         ipu_config_dict = ipu_config.for_pod_type(pod_type).to_dict()
         if for_inference:
-            ipu_config_dict["replication_factor"] = ipu_config_dict["inference_replication_factor"]
-            ipu_config_dict["device_iterations"] = ipu_config_dict["inference_device_iterations"]
+            ipu_config_dict["training_replication_factor"] = ipu_config_dict["inference_replication_factor"]
+            ipu_config_dict["training_device_iterations"] = ipu_config_dict["inference_device_iterations"]
             ipu_config_dict["gradient_accumulation_steps"] = 1
             ipu_config_dict["output_mode"] = "all"
         ipu_config_dict, options_dict = intersection_of_dicts(
@@ -187,8 +187,8 @@ class IPUConfigTester(unittest.TestCase):
         options = ipu_config.to_options(for_inference=for_inference)
         ipu_config_dict = ipu_config.to_dict()
         if for_inference:
-            ipu_config_dict["replication_factor"] = ipu_config_dict["inference_replication_factor"]
-            ipu_config_dict["device_iterations"] = ipu_config_dict["inference_device_iterations"]
+            ipu_config_dict["training_replication_factor"] = ipu_config_dict["inference_replication_factor"]
+            ipu_config_dict["training_device_iterations"] = ipu_config_dict["inference_device_iterations"]
             ipu_config_dict["gradient_accumulation_steps"] = 1
             ipu_config_dict["output_mode"] = "all"
         ipu_config_dict, options_dict = intersection_of_dicts(
@@ -209,10 +209,12 @@ class IPUConfigTester(unittest.TestCase):
         batch_size_factor = ipu_config.batch_size_factor(for_inference=for_inference, pod_type=pod_type)
         ipu_config = ipu_config.for_pod_type(pod_type)
         replication_factor = (
-            ipu_config.inference_replication_factor if for_inference else ipu_config.replication_factor
+            ipu_config.inference_replication_factor if for_inference else ipu_config.training_replication_factor
         )
         gradient_accumulation_steps = 1 if for_inference else ipu_config.gradient_accumulation_steps
-        device_iterations = ipu_config.inference_device_iterations if for_inference else ipu_config.device_iterations
+        device_iterations = (
+            ipu_config.inference_device_iterations if for_inference else ipu_config.training_device_iterations
+        )
         self.assertEqual(
             replication_factor * gradient_accumulation_steps * device_iterations,
             batch_size_factor,
@@ -221,10 +223,12 @@ class IPUConfigTester(unittest.TestCase):
         ipu_config = create_ipu_config().for_pod_type(pod_type)
         batch_size_factor = ipu_config.batch_size_factor(for_inference=for_inference)
         replication_factor = (
-            ipu_config.inference_replication_factor if for_inference else ipu_config.replication_factor
+            ipu_config.inference_replication_factor if for_inference else ipu_config.training_replication_factor
         )
         gradient_accumulation_steps = 1 if for_inference else ipu_config.gradient_accumulation_steps
-        device_iterations = ipu_config.inference_device_iterations if for_inference else ipu_config.device_iterations
+        device_iterations = (
+            ipu_config.inference_device_iterations if for_inference else ipu_config.training_device_iterations
+        )
         self.assertEqual(
             replication_factor * gradient_accumulation_steps * device_iterations,
             batch_size_factor,
@@ -238,46 +242,46 @@ class IPUConfigTester(unittest.TestCase):
 
     def test_layers_per_ipu(self):
         # ipus_per_replica inferred from layers_per_ipu
-        ipu_config = IPUConfig(layers_per_ipu=[1, 2])
-        self.assertEqual(ipu_config.ipus_per_replica, 2)
+        ipu_config = IPUConfig(training_layers_per_ipu=[1, 2])
+        self.assertEqual(ipu_config.training_ipus_per_replica, 2)
 
         # get_layer_ipu with specific layers_per_ipu
-        ipu_config = IPUConfig(layers_per_ipu=[1, 2])
+        ipu_config = IPUConfig(training_layers_per_ipu=[1, 2])
         layer_ipu = get_layer_ipu(ipu_config, 3)
         self.assertEqual(layer_ipu, [0, 1, 1])
 
         # No target number of layers specified
-        ipu_config = IPUConfig(layers_per_ipu=[1, 2])
+        ipu_config = IPUConfig(training_layers_per_ipu=[1, 2])
         layer_ipu = get_layer_ipu(ipu_config)
         self.assertEqual(layer_ipu, [0, 1, 1])
 
         # Raises exception if number of layers is too few
-        ipu_config = IPUConfig(layers_per_ipu=[1, 2])
+        ipu_config = IPUConfig(training_layers_per_ipu=[1, 2])
         with pytest.raises(
             IncompatibleIPUConfigError,
-            match="layers_per_ipu does not define the correct number of layers for the current model",
+            match="training_layers_per_ipu does not define the correct number of layers for the current model",
         ):
             layer_ipu = get_layer_ipu(ipu_config, 2)
 
         # Raises exception if number of layers is too many
-        ipu_config = IPUConfig(layers_per_ipu=[1, 2])
+        ipu_config = IPUConfig(training_layers_per_ipu=[1, 2])
         with pytest.raises(
             IncompatibleIPUConfigError,
-            match="layers_per_ipu does not define the correct number of layers for the current model",
+            match="training_layers_per_ipu does not define the correct number of layers for the current model",
         ):
             layer_ipu = get_layer_ipu(ipu_config, 4)
 
         # layers_per_ipu and ipus_per_replica mismatch raises
-        ipu_config = IPUConfig(layers_per_ipu=[1, 2], ipus_per_replica=4)
+        ipu_config = IPUConfig(training_layers_per_ipu=[1, 2], training_ipus_per_replica=4)
         with pytest.raises(
             IncompatibleIPUConfigError,
-            match=r"layers_per_ipu has non-default value set, but its length does not match ipus_per_replica",
+            match=r"training_layers_per_ipu has non-default value set, but its length does not match training_ipus_per_replica",
         ):
             layer_ipu = get_layer_ipu(ipu_config, 3)
-        ipu_config = IPUConfig(layers_per_ipu=[1, -1], ipus_per_replica=4)
+        ipu_config = IPUConfig(training_layers_per_ipu=[1, -1], training_ipus_per_replica=4)
         with pytest.raises(
             IncompatibleIPUConfigError,
-            match=r"layers_per_ipu has non-default value set, but its length does not match ipus_per_replica",
+            match=r"training_layers_per_ipu has non-default value set, but its length does not match training_ipus_per_replica",
         ):
             layer_ipu = get_layer_ipu(ipu_config, 3)
 
@@ -287,36 +291,36 @@ class IPUConfigTester(unittest.TestCase):
         self.assertEqual(layer_ipu, [0] * 9)
 
         # Spread layers across 2 IPUs
-        ipu_config = IPUConfig(ipus_per_replica=2)
+        ipu_config = IPUConfig(training_ipus_per_replica=2)
         layer_ipu = get_layer_ipu(ipu_config, 6)  # even
         self.assertEqual(layer_ipu, [0, 0, 0, 1, 1, 1])
         layer_ipu = get_layer_ipu(ipu_config, 7)  # odd
         self.assertEqual(layer_ipu, [0, 0, 0, 1, 1, 1, 1])
 
         # Wild card
-        ipu_config = IPUConfig(layers_per_ipu=[2, -1])
+        ipu_config = IPUConfig(training_layers_per_ipu=[2, -1])
         layer_ipu = get_layer_ipu(ipu_config, 6)
         self.assertEqual(layer_ipu, [0, 0, 1, 1, 1, 1])
-        ipu_config = IPUConfig(layers_per_ipu=[-1, 2])
+        ipu_config = IPUConfig(training_layers_per_ipu=[-1, 2])
         layer_ipu = get_layer_ipu(ipu_config, 6)
         self.assertEqual(layer_ipu, [0, 0, 0, 0, 1, 1])
-        ipu_config = IPUConfig(layers_per_ipu=[-1, 2, -1, 2])
+        ipu_config = IPUConfig(training_layers_per_ipu=[-1, 2, -1, 2])
         layer_ipu = get_layer_ipu(ipu_config, 7)
         self.assertEqual(layer_ipu, [0, 1, 1, 2, 2, 3, 3])
 
         # Invalid values
-        ipu_config = IPUConfig(layers_per_ipu=[2, -2])
-        with pytest.raises(IncompatibleIPUConfigError, match=r"Invalid values in layers_per_ipu"):
+        ipu_config = IPUConfig(training_layers_per_ipu=[2, -2])
+        with pytest.raises(IncompatibleIPUConfigError, match=r"Invalid values in training_layers_per_ipu"):
             layer_ipu = get_layer_ipu(ipu_config, 6)
-        ipu_config = IPUConfig(ipus_per_replica=0)
-        with pytest.raises(IncompatibleIPUConfigError, match=r"Invalid value for ipus_per_replica"):
+        ipu_config = IPUConfig(training_ipus_per_replica=0)
+        with pytest.raises(IncompatibleIPUConfigError, match=r"Invalid value for training_ipus_per_replica"):
             layer_ipu = get_layer_ipu(ipu_config, 6)
 
     def test_execution_mode_specific_options(self):
         ipu_config = IPUConfig(
-            layers_per_ipu=[1, 2, 3, 4],
-            matmul_proportion=[0.1, 0.2, 0.3, 0.4],
-            ipus_per_replica=4,
+            training_layers_per_ipu=[1, 2, 3, 4],
+            training_matmul_proportion=[0.1, 0.2, 0.3, 0.4],
+            training_ipus_per_replica=4,
             inference_layers_per_ipu=[3, 7],
             inference_matmul_proportion=[0.3, 0.7],
             inference_ipus_per_replica=2,
@@ -348,27 +352,24 @@ class IPUConfigTester(unittest.TestCase):
         self.assertEqual(d_ipu_config.layers_per_ipu, [7])
         self.assertEqual(d_ipu_config.ipus_per_replica, 1)
 
-        # Reading and writing `ManagedAttribute`s when mode is invalid
-        ipu_config.mode = "invalid"
-        with pytest.raises(AssertionError, match=r"IPUConfig\.mode is invalid, must be one of:"):
-            ipu_config.layers_per_ipu
-        with pytest.raises(AssertionError, match=r"IPUConfig\.mode is invalid, must be one of:"):
-            ipu_config.layers_per_ipu = [1]
+        # Setting an invalid value for the mode
+        with pytest.raises(AssertionError, match=rf"value=invalid must be one of"):
+            ipu_config.mode = "invalid"
 
         # ipus_per_replica not specified
-        ipu_config = IPUConfig(layers_per_ipu=[1, 2, 3, 4])
+        ipu_config = IPUConfig(training_layers_per_ipu=[1, 2, 3, 4])
         self.assertEqual(ipu_config.ipus_per_replica, 4)
 
         # layers_per_ipu wildcard
-        ipu_config = IPUConfig(ipus_per_replica=4, layers_per_ipu=[-1])
+        ipu_config = IPUConfig(training_ipus_per_replica=4, training_layers_per_ipu=[-1])
         layer_ipu = get_layer_ipu(ipu_config, 8)
         self.assertEqual(ipu_config.ipus_per_replica, 4)
         self.assertEqual(layer_ipu, [0, 0, 1, 1, 2, 2, 3, 3])
 
         # inference_matmul_proportion not specified but matmul_proportion is
         ipu_config = IPUConfig(
-            layers_per_ipu=[1, 2, 3, 4],
-            matmul_proportion=[0.1, 0.2, 0.3, 0.4],
+            training_layers_per_ipu=[1, 2, 3, 4],
+            training_matmul_proportion=[0.1, 0.2, 0.3, 0.4],
             inference_layers_per_ipu=[3, 7],
         )
         self.assertEqual(ipu_config.layers_per_ipu, [1, 2, 3, 4])
@@ -377,7 +378,7 @@ class IPUConfigTester(unittest.TestCase):
 
     def test_split_encoder_decoder_ipu_config(self):
         # Test splitting two IPUs
-        ipu_config = IPUConfig(layers_per_ipu=[1, 2])
+        ipu_config = IPUConfig(training_layers_per_ipu=[1, 2])
         e_ipu_config, d_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 1, 2)
         self.assertEqual(e_ipu_config.layers_per_ipu, [1])
         self.assertEqual(e_ipu_config.ipus_per_replica, 1)
@@ -385,7 +386,7 @@ class IPUConfigTester(unittest.TestCase):
         self.assertEqual(d_ipu_config.ipus_per_replica, 1)
 
         # Test splitting matmul_proportion
-        ipu_config = IPUConfig(layers_per_ipu=[2, 2, 2, 2], matmul_proportion=[0.1, 0.2, 0.3, 0.4])
+        ipu_config = IPUConfig(training_layers_per_ipu=[2, 2, 2, 2], training_matmul_proportion=[0.1, 0.2, 0.3, 0.4])
         e_ipu_config, d_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 4, 4)
         self.assertEqual(e_ipu_config.matmul_proportion, [0.1, 0.2])
         self.assertEqual(d_ipu_config.matmul_proportion, [0.3, 0.4])
@@ -402,36 +403,36 @@ class IPUConfigTester(unittest.TestCase):
             self.assertEqual(ipu_config[k], d_ipu_config[k], k)
 
         # Test that wildcards work
-        ipu_config = IPUConfig(layers_per_ipu=[-1, -1])
+        ipu_config = IPUConfig(training_layers_per_ipu=[-1, -1])
         e_ipu_config, d_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 2, 3)
         self.assertEqual(e_ipu_config.layers_per_ipu, [2])
         self.assertEqual(d_ipu_config.layers_per_ipu, [3])
 
         # Wrong number of layers should raise an exception
-        ipu_config = IPUConfig(layers_per_ipu=[1, 2])
+        ipu_config = IPUConfig(training_layers_per_ipu=[1, 2])
         with pytest.raises(
             IncompatibleIPUConfigError,
-            match=r"layers_per_ipu does not define the correct number of layers for the current model",
+            match=r"training_layers_per_ipu does not define the correct number of layers for the current model",
         ):
             e_ipu_config, d_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 2, 2)
 
         # Encoder and decoder layers defined on same IPU should raise an exception
-        ipu_config = IPUConfig(layers_per_ipu=[4, 3])
+        ipu_config = IPUConfig(training_layers_per_ipu=[4, 3])
         with pytest.raises(
-            IncompatibleIPUConfigError, match=r"Unable to find valid split of ipu_config.layers_per_ipu"
+            IncompatibleIPUConfigError, match=r"Unable to find valid split of ipu_config.training_layers_per_ipu"
         ):
             e_ipu_config, d_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 3, 4)
 
         # If ipu_config only has 1 IPU then it should raise and exception
-        ipu_config = IPUConfig(layers_per_ipu=[4])
+        ipu_config = IPUConfig(training_layers_per_ipu=[4])
         with pytest.raises(
             IncompatibleIPUConfigError,
-            match=r"Need ipus_per_replica of at least 2 to split ipu_config into encoder and decoder configs",
+            match=r"Need training_ipus_per_replica of at least 2 to split ipu_config into encoder and decoder configs",
         ):
             e_ipu_config, d_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 2, 2)
 
         # Handle empty IPU in last stage of encoder
-        ipu_config = IPUConfig(layers_per_ipu=[1, 2, 3, 0, 5, 6, 7, 8])
+        ipu_config = IPUConfig(training_layers_per_ipu=[1, 2, 3, 0, 5, 6, 7, 8])
         e_ipu_config, d_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 6, 26)
         self.assertEqual(e_ipu_config.layers_per_ipu, [1, 2, 3, 0])
         self.assertEqual(e_ipu_config.ipus_per_replica, 4)
@@ -439,7 +440,7 @@ class IPUConfigTester(unittest.TestCase):
         self.assertEqual(d_ipu_config.ipus_per_replica, 4)
 
         # Split where first IPU has 0 layers
-        ipu_config = IPUConfig(layers_per_ipu=[0, 6, 0, 6])
+        ipu_config = IPUConfig(training_layers_per_ipu=[0, 6, 0, 6])
         e_ipu_config, d_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 6, 6)
         self.assertEqual(e_ipu_config.layers_per_ipu, [0, 6])
         self.assertEqual(e_ipu_config.ipus_per_replica, 2)
@@ -447,7 +448,7 @@ class IPUConfigTester(unittest.TestCase):
         self.assertEqual(d_ipu_config.ipus_per_replica, 2)
 
         # Split where there are many zeros
-        ipu_config = IPUConfig(layers_per_ipu=[3, 0, 3, 0, 0, 7])
+        ipu_config = IPUConfig(training_layers_per_ipu=[3, 0, 3, 0, 0, 7])
         e_ipu_config, d_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 6, 7)
         self.assertEqual(e_ipu_config.layers_per_ipu, [3, 0, 3, 0])
         self.assertEqual(e_ipu_config.ipus_per_replica, 4)

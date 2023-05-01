@@ -20,46 +20,46 @@ INFERENCE_ENGINES_TO_MODEL_NAMES = {
 
 STABLE_DIFFUSION_V1_512_IPU_CONFIG = {
     "text_encoder": {
-        "ipus_per_replica": 1,
-        "matmul_proportion": 0.6,
+        "training_ipus_per_replica": 1,
+        "training_matmul_proportion": 0.6,
     },
     "unet": {
-        "ipus_per_replica": 4,
-        "matmul_proportion": [0.6, 0.6, 0.1, 0.3],
+        "training_ipus_per_replica": 4,
+        "training_matmul_proportion": [0.6, 0.6, 0.1, 0.3],
         "attn_matrix_target_mem_mb": 100,
     },
-    "vae": {"ipus_per_replica": 2, "matmul_proportion": 0.3},
-    "safety_checker": {"ipus_per_replica": 1, "matmul_proportion": 0.6},
+    "vae": {"training_ipus_per_replica": 2, "training_matmul_proportion": 0.3},
+    "safety_checker": {"training_ipus_per_replica": 1, "training_matmul_proportion": 0.6},
 }
 
 
 STABLE_DIFFUSION_V2_512_IPU_CONFIG = {
     "text_encoder": {
-        "ipus_per_replica": 1,
-        "matmul_proportion": 0.6,
+        "training_ipus_per_replica": 1,
+        "training_matmul_proportion": 0.6,
     },
     "unet": {
-        "ipus_per_replica": 4,
-        "matmul_proportion": [0.6, 0.6, 0.1, 0.3],
+        "training_ipus_per_replica": 4,
+        "training_matmul_proportion": [0.6, 0.6, 0.1, 0.3],
         "attn_matrix_target_mem_mb": 100,
     },
-    "vae": {"ipus_per_replica": 2, "matmul_proportion": 0.3},
-    "safety_checker": {"ipus_per_replica": 1, "matmul_proportion": 0.6},
+    "vae": {"training_ipus_per_replica": 2, "training_matmul_proportion": 0.3},
+    "safety_checker": {"training_ipus_per_replica": 1, "training_matmul_proportion": 0.6},
 }
 
 
 STABLE_DIFFUSION_V2_768_IPU_CONFIG = {
     "text_encoder": {
-        "ipus_per_replica": 1,
-        "matmul_proportion": 0.6,
+        "training_ipus_per_replica": 1,
+        "training_matmul_proportion": 0.6,
     },
     "unet": {
-        "ipus_per_replica": 4,
-        "matmul_proportion": [0.06, 0.1, 0.1, 0.1],
+        "training_ipus_per_replica": 4,
+        "training_matmul_proportion": [0.06, 0.1, 0.1, 0.1],
         "attn_matrix_target_mem_mb": 45,
     },
     "vae": None,  # not supported yet
-    "safety_checker": {"ipus_per_replica": 1, "matmul_proportion": 0.6},
+    "safety_checker": {"training_ipus_per_replica": 1, "training_matmul_proportion": 0.6},
 }
 
 

@@ -91,9 +91,9 @@ def main():
         processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-large-960h")
         model = AutoModelForCTC.from_pretrained("facebook/wav2vec2-large-960h")
         ipu_config = IPUConfig(
-            matmul_proportion=0.1,
+            training_matmul_proportion=0.1,
             inference_device_iterations=num_device_iterations,
-            layers_per_ipu=[17, 16],
+            training_layers_per_ipu=[17, 16],
         )
     else:
         processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-base-960h")

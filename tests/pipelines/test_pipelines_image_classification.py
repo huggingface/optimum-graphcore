@@ -111,7 +111,7 @@ class ImageClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
         image_classifier = pipeline(
             "image-classification",
             model=small_model,
-            ipu_config={"layers_per_ipu": [5], "ipus_per_replica": 1},
+            ipu_config={"training_layers_per_ipu": [5], "training_ipus_per_replica": 1},
         )
 
         outputs = image_classifier("http://images.cocodataset.org/val2017/000000039769.jpg")
@@ -142,7 +142,7 @@ class ImageClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
         image_classifier = pipeline(
             "image-classification",
             model="hf-internal-testing/tiny-random-vit",
-            ipu_config={"layers_per_ipu": [5], "ipus_per_replica": 1},
+            ipu_config={"training_layers_per_ipu": [5], "training_ipus_per_replica": 1},
             tokenizer=tokenizer,
         )
 
