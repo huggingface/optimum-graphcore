@@ -298,7 +298,7 @@ def split_encoder_decoder_ipu_config(
     """
 
     layers_per_ipu_mode_str = ipu_config._get_managed_attr_mode_name("layers_per_ipu")
-    ipus_per_replica_mode_str = ipu_configs._get_managed_attr_mode_name("ipus_per_replica")
+    ipus_per_replica_mode_str = ipu_config._get_managed_attr_mode_name("ipus_per_replica")
 
     # Need at least two IPUs to do the split
     if ipu_config._ipus_per_replica < 2:
