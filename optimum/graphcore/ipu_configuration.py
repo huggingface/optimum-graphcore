@@ -255,9 +255,15 @@ class IPUConfig(BaseConfig):
         self.inference_layers_per_ipu = inference_layers_per_ipu if inference_layers_per_ipu else self.layers_per_ipu
         
         self.ipus_per_replica = ipus_per_replica if ipus_per_replica else len(self.layers_per_ipu)
-        self.inference_ipus_per_replica = inference_ipus_per_replica if inference_ipus_per_replica else self.ipus_per_replica
+        # If ipus_per_replica is default, recalculate ipus_per_replica from inference_layers_per_ipu instead
+        fallback_ipus_per_replica = self.ipus_per_replica
+        if fallback_ipus_per_replica == len(self.layers_per_ipu):
+            fallback_ipus_per_replica = len(self.inference_layers_per_ipu)
+        self.inference_ipus_per_replica = inference_ipus_per_replica if inference_ipus_per_replica else fallback_ipus_per_replica
         
         self.matmul_proportion = matmul_proportion
+        # If matmul_proportion is a list and its length is not equal to inference_ipus_per_replica, use the
+        # default float value for matmul_proportion instead
         fallback_matmul_proportion = self.matmul_proportion 
         if isinstance(self.matmul_proportion, list) and len(self.matmul_proportion) != self.inference_ipus_per_replica:
             fallback_matmul_proportion = 0.2
