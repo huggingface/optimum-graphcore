@@ -248,7 +248,7 @@ class PipelinedRobertaForSequenceClassification(RobertaForSequenceClassification
 
     def parallelize(self):
         super().parallelize()
-        last_ipu = self.ipu_config.ipus_per_replica - 1
+        last_ipu = self.ipu_config._ipus_per_replica - 1
         logger.info(f"Classifier Output --> IPU {last_ipu}")
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
@@ -268,7 +268,7 @@ class PipelinedRobertaForMultipleChoice(RobertaForMultipleChoice, RobertaPipelin
 
     def parallelize(self):
         super().parallelize()
-        last_ipu = self.ipu_config.ipus_per_replica - 1
+        last_ipu = self.ipu_config._ipus_per_replica - 1
         logger.info(f"Classifier Output --> IPU {last_ipu}")
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
@@ -288,7 +288,7 @@ class PipelinedRobertaForTokenClassification(RobertaForTokenClassification, Robe
 
     def parallelize(self):
         super().parallelize()
-        last_ipu = self.ipu_config.ipus_per_replica - 1
+        last_ipu = self.ipu_config._ipus_per_replica - 1
         logger.info(f"Classifier Output --> IPU {last_ipu}")
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
@@ -308,7 +308,7 @@ class PipelinedRobertaForQuestionAnswering(RobertaForQuestionAnswering, RobertaP
 
     def parallelize(self):
         super().parallelize()
-        last_ipu = self.ipu_config.ipus_per_replica - 1
+        last_ipu = self.ipu_config._ipus_per_replica - 1
         logger.info(f"QA Outputs --> IPU {last_ipu}")
         self.qa_outputs = poptorch.BeginBlock(self.qa_outputs, "QA Outputs", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")

@@ -76,15 +76,13 @@ class IPUConfig(BaseConfig):
         > Parameters related to parallelism
 
         layers_per_ipu (`List[int]`):
-            Specifies the number of layers that will be put on each IPU for pipelined execution.
+            Specifies the number of layers that will be put on each IPU for pipelined execution during training.
             For instance: `[2, 3, 4, 2]` specifies a 4-IPU pipeline, where the first two layers will be put on IPU0,
             the following three on IPU1, the next four on IPU2 and the last two on IPU3.
             If the default of [-1] is used, the layers will be split evenly over `ipus_per_replica` IPUs.
             The wildcard value '-1' can also be used in combination with integers.
             For instance: `[1, 2, -1, -1]` specifies a 4-IPU pipeline, where the first layer is put on IPU0,
             the next two layers on IPU1, and the remaining layers split evenly between IPU2 and IPU3.
-        training_layers_per_ipu (`List[int]`):
-            Same as `layers_per_ipu` for training only.
         inference_layers_per_ipu (`List[int]`):
             Same as `layers_per_ipu` for inference only.
         ipus_per_replica (`int`, *optional*, defaults to `len(layers_per_ipu)`):
@@ -100,14 +98,12 @@ class IPUConfig(BaseConfig):
         replicated_tensor_sharding (`bool`, *optional*, defaults to `False`):
             Shards the optimizer between replicas with zero-redundancy.
         matmul_proportion (`List[float]` or `float`, *optional*, defaults to 0.2):
-            Sets the amount of temporary memory made available on per-IPU basis.
+            Sets the amount of temporary memory made available during training on per-IPU basis.
             Use this setting to control the amount of temporary memory available to operations such as:
               - convolution
               - matrix multiplication
               - embedding lookups
               - indexing operations
-        training_matmul_proportion (`List[int]`):
-            Same as `matmul_proportion` for training only.
         inference_matmul_proportion (`List[int]`):
             Same as `matmul_proportion` for inference only.
         enable_half_partials (`bool`, *optional*, defaults to `True`):
@@ -148,22 +144,25 @@ class IPUConfig(BaseConfig):
 
         def __set__(self, obj, value):
             if isinstance(obj, IPUConfig):
-                logger.debug(f"ManagedAttribute {self.attr} writing to {obj.mode}_{self.attr}")
-                return setattr(obj, f"{obj.mode}_{self.attr}", value)
+                mode_attr = f"inference_{self.attr}" if obj.mode == "inference" else self.attr
+                logger.debug(f"ManagedAttribute {self.attr} writing to {mode_attr}")
+                return setattr(obj, mode_attr, value)
 
         def __get__(self, obj, objtype=None):
             if isinstance(obj, IPUConfig):
-                logger.debug(f"ManagedAttribute {self.attr} reading from {obj.mode}_{self.attr}")
-                return getattr(obj, f"{obj.mode}_{self.attr}")
+                mode_attr = f"inference_{self.attr}" if obj.mode == "inference" else self.attr
+                logger.debug(f"ManagedAttribute {self.attr} reading from {mode_attr}")
+                return getattr(obj, mode_attr)
 
     # Create descriptor based managed attributes which will either return the
-    # `training_` or `inference_` versions of the attribute depending on the value of
-    # `self.mode` ("training" by default)
+    # `attribute` or `inference_attribute` versions of the attribute depending on the value of
+    # `self.mode` ("training" by default). For example `_layers_per_ipu`
+    # switches between `layers_per_ipu` and `inference`
     modes = ("training", "inference")
-    layers_per_ipu = ManagedAttribute("layers_per_ipu")
-    ipus_per_replica = ManagedAttribute("ipus_per_replica")
-    matmul_proportion = ManagedAttribute("matmul_proportion")
-    replication_factor = ManagedAttribute("replication_factor")
+    _layers_per_ipu = ManagedAttribute("layers_per_ipu")
+    _ipus_per_replica = ManagedAttribute("ipus_per_replica")
+    _matmul_proportion = ManagedAttribute("matmul_proportion")
+    _device_iterations = ManagedAttribute("device_iterations")
 
     # Create a mapping of attribute value validating functions to a set of attributes
     # to be validated by that function
@@ -193,10 +192,10 @@ class IPUConfig(BaseConfig):
             )
 
     attribute_validators[partial(contents_geq_value_validator, floor_value=1)] = {
-        "training_replication_factor",
+        "replication_factor",
         "inference_replication_factor",
         "gradient_accumulation_steps",
-        "training_ipus_per_replica",
+        "ipus_per_replica",
         "inference_ipus_per_replica",
         "embedding_serialization_factor",
         "device_iterations",
@@ -204,12 +203,12 @@ class IPUConfig(BaseConfig):
     }
 
     attribute_validators[partial(contents_geq_value_validator, floor_value=0)] = {
-        "training_matmul_proportion",
+        "matmul_proportion",
         "inference_matmul_proportion",
     }
 
     attribute_validators[partial(contents_geq_value_validator, floor_value=-1)] = {
-        "training_layers_per_ipu",
+        "layers_per_ipu",
         "inference_layers_per_ipu",
     }
 
@@ -226,19 +225,15 @@ class IPUConfig(BaseConfig):
     def __init__(
         self,
         replication_factor: int = 1,
-        training_replication_factor: Optional[int] = None,
         inference_replication_factor: int = 1,
         gradient_accumulation_steps: int = 1,
         layers_per_ipu: List[int] = [-1],
-        training_layers_per_ipu: Optional[List[int]] = None,
         inference_layers_per_ipu: Optional[List[int]] = None,
         ipus_per_replica: Optional[int] = None,
-        training_ipus_per_replica: Optional[int] = None,
         inference_ipus_per_replica: Optional[int] = None,
         optimizer_state_offchip: bool = False,
         replicated_tensor_sharding: bool = False,
         matmul_proportion: Union[float, List[float]] = 0.2,
-        training_matmul_proportion: Optional[Union[float, List[float]]] = None,
         inference_matmul_proportion: Optional[Union[float, List[float]]] = None,
         enable_half_partials: bool = True,
         embedding_serialization_factor: int = 1,
@@ -256,38 +251,17 @@ class IPUConfig(BaseConfig):
         # Default mode to `training`
         self.train()
 
-        if ipus_per_replica is None:
-            ipus_per_replica = len(layers_per_ipu)
-
-        self.training_layers_per_ipu = training_layers_per_ipu if training_layers_per_ipu else layers_per_ipu
-        self.inference_layers_per_ipu = inference_layers_per_ipu if inference_layers_per_ipu else layers_per_ipu
-
-        def init_ipus_per_replica(mode_ipus_per_replica, mode_layers_per_ipu):
-            fallback_value = ipus_per_replica
-            # if ipus_per_replica is default, recalculate ipus_per_replica from {mode}_layers_per_ipu instead
-            if ipus_per_replica == len(layers_per_ipu):
-                fallback_value = len(mode_layers_per_ipu)
-            return mode_ipus_per_replica if mode_ipus_per_replica else fallback_value
-
-        self.training_ipus_per_replica = init_ipus_per_replica(training_ipus_per_replica, self.training_layers_per_ipu)
-        self.inference_ipus_per_replica = init_ipus_per_replica(
-            inference_ipus_per_replica, self.inference_layers_per_ipu
-        )
-
-        def init_mode_matmul_proportion(mode_matmul_proportion, mode_ipus_per_replica):
-            fallback_value = matmul_proportion
-            # if matmul_proportion is a list and its length is not equal to {mode}_ipus_per_replica, use the
-            # default float value for matmul_proportion instead
-            if isinstance(matmul_proportion, list) and len(matmul_proportion) != mode_ipus_per_replica:
-                fallback_value = 0.2
-            return mode_matmul_proportion if mode_matmul_proportion else fallback_value
-
-        self.training_matmul_proportion = init_mode_matmul_proportion(
-            training_matmul_proportion, self.training_ipus_per_replica
-        )
-        self.inference_matmul_proportion = init_mode_matmul_proportion(
-            inference_matmul_proportion, self.inference_ipus_per_replica
-        )
+        self.layers_per_ipu = layers_per_ipu
+        self.inference_layers_per_ipu = inference_layers_per_ipu if inference_layers_per_ipu else self.layers_per_ipu
+        
+        self.ipus_per_replica = ipus_per_replica if ipus_per_replica else len(self.layers_per_ipu)
+        self.inference_ipus_per_replica = inference_ipus_per_replica if inference_ipus_per_replica else self.ipus_per_replica
+        
+        self.matmul_proportion = matmul_proportion
+        fallback_matmul_proportion = self.matmul_proportion 
+        if isinstance(self.matmul_proportion, list) and len(self.matmul_proportion) != self.inference_ipus_per_replica:
+            fallback_matmul_proportion = 0.2
+        self.inference_matmul_proportion = inference_matmul_proportion if inference_matmul_proportion else fallback_matmul_proportion
 
         def check_and_set_replication_factor(attr_name, attr, default=False):
             if isinstance(attr, int):
@@ -318,10 +292,7 @@ class IPUConfig(BaseConfig):
             else:
                 raise ValueError(f"{attr_name} must be of type `int`. You provided: {attr_name}={attr}, {type(attr)}.")
 
-        check_and_set_replication_factor(
-            "training_replication_factor",
-            training_replication_factor if training_replication_factor else replication_factor,
-        )
+        check_and_set_replication_factor("replication_factor", replication_factor)
         check_and_set_replication_factor("inference_replication_factor", inference_replication_factor)
 
         self.gradient_accumulation_steps = gradient_accumulation_steps
@@ -350,9 +321,9 @@ class IPUConfig(BaseConfig):
         self.validate_ipu_config()
 
     @property
-    def mode(self):
+    def mode(self) -> str:
         return self._mode
-
+    
     @mode.setter
     def mode(self, value):
         if value not in self.modes:
@@ -378,8 +349,8 @@ class IPUConfig(BaseConfig):
         """
         # Shallow check to ensure that the input attribute is actually
         # a managed attribute
-        if hasattr(self, attr) and hasattr(self, f"inference_{attr}") and hasattr(self, f"training_{attr}"):
-            return f"training_{attr}" if self.mode == "training" else f"inference_{attr}"
+        if hasattr(self, attr) and hasattr(self, f"inference_{attr}"):
+            return attr if self.mode == "training" else f"inference_{attr}"
         else:
             warnings.warn(f"{attr} is not a `ManagedAttribute`. Returning modeless name: {attr}")
             return attr
@@ -523,10 +494,13 @@ class IPUConfig(BaseConfig):
         if compile_only:
             opts.useOfflineIpuTarget()
 
-        matmul_proportion = copy.deepcopy(self.matmul_proportion)
+        matmul_proportion = copy.deepcopy(
+            self.inference_matmul_proportion if for_inference else self.matmul_proportion
+        )
+        ipus_per_replica = self.inference_ipus_per_replica if for_inference else self.ipus_per_replica
         if isinstance(self.matmul_proportion, float):
-            matmul_proportion = [self.matmul_proportion] * self.ipus_per_replica
-        mem_prop = {f"IPU{i}": matmul_proportion[i] for i in range(self.ipus_per_replica)}
+            matmul_proportion = [self.matmul_proportion] * ipus_per_replica
+        mem_prop = {f"IPU{i}": matmul_proportion[i] for i in range(ipus_per_replica)}
         opts.setAvailableMemoryProportion(mem_prop)
 
         # Enable caching the compiled executable to disk
@@ -612,7 +586,7 @@ class IPUConfig(BaseConfig):
         Returns:
             `int`: The batch size factor.
         """
-        replication_factor = self.inference_replication_factor if for_inference else self.training_replication_factor
+        replication_factor = self.inference_replication_factor if for_inference else self.replication_factor
         gradient_accumulation_steps = 1 if for_inference else self.gradient_accumulation_steps
         device_iterations = self.inference_device_iterations if for_inference else self.device_iterations
         return replication_factor * gradient_accumulation_steps * device_iterations

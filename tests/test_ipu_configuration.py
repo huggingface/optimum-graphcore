@@ -207,9 +207,9 @@ class IPUConfigTester(unittest.TestCase):
 
     def test_execution_mode_specific_options(self):
         ipu_config = IPUConfig(
-            training_layers_per_ipu=[1, 2, 3, 4],
-            training_matmul_proportion=[0.1, 0.2, 0.3, 0.4],
-            training_ipus_per_replica=4,
+            layers_per_ipu=[1, 2, 3, 4],
+            matmul_proportion=[0.1, 0.2, 0.3, 0.4],
+            ipus_per_replica=4,
             inference_layers_per_ipu=[3, 7],
             inference_matmul_proportion=[0.3, 0.7],
             inference_ipus_per_replica=2,
@@ -219,9 +219,9 @@ class IPUConfigTester(unittest.TestCase):
         self.assertEqual(ipu_config.mode, "training")
 
         # Training versions retreived
-        self.assertEqual(ipu_config.layers_per_ipu, [1, 2, 3, 4])
-        self.assertEqual(ipu_config.matmul_proportion, [0.1, 0.2, 0.3, 0.4])
-        self.assertEqual(ipu_config.ipus_per_replica, 4)
+        self.assertEqual(ipu_config._layers_per_ipu, [1, 2, 3, 4])
+        self.assertEqual(ipu_config._matmul_proportion, [0.1, 0.2, 0.3, 0.4])
+        self.assertEqual(ipu_config._ipus_per_replica, 4)
 
         # Inference options created when mode is training
         opts = ipu_config.train().to_options(for_inference=True)
@@ -230,25 +230,21 @@ class IPUConfigTester(unittest.TestCase):
 
         # Inference versions retreived
         ipu_config.eval()
-        self.assertEqual(ipu_config.layers_per_ipu, [3, 7])
-        self.assertEqual(ipu_config.matmul_proportion, [0.3, 0.7])
-        self.assertEqual(ipu_config.ipus_per_replica, 2)
+        self.assertEqual(ipu_config._layers_per_ipu, [3, 7])
+        self.assertEqual(ipu_config._matmul_proportion, [0.3, 0.7])
+        self.assertEqual(ipu_config._ipus_per_replica, 2)
 
         # Test encoder decoder model IPUConfig splitting for generation
         e_ipu_config, d_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 3, 7)
-        self.assertEqual(e_ipu_config.layers_per_ipu, [3])
-        self.assertEqual(e_ipu_config.ipus_per_replica, 1)
-        self.assertEqual(d_ipu_config.layers_per_ipu, [7])
-        self.assertEqual(d_ipu_config.ipus_per_replica, 1)
+        self.assertEqual(e_ipu_config._layers_per_ipu, [3])
+        self.assertEqual(e_ipu_config._ipus_per_replica, 1)
+        self.assertEqual(d_ipu_config._layers_per_ipu, [7])
+        self.assertEqual(d_ipu_config._ipus_per_replica, 1)
 
-        # ipus_per_replica not specified
-        ipu_config = IPUConfig(training_layers_per_ipu=[1, 2, 3, 4])
-        self.assertEqual(ipu_config.ipus_per_replica, 4)
-
-        # training_layers_per_ipu wildcard
-        ipu_config = IPUConfig(ipus_per_replica=4, training_layers_per_ipu=[-1])
+        # layers_per_ipu wildcard
+        ipu_config = IPUConfig(ipus_per_replica=4, layers_per_ipu=[-1])
         layer_ipu = get_layer_ipu(ipu_config, 8)
-        self.assertEqual(ipu_config.ipus_per_replica, 4)
+        self.assertEqual(ipu_config._ipus_per_replica, 4)
         self.assertEqual(layer_ipu, [0, 0, 1, 1, 2, 2, 3, 3])
 
         # inference_matmul_proportion not specified but matmul_proportion is
@@ -257,8 +253,6 @@ class IPUConfigTester(unittest.TestCase):
             matmul_proportion=[0.1, 0.2, 0.3, 0.4],
             inference_layers_per_ipu=[3, 7],
         )
-        self.assertEqual(ipu_config.training_layers_per_ipu, [1, 2, 3, 4])
-        self.assertEqual(ipu_config.training_matmul_proportion, [0.1, 0.2, 0.3, 0.4])
         self.assertEqual(ipu_config.inference_matmul_proportion, 0.2)
 
     def test_split_encoder_decoder_ipu_config(self):

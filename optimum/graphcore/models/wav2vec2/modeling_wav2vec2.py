@@ -433,7 +433,7 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
         self.change_wav2vec2_adapter_class(False)
         self.change_conv_eps(False)
 
-        if self.ipu_config.ipus_per_replica != 1:
+        if self.ipu_config._ipus_per_replica != 1:
             logger.info("---------- Device Allocation -----------")
             layers = []
             # Conv layers

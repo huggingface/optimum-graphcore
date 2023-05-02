@@ -774,7 +774,7 @@ class PipelinedGroupBertForSequenceClassification(GroupBertForSequenceClassifica
 
     def parallelize(self):
         super().parallelize()
-        last_ipu = self.ipu_config.ipus_per_replica - 1
+        last_ipu = self.ipu_config._ipus_per_replica - 1
         logger.info(f"Classifier Output --> IPU {last_ipu}")
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
@@ -794,7 +794,7 @@ class PipelinedGroupBertForMultipleChoice(GroupBertForMultipleChoice, BertPipeli
 
     def parallelize(self):
         super().parallelize()
-        last_ipu = self.ipu_config.ipus_per_replica - 1
+        last_ipu = self.ipu_config._ipus_per_replica - 1
         logger.info(f"Classifier Output --> IPU {last_ipu}")
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
@@ -814,7 +814,7 @@ class PipelinedGroupBertForTokenClassification(GroupBertForTokenClassification, 
 
     def parallelize(self):
         super().parallelize()
-        last_ipu = self.ipu_config.ipus_per_replica - 1
+        last_ipu = self.ipu_config._ipus_per_replica - 1
         logger.info(f"Classifier Output --> IPU {last_ipu}")
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
@@ -834,7 +834,7 @@ class PipelinedGroupBertForQuestionAnswering(GroupBertForQuestionAnswering, Bert
 
     def parallelize(self):
         super().parallelize()
-        last_ipu = self.ipu_config.ipus_per_replica - 1
+        last_ipu = self.ipu_config._ipus_per_replica - 1
         logger.info(f"QA Outputs --> IPU {last_ipu}")
         self.qa_outputs = poptorch.BeginBlock(self.qa_outputs, "QA Outputs", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
