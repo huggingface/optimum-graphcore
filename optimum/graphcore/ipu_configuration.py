@@ -157,7 +157,7 @@ class IPUConfig(BaseConfig):
     # Create descriptor based managed attributes which will either return the
     # `attribute` or `inference_attribute` versions of the attribute depending on the value of
     # `self.mode` ("training" by default). For example `_layers_per_ipu`
-    # switches between `layers_per_ipu` and `inference`
+    # switches between `layers_per_ipu` and `inference_layers_per_ipu`
     modes = ("training", "inference")
     _layers_per_ipu = ManagedAttribute("layers_per_ipu")
     _ipus_per_replica = ManagedAttribute("ipus_per_replica")
