@@ -580,7 +580,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         for key in dict1.keys():
             # Logging dir can be slightly different as they default to something with the time.
             if key != "logging_dir":
-                self.assertEqual(dict1[key], dict2[key])
+                self.assertEqual(dict1[key], dict2[key], f"{key=}: {dict1[key]=} != {dict2[key]=}")
 
     def test_number_of_steps_in_training(self):
         # Regular training has n_epochs * len(train_dl) steps
