@@ -202,7 +202,7 @@ class IPUConfig(BaseConfig):
 
         if "inference_replication_factor" in kwargs:
             warnings.warn(
-                'The "inference_replication_factor" parameter is deprecated, inference replication factor will be inferred from the `pod_type` argument of the `pipeline`'
+                'The "inference_replication_factor" parameter is deprecated, inference replication factor will be inferred from the `pod_type` argument of the `IPUTrainer`'
             )
 
         self.enable_half_partials = kwargs.pop("enable_half_partials", True)
