@@ -214,15 +214,25 @@ class IPUConfig(BaseConfig):
         # TODO: remove this if unnecessary.
         self.execute_encoder_on_cpu_for_generation = kwargs.pop("execute_encoder_on_cpu_for_generation", False)
 
+    def train(self):
+        self.mode = "training"
+        return self
+
+    def eval(self):
+        self.mode = "inference"
+        return self
+
     def _prepare_config_attribute_for_pod_type(
         self, config_attribute_name: str, config_attribute: Union[Any, Dict[str, Any]], pod_type: Optional[str]
     ) -> Any:
         """
         Prepares a config attribute by extracting the proper value for this attribute considering the POD type.
+
         Args:
             config_attribute_name: The config attribute name (i.e. the name of the config field).
             config_attribute: The config attribute to extract the value from.
             pod_type: The POD type.
+
         Returns:
             The extracted config attribute value.
         """
@@ -252,10 +262,12 @@ class IPUConfig(BaseConfig):
     def for_pod_type(self, pod_type: Optional[str] = None) -> "IPUConfig":
         """
         Creates an `IPUConfig` specialized for a POD type.
+
         Args:
             pod_type (`str`, *optional*):
                 The POD type. If left to None, either the default value or the lowest value will be used for each
                 configuration field.
+
         Returns:
             `IPUConfig`: The IPUConfig instance.
         """
@@ -266,14 +278,6 @@ class IPUConfig(BaseConfig):
         config_dict = self.to_dict()
         config_dict = {k: self._prepare_config_attribute_for_pod_type(k, v, pod_type) for k, v in config_dict.items()}
         return IPUConfig(**config_dict)
-
-    def train(self):
-        self.mode = "training"
-        return self
-
-    def eval(self):
-        self.mode = "inference"
-        return self
 
     def _to_options(self, for_inference: bool = False, compile_only: bool = False) -> poptorch.Options:
         if not compile_only and poptorch.ipuHardwareVersion() != 2:
