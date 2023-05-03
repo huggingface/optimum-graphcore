@@ -350,23 +350,19 @@ class IPUConfig(BaseConfig):
                 otherwise.
             compile_only (`bool`, defaults to `False`):
                 If True, compilation will be performed offline, no IPUs required.
-            pod_type (`str`, *optional*):
-                The POD type to specialize the `poptorch.Options` for.
 
         Returns:
             `poptorch.Options`: The option representing the `IPUConfig`.
         """
         return self._to_options(for_inference=for_inference, compile_only=compile_only)
 
-    def batch_size_factor(self, for_inference: bool = False, pod_type: Optional[str] = None) -> int:
+    def batch_size_factor(self, for_inference: bool = False) -> int:
         """
         Computes the factor to apply to the micro batch size to get the combined batch size.
 
         Args:
             for_inference (`bool`, defaults to `False`):
                 Whether the factor is being use to compute the batch size for inference or not.
-            pod_type (`str`, *optional*):
-                The pod type that is being used. This is needed because the batch size factor can be pod type dependent.
 
         Returns:
             `int`: The batch size factor.
