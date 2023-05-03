@@ -29,6 +29,7 @@ from poptorch import Options, OutputMode
 
 from .training_args import ALLOWED_POD_TYPES
 
+
 logger = logging.get_logger(__name__)
 
 IPU_CONFIG_NAME = "ipu_config.json"
