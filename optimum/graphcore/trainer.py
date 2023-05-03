@@ -263,12 +263,11 @@ class IPUTrainer:
         self.eval_dataset = eval_dataset
         self.tokenizer = tokenizer
 
-        self.ipu_config = copy.deepcopy(ipu_config).for_pod_type(self.args.pod_type)
-        # set replication factor using pod_type (can be overruled by ipu_config_overrides)
-        if self.args.pod_type is not None:
-            num_ipus = self.args.get_num_ipus_from_podtype()
-            self.ipu_config.training_replication_factor = num_ipus // self.ipu_config.training_ipus_per_replica
-            self.ipu_config.inference_replication_factor = num_ipus // self.ipu_config.inference_ipus_per_replica
+        self.ipu_config = copy.deepcopy(ipu_config)
+        # set replication factor using n_ipu (can be overruled by ipu_config_overrides)
+        if (n_ipu := self.args.n_ipu) is not None:
+            self.ipu_config.training_replication_factor = n_ipu // self.ipu_config.training_ipus_per_replica
+            self.ipu_config.inference_replication_factor = n_ipu // self.ipu_config.inference_ipus_per_replica
         if self.ipu_config.training_replication_factor > 1 or self.ipu_config.inference_replication_factor > 1:
             os.environ["TOKENIZERS_PARALLELISM"] = "true"
         if args.ipu_config_overrides:

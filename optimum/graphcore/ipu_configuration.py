@@ -31,7 +31,6 @@ from poptorch import Options, OutputMode
 logger = logging.get_logger(__name__)
 
 IPU_CONFIG_NAME = "ipu_config.json"
-ALLOWED_POD_TYPES = ["pod4", "pod8", "pod16", "pod32", "pod64"]
 
 
 class IPUConfig(BaseConfig):
@@ -197,12 +196,12 @@ class IPUConfig(BaseConfig):
 
         if "replication_factor" in kwargs:
             warnings.warn(
-                'The "replication_factor" parameter is deprecated, replication factor will be inferred from the `pod_type` argument of the `IPUTrainer`'
+                'The "replication_factor" parameter is deprecated, replication factor will be inferred from the `n_ipu` argument of the `IPUTrainer`'
             )
 
         if "inference_replication_factor" in kwargs:
             warnings.warn(
-                'The "inference_replication_factor" parameter is deprecated, inference replication factor will be inferred from the `pod_type` argument of the `IPUTrainer`'
+                'The "inference_replication_factor" parameter is deprecated, inference replication factor will be inferred from the `n_ipu` argument of the `IPUTrainer`'
             )
 
         self.enable_half_partials = kwargs.pop("enable_half_partials", True)
@@ -224,65 +223,6 @@ class IPUConfig(BaseConfig):
     def eval(self):
         self.mode = "inference"
         return self
-
-    def _prepare_config_attribute_for_pod_type(
-        self, config_attribute_name: str, config_attribute: Union[Any, Dict[str, Any]], pod_type: Optional[str]
-    ) -> Any:
-        """
-        Prepares a config attribute by extracting the proper value for this attribute considering the POD type.
-
-        Args:
-            config_attribute_name: The config attribute name (i.e. the name of the config field).
-            config_attribute: The config attribute to extract the value from.
-            pod_type: The POD type.
-
-        Returns:
-            The extracted config attribute value.
-        """
-        if isinstance(config_attribute, dict):
-            msg = "Specifying an attribute per `pod_type` using a `dict` in `ipu_config.json` will be deprecated in the next release."
-            if "replication_factor" in config_attribute_name:
-                msg += " `replication_factor` and `inference_replication_factor` will be inferred from the `pod_type` argument."
-            warnings.warn(msg)
-
-        if not isinstance(config_attribute, dict) or not config_attribute.keys() <= (
-            set(ALLOWED_POD_TYPES) | {"default"}
-        ):
-            return config_attribute
-
-        if pod_type is None and "default" not in config_attribute:
-            raise RuntimeError(
-                f"No POD type was specified and no default value was provided for {config_attribute_name}, cannot infer"
-                " which value to use"
-            )
-        elif pod_type is None:
-            return config_attribute["default"]
-        elif pod_type not in ALLOWED_POD_TYPES:
-            raise ValueError(
-                f"{pod_type} is not a correct value for a POD type, supported POD types: {', '.join(ALLOWED_POD_TYPES)}"
-            )
-        elif pod_type not in config_attribute:
-            raise KeyError(
-                f"the {config_attribute_name} configuration field does not contain a value for POD type {pod_type}"
-            )
-        else:
-            return config_attribute[pod_type]
-
-    def for_pod_type(self, pod_type: Optional[str] = None) -> "IPUConfig":
-        """
-        Creates an `IPUConfig` specialized for a POD type.
-
-        Args:
-            pod_type (`str`, *optional*):
-                The POD type. If left to None, either the default value or the lowest value will be used for each
-                configuration field.
-
-        Returns:
-            `IPUConfig`: The IPUConfig instance.
-        """
-        config_dict = self.to_dict()
-        config_dict = {k: self._prepare_config_attribute_for_pod_type(k, v, pod_type) for k, v in config_dict.items()}
-        return IPUConfig(**config_dict)
 
     def _to_options(self, for_inference: bool = False, compile_only: bool = False) -> poptorch.Options:
         if not compile_only and poptorch.ipuHardwareVersion() != 2:
@@ -399,9 +339,7 @@ class IPUConfig(BaseConfig):
         self.mode = old_mode
         return opts
 
-    def to_options(
-        self, for_inference: bool = False, compile_only: bool = False, pod_type: Optional[str] = None
-    ) -> poptorch.Options:
+    def to_options(self, for_inference: bool = False, compile_only: bool = False) -> poptorch.Options:
         """
         Creates a `poptorch.Options` from the `IPUConfig`.
 
@@ -417,7 +355,7 @@ class IPUConfig(BaseConfig):
         Returns:
             `poptorch.Options`: The option representing the `IPUConfig`.
         """
-        return self.for_pod_type(pod_type)._to_options(for_inference=for_inference, compile_only=compile_only)
+        return self._to_options(for_inference=for_inference, compile_only=compile_only)
 
     def batch_size_factor(self, for_inference: bool = False, pod_type: Optional[str] = None) -> int:
         """
@@ -432,12 +370,9 @@ class IPUConfig(BaseConfig):
         Returns:
             `int`: The batch size factor.
         """
-        ipu_config = self.for_pod_type(pod_type)
-        replication_factor = (
-            ipu_config.inference_replication_factor if for_inference else ipu_config.training_replication_factor
-        )
-        gradient_accumulation_steps = 1 if for_inference else ipu_config.gradient_accumulation_steps
-        device_iterations = ipu_config.inference_device_iterations if for_inference else ipu_config.device_iterations
+        replication_factor = self.inference_replication_factor if for_inference else self.training_replication_factor
+        gradient_accumulation_steps = 1 if for_inference else self.gradient_accumulation_steps
+        device_iterations = self.inference_device_iterations if for_inference else self.device_iterations
         return replication_factor * gradient_accumulation_steps * device_iterations
 
     def update_from_string(self, update_str: str):
