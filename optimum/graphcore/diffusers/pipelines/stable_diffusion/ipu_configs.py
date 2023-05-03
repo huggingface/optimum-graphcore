@@ -1,6 +1,6 @@
 from optimum.utils import logging
 
-from ....ipu_configuration import ALLOWED_POD_TYPES
+from ....ipu_configuration import ALLOWED_N_IPU
 
 
 logger = logging.get_logger(__name__)
@@ -81,14 +81,14 @@ def get_default_ipu_configs(
     width: int = 512,
     num_prompts: int = 1,
     num_images_per_prompt: int = 1,
-    pod_type: str = "pod4",
+    n_ipu: int = 4,
     **common_kwargs,
 ):
     if engine not in INFERENCE_ENGINES_TO_MODEL_NAMES:
         raise ValueError(f"{engine} should be one of {', '.join(INFERENCE_ENGINES_TO_MODEL_NAMES)}")
-    if pod_type not in ALLOWED_POD_TYPES:
+    if n_ipu not in ALLOWED_N_IPU:
         raise ValueError(
-            f"{pod_type} is not a correct value for a POD type, supported POD types: {', '.join(ALLOWED_POD_TYPES)}"
+            f"{n_ipu=} is not a correct value for a POD type, supported POD types: {', '.join(ALLOWED_N_IPU)}"
         )
 
     default_image_dim = 768 if "768" in engine else 512
@@ -101,9 +101,9 @@ def get_default_ipu_configs(
     model_ipu_configs = INFERENCE_ENGINES_TO_IPU_CONFIGS[engine]
 
     unet_ipu_config = model_ipu_configs["unet"]
-    text_encoder_ipu_config = model_ipu_configs["text_encoder"] if pod_type != "pod4" else None
-    vae_ipu_config = model_ipu_configs["vae"] if pod_type != "pod4" else None
-    safety_checker_ipu_config = model_ipu_configs["safety_checker"] if pod_type != "pod4" else None
+    text_encoder_ipu_config = model_ipu_configs["text_encoder"] if n_ipu > 4 else None
+    vae_ipu_config = model_ipu_configs["vae"] if n_ipu > 4 else None
+    safety_checker_ipu_config = model_ipu_configs["safety_checker"] if n_ipu > 4 else None
 
     # Set the micro batch size at 1 for now.
     common_kwargs["inference_device_iterations"] = num_prompts * num_images_per_prompt

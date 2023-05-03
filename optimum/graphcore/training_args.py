@@ -32,6 +32,8 @@ from transformers.trainer_utils import EvaluationStrategy, HubStrategy, Interval
 from transformers.training_args import default_logdir
 from transformers.utils import ExplicitEnum
 
+from .ipu_configuration import ALLOWED_N_IPU
+
 
 logger = logging.get_logger(__name__)
 log_levels = logging.get_log_levels_dict().copy()
@@ -567,7 +569,7 @@ class IPUTrainingArguments:
     )
     n_ipu: Optional[int] = field(
         default=None,
-        metadata={"help": "The number of IPUs to run the `Trainer` on.", "choices": [2**i for i in range(7)]},
+        metadata={"help": "The number of IPUs to run the `Trainer` on.", "choices": ALLOWED_N_IPU},
     )
     fp32: bool = field(
         default=False,
@@ -741,7 +743,7 @@ class IPUTrainingArguments:
             warnings.warn(
                 "`--pod_type` is deprecated and will be removed in the next release of Optimum Graphcore. Use "
                 "`--n_ipu` instead tp specify how many IPUs you would like the Trainer to use.",
-                FutureWarning
+                FutureWarning,
             )
             self.n_ipu = int(self.pod_type.strip("pod"))
 
