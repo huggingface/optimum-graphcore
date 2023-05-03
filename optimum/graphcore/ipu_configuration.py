@@ -53,6 +53,12 @@ class IPUConfig(BaseConfig):
 
         > Parameters for controlling the batch size
 
+        replication_factor (`int`, *optional*, defaults to 1):
+            The number of replicas for data-parallelism during training. It depends on the size of the pipeline as well
+            as the number of IPUs available. For example: on a Pod16, with a 4-IPU pipeline, replication_factor must
+            be betwen 1 and 4.
+        inference_replication_factor (`int`, *optional*, defaults to 1):
+            Same as `replication_factor` for inference.
         gradient_accumulation_steps (`int`, *optional*, defaults to 1):
             Number of micro-batches to accumulate for the gradient calculation.
             Accumulates the gradient gradient_accumulation times before updating the model using the gradient.
@@ -173,7 +179,7 @@ class IPUConfig(BaseConfig):
                 matmul_proportion = 0.2
             setattr(self, f"{mode}_matmul_proportion", kwargs.pop(f"{mode}_matmul_proportion", matmul_proportion))
 
-            # Default replication factors to 1. They will be changed, if appropriate, by the Trainer
+            # Default replication factors to 1
             setattr(self, f"{mode}_replication_factor", 1)
 
         self.gradient_accumulation_steps = kwargs.pop("gradient_accumulation_steps", 1)
@@ -194,16 +200,6 @@ class IPUConfig(BaseConfig):
 
         if "enable_half_first_order_momentum" in kwargs:
             warnings.warn('The "enable_half_first_order_momentum" parameter is deprecated')
-
-        if "replication_factor" in kwargs:
-            warnings.warn(
-                'The "replication_factor" parameter is deprecated, replication factor will be inferred from the `n_ipu` argument of the `IPUTrainer`'
-            )
-
-        if "inference_replication_factor" in kwargs:
-            warnings.warn(
-                'The "inference_replication_factor" parameter is deprecated, inference replication factor will be inferred from the `n_ipu` argument of the `IPUTrainer`'
-            )
 
         self.enable_half_partials = kwargs.pop("enable_half_partials", True)
 
