@@ -162,7 +162,6 @@ class IPUConfig(BaseConfig):
     _layers_per_ipu = ManagedAttribute("layers_per_ipu")
     _ipus_per_replica = ManagedAttribute("ipus_per_replica")
     _matmul_proportion = ManagedAttribute("matmul_proportion")
-    _device_iterations = ManagedAttribute("device_iterations")
 
     # Create a mapping of attribute value validating functions to a set of attributes
     # to be validated by that function
