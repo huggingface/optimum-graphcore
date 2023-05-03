@@ -23,7 +23,7 @@ from typing import Any, Dict, Optional, Set
 import pytest
 
 from optimum.graphcore import IPUConfig
-from optimum.graphcore.ipu_configuration import ALLOWED_POD_TYPES
+from optimum.graphcore.ipu_configuration import ALLOWED_N_IPU
 from optimum.graphcore.modeling_utils import (
     IncompatibleIPUConfigError,
     get_layer_ipu,
@@ -42,15 +42,6 @@ def create_ipu_config() -> IPUConfig:
 
 
 class IPUConfigTester(unittest.TestCase):
-    def test_deprecation_warnings(self):
-        with pytest.warns(UserWarning, match='The "replication_factor" parameter is deprecated'):
-            ipu_config = IPUConfig(replication_factor=1, seed={"pod4": 42, "pod8": 42})
-        with pytest.warns(
-            UserWarning,
-            match="Specifying an attribute per `pod_type` using a `dict` in `ipu_config.json` will be deprecated",
-        ):
-            ipu_config.for_pod_type("pod4")
-
     def _test_to_options(self, for_inference: bool):
         def make_poptorch_options_comparable_to_ipu_config(options_dict):
             options_dict = copy.deepcopy(options_dict)
@@ -125,11 +116,9 @@ class IPUConfigTester(unittest.TestCase):
         return self._test_to_options(True)
 
     def _test_batch_size_factor(self, for_inference: bool):
-        pod_type = random.choice(ALLOWED_POD_TYPES)
         # Case 1: the IPUConfig is not "specialized" and contains values for many pod types.
         ipu_config = create_ipu_config()
-        batch_size_factor = ipu_config.batch_size_factor(for_inference=for_inference, pod_type=pod_type)
-        ipu_config = ipu_config.for_pod_type(pod_type)
+        batch_size_factor = ipu_config.batch_size_factor(for_inference=for_inference)
         replication_factor = (
             ipu_config.inference_replication_factor if for_inference else ipu_config.training_replication_factor
         )
@@ -140,7 +129,7 @@ class IPUConfigTester(unittest.TestCase):
             batch_size_factor,
         )
         # Case 2: the IPUConfig is specialized, no pod type needs to be specified to compute the batch size factor.
-        ipu_config = create_ipu_config().for_pod_type(pod_type)
+        ipu_config = create_ipu_config()
         batch_size_factor = ipu_config.batch_size_factor(for_inference=for_inference)
         replication_factor = (
             ipu_config.inference_replication_factor if for_inference else ipu_config.training_replication_factor
