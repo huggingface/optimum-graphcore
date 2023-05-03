@@ -14,11 +14,13 @@
 #  limitations under the License.
 
 import copy
+from functools import partial
 import json
 import warnings
 from tempfile import NamedTemporaryFile
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, Optional, Union, List, get_type_hints, Type, Set, Sequence
 
+import typeguard
 import torch
 
 import popart
@@ -31,6 +33,10 @@ from poptorch import Options, OutputMode
 logger = logging.get_logger(__name__)
 
 IPU_CONFIG_NAME = "ipu_config.json"
+
+class InvalidIPUConfigError(ValueError):
+    "Exception raised when IPU config values are not coherent"
+    pass
 
 
 class IPUConfig(BaseConfig):
@@ -76,6 +82,11 @@ class IPUConfig(BaseConfig):
             Same as `layers_per_ipu` for training only.
         inference_layers_per_ipu (`List[int]`):
             Same as `layers_per_ipu` for inference only.
+        ipus_per_replica (`int`, *optional*, defaults to `len(layers_per_ipu)`):
+            Specifies the number of IPUs to use during training. This must be consistent with 
+            the number of IPUs used in `layers_per_ipu`.
+        inference_ipus_per_replica (`int`, *optional*, defaults to `len(inference_layers_per_ipu) if ipus_per_replica==len(layers_per_ipu) else ipus_per_replica):
+            Same as `ipus_per_replica` but for inference only.
 
         > Parameters for memory management
 
@@ -150,43 +161,114 @@ class IPUConfig(BaseConfig):
     ipus_per_replica = ManagedAttribute("ipus_per_replica")
     matmul_proportion = ManagedAttribute("matmul_proportion")
     replication_factor = ManagedAttribute("replication_factor")
-
-    def __init__(self, **kwargs):
-        self.seed = kwargs.pop("seed", None)
+    
+    attribute_validators = Dict()
+    
+    def contents_geq_value_validator(name: str, value: Union[float, int, Sequence], floor_value: Union[float, int]) -> None:
+        if isinstance(value, Sequence):
+            if not all([elem >= floor_value for elem in value]):
+                raise ValueError(
+                    f"`IPUConfig`attribute {name} must have all elements >= 1. You provided {value=}"
+                )
+        elif isinstance(value, int, float):
+            if not value >= floor_value:
+                raise ValueError(
+                    f"`IPUConfig` attribute {name} must be >= 1. You provided {value=}"
+                )
+        else:
+            raise ValueError(
+                f"`contents_geq_value_validator` validates inputs of type:"
+                f" Union[float, int, Sequence]. You provided: {value=},{type(value)}" 
+            )
+            
+    attribute_validators[partial(contents_geq_value_validator, floor_value=1)] = {
+        "replication_factor", "inference_replication_factor",
+        "gradient_accumulation_steps", "ipus_per_replica", 
+        "inference_ipus_per_replica", "embedding_serialization_factor",
+        "device_iterations", "inference_device_iterations"
+    }
+    
+    attribute_validators[partial(contents_geq_value_validator, floor_value=0)] = {
+        "matmul_proportion", "inference_matmul_proportion"}
+    
+    attribute_validators[partial(contents_geq_value_validator, floor_value=-1)] = {
+        "layers_per_ipu", "inference_layers_per_ipu"
+    }
+    
+    def output_mode_validator(name: str, value: str):
+        allowed_values = ("all", "sum", "final", "default") 
+        if value not in allowed_values:
+            raise ValueError(
+                f"`IPUConfig` attribute `output_mode` can only take values in"
+                " {allowed_values}. You provided: {value=}")
+    
+    attribute_validators[output_mode_validator] = {"output_mode"}
+        
+    
+    def __init__(
+        self, 
+        seed: Optional[int] = None,
+        auto_loss_scaling: bool = False,
+        executable_cache_dir: str = "", 
+        replication_factor: int = 1,
+        inference_replication_factor: int = 1,
+        gradient_accumulation_steps: int = 1,
+        layers_per_ipu: List[int] = [-1],
+        training_layers_per_ipu: Optional[List[int]] = None,
+        inference_layers_per_ipu: Optional[List[int]] = None,
+        ipus_per_replica: Optional[int] = None,
+        training_ipus_per_replica: Optional[int] = None,
+        inference_ipus_per_replica: Optional[int] = None,
+        optimizer_state_offchip: bool = False,
+        replicated_tensor_sharding: bool = False,
+        matmul_proportion: Union[float, List[float]] = 0.2,
+        training_matmul_proportion: Optional[Union[float, List[float]]] = None,
+        inference_matmul_proportion: Optional[Union[float, List[float]]] = None,
+        enable_half_partials: bool = True,
+        embedding_serialization_factor: int = 1,
+        recompute_checkpoint_every_layer: bool = False,
+        device_iterations: int = 1,
+        inference_device_iterations: int = 1,
+        output_mode: str = "final",        
+        **kwargs):
+        self.seed = seed
 
         # Default mode to `training`
-        self.mode = "training"
+        self.train()
 
         # Get execution mode agnostic arguments
-        layers_per_ipu = kwargs.pop("layers_per_ipu", [-1])
-        ipus_per_replica = kwargs.pop("ipus_per_replica", len(layers_per_ipu))
-        matmul_proportion = kwargs.pop("matmul_proportion", 0.2)
+        if ipus_per_replica is None:
+            ipus_per_replica = len(layers_per_ipu)
 
-        # Get execution mode specific arguments (if available)
-        for mode in self.modes:
-            setattr(self, f"{mode}_layers_per_ipu", kwargs.pop(f"{mode}_layers_per_ipu", layers_per_ipu))
-
-            # If ipus_per_replica is default, recalculate ipus_per_replica from {mode}_layers_per_ipu instead
+        self.training_layers_per_ipu = layers_per_ipu if training_layers_per_ipu is None else training_layers_per_ipu
+        self.inference_layers_per_ipu = layers_per_ipu if inference_layers_per_ipu is None else inference_layers_per_ipu
+        
+        def init_mode_ipus_per_replica(mode_ipus_per_replica, mode_layers_per_ipu):
+            default_value = ipus_per_replica
             if ipus_per_replica == len(layers_per_ipu):
-                ipus_per_replica = len(getattr(self, f"{mode}_layers_per_ipu"))
-            setattr(self, f"{mode}_ipus_per_replica", kwargs.pop(f"{mode}_ipus_per_replica", ipus_per_replica))
+                default_value = len(mode_layers_per_ipu)
+            return mode_ipus_per_replica if mode_ipus_per_replica else default_value
+            
+        self.training_ipus_per_replica = init_mode_ipus_per_replica(training_ipus_per_replica, training_layers_per_ipu)        
+        self.inference_ipus_per_replica = init_mode_ipus_per_replica(inference_ipus_per_replica, inference_layers_per_ipu)        
+        
+        def init_mode_matmul_proportion(mode_ipus_per_replica, mode_matmul_proportion):
+            default_value = matmul_proportion
+            if isinstance(matmul_proportion, list) and len(matmul_proportion) != mode_ipus_per_replica:
+                default_value = 0.2
+            return mode_matmul_proportion if mode_matmul_proportion else default_value
 
-            # If matmul_proportion is a list and its length is not equal to {mode}_ipus_per_replica, use the
-            # default float value for matmul_proportion instead
-            if (isinstance(matmul_proportion, list) and  # fmt: skip
-                len(matmul_proportion) != getattr(self, f"{mode}_ipus_per_replica")):  # fmt: skip
-                matmul_proportion = 0.2
-            setattr(self, f"{mode}_matmul_proportion", kwargs.pop(f"{mode}_matmul_proportion", matmul_proportion))
-
-            # Default replication factors to 1
-            setattr(self, f"{mode}_replication_factor", 1)
-
-        self.gradient_accumulation_steps = kwargs.pop("gradient_accumulation_steps", 1)
-        self.device_iterations = kwargs.pop("device_iterations", 1)
-        self.inference_device_iterations = kwargs.pop("inference_device_iterations", 1)
-        self.optimizer_state_offchip = kwargs.pop("optimizer_state_offchip", True)
-        self.replicated_tensor_sharding = kwargs.pop("replicated_tensor_sharding", False)
-        self.auto_loss_scaling = kwargs.pop("auto_loss_scaling", False)
+        self.training_matmul_proportion = init_mode_matmul_proportion(training_ipus_per_replica, training_matmul_proportion)        
+        self.inference_matmul_proportion = init_mode_matmul_proportion(inference_ipus_per_replica, inference_matmul_proportion)        
+        
+        self.replication_factor = replication_factor
+        self.inference_replication_factor = inference_replication_factor
+        self.gradient_accumulation_steps = gradient_accumulation_steps
+        self.device_iterations = device_iterations
+        self.inference_device_iterations = inference_device_iterations
+        self.optimizer_state_offchip = optimizer_state_offchip
+        self.replicated_tensor_sharding = replicated_tensor_sharding)
+        self.auto_loss_scaling = auto_loss_scaling
 
         if self.replicated_tensor_sharding and self.replication_factor == 1:
             logger.warning("Setting replicated_tensor_sharding to False when replication_factor=1")
@@ -200,14 +282,11 @@ class IPUConfig(BaseConfig):
         if "enable_half_first_order_momentum" in kwargs:
             warnings.warn('The "enable_half_first_order_momentum" parameter is deprecated')
 
-        self.enable_half_partials = kwargs.pop("enable_half_partials", True)
-
-        self.executable_cache_dir = kwargs.pop("executable_cache_dir", "")
-
-        self.embedding_serialization_factor = kwargs.pop("embedding_serialization_factor", 1)
-
-        self.recompute_checkpoint_every_layer = kwargs.pop("recompute_checkpoint_every_layer", True)
-        self.output_mode = kwargs.pop("output_mode", "final")
+        self.enable_half_partials = enable_half_partials
+        self.executable_cache_dir = executable_cache_dir
+        self.embedding_serialization_factor = embedding_serialization_factor
+        self.recompute_checkpoint_every_layer = recompute_checkpoint_every_layer
+        self.output_mode = output_mode
 
         # TODO: remove this if unnecessary.
         self.execute_encoder_on_cpu_for_generation = kwargs.pop("execute_encoder_on_cpu_for_generation", False)
@@ -219,6 +298,47 @@ class IPUConfig(BaseConfig):
     def eval(self):
         self.mode = "inference"
         return self
+    
+    def _get_attribute_type(self, name: str) -> Type:
+        try:
+            type_hints = self._attribute_type_hints
+        except AttributeError:
+            type_hints = get_type_hints(IPUConfig.__init__)
+            super().__setattr__("_attribute_type_hints", type_hints)
+        return type_hints.get(name, Any)
+    
+    def __setattr__(self, name, value):
+        attr_type = self._get_attribute_type(name)
+        try:
+            typeguard.check_type(value, attr_type)
+        except typeguard.TypeCheckError as e:
+            raise TypeError(
+                f"Setting `IPUConfig` attribute: {name}, type: {attr_type}."
+                f" with {value=},{type(value)} is invalid.") from e
+            
+        # run additional validators
+        for func, attrs in self.attribute_validators:
+            if name in attrs:
+                func(name, value)
+                
+        return super().__setattr__(name, value)
+    
+    def validate_ipu_config(self):
+        old_mode = self.mode
+        for mode in self.modes:
+            self.mode = mode
+            if isinstance(self._matmul_proportion, list) and len(self._matmul_proportion) != self._ipus_per_replica:
+                matmul_proportion_mode_str = self._get_mode_attr_name("matmul_proportion")
+                ipus_per_replica_mode_str = self._get_mode_attr_name("ipus_per_replica")
+                raise InvalidIPUConfigError(
+                    f"{matmul_proportion_mode_str}={self._matmul_proportion} should use the"
+                    f"same number of IPUs as {ipus_per_replica_mode_str}={self._ipus_per_replica}"
+                )
+            # layers per IPU
+            # if default [-1], and ipus_per_replica >= 1, okay
+            # [-1] * ipus_per_replica, okay,
+            # 
+            
 
     def _to_options(self, for_inference: bool = False, compile_only: bool = False) -> poptorch.Options:
         if not compile_only and poptorch.ipuHardwareVersion() != 2:
