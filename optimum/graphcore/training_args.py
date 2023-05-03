@@ -38,6 +38,7 @@ log_levels = logging.get_log_levels_dict().copy()
 trainer_log_levels = dict(**log_levels, passive=-1)
 
 ALLOWED_N_IPU = [2**i for i in range(7)]
+ALLOWED_POD_TYPES = ["pod4", "pod8", "pod16", "pod32", "pod64"]
 
 
 class ParallelMode(Enum):
@@ -741,8 +742,8 @@ class IPUTrainingArguments:
 
         if self.pod_type is not None:
             warnings.warn(
-                "`--pod_type` is deprecated and will be removed in the next release of Optimum Graphcore. Use "
-                "`--n_ipu` instead tp specify how many IPUs you would like the Trainer to use.",
+                "`pod_type` is deprecated and will be removed in the next release of Optimum Graphcore. Use `n_ipu` "
+                "instead tp specify how many IPUs you would like the Trainer to use.",
                 FutureWarning,
             )
             self.n_ipu = int(self.pod_type.strip("pod"))
