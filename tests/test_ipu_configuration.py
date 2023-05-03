@@ -23,7 +23,6 @@ from typing import Any, Dict, Optional, Set
 import pytest
 
 from optimum.graphcore import IPUConfig
-from optimum.graphcore.ipu_configuration import ALLOWED_N_IPU
 from optimum.graphcore.modeling_utils import (
     IncompatibleIPUConfigError,
     get_layer_ipu,

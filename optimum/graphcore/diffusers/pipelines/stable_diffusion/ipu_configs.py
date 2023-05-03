@@ -1,6 +1,6 @@
 from optimum.utils import logging
 
-from ....ipu_configuration import ALLOWED_N_IPU
+from ....training_args import ALLOWED_N_IPU
 
 
 logger = logging.get_logger(__name__)

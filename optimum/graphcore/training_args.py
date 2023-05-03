@@ -32,12 +32,12 @@ from transformers.trainer_utils import EvaluationStrategy, HubStrategy, Interval
 from transformers.training_args import default_logdir
 from transformers.utils import ExplicitEnum
 
-from .ipu_configuration import ALLOWED_N_IPU
-
 
 logger = logging.get_logger(__name__)
 log_levels = logging.get_log_levels_dict().copy()
 trainer_log_levels = dict(**log_levels, passive=-1)
+
+ALLOWED_N_IPU = [2**i for i in range(7)]
 
 
 class ParallelMode(Enum):

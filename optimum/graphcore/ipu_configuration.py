@@ -31,7 +31,6 @@ from poptorch import Options, OutputMode
 logger = logging.get_logger(__name__)
 
 IPU_CONFIG_NAME = "ipu_config.json"
-ALLOWED_N_IPU = [2**i for i in range(7)]
 
 
 class IPUConfig(BaseConfig):
