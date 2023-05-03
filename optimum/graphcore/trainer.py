@@ -267,7 +267,9 @@ class IPUTrainer:
         # set replication factor using n_ipu (can be overruled by ipu_config_overrides)
         if (n_ipu := self.args.n_ipu) is not None:
             if self.ipu_config.training_replication_factor > 1 or self.ipu_config.inference_replication_factor > 1:
-                warnings.warn("IPUTrainer is overwriting the replication factors set in self.ipu_config because `--n_ipu` was provided.")
+                warnings.warn(
+                    "IPUTrainer is overwriting the replication factors set in self.ipu_config because `--n_ipu` was provided."
+                )
             self.ipu_config.training_replication_factor = n_ipu // self.ipu_config.training_ipus_per_replica
             self.ipu_config.inference_replication_factor = n_ipu // self.ipu_config.inference_ipus_per_replica
         if self.ipu_config.training_replication_factor > 1 or self.ipu_config.inference_replication_factor > 1:
