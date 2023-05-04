@@ -125,7 +125,7 @@ python run_pretraining.py \
 	--min_gumbel_temperature 0.5 \
 	--gumbel_temperature_decay 0.999995 \
 	--logging_steps 10 \
-	--pod_type pod16
+	--n_ipu 16
 ```
 
 ## Base
@@ -160,7 +160,7 @@ python run_pretraining.py \
 	--min_gumbel_temperature 0.5 \
 	--gumbel_temperature_decay 0.999995 \
 	--logging_steps 10 \
-	--pod_type pod16
+	--n_ipu 16
 ```
 
 If you increase the effective batch size, for example by increasing the `gradient_accumulation_steps`,
@@ -197,7 +197,7 @@ python run_pretraining.py \
 	--min_gumbel_temperature 0.5 \
 	--gumbel_temperature_decay 0.999995 \
 	--logging_steps 10 \
-	--pod_type pod16
+	--n_ipu 16
 ```
 
 Similarly to the `"base-sized"` model above, be sure to select optimal `learning_rate` given the effective batch size of your configuration. The effective batch size is defined as `gradient_accumulation_steps * per_device_train_batch_size * replication_factor`. The `replication_factor` is calculated as number of IPUs (`pod_type`) divided by `ipus_per_replica`. See [Graphcore/wav2vec2-large](https://huggingface.co/Graphcore/wav2vec2-large-ipu) for configuration parameters in addition to the command line arguments.

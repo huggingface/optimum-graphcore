@@ -32,7 +32,7 @@ python examples/multiple-choice/run_swag.py \
 --per_device_eval_batch_size=2 \
 --per_device_train_batch_size=2 \
 --gradient_accumulation_steps 16 \
---pod_type pod16 \
+--n_ipu 16 \
 --report_to none \
 --pad_on_batch_axis \
 --overwrite_output

@@ -56,7 +56,7 @@ python run_glue.py \
   --do_predict \
   --max_seq_length 128 \
   --per_device_train_batch_size 32 \
-  --pod_type pod16 \
+  --n_ipu 16 \
   --learning_rate 2e-5 \
   --num_train_epochs 3 \
   --output_dir ./output/imdb/
@@ -81,7 +81,7 @@ python run_xnli.py \
   --do_train \
   --do_eval \
   --per_device_train_batch_size 32 \
-  --pod_type pod16 \
+  --n_ipu 16 \
   --learning_rate 5e-5 \
   --num_train_epochs 2.0 \
   --max_seq_length 128 \
