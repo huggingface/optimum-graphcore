@@ -41,7 +41,7 @@ python examples/summarization/run_summarization.py \
     --source_prefix "summarize: " \
     --per_device_train_batch_size 1 \
     --per_device_eval_batch_size 4 \
-    --pod_type pod16 \
+    --n_ipu 16 \
     --num_train_epochs 2 \
     --max_target_length 200 \
     --logging_steps 1 \
@@ -77,7 +77,7 @@ python examples/summarization/run_summarization.py \
     --per_device_eval_batch_size=4 \
     --max_target_length 200 \
     --num_train_epochs 2 \
-    --pod_type pod16 \
+    --n_ipu 16 \
     --learning_rate 1e-4 \
     --lr_scheduler_type constant \
     --max_grad_norm 0.5 \
@@ -101,7 +101,7 @@ python examples/summarization/run_summarization.py \
     --dataset_config "3.0.0" \
     --per_device_train_batch_size 2 \
     --per_device_eval_batch_size 4 \
-    --pod_type pod16 \
+    --n_ipu 16 \
     --num_train_epochs 2 \
     --logging_steps 1 \
     --learning_rate 1e-4 \

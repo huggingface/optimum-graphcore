@@ -44,7 +44,7 @@ python examples/translation/run_translation.py \
     --output_dir /tmp/tst-translation \
     --per_device_train_batch_size=1 \
     --per_device_eval_batch_size=1 \
-    --pod_type pod16 \
+    --n_ipu 16 \
     --dataloader_drop_last \
     --pad_to_max_length \
     --logging_steps 1 \
@@ -69,7 +69,7 @@ python examples/translation/run_translation.py \
     --output_dir /tmp/tst-translation \
     --per_device_train_batch_size=2 \
     --per_device_eval_batch_size=2 \
-    --pod_type pod16 \
+    --n_ipu 16 \
     --dataloader_drop_last \
     --max_source_length 512 \
     --max_target_length 512 \
@@ -101,7 +101,7 @@ python examples/translation/run_translation.py \
     --output_dir /tmp/tst-translation \
     --per_device_train_batch_size=2 \
     --per_device_eval_batch_size=2 \
-    --pod_type pod16 \
+    --n_ipu 16 \
     --dataloader_drop_last \
     --max_source_length 512 \
     --max_target_length 512 \
@@ -133,7 +133,7 @@ python examples/translation/run_translation.py \
     --output_dir /tmp/tst-translation \
     --per_device_train_batch_size=2 \
     --per_device_eval_batch_size=2 \
-    --pod_type pod16 \
+    --n_ipu 16 \
     --dataloader_drop_last \
     --max_source_length 512 \
     --max_target_length 512 \

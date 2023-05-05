@@ -229,7 +229,7 @@ class ExampleTesterBase(TestCase):
     INFERENCE_DEVICE_ITERATIONS = 4
     GRADIENT_ACCUMULATION_STEPS = 64
     EXTRA_COMMAND_LINE_ARGUMENTS = None
-    POD_TYPE = "pod8"
+    N_IPU = 8
 
     def setUp(self):
         self._create_venv()
@@ -286,7 +286,7 @@ class ExampleTesterBase(TestCase):
             "--save_steps -1",
             "--save_total_limit 1",
             "--report_to none",
-            f"--pod_type {self.POD_TYPE}",
+            f"--n_ipu {self.N_IPU}",
         ]
         if dataset_config_name is not None:
             cmd_line.append(f"--dataset_config_name {dataset_config_name}")

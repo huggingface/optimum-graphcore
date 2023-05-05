@@ -45,7 +45,7 @@ python examples/question-answering/run_qa.py \
   --per_device_train_batch_size 2 \
   --per_device_eval_batch_size 16 \
   --gradient_accumulation_steps 16 \
-  --pod_type pod16 \
+  --n_ipu 16 \
   --learning_rate 7e-5 \
   --max_seq_length 384 \
   --doc_stride 128 \
@@ -94,5 +94,5 @@ python examples/question-answering/run_vqa.py \
   --output_dir /tmp/gqa/ \
   --dataloader_drop_last \
   --replace_qa_head \
-  --pod_type pod16
+  --n_ipu 16
 ```
