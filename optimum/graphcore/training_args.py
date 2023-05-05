@@ -743,7 +743,7 @@ class IPUTrainingArguments:
         if self.pod_type is not None:
             warnings.warn(
                 "`pod_type` is deprecated and will be removed in the next release of Optimum Graphcore. Use `n_ipu` "
-                "instead tp specify how many IPUs you would like the Trainer to use.",
+                "instead to specify how many IPUs you would like the Trainer to use.",
                 FutureWarning,
             )
             self.n_ipu = int(self.pod_type.strip("pod"))
