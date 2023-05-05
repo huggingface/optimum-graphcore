@@ -38,7 +38,6 @@ log_levels = logging.get_log_levels_dict().copy()
 trainer_log_levels = dict(**log_levels, passive=-1)
 
 ALLOWED_N_IPU = [2**i for i in range(7)]
-ALLOWED_POD_TYPES = ["pod4", "pod8", "pod16", "pod32", "pod64"]
 
 
 class ParallelMode(Enum):

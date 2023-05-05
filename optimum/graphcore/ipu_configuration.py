@@ -27,8 +27,6 @@ from optimum.configuration_utils import BaseConfig
 from optimum.utils import logging
 from poptorch import Options, OutputMode
 
-from .training_args import ALLOWED_POD_TYPES
-
 
 logger = logging.get_logger(__name__)
 
@@ -221,63 +219,6 @@ class IPUConfig(BaseConfig):
     def eval(self):
         self.mode = "inference"
         return self
-
-    def _prepare_config_attribute_for_pod_type(
-        self, config_attribute_name: str, config_attribute: Union[Any, Dict[str, Any]], pod_type: Optional[str]
-    ) -> Any:
-        """
-        Prepares a config attribute by extracting the proper value for this attribute considering the POD type.
-
-        Args:
-            config_attribute_name: The config attribute name (i.e. the name of the config field).
-            config_attribute: The config attribute to extract the value from.
-            pod_type: The POD type.
-
-        Returns:
-            The extracted config attribute value.
-        """
-        if not isinstance(config_attribute, dict) or not config_attribute.keys() <= (
-            set(ALLOWED_POD_TYPES) | {"default"}
-        ):
-            return config_attribute
-
-        if pod_type is None and "default" not in config_attribute:
-            raise RuntimeError(
-                f"No POD type was specified and no default value was provided for {config_attribute_name}, cannot infer"
-                " which value to use"
-            )
-        elif pod_type is None:
-            return config_attribute["default"]
-        elif pod_type not in ALLOWED_POD_TYPES:
-            raise ValueError(
-                f"{pod_type} is not a correct value for a POD type, supported POD types: {', '.join(ALLOWED_POD_TYPES)}"
-            )
-        elif pod_type not in config_attribute:
-            raise KeyError(
-                f"the {config_attribute_name} configuration field does not contain a value for POD type {pod_type}"
-            )
-        else:
-            return config_attribute[pod_type]
-
-    def for_pod_type(self, pod_type: Optional[str] = None) -> "IPUConfig":
-        """
-        Creates an `IPUConfig` specialized for a POD type.
-
-        Args:
-            pod_type (`str`, *optional*):
-                The POD type. If left to None, either the default value or the lowest value will be used for each
-                configuration field.
-
-        Returns:
-            `IPUConfig`: The IPUConfig instance.
-        """
-        warnings.warn(
-            "`for_pod_type` is deprecated and will be removed in the next release. If you are using `pod_type` to"
-            "scale your training via `replication_factor`, please use the `IPUTrainingArguments.n_ipu` instead."
-        )
-        config_dict = self.to_dict()
-        config_dict = {k: self._prepare_config_attribute_for_pod_type(k, v, pod_type) for k, v in config_dict.items()}
-        return IPUConfig(**config_dict)
 
     def _to_options(self, for_inference: bool = False, compile_only: bool = False) -> poptorch.Options:
         if not compile_only and poptorch.ipuHardwareVersion() != 2:
