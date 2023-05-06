@@ -21,6 +21,7 @@ INSTALL_REQUIRES = [
     "sentencepiece",
     "scipy",
     "pillow",
+    "typeguard"
 ]
 
 QUALITY_REQUIRES = [
