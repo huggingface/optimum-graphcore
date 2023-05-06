@@ -32,6 +32,7 @@ from poptorch import Options, OutputMode
 # For container types check all items for type correctness
 # rather than just the first element
 typeguard._config.global_config.collection_check_strategy = typeguard.config.collection_check_strategy.ALL_ITEMS
+typeguard._config.global_config.debug_instrumentation = True
 logger = logging.get_logger(__name__)
 
 IPU_CONFIG_NAME = "ipu_config.json"
@@ -60,7 +61,6 @@ class IPUConfig(BaseConfig):
             Enables caching the compile executables to a directory.
 
         > Parameters for controlling the batch size
-
         replication_factor (`int`, *optional*, defaults to 1):
             The number of replicas for data-parallelism during training. It depends on the size of the pipeline as well
             as the number of IPUs available. For example: on a Pod16, with a 4-IPU pipeline, replication_factor must
@@ -164,10 +164,20 @@ class IPUConfig(BaseConfig):
     ipus_per_replica = ManagedAttribute("ipus_per_replica")
     matmul_proportion = ManagedAttribute("matmul_proportion")
     replication_factor = ManagedAttribute("replication_factor")
-    
-    attribute_validators = Dict()
-    
-    def contents_geq_value_validator(name: str, value: Union[float, int, Sequence], floor_value: Union[float, int]) -> None:
+
+    # Create a mapping of attribute value validating functions to a set of attributes
+    # to be validated by that function
+    attribute_validators = dict()
+
+    def contents_geq_value_validator(
+        name: str, value: Union[float, int, Sequence], floor_value: Union[float, int]
+    ) -> None:
+        """
+        Validates the values of Sequence and scalar types to be greater than `floor_value`
+        For Sequence[Union[int, float]], ensure that all elements are >= floor_value
+        For Union[float, int], ensure the scalar is >= floor_value
+        """
+
         if isinstance(value, Sequence):
             if not all([elem >= floor_value for elem in value]):
                 raise ValueError(
@@ -181,12 +191,12 @@ class IPUConfig(BaseConfig):
                 f"`contents_geq_value_validator` validates inputs of type:"
                 f" Union[float, int, Sequence[Union[int, float]]]. You provided: {value=},{type(value)}"
             )
-            
+
     attribute_validators[partial(contents_geq_value_validator, floor_value=1)] = {
-        "replication_factor",
+        "training_replication_factor",
         "inference_replication_factor",
         "gradient_accumulation_steps",
-        "ipus_per_replica",
+        "training_ipus_per_replica",
         "inference_ipus_per_replica",
         "embedding_serialization_factor",
         "device_iterations",
@@ -194,12 +204,12 @@ class IPUConfig(BaseConfig):
     }
 
     attribute_validators[partial(contents_geq_value_validator, floor_value=0)] = {
-        "matmul_proportion",
+        "training_matmul_proportion",
         "inference_matmul_proportion",
     }
 
     attribute_validators[partial(contents_geq_value_validator, floor_value=-1)] = {
-        "layers_per_ipu",
+        "training_layers_per_ipu",
         "inference_layers_per_ipu",
     }
 
@@ -245,17 +255,15 @@ class IPUConfig(BaseConfig):
         # Default mode to `training`
         self.train()
 
-        # Get execution mode agnostic arguments
         if ipus_per_replica is None:
             ipus_per_replica = len(layers_per_ipu)
 
-        self.training_layers_per_ipu = layers_per_ipu if training_layers_per_ipu is None else training_layers_per_ipu
-        self.inference_layers_per_ipu = (
-            layers_per_ipu if inference_layers_per_ipu is None else inference_layers_per_ipu
-        )
+        self.training_layers_per_ipu = training_layers_per_ipu if training_layers_per_ipu else layers_per_ipu
+        self.inference_layers_per_ipu = inference_layers_per_ipu if inference_layers_per_ipu else layers_per_ipu
 
         def init_ipus_per_replica(mode_ipus_per_replica, mode_layers_per_ipu):
             fallback_value = ipus_per_replica
+            # if ipus_per_replica is default, recalculate ipus_per_replica from {mode}_layers_per_ipu instead
             if ipus_per_replica == len(layers_per_ipu):
                 fallback_value = len(mode_layers_per_ipu)
             return mode_ipus_per_replica if mode_ipus_per_replica else fallback_value
@@ -265,21 +273,25 @@ class IPUConfig(BaseConfig):
             inference_ipus_per_replica, self.inference_layers_per_ipu
         )
 
-        def init_mode_matmul_proportion(mode_ipus_per_replica, mode_matmul_proportion):
-            default_value = matmul_proportion
+        def init_mode_matmul_proportion(mode_matmul_proportion, mode_ipus_per_replica):
+            fallback_value = matmul_proportion
+            # if matmul_proportion is a list and its length is not equal to {mode}_ipus_per_replica, use the
+            # default float value for matmul_proportion instead
             if isinstance(matmul_proportion, list) and len(matmul_proportion) != mode_ipus_per_replica:
-                default_value = 0.2
-            return mode_matmul_proportion if mode_matmul_proportion else default_value
+                fallback_value = 0.2
+            return mode_matmul_proportion if mode_matmul_proportion else fallback_value
 
         self.training_matmul_proportion = init_mode_matmul_proportion(
-            training_ipus_per_replica, training_matmul_proportion
+            training_matmul_proportion, self.training_ipus_per_replica
         )
         self.inference_matmul_proportion = init_mode_matmul_proportion(
-            inference_ipus_per_replica, inference_matmul_proportion
+            inference_matmul_proportion, self.inference_ipus_per_replica
         )
 
-        self.replication_factor = replication_factor
-        self.inference_replication_factor = inference_replication_factor
+        # Default replication factors to 1
+        self.training_replication_factor = 1
+        self.inference_replication_factor = 1
+
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.device_iterations = device_iterations
         self.inference_device_iterations = inference_device_iterations
@@ -300,28 +312,52 @@ class IPUConfig(BaseConfig):
         self.embedding_serialization_factor = embedding_serialization_factor
         self.recompute_checkpoint_every_layer = recompute_checkpoint_every_layer
         self.output_mode = output_mode
-
         # TODO: remove this if unnecessary.
         self.execute_encoder_on_cpu_for_generation = kwargs.pop("execute_encoder_on_cpu_for_generation", False)
 
         self.validate_ipu_config()
 
+    @property
+    def mode(self):
+        return self._mode
+
+    @mode.setter
+    def mode(self, value):
+        if value not in self.modes:
+            raise ValueError(
+                f"`IPUConfig` mode can only take values in {self.modes}."
+                f" You provided: {value=}. Use the `train` and `eval` methods"
+                " instead to avoid error."
+            )
+        self._mode = value
+
     def train(self):
-        self.mode = "training"
+        self._mode = "training"
         return self
 
     def eval(self):
-        self.mode = "inference"
+        self._mode = "inference"
         return self
 
     def _get_managed_attr_mode_name(self, attr: str) -> str:
+        """
+        Returns the attribute name that a ManagedAttribute descriptor is
+        currently referring to
+        """
+        # Shallow check to ensure that the input attribute is actually
+        # a managed attribute
         if hasattr(self, attr) and hasattr(self, f"inference_{attr}") and hasattr(self, f"training_{attr}"):
             return f"training_{attr}" if self.mode == "training" else f"inference_{attr}"
         else:
             warnings.warn(f"{attr} is not a `ManagedAttribute`. Returning modeless name: {attr}")
             return attr
 
-    def _get_attribute_type(self, name: str) -> Type:
+    def _get_attribute_type(self, name: str) -> Any:
+        """
+        Returns the input `name` attribute type hints. Returns `Any` type by default.
+        The return type for an attribute is only specific if it is a parameter in the
+        signature of IPUConfig.__init__
+        """
         try:
             type_hints = self._attribute_type_hints
         except AttributeError:
@@ -333,7 +369,6 @@ class IPUConfig(BaseConfig):
         """Override __setattr__ to include value type checking
         and validation
         """
-        # type check `value` if `name` is a parameter of __init__
         attr_type = self._get_attribute_type(name)
         try:
             typeguard.check_type(value, attr_type)
@@ -343,7 +378,7 @@ class IPUConfig(BaseConfig):
                 f" with {value=}, type: {type(value)} is invalid."
             ) from e
 
-        # validate attribute
+        # Run additional attribute value validators
         for func, attrs in self.attribute_validators.items():
             if name in attrs:
                 func(name, value)
@@ -354,13 +389,13 @@ class IPUConfig(BaseConfig):
         """
         Tests coherence of `IPUConfig` attributes for all modes
         in self.modes. For example if `matmul_proportion=[0.2, 0.2]`,
-        `ipus_per_replica` must equal 2.
+        `ipus_per_replica` must have value 2.
 
         Raises:
             InvalidIPUConfigError: Raised if any `IPUConfig` attributes
             are not coherent.
         """
-
+        # import pdb; pdb.set_trace()
         if self.replicated_tensor_sharding and self.replication_factor == 1:
             logger.warning("Setting replicated_tensor_sharding to False when replication_factor=1")
             self.replicated_tensor_sharding = False

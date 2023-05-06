@@ -23,7 +23,7 @@ from typing import Any, Dict, Optional, Set
 import pytest
 
 from optimum.graphcore import IPUConfig
-from optimum.graphcore.ipu_configuration import ALLOWED_POD_TYPES, InvalidIPUConfigError
+from optimum.graphcore.ipu_configuration import InvalidIPUConfigError
 from optimum.graphcore.modeling_utils import (
     IncompatibleIPUConfigError,
     get_layer_ipu,
@@ -179,12 +179,6 @@ class IPUConfigTester(unittest.TestCase):
             layer_ipu = get_layer_ipu(ipu_config, 4)
 
         # layers_per_ipu and ipus_per_replica mismatch raises
-        ipu_config = IPUConfig(layers_per_ipu=[1, 2], ipus_per_replica=4)
-        with pytest.raises(
-            IncompatibleIPUConfigError,
-            match=r"layers_per_ipu has non-default value set, but its length does not match ipus_per_replica",
-        ):
-            layer_ipu = get_layer_ipu(ipu_config, 3)
         ipu_config = IPUConfig(layers_per_ipu=[1, -1], ipus_per_replica=4)
         with pytest.raises(
             IncompatibleIPUConfigError,
@@ -214,14 +208,6 @@ class IPUConfigTester(unittest.TestCase):
         ipu_config = IPUConfig(layers_per_ipu=[-1, 2, -1, 2])
         layer_ipu = get_layer_ipu(ipu_config, 7)
         self.assertEqual(layer_ipu, [0, 1, 1, 2, 2, 3, 3])
-
-        # Invalid values
-        ipu_config = IPUConfig(layers_per_ipu=[2, -2])
-        with pytest.raises(IncompatibleIPUConfigError, match=r"Invalid values in layers_per_ipu"):
-            layer_ipu = get_layer_ipu(ipu_config, 6)
-        ipu_config = IPUConfig(ipus_per_replica=0)
-        with pytest.raises(IncompatibleIPUConfigError, match=r"Invalid value for ipus_per_replica"):
-            layer_ipu = get_layer_ipu(ipu_config, 6)
 
     def test_execution_mode_specific_options(self):
         ipu_config = IPUConfig(
@@ -370,14 +356,14 @@ class IPUConfigTester(unittest.TestCase):
 
         # *layers_per_ipu attributes (List[int>=-1]) cannot contain
         # values less than -1
-        test_attr = random.choice(("layers_per_ipu", "inference_layers_per_ipu"))
+        test_attr = random.choice(("training_layers_per_ipu", "inference_layers_per_ipu"))
         with pytest.raises(ValueError, match=f"`IPUConfig` attribute `{test_attr}` must have all elements >= -1"):
             setattr(ipu_config, test_attr, [3, 5, -2])
         # should not raise
         setattr(ipu_config, test_attr, [1, 2, 3])
 
         # *matmul proportion attributes cannot contain values less than 0
-        test_attr = random.choice(("matmul_proportion", "inference_matmul_proportion"))
+        test_attr = random.choice(("training_matmul_proportion", "inference_matmul_proportion"))
         with pytest.raises(ValueError, match=f"`IPUConfig` attribute `{test_attr}` must have all elements >= 0"):
             setattr(ipu_config, test_attr, [-0.5, 0, 0.5])
         # should not raise
@@ -386,13 +372,13 @@ class IPUConfigTester(unittest.TestCase):
         # Scalar attributes like *replication_factor must be atleast 1
         test_attr = random.choice(
             (
-                "replication_factor",
+                "training_replication_factor",
                 "inference_replication_factor",
                 "gradient_accumulation_steps",
-                "ipus_per_replica",
+                "training_ipus_per_replica",
                 "inference_ipus_per_replica",
                 "embedding_serialization_factor",
-                "device_iterations",
+                "training_device_iterations",
                 "inference_device_iterations",
             )
         )
