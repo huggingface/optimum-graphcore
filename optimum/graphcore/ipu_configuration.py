@@ -33,7 +33,6 @@ from poptorch import Options, OutputMode
 # For container types check all items for type correctness
 # rather than just the first element
 typeguard._config.global_config.collection_check_strategy = typeguard.config.collection_check_strategy.ALL_ITEMS
-typeguard._config.global_config.debug_instrumentation = True
 logger = logging.get_logger(__name__)
 
 IPU_CONFIG_NAME = "ipu_config.json"
