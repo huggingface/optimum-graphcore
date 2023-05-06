@@ -14,20 +14,21 @@
 #  limitations under the License.
 
 import copy
-from functools import partial
 import json
 import warnings
+from functools import partial
 from tempfile import NamedTemporaryFile
-from typing import Any, Dict, Optional, Union, List, get_type_hints, Type, Set, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Set, Type, Union, get_type_hints
 
-import typeguard
 import torch
 
 import popart
 import poptorch
+import typeguard
 from optimum.configuration_utils import BaseConfig
 from optimum.utils import logging
 from poptorch import Options, OutputMode
+
 
 # For container types check all items for type correctness
 # rather than just the first element
