@@ -18,10 +18,10 @@ INSTALL_REQUIRES = [
     "diffusers[torch]==0.12.1",
     "datasets",
     "tokenizers",
-    "typeguard,"
+    "typeguard",
     "sentencepiece",
     "scipy",
-    "pillow"
+    "pillow",
 ]
 
 QUALITY_REQUIRES = [
