@@ -147,13 +147,11 @@ class IPUConfig(BaseConfig):
         def __set__(self, obj, value):
             if isinstance(obj, IPUConfig):
                 logger.debug(f"ManagedAttribute {self.attr} writing to {obj.mode}_{self.attr}")
-                assert obj.mode in obj.modes, f"IPUConfig.mode is invalid, must be one of: {obj.modes}"
                 return setattr(obj, f"{obj.mode}_{self.attr}", value)
 
         def __get__(self, obj, objtype=None):
             if isinstance(obj, IPUConfig):
                 logger.debug(f"ManagedAttribute {self.attr} reading from {obj.mode}_{self.attr}")
-                assert obj.mode in obj.modes, f"IPUConfig.mode is invalid, must be one of: {obj.modes}"
                 return getattr(obj, f"{obj.mode}_{self.attr}")
 
     # Create descriptor based managed attributes which will either return the
@@ -556,6 +554,21 @@ class IPUConfig(BaseConfig):
             `poptorch.Options`: The option representing the `IPUConfig`.
         """
         return self._to_options(for_inference=for_inference, compile_only=compile_only)
+
+    # Adapted from BaseConfig.to_dict
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Serializes this instance to a Python dictionary.
+
+        Returns:
+            `Dict[str, Any]`: Dictionary of all the attributes that make up this configuration instance.
+        """
+        output = super().to_dict()
+
+        # Remove type hints as they are not serializable
+        output.pop("_attribute_type_hints", None)
+
+        return output
 
     def batch_size_factor(self, for_inference: bool = False) -> int:
         """

@@ -245,13 +245,6 @@ class IPUConfigTester(unittest.TestCase):
         self.assertEqual(d_ipu_config.layers_per_ipu, [7])
         self.assertEqual(d_ipu_config.ipus_per_replica, 1)
 
-        # Reading and writing `ManagedAttribute`s when mode is invalid
-        ipu_config.mode = "invalid"
-        with pytest.raises(AssertionError, match=r"IPUConfig\.mode is invalid, must be one of:"):
-            ipu_config.layers_per_ipu
-        with pytest.raises(AssertionError, match=r"IPUConfig\.mode is invalid, must be one of:"):
-            ipu_config.layers_per_ipu = [1]
-
         # ipus_per_replica not specified
         ipu_config = IPUConfig(training_layers_per_ipu=[1, 2, 3, 4])
         self.assertEqual(ipu_config.ipus_per_replica, 4)
@@ -356,36 +349,34 @@ class IPUConfigTester(unittest.TestCase):
 
         # *layers_per_ipu attributes (List[int>=-1]) cannot contain
         # values less than -1
-        test_attr = random.choice(("training_layers_per_ipu", "inference_layers_per_ipu"))
-        with pytest.raises(ValueError, match=f"`IPUConfig` attribute `{test_attr}` must have all elements >= -1"):
-            setattr(ipu_config, test_attr, [3, 5, -2])
-        # should not raise
-        setattr(ipu_config, test_attr, [1, 2, 3])
+        for test_attr in ("training_layers_per_ipu", "inference_layers_per_ipu"):
+            with pytest.raises(ValueError, match=f"`IPUConfig` attribute `{test_attr}` must have all elements >= -1"):
+                setattr(ipu_config, test_attr, [3, 5, -2])
+            # should not raise
+            setattr(ipu_config, test_attr, [1, 2, 3])
 
         # *matmul proportion attributes cannot contain values less than 0
-        test_attr = random.choice(("training_matmul_proportion", "inference_matmul_proportion"))
-        with pytest.raises(ValueError, match=f"`IPUConfig` attribute `{test_attr}` must have all elements >= 0"):
-            setattr(ipu_config, test_attr, [-0.5, 0, 0.5])
-        # should not raise
-        setattr(ipu_config, test_attr, [0.5, 0.5])
+        for test_attr in ("training_matmul_proportion", "inference_matmul_proportion"):
+            with pytest.raises(ValueError, match=f"`IPUConfig` attribute `{test_attr}` must have all elements >= 0"):
+                setattr(ipu_config, test_attr, [-0.5, 0, 0.5])
+            # should not raise
+            setattr(ipu_config, test_attr, [0.5, 0.5])
 
         # Scalar attributes like *replication_factor must be atleast 1
-        test_attr = random.choice(
-            (
-                "training_replication_factor",
-                "inference_replication_factor",
-                "gradient_accumulation_steps",
-                "training_ipus_per_replica",
-                "inference_ipus_per_replica",
-                "embedding_serialization_factor",
-                "training_device_iterations",
-                "inference_device_iterations",
-            )
-        )
-        with pytest.raises(ValueError, match=f"`IPUConfig` attribute `{test_attr}` must be >= 1"):
-            setattr(ipu_config, test_attr, 0)
-        # should not raise
-        setattr(ipu_config, test_attr, 8)
+        for test_attr in (
+            "training_replication_factor",
+            "inference_replication_factor",
+            "gradient_accumulation_steps",
+            "training_ipus_per_replica",
+            "inference_ipus_per_replica",
+            "embedding_serialization_factor",
+            "device_iterations",
+            "inference_device_iterations",
+        ):
+            with pytest.raises(ValueError, match=f"`IPUConfig` attribute `{test_attr}` must be >= 1"):
+                setattr(ipu_config, test_attr, 0)
+            # should not raise
+            setattr(ipu_config, test_attr, 8)
 
         # output mode must be one of ("all", "sum", "final", "default")
         with pytest.raises(ValueError, match=f"`IPUConfig` attribute `output_mode` can only take values in"):
