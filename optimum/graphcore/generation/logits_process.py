@@ -22,44 +22,62 @@ from transformers.generation.utils import (
 )
 
 
-LARGE_NEGATIVE_CONST = -1e9
+VERY_LARGE_NEGATIVE_CONST = -1e18
 
 
 class IPUMinLengthLogitsProcessor(MinLengthLogitsProcessor):
+    @classmethod
+    def from_model(cls, inst, vocab_size: int):
+        self = inst
+        self.__class__ = cls
+
+        self.mask = torch.ones((1, vocab_size), dtype=torch.int32)
+        self.mask[:, self.eos_token_id] = 0
+        return self
+
     def __call__(
         self, input_ids: torch.LongTensor, scores: torch.FloatTensor, absolute_step: torch.IntTensor
     ) -> torch.FloatTensor:
-        # upstream checks `if input_ids.shape[-1] < self.min_length:`
-        idx = torch.ones((scores.shape[0], 1), dtype=torch.long, device=scores.device) * self.eos_token_id
-        cond = absolute_step + 1 < self.min_length
-        val = cond * torch.ones_like(idx) * LARGE_NEGATIVE_CONST
-        scores.scatter_add_(1, idx, val)
-        return scores
+        mask = self.mask.to(scores.device)
+        cond = absolute_step >= self.min_length
+        mask |= cond
+        return mask * scores + (1 - mask) * VERY_LARGE_NEGATIVE_CONST
 
 
 class IPUSuppressTokensLogitsProcessor(SuppressTokensLogitsProcessor):
+    @classmethod
+    def from_model(cls, inst, vocab_size: int):
+        self = inst
+        self.__class__ = cls
+
+        self.mask = torch.ones((1, vocab_size), dtype=torch.int32)
+        self.mask[:, self.suppress_tokens] = 0
+        return self
+
     def __call__(
         self, input_ids: torch.LongTensor, scores: torch.FloatTensor, absolute_step: torch.IntTensor
     ) -> torch.FloatTensor:
-        idx = torch.ones(
-            (scores.shape[0], len(self.suppress_tokens)), dtype=torch.long, device=scores.device
-        ) * torch.tensor(self.suppress_tokens)
-        val = torch.ones_like(idx) * LARGE_NEGATIVE_CONST
-        scores.scatter_add_(1, idx, val)
-        return scores
+        mask = self.mask.to(scores.device)
+        return mask * scores + (1 - mask) * VERY_LARGE_NEGATIVE_CONST
 
 
 class IPUSuppressTokensAtBeginLogitsProcessor(SuppressTokensAtBeginLogitsProcessor):
+    @classmethod
+    def from_model(cls, inst, vocab_size: int):
+        self = inst
+        self.__class__ = cls
+
+        self.mask = torch.ones((1, vocab_size), dtype=torch.int32)
+        self.mask[:, self.begin_suppress_tokens] = 0
+        return self
+
     def __call__(
         self, input_ids: torch.LongTensor, scores: torch.FloatTensor, absolute_step: torch.IntTensor
     ) -> torch.FloatTensor:
-        idx = torch.ones(
-            (scores.shape[0], len(self.begin_suppress_tokens)), dtype=torch.long, device=scores.device
-        ) * torch.tensor(self.begin_suppress_tokens)
-        cond = absolute_step + 1 == self.begin_index
-        val = cond * torch.ones_like(idx) * LARGE_NEGATIVE_CONST
-        scores.scatter_add_(1, idx, val)
-        return scores
+        mask = self.mask.to(scores.device)
+        cond = absolute_step != self.begin_index
+        mask |= cond
+        return mask * scores + (1 - mask) * VERY_LARGE_NEGATIVE_CONST
 
 
 class IPUForceTokensLogitsProcessor(ForceTokensLogitsProcessor):
@@ -68,12 +86,12 @@ class IPUForceTokensLogitsProcessor(ForceTokensLogitsProcessor):
     ) -> torch.FloatTensor:
         force_token_map_keys = torch.tensor(list(self.force_token_map.keys()))
         force_token_map_values = torch.tensor(list(self.force_token_map.values()))
-        mask = absolute_step + 1 == force_token_map_keys
+        mask = absolute_step == force_token_map_keys
         selected_value = torch.amax(mask * force_token_map_values)
         cond = torch.any(mask).int()
-        scores = cond * torch.ones_like(scores) * LARGE_NEGATIVE_CONST + (1 - cond) * scores
-        idx = torch.ones((scores.shape[0], 1), dtype=torch.long, device=scores.device) * selected_value
-        val = cond * torch.ones_like(idx) * -LARGE_NEGATIVE_CONST
+        scores = cond * torch.ones_like(scores) * VERY_LARGE_NEGATIVE_CONST + (1 - cond) * scores
+        idx = torch.ones((scores.shape[0], 1), dtype=torch.long) * selected_value
+        val = cond * torch.ones_like(idx) * -VERY_LARGE_NEGATIVE_CONST
         scores.scatter_add_(1, idx, val)
         return scores
 
