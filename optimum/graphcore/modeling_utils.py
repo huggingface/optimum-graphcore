@@ -24,16 +24,10 @@ import poptorch
 from optimum.utils import logging
 from transformers import PreTrainedModel
 
-from .ipu_configuration import IPUConfig
+from .ipu_configuration import IncompatibleIPUConfigError, IPUConfig
 
 
 logger = logging.get_logger(__name__)
-
-
-class IncompatibleIPUConfigError(Exception):
-    """An exception used when an IPU Config is incompatible with a model"""
-
-    pass
 
 
 _PRETRAINED_TO_PIPELINED_REGISTRY = {}
