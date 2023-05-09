@@ -288,9 +288,6 @@ class IPUConfig(BaseConfig):
         self.inference_matmul_proportion = init_mode_matmul_proportion(
             inference_matmul_proportion, self.inference_ipus_per_replica
         )
-        import pdb
-
-        pdb.set_trace()
         self.training_replication_factor = (
             training_replication_factor if training_replication_factor else replication_factor
         )
