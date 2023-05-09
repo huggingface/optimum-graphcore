@@ -41,7 +41,7 @@ class IPUForcedBOSTokenLogitsProcessor(ForcedBOSTokenLogitsProcessor):
     def __call__(
         self, input_ids: torch.LongTensor, scores: torch.FloatTensor, absolute_step: torch.IntTensor
     ) -> torch.FloatTensor:
-        cond = (absolute_step > 0).int()
+        cond = (absolute_step > 1).int()
         return cond * scores + (1 - cond) * self.bos_scores.to(device=scores.device)
 
 
@@ -80,91 +80,29 @@ class IPUMinLengthLogitsProcessor(MinLengthLogitsProcessor):
         return mask * scores + (1 - mask) * VERY_LARGE_NEGATIVE_CONST
 
 
-
-def _get_ngrams(ngram_size: int, prev_input_ids: torch.Tensor, num_hypos: int):
-    generated_ngrams = [{} for _ in range(num_hypos)]
-    for idx in range(num_hypos):
-        gen_tokens = prev_input_ids[idx].tolist()
-        generated_ngram = generated_ngrams[idx]
-        for ngram in zip(*[gen_tokens[i:] for i in range(ngram_size)]):
-            prev_ngram_tuple = tuple(ngram[:-1])
-            generated_ngram[prev_ngram_tuple] = generated_ngram.get(prev_ngram_tuple, []) + [ngram[-1]]
-    return generated_ngrams
-
-
-def _get_generated_ngrams(banned_ngrams, prev_input_ids, ngram_size, cur_len):
-    # Before decoding the next token, prevent decoding of ngrams that have already appeared
-    start_idx = cur_len + 1 - ngram_size
-    ngram_idx = tuple(prev_input_ids[start_idx:cur_len].tolist())
-    return banned_ngrams.get(ngram_idx, [])
-
-
-def _calc_banned_ngram_tokens(
-    ngram_size: int, prev_input_ids: torch.Tensor, num_hypos: int, cur_len: int):
-    """Copied from fairseq for no_repeat_ngram in beam_search"""
-    if cur_len + 1 < ngram_size:
-        # return no banned tokens if we haven't generated no_repeat_ngram_size tokens yet
-        return [[] for _ in range(num_hypos)]
-
-    generated_ngrams = _get_ngrams(ngram_size, prev_input_ids, num_hypos)
-
-    banned_tokens = [
-        _get_generated_ngrams(generated_ngrams[hypo_idx], prev_input_ids[hypo_idx], ngram_size, cur_len)
-        for hypo_idx in range(num_hypos)
-    ]
-    return banned_tokens
-
-
-class IPUNoRepeatNGramLogitsProcessor():
-    r"""
-    [`LogitsProcessor`] that enforces no repetition of n-grams. See
-    [Fairseq](https://github.com/pytorch/fairseq/blob/a07cb6f40480928c9e0548b737aadd36ee66ac76/fairseq/sequence_generator.py#L345).
-
-    Args:
-        ngram_size (`int`):
-            All ngrams of size `ngram_size` can only occur once.
-    """
-
-    def __init__(self, ngram_size: int):
-        if not isinstance(ngram_size, int) or ngram_size <= 0:
-            raise ValueError(f"`ngram_size` has to be a strictly positive integer, but is {ngram_size}")
-        self.ngram_size = ngram_size
-
+class IPUNoRepeatNGramLogitsProcessor(NoRepeatNGramLogitsProcessor):
     def __call__(
         self, input_ids: torch.LongTensor, scores: torch.FloatTensor, absolute_step: torch.IntTensor
     ) -> torch.FloatTensor:
-        num_batch_hypotheses = scores.shape[0]
-        cur_len = absolute_step + 1
-        banned_batch_tokens = _calc_banned_ngram_tokens(self.ngram_size, input_ids, num_batch_hypotheses, cur_len)
 
-        for i, banned_tokens in enumerate(banned_batch_tokens):
-            scores[i, banned_tokens] = -float("inf")
+        # mask out values above cur_len
+        cur_len = absolute_step
+        cur_len_mask = torch.arange(0, input_ids.shape[-1], device=input_ids.device).unsqueeze(0) < cur_len
+        input_ids = input_ids * cur_len_mask
 
-        return scores
-
-
-
-
-class IPUNoRepeatNGramLogitsProcessor2(NoRepeatNGramLogitsProcessor):
-    def __call__(
-        self, input_ids: torch.LongTensor, scores: torch.FloatTensor, absolute_step: torch.IntTensor
-    ) -> torch.FloatTensor:
-        cur_step = absolute_step
-        start_idx = torch.maximum(cur_step + 1 - self.ngram_size, torch.tensor(self.ngram_size))
-        ngrams = input_ids.unfold(1, 3, 1)
+        start_idx = torch.maximum(cur_len + 1 - self.ngram_size, torch.tensor(self.ngram_size))
+        ngrams = input_ids.unfold(1, self.ngram_size, 1)
         last_tokens = poptorch.dynamic_slice(input_ids, 1, start_idx, self.ngram_size - 1, 1).unsqueeze(1)
         last_tokens = (start_idx > self.ngram_size) * last_tokens
         
         mask = (ngrams[..., :self.ngram_size - 1] == last_tokens).float().prod(-1)
-        # If absolute_step + 1 < ngram_size zero the mask
-        mask = ~(cur_step + 1 < self.ngram_size) * mask
-        
+
+        # If absolute_step + 1 < ngram_size set indices all to zero
+        mask = ~(cur_len + 1 < self.ngram_size) * mask
         idx = (ngrams[..., -1] * mask.to(dtype=ngrams.dtype)).long()
-        #idx[idx == 0] = 1
-        s0 = scores[0]
+
         val = torch.ones_like(idx) * VERY_LARGE_NEGATIVE_CONST
         scores.scatter_add_(1, idx, val)
-        scores[0] = s0
         return scores
 
 
@@ -225,7 +163,7 @@ IPULogitsProcessors = {
     ForcedEOSTokenLogitsProcessor: IPUForcedEOSTokenLogitsProcessor,
     ForceTokensLogitsProcessor: IPUForceTokensLogitsProcessor,
     MinLengthLogitsProcessor: IPUMinLengthLogitsProcessor,
-    NoRepeatNGramLogitsProcessor: IPUNoRepeatNGramLogitsProcessor2,
+    NoRepeatNGramLogitsProcessor: IPUNoRepeatNGramLogitsProcessor,
     SuppressTokensLogitsProcessor: IPUSuppressTokensLogitsProcessor,
     SuppressTokensAtBeginLogitsProcessor: IPUSuppressTokensAtBeginLogitsProcessor,
 }
