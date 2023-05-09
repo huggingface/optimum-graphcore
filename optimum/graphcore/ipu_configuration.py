@@ -302,7 +302,7 @@ class IPUConfig(BaseConfig):
                     raise ValueError(
                         base_message + f" Attempted to use the `default`"
                         f" replication factor in `{attr_name}={attr}"
-                        f" however no such key exists."
+                        " however no such key exists."
                     )
 
                 try:
@@ -311,14 +311,12 @@ class IPUConfig(BaseConfig):
                     raise TypeError(
                         base_message + f" `Attempted to set"
                         f" `{attr_name}` using the `default` key of `{attr_name}"
-                        " but a TypeError was raised. Check the error traceback for more information"
+                        " but a TypeError was raised. Check the error traceback for more information."
                     ) from e
 
                 warnings.warn(base_message, FutureWarning, stacklevel=2)
             else:
-                raise ValueError(
-                    f"{attr_name} must be of type `int`." f" You provided: {attr_name}={attr}, {type(attr)}"
-                )
+                raise ValueError(f"{attr_name} must be of type `int`. You provided: {attr_name}={attr}, {type(attr)}.")
 
         check_and_set_replication_factor(
             "training_replication_factor",
