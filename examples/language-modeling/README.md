@@ -55,7 +55,7 @@ python examples/language-modeling/run_pretraining.py \
   --lamb \
   --per_device_train_batch_size 10 \
   --gradient_accumulation_steps 1640 \
-  --pod_type pod16 \
+  --n_ipu 16 \
   --learning_rate 0.012 \
   --loss_scaling 16384 \
   --weight_decay 0.01 \
@@ -84,7 +84,7 @@ examples/language-modeling/run_pretraining.py \
   --lamb \
   --per_device_train_batch_size 2 \
   --gradient_accumulation_steps 2048 \
-  --pod_type pod16 \
+  --n_ipu 16 \
   --learning_rate 0.01 \
   --loss_scaling 128.0 \
   --weight_decay 0.01 \
@@ -114,7 +114,7 @@ python examples/language-modeling/run_pretraining.py \
   --lamb_no_bias_correction \
   --per_device_train_batch_size 32 \
   --gradient_accumulation_steps 512 \
-  --pod_type pod16 \
+  --n_ipu 16 \
   --learning_rate 0.006 \
   --lr_scheduler_type linear \
   --loss_scaling 16384 \
@@ -144,7 +144,7 @@ python examples/language-modeling/run_pretraining.py \
   --lamb_no_bias_correction \
   --per_device_train_batch_size 8 \
   --gradient_accumulation_steps 512 \
-  --pod_type pod16 \
+  --n_ipu 16 \
   --learning_rate 0.002828 \
   --lr_scheduler_type linear \
   --loss_scaling 128.0 \
@@ -175,7 +175,7 @@ python examples/language-modeling/run_pretraining.py \
   --lamb_no_bias_correction \
   --per_device_train_batch_size 8 \
   --gradient_accumulation_steps 2048 \
-  --pod_type pod16 \
+  --n_ipu 16 \
   --learning_rate 0.006 \
   --lr_scheduler_type linear \
   --loss_scaling 32768 \
@@ -205,7 +205,7 @@ python examples/language-modeling/run_pretraining.py \
   --lamb_no_bias_correction \
   --per_device_train_batch_size 2 \
   --gradient_accumulation_steps 2048 \
-  --pod_type pod16 \
+  --n_ipu 16 \
   --learning_rate 0.002828 \
   --lr_scheduler_type linear \
   --loss_scaling 16384 \
@@ -250,7 +250,7 @@ python examples/language-modeling/run_mlm.py \
     --do_train \
     --do_eval \
     --num_train_epochs 5 \
-    --pod_type pod16 \
+    --n_ipu 16 \
     --output_dir /tmp/mlm_output \
     --ipu_config_overrides="inference_device_iterations=5" \
     --dataloader_drop_last
@@ -283,7 +283,7 @@ python examples/language-modeling/run_clm.py \
     --warmup_ratio 0.1 \
     --config_overrides="activation_function=gelu" \
     --dataloader_drop_last \
-    --pod_type pod16
+    --n_ipu 16
 ```
 
 To fine-tune GPT2-medium on WikiText-2, we need to override a different set of IPU configurations. Note that `activation_function` is overridden to `gelu`
@@ -311,6 +311,6 @@ python examples/language-modeling/run_clm.py \
     --warmup_ratio 0.1 \
     --config_overrides="activation_function=gelu" \
     --dataloader_drop_last \
-    --pod_type pod16
+    --n_ipu 16
 
 ```

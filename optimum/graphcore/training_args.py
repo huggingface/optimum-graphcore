@@ -32,12 +32,12 @@ from transformers.trainer_utils import EvaluationStrategy, HubStrategy, Interval
 from transformers.training_args import default_logdir
 from transformers.utils import ExplicitEnum
 
-from .ipu_configuration import ALLOWED_POD_TYPES
-
 
 logger = logging.get_logger(__name__)
 log_levels = logging.get_log_levels_dict().copy()
 trainer_log_levels = dict(**log_levels, passive=-1)
+
+ALLOWED_N_IPU = [2**i for i in range(7)]
 
 
 class ParallelMode(Enum):
@@ -324,8 +324,8 @@ class IPUTrainingArguments:
             **Note**: currently not supported.
         ipu_config_name (`str`, *optional*):
             The pretrained IPU config name or path if not the same as the model name or path.
-        pod_type (`str`, *optional*):
-            The targeted pod type (POD4, POD8, POD16, ...)
+        n_ipu (`int`, *optional*):
+            The number of IPUs to use. Must be a power of 2 and a multiple of the number of IPUs required by your model.
         fp32 (`bool`, *optional*, defaults to `False`):
             Whether to use 32-bit (full) precision instead of 16-bit
         loss_scaling (`float`, *optional*):
@@ -559,14 +559,17 @@ class IPUTrainingArguments:
         default=None, metadata={"help": "The name of the organization in with to which push the `Trainer`."}
     )
     push_to_hub_token: str = field(default=None, metadata={"help": "The token to use to push to the Model Hub."})
-
+    pod_type: Optional[str] = field(
+        default=None,
+        metadata={"help": "The POD type to run the `Trainer` on."},
+    )
     # IPU Specific arguments
     ipu_config_name: Optional[str] = field(
         default=None, metadata={"help": "Pretrained IPU config name or path if not the same as model_name."}
     )
-    pod_type: Optional[str] = field(
+    n_ipu: Optional[int] = field(
         default=None,
-        metadata={"help": "The POD type to run the `Trainer` on.", "choices": ALLOWED_POD_TYPES},
+        metadata={"help": "The number of IPUs to run the `Trainer` on.", "choices": ALLOWED_N_IPU},
     )
     fp32: bool = field(
         default=False,
@@ -735,6 +738,14 @@ class IPUTrainingArguments:
                 f"{self.hub_model_id}).",
                 FutureWarning,
             )
+
+        if self.pod_type is not None:
+            warnings.warn(
+                "`pod_type` is deprecated and will be removed in the next release of Optimum Graphcore. Use `n_ipu` "
+                "instead to specify how many IPUs you would like the Trainer to use.",
+                FutureWarning,
+            )
+            self.n_ipu = int(self.pod_type.strip("pod"))
 
         # IPU specific
         dataloader_mode_mapping = {"sync": 0, "async": 1, "async_rebatched": 2}

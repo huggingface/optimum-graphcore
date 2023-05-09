@@ -31,7 +31,6 @@ from poptorch import Options, OutputMode
 logger = logging.get_logger(__name__)
 
 IPU_CONFIG_NAME = "ipu_config.json"
-ALLOWED_POD_TYPES = ["pod4", "pod8", "pod16", "pod32", "pod64"]
 
 
 class IPUConfig(BaseConfig):
@@ -150,6 +149,7 @@ class IPUConfig(BaseConfig):
     layers_per_ipu = ManagedAttribute("layers_per_ipu")
     ipus_per_replica = ManagedAttribute("ipus_per_replica")
     matmul_proportion = ManagedAttribute("matmul_proportion")
+    replication_factor = ManagedAttribute("replication_factor")
 
     def __init__(self, **kwargs):
         self.seed = kwargs.pop("seed", None)
@@ -178,8 +178,9 @@ class IPUConfig(BaseConfig):
                 matmul_proportion = 0.2
             setattr(self, f"{mode}_matmul_proportion", kwargs.pop(f"{mode}_matmul_proportion", matmul_proportion))
 
-        self.replication_factor = kwargs.pop("replication_factor", 1)
-        self.inference_replication_factor = kwargs.pop("inference_replication_factor", 1)
+            # Default replication factors to 1
+            setattr(self, f"{mode}_replication_factor", 1)
+
         self.gradient_accumulation_steps = kwargs.pop("gradient_accumulation_steps", 1)
         self.device_iterations = kwargs.pop("device_iterations", 1)
         self.inference_device_iterations = kwargs.pop("inference_device_iterations", 1)
@@ -219,59 +220,6 @@ class IPUConfig(BaseConfig):
         self.mode = "inference"
         return self
 
-    def _prepare_config_attribute_for_pod_type(
-        self, config_attribute_name: str, config_attribute: Union[Any, Dict[str, Any]], pod_type: Optional[str]
-    ) -> Any:
-        """
-        Prepares a config attribute by extracting the proper value for this attribute considering the POD type.
-
-        Args:
-            config_attribute_name: The config attribute name (i.e. the name of the config field).
-            config_attribute: The config attribute to extract the value from.
-            pod_type: The POD type.
-
-        Returns:
-            The extracted config attribute value.
-        """
-        if not isinstance(config_attribute, dict) or not config_attribute.keys() <= (
-            set(ALLOWED_POD_TYPES) | {"default"}
-        ):
-            return config_attribute
-
-        if pod_type is None and "default" not in config_attribute:
-            raise RuntimeError(
-                f"No POD type was specified and no default value was provided for {config_attribute_name}, cannot infer"
-                " which value to use"
-            )
-        elif pod_type is None:
-            return config_attribute["default"]
-        elif pod_type not in ALLOWED_POD_TYPES:
-            raise ValueError(
-                f"{pod_type} is not a correct value for a POD type, supported POD types: {', '.join(ALLOWED_POD_TYPES)}"
-            )
-        elif pod_type not in config_attribute:
-            raise KeyError(
-                f"the {config_attribute_name} configuration field does not contain a value for POD type {pod_type}"
-            )
-        else:
-            return config_attribute[pod_type]
-
-    def for_pod_type(self, pod_type: Optional[str] = None) -> "IPUConfig":
-        """
-        Creates an `IPUConfig` specialized for a POD type.
-
-        Args:
-            pod_type (`str`, *optional*):
-                The POD type. If left to None, either the default value or the lowest value will be used for each
-                configuration field.
-
-        Returns:
-            `IPUConfig`: The IPUConfig instance.
-        """
-        config_dict = self.to_dict()
-        config_dict = {k: self._prepare_config_attribute_for_pod_type(k, v, pod_type) for k, v in config_dict.items()}
-        return IPUConfig(**config_dict)
-
     def _to_options(self, for_inference: bool = False, compile_only: bool = False) -> poptorch.Options:
         if not compile_only and poptorch.ipuHardwareVersion() != 2:
             raise RuntimeError("This requires an IPU Mk2 system to run.")
@@ -284,7 +232,7 @@ class IPUConfig(BaseConfig):
 
         opts = Options()
         opts.autoRoundNumIPUs(True)
-        opts.replicationFactor(self.inference_replication_factor if for_inference else self.replication_factor)
+        opts.replicationFactor(self.replication_factor)
         opts.deviceIterations(self.inference_device_iterations if for_inference else self.device_iterations)
 
         if not for_inference:
@@ -387,9 +335,7 @@ class IPUConfig(BaseConfig):
         self.mode = old_mode
         return opts
 
-    def to_options(
-        self, for_inference: bool = False, compile_only: bool = False, pod_type: Optional[str] = None
-    ) -> poptorch.Options:
+    def to_options(self, for_inference: bool = False, compile_only: bool = False) -> poptorch.Options:
         """
         Creates a `poptorch.Options` from the `IPUConfig`.
 
@@ -399,33 +345,26 @@ class IPUConfig(BaseConfig):
                 otherwise.
             compile_only (`bool`, defaults to `False`):
                 If True, compilation will be performed offline, no IPUs required.
-            pod_type (`str`, *optional*):
-                The POD type to specialize the `poptorch.Options` for.
 
         Returns:
             `poptorch.Options`: The option representing the `IPUConfig`.
         """
-        return self.for_pod_type(pod_type)._to_options(for_inference=for_inference, compile_only=compile_only)
+        return self._to_options(for_inference=for_inference, compile_only=compile_only)
 
-    def batch_size_factor(self, for_inference: bool = False, pod_type: Optional[str] = None) -> int:
+    def batch_size_factor(self, for_inference: bool = False) -> int:
         """
         Computes the factor to apply to the micro batch size to get the combined batch size.
 
         Args:
             for_inference (`bool`, defaults to `False`):
                 Whether the factor is being use to compute the batch size for inference or not.
-            pod_type (`str`, *optional*):
-                The pod type that is being used. This is needed because the batch size factor can be pod type dependent.
 
         Returns:
             `int`: The batch size factor.
         """
-        ipu_config = self.for_pod_type(pod_type)
-        replication_factor = (
-            ipu_config.inference_replication_factor if for_inference else ipu_config.replication_factor
-        )
-        gradient_accumulation_steps = 1 if for_inference else ipu_config.gradient_accumulation_steps
-        device_iterations = ipu_config.inference_device_iterations if for_inference else ipu_config.device_iterations
+        replication_factor = self.inference_replication_factor if for_inference else self.training_replication_factor
+        gradient_accumulation_steps = 1 if for_inference else self.gradient_accumulation_steps
+        device_iterations = self.inference_device_iterations if for_inference else self.device_iterations
         return replication_factor * gradient_accumulation_steps * device_iterations
 
     def update_from_string(self, update_str: str):

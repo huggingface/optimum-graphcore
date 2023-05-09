@@ -49,7 +49,7 @@ python examples/audio-classification/run_audio_classification.py \
     --per_device_train_batch_size 2 \
     --gradient_accumulation_steps 16 \
     --per_device_eval_batch_size 8 \
-    --pod_type pod16 \
+    --n_ipu 16 \
     --dataloader_num_workers 64 \
     --dataloader_drop_last True \
     --logging_strategy steps \
@@ -84,7 +84,7 @@ python examples/audio-classification/run_audio_classification.py \
     --per_device_eval_batch_size 4 \
     --dataloader_num_workers 64 \
     --dataloader_drop_last True \
-    --pod_type pod16 \
+    --n_ipu 16 \
     --logging_strategy steps \
     --logging_steps 10 \
     --seed 0
