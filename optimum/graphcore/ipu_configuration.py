@@ -62,7 +62,7 @@ class IPUConfig(BaseConfig):
             Enables caching the compile executables to a directory.
 
         > Parameters for controlling the batch size
-        
+
         replication_factor (`int`, *optional*, defaults to 1):
             The number of replicas for data-parallelism during training. It depends on the size of the pipeline as well
             as the number of IPUs available. For example: on a Pod16, with a 4-IPU pipeline, replication_factor must
@@ -226,7 +226,8 @@ class IPUConfig(BaseConfig):
     def __init__(
         self,
         replication_factor: int = 1,
-        inference_replication_factor: int = 1,
+        training_replication_factor: Optional[int] = None,
+        inference_replication_factor: Optional[int] = None,
         gradient_accumulation_steps: int = 1,
         layers_per_ipu: List[int] = [-1],
         training_layers_per_ipu: Optional[List[int]] = None,
@@ -287,9 +288,15 @@ class IPUConfig(BaseConfig):
         self.inference_matmul_proportion = init_mode_matmul_proportion(
             inference_matmul_proportion, self.inference_ipus_per_replica
         )
+        import pdb
 
-        self.training_replication_factor = replication_factor
-        self.inference_replication_factor = inference_replication_factor
+        pdb.set_trace()
+        self.training_replication_factor = (
+            training_replication_factor if training_replication_factor else replication_factor
+        )
+        self.inference_replication_factor = (
+            inference_replication_factor if inference_replication_factor else replication_factor
+        )
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.device_iterations = device_iterations
         self.inference_device_iterations = inference_device_iterations
