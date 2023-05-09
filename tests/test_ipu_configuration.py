@@ -23,12 +23,8 @@ from typing import Any, Dict, Optional, Set
 import pytest
 
 from optimum.graphcore import IPUConfig
-from optimum.graphcore.ipu_configuration import InvalidIPUConfigError
-from optimum.graphcore.modeling_utils import (
-    IncompatibleIPUConfigError,
-    get_layer_ipu,
-    split_encoder_decoder_ipu_config,
-)
+from optimum.graphcore.ipu_configuration import IncompatibleIPUConfigError
+from optimum.graphcore.modeling_utils import get_layer_ipu, split_encoder_decoder_ipu_config
 from poptorch import OutputMode
 
 
@@ -390,7 +386,7 @@ class IPUConfigTester(unittest.TestCase):
         ipus_per_replica = 4
         training_matmul_proportion = [0.2] * (ipus_per_replica + 1)
         with pytest.raises(
-            InvalidIPUConfigError,
+            IncompatibleIPUConfigError,
             match=re.escape(f"training_matmul_proportion={training_matmul_proportion} should use the same number"),
         ):
             IPUConfig(ipus_per_replica=ipus_per_replica, training_matmul_proportion=training_matmul_proportion)
@@ -400,7 +396,7 @@ class IPUConfigTester(unittest.TestCase):
 
         inference_matmul_proportion = [0.2] * (ipus_per_replica - 1)
         with pytest.raises(
-            InvalidIPUConfigError,
+            IncompatibleIPUConfigError,
             match=re.escape(f"inference_matmul_proportion={inference_matmul_proportion} should use the same number"),
         ):
             IPUConfig(ipus_per_replica=ipus_per_replica, inference_matmul_proportion=inference_matmul_proportion)
@@ -412,7 +408,7 @@ class IPUConfigTester(unittest.TestCase):
         # should equal *ipus_per_replica
         training_layers_per_ipu = [2] * (ipus_per_replica + 1)
         with pytest.raises(
-            InvalidIPUConfigError,
+            IncompatibleIPUConfigError,
             match=re.escape(f"training_layers_per_ipu={training_layers_per_ipu} should use the same number"),
         ):
             IPUConfig(ipus_per_replica=ipus_per_replica, training_layers_per_ipu=training_layers_per_ipu)
@@ -422,7 +418,7 @@ class IPUConfigTester(unittest.TestCase):
 
         inference_layers_per_ipu = [2] * (ipus_per_replica - 1)
         with pytest.raises(
-            InvalidIPUConfigError,
+            IncompatibleIPUConfigError,
             match=re.escape(f"inference_layers_per_ipu={inference_layers_per_ipu} should use the same number"),
         ):
             IPUConfig(ipus_per_replica=ipus_per_replica, inference_layers_per_ipu=inference_layers_per_ipu)
@@ -435,7 +431,7 @@ class IPUConfigTester(unittest.TestCase):
         training_layers_per_ipu = [2, 2, 2]
         ipu_config.training_layers_per_ipu = training_layers_per_ipu
         with pytest.raises(
-            InvalidIPUConfigError,
+            IncompatibleIPUConfigError,
             match=re.escape(f"training_layers_per_ipu={training_layers_per_ipu} should use the same number"),
         ):
             ipu_config.validate_ipu_config()
