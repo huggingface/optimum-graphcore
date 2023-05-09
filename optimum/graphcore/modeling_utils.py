@@ -24,7 +24,7 @@ import poptorch
 from optimum.utils import logging
 from transformers import PreTrainedModel
 
-from .ipu_configuration import IPUConfig, IncompatibleIPUConfigError
+from .ipu_configuration import IncompatibleIPUConfigError, IPUConfig
 
 
 logger = logging.get_logger(__name__)
