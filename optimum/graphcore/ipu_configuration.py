@@ -287,10 +287,8 @@ class IPUConfig(BaseConfig):
             inference_matmul_proportion, self.inference_ipus_per_replica
         )
 
-        # Default replication factors to 1
-        self.training_replication_factor = 1
-        self.inference_replication_factor = 1
-
+        self.training_replication_factor = replication_factor
+        self.inference_replication_factor = inference_replication_factor
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.device_iterations = device_iterations
         self.inference_device_iterations = inference_device_iterations
