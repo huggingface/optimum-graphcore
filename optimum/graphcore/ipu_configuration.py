@@ -320,7 +320,10 @@ class IPUConfig(BaseConfig):
                     f"{attr_name} must be of type `int`." f" You provided: {attr_name}={attr}, {type(attr)}"
                 )
 
-        check_and_set_replication_factor("training_replication_factor", replication_factor)
+        check_and_set_replication_factor(
+            "training_replication_factor",
+            training_replication_factor if training_replication_factor else replication_factor,
+        )
         check_and_set_replication_factor("inference_replication_factor", inference_replication_factor)
 
         self.gradient_accumulation_steps = gradient_accumulation_steps
