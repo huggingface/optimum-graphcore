@@ -33,7 +33,7 @@ class IPUForcedBOSTokenLogitsProcessor(ForcedBOSTokenLogitsProcessor):
     @classmethod
     def from_model(cls, inst, vocab_size: int):
         self = inst
-        self.bos_scores = LARGE_NEGATIVE_CONST * torch.ones((1, vocab_size), dtype=torch.int32)
+        self.bos_scores = VERY_LARGE_NEGATIVE_CONST * torch.ones((1, vocab_size), dtype=torch.int32)
         self.bos_scores[:, self.bos_token_id] = 0
         self.__class__ = cls
         return self
@@ -49,7 +49,7 @@ class IPUForcedEOSTokenLogitsProcessor(ForcedEOSTokenLogitsProcessor):
     @classmethod
     def from_model(cls, inst, vocab_size: int):
         self = inst
-        self.eos_scores = LARGE_NEGATIVE_CONST * torch.ones((1, vocab_size), dtype=torch.int32)
+        self.eos_scores = VERY_LARGE_NEGATIVE_CONST * torch.ones((1, vocab_size), dtype=torch.int32)
         self.eos_scores[:, self.eos_token_id] = 0
         self.__class__ = cls
         return self
@@ -162,7 +162,7 @@ class IPUNoRepeatNGramLogitsProcessor2(NoRepeatNGramLogitsProcessor):
         idx = (ngrams[..., -1] * mask.to(dtype=ngrams.dtype)).long()
         #idx[idx == 0] = 1
         s0 = scores[0]
-        val = torch.ones_like(idx) * LARGE_NEGATIVE_CONST
+        val = torch.ones_like(idx) * VERY_LARGE_NEGATIVE_CONST
         scores.scatter_add_(1, idx, val)
         scores[0] = s0
         return scores
