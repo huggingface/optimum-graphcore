@@ -394,7 +394,6 @@ class IPUConfig(BaseConfig):
             IncompatibleIPUConfigError: Raised if any `IPUConfig` attributes
             are not coherent.
         """
-        # import pdb; pdb.set_trace()
         if self.replicated_tensor_sharding and self.replication_factor == 1:
             logger.warning("Setting replicated_tensor_sharding to False when replication_factor=1")
             self.replicated_tensor_sharding = False
