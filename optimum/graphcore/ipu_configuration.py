@@ -227,7 +227,7 @@ class IPUConfig(BaseConfig):
         self,
         replication_factor: int = 1,
         training_replication_factor: Optional[int] = None,
-        inference_replication_factor: Optional[int] = None,
+        inference_replication_factor: int = 1,
         gradient_accumulation_steps: int = 1,
         layers_per_ipu: List[int] = [-1],
         training_layers_per_ipu: Optional[List[int]] = None,
@@ -288,12 +288,41 @@ class IPUConfig(BaseConfig):
         self.inference_matmul_proportion = init_mode_matmul_proportion(
             inference_matmul_proportion, self.inference_ipus_per_replica
         )
-        self.training_replication_factor = (
-            training_replication_factor if training_replication_factor else replication_factor
-        )
-        self.inference_replication_factor = (
-            inference_replication_factor if inference_replication_factor else replication_factor
-        )
+
+        def check_and_set_replication_factor(attr_name, attr, default=False):
+            if isinstance(attr, int):
+                setattr(self, attr_name, attr)
+            elif isinstance(attr, dict):
+                base_message = (
+                    f"Dictionary values for `{attr_name}`"
+                    " have been deprecated. Provide values of type `int` instead."
+                )
+
+                if "default" not in attr:
+                    raise ValueError(
+                        base_message + f" Attempted to use the `default`"
+                        f" replication factor in `{attr_name}={attr}"
+                        f" however no such key exists."
+                    )
+
+                try:
+                    setattr(self, attr_name, attr.get("default"))
+                except TypeError as e:
+                    raise TypeError(
+                        base_message + f" `Attempted to set"
+                        f" `{attr_name}` using the `default` key of `{attr_name}"
+                        " but a TypeError was raised. Check the error traceback for more information"
+                    ) from e
+
+                warnings.warn(base_message, FutureWarning, stacklevel=2)
+            else:
+                raise ValueError(
+                    f"{attr_name} must be of type `int`." f" You provided: {attr_name}={attr}, {type(attr)}"
+                )
+
+        check_and_set_replication_factor("training_replication_factor", replication_factor)
+        check_and_set_replication_factor("inference_replication_factor", inference_replication_factor)
+
         self.gradient_accumulation_steps = gradient_accumulation_steps
         self.device_iterations = device_iterations
         self.inference_device_iterations = inference_device_iterations
