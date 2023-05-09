@@ -373,7 +373,7 @@ class IPUConfig(BaseConfig):
             typeguard.check_type(value, attr_type)
         except typeguard.TypeCheckError as e:
             raise TypeError(
-                f"Setting `IPUConfig` attribute: {name}, type: {attr_type}."
+                f"Setting `IPUConfig` attribute: {name}, type: {attr_type}"
                 f" with {value=}, type: {type(value)} is invalid."
             ) from e
 
