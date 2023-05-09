@@ -38,8 +38,9 @@ logger = logging.get_logger(__name__)
 IPU_CONFIG_NAME = "ipu_config.json"
 
 
-class InvalidIPUConfigError(ValueError):
-    "Exception raised when IPU config values are not coherent"
+class IncompatibleIPUConfigError(ValueError):
+    "Exception raised when IPU config values are invalid"
+    "or are not compatible with a model"
     pass
 
 
@@ -390,7 +391,7 @@ class IPUConfig(BaseConfig):
         `ipus_per_replica` must have value 2.
 
         Raises:
-            InvalidIPUConfigError: Raised if any `IPUConfig` attributes
+            IncompatibleIPUConfigError: Raised if any `IPUConfig` attributes
             are not coherent.
         """
         # import pdb; pdb.set_trace()
@@ -407,7 +408,7 @@ class IPUConfig(BaseConfig):
             # len(matmul_proportion) must equal ipus_per_replica
             if isinstance(self.matmul_proportion, list) and len(self.matmul_proportion) != self.ipus_per_replica:
                 matmul_proportion_mode_str = self._get_managed_attr_mode_name("matmul_proportion")
-                raise InvalidIPUConfigError(
+                raise IncompatibleIPUConfigError(
                     f"{matmul_proportion_mode_str}={self.matmul_proportion} should use the"
                     f" same number of IPUs as {ipus_per_replica_mode_str}={self.ipus_per_replica}"
                 )
@@ -417,7 +418,7 @@ class IPUConfig(BaseConfig):
             # handle the validation
             if -1 not in self.layers_per_ipu and len(self.layers_per_ipu) != self.ipus_per_replica:
                 layers_per_ipu_mode_str = self._get_managed_attr_mode_name("layers_per_ipu")
-                raise InvalidIPUConfigError(
+                raise IncompatibleIPUConfigError(
                     f"{layers_per_ipu_mode_str}={self.layers_per_ipu} should use the"
                     f" same number of IPUs as {ipus_per_replica_mode_str}={self.ipus_per_replica}"
                 )
