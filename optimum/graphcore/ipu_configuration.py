@@ -62,6 +62,7 @@ class IPUConfig(BaseConfig):
             Enables caching the compile executables to a directory.
 
         > Parameters for controlling the batch size
+        
         replication_factor (`int`, *optional*, defaults to 1):
             The number of replicas for data-parallelism during training. It depends on the size of the pipeline as well
             as the number of IPUs available. For example: on a Pod16, with a 4-IPU pipeline, replication_factor must
