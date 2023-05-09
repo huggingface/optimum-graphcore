@@ -224,9 +224,6 @@ class IPUConfig(BaseConfig):
 
     def __init__(
         self,
-        seed: Optional[int] = None,
-        auto_loss_scaling: bool = False,
-        executable_cache_dir: str = "",
         replication_factor: int = 1,
         inference_replication_factor: int = 1,
         gradient_accumulation_steps: int = 1,
@@ -247,6 +244,9 @@ class IPUConfig(BaseConfig):
         device_iterations: int = 1,
         inference_device_iterations: int = 1,
         output_mode: str = "final",
+        seed: Optional[int] = None,
+        auto_loss_scaling: bool = False,
+        executable_cache_dir: str = "",
         **kwargs,
     ):
         self.seed = seed
