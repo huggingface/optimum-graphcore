@@ -88,10 +88,11 @@ class IPUNoRepeatNGramLogitsProcessor(NoRepeatNGramLogitsProcessor):
         # mask out values above cur_len
         cur_len = absolute_step
         cur_len_mask = torch.arange(0, input_ids.shape[-1], device=input_ids.device).unsqueeze(0) < cur_len
+        input_ids = input_ids.view(-1, input_ids.shape[-1])
         input_ids = input_ids * cur_len_mask
 
         start_idx = torch.maximum(cur_len + 1 - self.ngram_size, torch.tensor(self.ngram_size))
-        ngrams = input_ids.unfold(1, self.ngram_size, 1)
+        ngrams = input_ids.unfold(-1, self.ngram_size, 1)
         last_tokens = poptorch.dynamic_slice(input_ids, 1, start_idx, self.ngram_size - 1, 1).unsqueeze(1)
         last_tokens = (start_idx > self.ngram_size) * last_tokens
         
@@ -101,7 +102,7 @@ class IPUNoRepeatNGramLogitsProcessor(NoRepeatNGramLogitsProcessor):
         mask = ~(cur_len + 1 < self.ngram_size) * mask
         idx = (ngrams[..., -1] * mask.to(dtype=ngrams.dtype)).long()
 
-        val = torch.any(mask, -1) * torch.ones_like(idx) * VERY_LARGE_NEGATIVE_CONST
+        val = (idx != 0) * torch.ones_like(idx) * VERY_LARGE_NEGATIVE_CONST
         scores.scatter_add_(1, idx, val)
         return scores
 
