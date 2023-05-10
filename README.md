@@ -7,7 +7,7 @@
 # Optimum Graphcore
 
 🤗 Optimum Graphcore is the interface between the 🤗 Transformers library and [Graphcore IPUs](https://www.graphcore.ai/products/ipu).
-It provides a set of tools enabling model parallelization and loading on IPUs, training and fine-tuning on all the tasks already supported by Transformers while being compatible with the Hugging Face Hub and every model available on it out of the box.
+It provides a set of tools enabling model parallelization and loading on IPUs, training and fine-tuning on all the tasks already supported by 🤗 Transformers while being compatible with the Hugging Face Hub and every model available on it out of the box.
 
 ## What is an Intelligence Processing Unit (IPU)?
 Quote from the Hugging Face [blog post](https://huggingface.co/blog/graphcore#what-is-an-intelligence-processing-unit):
@@ -18,7 +18,7 @@ Quote from the Hugging Face [blog post](https://huggingface.co/blog/graphcore#wh
 > This design delivers high performance and new levels of efficiency, whether running today’s most popular models, such as BERT and EfficientNet, or exploring next-generation AI applications.
 
 ## Poplar SDK setup
-A Poplar SDK environment needs to be enabled to use this library. Please refer to Graphcore's [Getting Started](https://docs.graphcore.ai/en/latest/getting-started.html) guide.
+A Poplar SDK environment needs to be enabled to use this library. Please refer to Graphcore's [Getting Started](https://docs.graphcore.ai/en/latest/getting-started.html) guides.
 
 ## Install
 To install the latest release of this package:
@@ -105,7 +105,7 @@ For more information, check our [documentation](https://huggingface.co/docs/opti
 ## Supported Models
 The following model architectures and tasks are currently supported by 🤗 Optimum Graphcore:
 |            | Pre-Training | Masked LM | Causal LM | Seq2Seq LM (Summarization, Translation, etc) | Sequence Classification | Token Classification | Question Answering | Multiple Choice | Image Classification | CTC |
-|------------|--------------|-----------|-----------|----------------------------------------------|-------------------------|----------------------|--------------------|-----------------|----------------------| ------------ | 
+|------------|--------------|-----------|-----------|----------------------------------------------|-------------------------|----------------------|--------------------|-----------------|----------------------| ------------ |
 | BART       | ✅            |           | ❌         | ✅                                            | ✅                       |                      | ❌                  |                 |                      |             |
 | BERT       | ✅            | ✅         | ❌         |                                              | ✅                       | ✅                    | ✅                  | ✅               |                      |             |
 | ConvNeXt   | ✅            |           |           |                                              |                         |                      |                    |                 | ✅                    |             |

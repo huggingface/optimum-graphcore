@@ -21,11 +21,21 @@ limitations under the License.
 
 ## Installation
 
-To install 🤗 Optimum Graphcore:
+To install the latest release of 🤗 Optimum Graphcore:
 
 ```
+pip install optimum-graphcore
+```
+
+Optimum Graphcore is a fast-moving project, and you may want to install from source.
 
 ```
+pip install git+https://github.com/huggingface/optimum-graphcore.git
+```
+
+## Environment setup
+
+You need to have the Poplar SDK enabled to use 🤗 Optimum Graphcore. Refer to the [Getting Started guide](https://docs.graphcore.ai/en/latest/getting-started.html#getting-started) for your system for details on how to enable the Poplar SDK. Also refer to the [Jupyter Quick Start guide](https://docs.graphcore.ai/projects/jupyter-notebook-quick-start/en/latest/index.html) for how to set up Jupyter to be able to run notebooks on a remote IPU machine.
 
 
 ## Using Optimum Graphcore
@@ -37,6 +47,8 @@ There are two main classes you need to know about:
 
 
 [`IPUTrainer`] is very similar to the 🤗 Transformers [Trainer](https://huggingface.co/docs/transformers/main_classes/trainer) class, and you can easily adapt a script that currently uses `Trainer` to make it work with IPUs. You will mostly swap `Trainer` for [`IPUTrainer`]. This is how most of the [Optimum Graphcore example scripts](https://github.com/huggingface/optimum-graphcore/tree/main/examples) were adapted from the [original Hugging Face](https://github.com/huggingface/transformers/tree/master/examples/pytorch) scripts.
+
+The diff below shows how minimal the differences are:
 
 ```diff
 -from transformers import Trainer, TrainingArguments
@@ -63,3 +75,5 @@ There are two main classes you need to know about:
      train_dataset=train_dataset if training_args.do_train else None,
      ...  # Other arguments
 ```
+
+We load the following `IPUConfig` class which defines IPU-specific configuration,
