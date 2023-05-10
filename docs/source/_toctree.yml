@@ -7,6 +7,10 @@
     title: Configuration
   - local: trainer
     title: Training, evaluation and prediction on IPUs
+  - local: diffusers
+    title: Diffusers
+  - local: pipelines
+    title: Pipelines
   - local: add_support_for_new_model
     title: Add support for new model architectures
   title: Optimum Graphcore
