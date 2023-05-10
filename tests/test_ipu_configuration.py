@@ -96,7 +96,7 @@ class IPUConfigTester(unittest.TestCase):
         options = ipu_config.to_options(for_inference=for_inference)
         ipu_config_dict = ipu_config.to_dict()
         if for_inference:
-            ipu_config_dict["training_replication_factor"] = ipu_config_dict["inference_replication_factor"]
+            ipu_config_dict["replication_factor"] = ipu_config_dict["inference_replication_factor"]
             ipu_config_dict["device_iterations"] = ipu_config_dict["inference_device_iterations"]
             ipu_config_dict["gradient_accumulation_steps"] = 1
             ipu_config_dict["output_mode"] = "all"
@@ -116,7 +116,7 @@ class IPUConfigTester(unittest.TestCase):
         ipu_config = create_ipu_config()
         batch_size_factor = ipu_config.batch_size_factor(for_inference=for_inference)
         replication_factor = (
-            ipu_config.inference_replication_factor if for_inference else ipu_config.training_replication_factor
+            ipu_config.inference_replication_factor if for_inference else ipu_config.replication_factor
         )
         gradient_accumulation_steps = 1 if for_inference else ipu_config.gradient_accumulation_steps
         device_iterations = ipu_config.inference_device_iterations if for_inference else ipu_config.device_iterations
@@ -128,7 +128,7 @@ class IPUConfigTester(unittest.TestCase):
         ipu_config = create_ipu_config()
         batch_size_factor = ipu_config.batch_size_factor(for_inference=for_inference)
         replication_factor = (
-            ipu_config.inference_replication_factor if for_inference else ipu_config.training_replication_factor
+            ipu_config.inference_replication_factor if for_inference else ipu_config.replication_factor
         )
         gradient_accumulation_steps = 1 if for_inference else ipu_config.gradient_accumulation_steps
         device_iterations = ipu_config.inference_device_iterations if for_inference else ipu_config.device_iterations
@@ -339,14 +339,14 @@ class IPUConfigTester(unittest.TestCase):
 
         # *layers_per_ipu attributes (List[int>=-1]) cannot contain
         # values less than -1
-        for test_attr in ("training_layers_per_ipu", "inference_layers_per_ipu"):
+        for test_attr in ("layers_per_ipu", "inference_layers_per_ipu"):
             with pytest.raises(ValueError, match=f"`IPUConfig` attribute `{test_attr}` must have all elements >= -1"):
                 setattr(ipu_config, test_attr, [3, 5, -2])
             # should not raise
             setattr(ipu_config, test_attr, [1, 2, 3])
 
         # *matmul proportion attributes cannot contain values less than 0
-        for test_attr in ("training_matmul_proportion", "inference_matmul_proportion"):
+        for test_attr in ("matmul_proportion", "inference_matmul_proportion"):
             with pytest.raises(ValueError, match=f"`IPUConfig` attribute `{test_attr}` must have all elements >= 0"):
                 setattr(ipu_config, test_attr, [-0.5, 0, 0.5])
             # should not raise
@@ -354,10 +354,10 @@ class IPUConfigTester(unittest.TestCase):
 
         # Scalar attributes like *replication_factor must be atleast 1
         for test_attr in (
-            "training_replication_factor",
+            "replication_factor",
             "inference_replication_factor",
             "gradient_accumulation_steps",
-            "training_ipus_per_replica",
+            "ipus_per_replica",
             "inference_ipus_per_replica",
             "embedding_serialization_factor",
             "device_iterations",
@@ -378,15 +378,15 @@ class IPUConfigTester(unittest.TestCase):
         # If *matmul_proportion is a List[float], it must
         # use the same number of IPUs as *ipus_per_replica
         ipus_per_replica = 4
-        training_matmul_proportion = [0.2] * (ipus_per_replica + 1)
+        matmul_proportion = [0.2] * (ipus_per_replica + 1)
         with pytest.raises(
             IncompatibleIPUConfigError,
-            match=re.escape(f"training_matmul_proportion={training_matmul_proportion} should use the same number"),
+            match=re.escape(f"matmul_proportion={matmul_proportion} should use the same number"),
         ):
-            IPUConfig(ipus_per_replica=ipus_per_replica, training_matmul_proportion=training_matmul_proportion)
+            IPUConfig(ipus_per_replica=ipus_per_replica, matmul_proportion=matmul_proportion)
         # Should not raise
-        training_matmul_proportion = [0.2] * ipus_per_replica
-        IPUConfig(ipus_per_replica=ipus_per_replica, training_matmul_proportion=training_matmul_proportion)
+        matmul_proportion = [0.2] * ipus_per_replica
+        IPUConfig(ipus_per_replica=ipus_per_replica, matmul_proportion=matmul_proportion)
 
         inference_matmul_proportion = [0.2] * (ipus_per_replica - 1)
         with pytest.raises(
@@ -400,15 +400,15 @@ class IPUConfigTester(unittest.TestCase):
 
         # If there are no wildcards in *layers_per_ipu, the pipeline length
         # should equal *ipus_per_replica
-        training_layers_per_ipu = [2] * (ipus_per_replica + 1)
+        layers_per_ipu = [2] * (ipus_per_replica + 1)
         with pytest.raises(
             IncompatibleIPUConfigError,
-            match=re.escape(f"training_layers_per_ipu={training_layers_per_ipu} should use the same number"),
+            match=re.escape(f"layers_per_ipu={layers_per_ipu} should use the same number"),
         ):
-            IPUConfig(ipus_per_replica=ipus_per_replica, training_layers_per_ipu=training_layers_per_ipu)
+            IPUConfig(ipus_per_replica=ipus_per_replica, layers_per_ipu=layers_per_ipu)
         # Should not raise
-        training_layers_per_ipu = [2] * ipus_per_replica
-        IPUConfig(ipus_per_replica=ipus_per_replica, training_layers_per_ipu=training_layers_per_ipu)
+        layers_per_ipu = [2] * ipus_per_replica
+        IPUConfig(ipus_per_replica=ipus_per_replica, layers_per_ipu=layers_per_ipu)
 
         inference_layers_per_ipu = [2] * (ipus_per_replica - 1)
         with pytest.raises(
@@ -422,13 +422,13 @@ class IPUConfigTester(unittest.TestCase):
 
         # Test validation after construction
         ipu_config = IPUConfig(ipus_per_replica=ipus_per_replica, layers_per_ipu=[-1])
-        training_layers_per_ipu = [2, 2, 2]
-        ipu_config.training_layers_per_ipu = training_layers_per_ipu
+        layers_per_ipu = [2, 2, 2]
+        ipu_config.layers_per_ipu = layers_per_ipu
         with pytest.raises(
             IncompatibleIPUConfigError,
-            match=re.escape(f"training_layers_per_ipu={training_layers_per_ipu} should use the same number"),
+            match=re.escape(f"layers_per_ipu={layers_per_ipu} should use the same number"),
         ):
             ipu_config.validate_ipu_config()
         # Should not raise
-        ipu_config.training_layers_per_ipu = [2] * ipus_per_replica
+        ipu_config.layers_per_ipu = [2] * ipus_per_replica
         ipu_config.validate_ipu_config()

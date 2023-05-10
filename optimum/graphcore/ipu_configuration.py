@@ -252,21 +252,25 @@ class IPUConfig(BaseConfig):
 
         self.layers_per_ipu = layers_per_ipu
         self.inference_layers_per_ipu = inference_layers_per_ipu if inference_layers_per_ipu else self.layers_per_ipu
-        
+
         self.ipus_per_replica = ipus_per_replica if ipus_per_replica else len(self.layers_per_ipu)
         # If ipus_per_replica is default, recalculate ipus_per_replica from inference_layers_per_ipu instead
         fallback_ipus_per_replica = self.ipus_per_replica
         if fallback_ipus_per_replica == len(self.layers_per_ipu):
             fallback_ipus_per_replica = len(self.inference_layers_per_ipu)
-        self.inference_ipus_per_replica = inference_ipus_per_replica if inference_ipus_per_replica else fallback_ipus_per_replica
-        
+        self.inference_ipus_per_replica = (
+            inference_ipus_per_replica if inference_ipus_per_replica else fallback_ipus_per_replica
+        )
+
         self.matmul_proportion = matmul_proportion
         # If matmul_proportion is a list and its length is not equal to inference_ipus_per_replica, use the
         # default float value for matmul_proportion instead
-        fallback_matmul_proportion = self.matmul_proportion 
+        fallback_matmul_proportion = self.matmul_proportion
         if isinstance(self.matmul_proportion, list) and len(self.matmul_proportion) != self.inference_ipus_per_replica:
             fallback_matmul_proportion = 0.2
-        self.inference_matmul_proportion = inference_matmul_proportion if inference_matmul_proportion else fallback_matmul_proportion
+        self.inference_matmul_proportion = (
+            inference_matmul_proportion if inference_matmul_proportion else fallback_matmul_proportion
+        )
 
         def check_and_set_replication_factor(attr_name, attr, default=False):
             if isinstance(attr, int):
@@ -328,7 +332,7 @@ class IPUConfig(BaseConfig):
     @property
     def mode(self) -> str:
         return self._mode
-    
+
     @mode.setter
     def mode(self, value):
         if value not in self.modes:
@@ -445,7 +449,7 @@ class IPUConfig(BaseConfig):
 
         opts = Options()
         opts.autoRoundNumIPUs(True)
-        opts.replicationFactor(self.replication_factor)
+        opts.replicationFactor(self.inference_replication_factor if for_inference else self.replication_factor)
         opts.deviceIterations(self.inference_device_iterations if for_inference else self.device_iterations)
 
         if not for_inference:
