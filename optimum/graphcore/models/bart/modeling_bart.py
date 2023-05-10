@@ -561,7 +561,7 @@ class IPUBartPositionalLearnedEmbedding(nn.Embedding):
         del self._generation_step
 
         original = copy.deepcopy(self)
-        original.__class__ = BartLearnedPositionalEmbedding 
+        original.__class__ = BartLearnedPositionalEmbedding
         return original
 
     def forward(self, input_ids: torch.Tensor, past_key_values_length: int = 0):
@@ -571,7 +571,7 @@ class IPUBartPositionalLearnedEmbedding(nn.Embedding):
             # KV cache enabled.
             return poptorch.dynamic_slice(self.weight, 0, self._generation_step + self.offset, 1, 1)
         else:
-            return self.weight[self.offset: self.offset + input_ids.shape[-1]]
+            return self.weight[self.offset : self.offset + input_ids.shape[-1]]
 
 
 class _BartModelWithSharedEmbedding(BartModel):
@@ -658,7 +658,9 @@ class _BartModelWithSharedEmbedding(BartModel):
         """
         position_embedding = self.decoder.embed_positions
         self.decoder.embed_positions = (
-            position_embedding.to_model() if restore else IPUBartPositionalLearnedEmbedding.from_model(position_embedding)
+            position_embedding.to_model()
+            if restore
+            else IPUBartPositionalLearnedEmbedding.from_model(position_embedding)
         )
 
     def forward(

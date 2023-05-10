@@ -16,6 +16,7 @@ import poptorch
 import torch
 
 from transformers.generation.utils import (
+    ExponentialDecayLengthPenalty,
     ForceTokensLogitsProcessor,
     ForcedEOSTokenLogitsProcessor,
     ForcedBOSTokenLogitsProcessor,
@@ -84,7 +85,6 @@ class IPUNoRepeatNGramLogitsProcessor(NoRepeatNGramLogitsProcessor):
     def __call__(
         self, input_ids: torch.LongTensor, scores: torch.FloatTensor, absolute_step: torch.IntTensor
     ) -> torch.FloatTensor:
-
         # mask out values above cur_len
         cur_len = absolute_step
         cur_len_mask = torch.arange(0, input_ids.shape[-1], device=input_ids.device).unsqueeze(0) < cur_len
@@ -95,8 +95,8 @@ class IPUNoRepeatNGramLogitsProcessor(NoRepeatNGramLogitsProcessor):
         ngrams = input_ids.unfold(-1, self.ngram_size, 1)
         last_tokens = poptorch.dynamic_slice(input_ids, 1, start_idx, self.ngram_size - 1, 1).unsqueeze(1)
         last_tokens = (start_idx > self.ngram_size) * last_tokens
-        
-        mask = (ngrams[..., :self.ngram_size - 1] == last_tokens).float().prod(-1)
+
+        mask = (ngrams[..., : self.ngram_size - 1] == last_tokens).float().prod(-1)
 
         # If absolute_step + 1 < ngram_size set indices all to zero
         mask = ~(cur_len + 1 < self.ngram_size) * mask

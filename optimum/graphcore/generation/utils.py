@@ -1624,7 +1624,7 @@ class IPUGenerationMixin(GenerationMixin):
 
         logits_processor = self._adapt_logits_processor_for_on_device_generation(logits_processor, vocab_size)
         stopping_criteria = self._adapt_stopping_criteria_for_on_device_generation(
-           stopping_criteria, self.on_device_generation_steps
+            stopping_criteria, self.on_device_generation_steps
         )
 
         # This function only has to be called at the beginning of generation since
