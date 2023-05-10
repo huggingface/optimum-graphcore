@@ -525,9 +525,7 @@ class IPUConfig(BaseConfig):
 
         matmul_proportion = copy.deepcopy(self.matmul_proportion)
         if isinstance(self.matmul_proportion, float):
-            matmul_proportion = [self.matmul_proportion]
-        if len(matmul_proportion) == 1:
-            matmul_proportion = matmul_proportion * self.ipus_per_replica
+            matmul_proportion = [self.matmul_proportion] * self.ipus_per_replica
         mem_prop = {f"IPU{i}": matmul_proportion[i] for i in range(self.ipus_per_replica)}
         opts.setAvailableMemoryProportion(mem_prop)
 
