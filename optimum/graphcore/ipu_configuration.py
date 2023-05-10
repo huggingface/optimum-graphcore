@@ -292,8 +292,8 @@ class IPUConfig(BaseConfig):
                     setattr(self, attr_name, attr.get("default"))
                 except TypeError as e:
                     raise TypeError(
-                        base_message + f" `Attempted to set"
-                        f" `{attr_name}` using the `default` key of `{attr_name}"
+                        base_message + f" Attempted to set"
+                        f" `{attr_name}` using the `default` key of `{attr_name}`"
                         " but a TypeError was raised. Check the error traceback for more information."
                     ) from e
 
