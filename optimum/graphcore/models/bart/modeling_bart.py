@@ -539,16 +539,10 @@ class _BartDecoderWithCustomMakeCausalAndExpandMask(BartDecoder):
         )
 
 
-class IPUBartPositionalLearnedEmbedding(nn.Embedding):
+class IPUBartPositionalLearnedEmbedding(BartLearnedPositionalEmbedding):
     """
     This module learns positional embeddings up to a fixed maximum size.
     """
-
-    def __init__(self, num_embeddings: int, embedding_dim: int):
-        # Bart is set up so that if padding_idx is specified then offset the embedding ids by 2
-        # and adjust num_embeddings appropriately. Other models don't have this hack
-        self.offset = 2
-        super().__init__(num_embeddings + self.offset, embedding_dim)
 
     @classmethod
     def from_model(cls, model: BartLearnedPositionalEmbedding):
@@ -799,7 +793,7 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
         self.model.change_bart_encoder_and_decoder_classes(restore=False)
         self.model.change_bart_attention_class(restore=False, use_cache=use_cache and for_generation, **kwargs)
         self.model.change_decoder_positional_embedding(restore=False)
-        self.change_lm_head_to_indexed_input_linear(restore=use_cache and not for_generation)
+        self.change_lm_head_to_indexed_input_linear(restore=not (for_generation and not use_cache))
         self.use_encoder_output_buffer = kwargs.get("use_encoder_output_buffer", False)
         self.set_on_device_generation_steps(kwargs.get("on_device_generation_steps", 0))
 
