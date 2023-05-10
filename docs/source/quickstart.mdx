@@ -40,15 +40,13 @@ You need to have the Poplar SDK enabled to use 🤗 Optimum Graphcore. Refer to 
 
 ## Using Optimum Graphcore
 
-There are two main classes you need to know about:
+The main Optimum Graphcore classes are:
 
 - [`IPUTrainer`]: This class handles compiling the model to run on IPUs, as well as performing the training and evaluation. Refer to the [`IPUTrainer`](trainer) section for more information..
 - [`IPUConfig`]: This class specifies attributes and configuration parameters to compile and put the model on the IPU. Refer to the [`IPUConfig`](ipu_config) section for more information.
 
 
 [`IPUTrainer`] is very similar to the 🤗 Transformers [Trainer](https://huggingface.co/docs/transformers/main_classes/trainer) class, and you can easily adapt a script that currently uses `Trainer` to make it work with IPUs. You will mostly swap `Trainer` for [`IPUTrainer`]. This is how most of the [Optimum Graphcore example scripts](https://github.com/huggingface/optimum-graphcore/tree/main/examples) were adapted from the [original Hugging Face](https://github.com/huggingface/transformers/tree/master/examples/pytorch) scripts.
-
-The diff below shows how minimal the differences are:
 
 ```diff
 -from transformers import Trainer, TrainingArguments
@@ -58,12 +56,13 @@ The diff below shows how minimal the differences are:
 +training_args = IPUTrainingArguments(
      per_device_train_batch_size=4,
      learning_rate=1e-4,
-+    ipu_config_name="Graphcore/bert-base-ipu",  # Or any other IPUConfig on the Hub or stored locally
++    # Any IPUConfig on the Hub or stored locally
++    ipu_config_name="Graphcore/bert-base-ipu",
 +)
 +
 +# Loading the IPUConfig needed by the IPUTrainer to compile and train the model on IPUs
 +ipu_config = IPUConfig.from_pretrained(
-+    training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
++    training_args.ipu_config_name,
  )
 
  # Initialize our Trainer
@@ -76,4 +75,15 @@ The diff below shows how minimal the differences are:
      ...  # Other arguments
 ```
 
-We load the following `IPUConfig` class which defines IPU-specific configuration,
+We also support the `pipeline` API, so you can easily run a model on a given input (text, image, audio, ...) on IPUs:
+
+```diff
+->>> from transformers import pipeline
++>>> from optimum.graphcore import pipeline
+
+# Allocate a pipeline for sentiment-analysis
+->>> classifier = pipeline('sentiment-analysis', model="distilbert-base-uncased-finetuned-sst-2-english")
++>>> classifier = pipeline('sentiment-analysis', model="distilbert-base-uncased-finetuned-sst-2-english", ipu_config = "Graphcore/distilbert-base-ipu")
+>>> classifier('We are very happy to introduce pipeline to the transformers repository.')
+[{'label': 'POSITIVE', 'score': 0.9996947050094604}]
+```

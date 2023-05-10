@@ -56,7 +56,7 @@ pip install -r requirements.txt
 
 ## How to use it?
 🤗 Optimum Graphcore was designed with one goal in mind: **make training and evaluation straightforward for any 🤗 Transformers user while leveraging the complete power of IPUs.**
-It requires minimal compared to using 🤗 Transformers.
+It requires minimal changes if you are already using 🤗 Transformers.
 
 To immediately use a model on a given input (text, image, audio, ...), we support the `pipeline` API:
 
