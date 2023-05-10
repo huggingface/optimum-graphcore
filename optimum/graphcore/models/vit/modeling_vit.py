@@ -40,7 +40,7 @@ class PipelinedViTForImageClassification(transformers.ViTForImageClassification,
             logger.info(f"Encoder {index:<2} --> IPU {ipu}")
             self.vit.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
 
-        last_ipu = self.ipu_config.ipus_per_replica - 1
+        last_ipu = self.ipu_config._ipus_per_replica - 1
         logger.info(f"Head       --> IPU {last_ipu}")
         logger.info("---------------------------------------")
         self.vit.layernorm = poptorch.BeginBlock(self.vit.layernorm, "LayerNorm", ipu_id=last_ipu)
