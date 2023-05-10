@@ -16,7 +16,6 @@ import poptorch
 import torch
 
 from transformers.generation.utils import (
-    ExponentialDecayLengthPenalty,
     ForceTokensLogitsProcessor,
     ForcedEOSTokenLogitsProcessor,
     ForcedBOSTokenLogitsProcessor,
