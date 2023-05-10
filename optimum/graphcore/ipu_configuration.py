@@ -104,7 +104,7 @@ class IPUConfig(BaseConfig):
               - matrix multiplication
               - embedding lookups
               - indexing operations
-        inference_matmul_proportion (`List[int]`):
+        inference_matmul_proportion (`List[float]` or `float`):
             Same as `matmul_proportion` for inference only.
         enable_half_partials (`bool`, *optional*, defaults to `True`):
             Whether the data type of partial results for matrix multiplication and convolution operators should be
@@ -418,7 +418,13 @@ class IPUConfig(BaseConfig):
             ipus_per_replica_mode_str = self._get_managed_attr_mode_name("ipus_per_replica")
 
             # len(matmul_proportion) must equal ipus_per_replica
-            if isinstance(self.matmul_proportion, list) and len(self.matmul_proportion) != self.ipus_per_replica:
+            # if matmul_proportion = [proportion], _to_options will replicate
+            # its value to [proportion] * ipus_per_replica
+            if (
+                isinstance(self.matmul_proportion, list)
+                and len(self.matmul_proportion) != self.ipus_per_replica
+                and len(self.matmul_proportion) > 1
+            ):
                 matmul_proportion_mode_str = self._get_managed_attr_mode_name("matmul_proportion")
                 raise IncompatibleIPUConfigError(
                     f"{matmul_proportion_mode_str}={self.matmul_proportion} should use the"
