@@ -17,10 +17,15 @@ limitations under the License.
 
 # Quickstart
 
-🤗 Optimum Graphcore was designed with one goal in mind: **making training and evaluation straightforward for any 🤗 Transformers user while leveraging the complete power of IPUs.**
+🤗 Optimum Graphcore was designed with one goal in mind: **to make training and evaluation straightforward for any 🤗 Transformers user while leveraging the complete power of IPUs**.
 
 ## Installation
 
+To install 🤗 Optimum Graphcore:
+
+```
+
+```
 
 
 ## Using Optimum Graphcore
@@ -29,6 +34,7 @@ There are two main classes you need to know about:
 
 - [`IPUTrainer`]: This class handles compiling the model to run on IPUs, as well as performing the training and evaluation. Refer to the [`IPUTrainer`](trainer) section for more information..
 - [`IPUConfig`]: This class specifies attributes and configuration parameters to compile and put the model on the IPU. Refer to the [`IPUConfig`](ipu_config) section for more information.
+
 
 [`IPUTrainer`] is very similar to the 🤗 Transformers [Trainer](https://huggingface.co/docs/transformers/main_classes/trainer) class, and you can easily adapt a script that currently uses `Trainer` to make it work with IPUs. You will mostly swap `Trainer` for [`IPUTrainer`]. This is how most of the [Optimum Graphcore example scripts](https://github.com/huggingface/optimum-graphcore/tree/main/examples) were adapted from the [original Hugging Face](https://github.com/huggingface/transformers/tree/master/examples/pytorch) scripts.
 

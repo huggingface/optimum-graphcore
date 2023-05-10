@@ -11,6 +11,8 @@
     title: Diffusers
   - local: pipelines
     title: Pipelines
+  - local: text_generation
+    title: Text generation
   - local: add_support_for_new_model
     title: Add support for new model architectures
   title: Optimum Graphcore
