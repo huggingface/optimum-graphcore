@@ -76,7 +76,7 @@ class IPUMinLengthLogitsProcessor(MinLengthLogitsProcessor):
     ) -> torch.FloatTensor:
         mask = self.mask.to(scores.device)
         cond = absolute_step >= self.min_length
-        mask |= cond
+        mask = mask | cond
         return mask * scores + (1 - mask) * VERY_LARGE_NEGATIVE_CONST
 
 
@@ -101,7 +101,7 @@ class IPUNoRepeatNGramLogitsProcessor(NoRepeatNGramLogitsProcessor):
         mask = ~(cur_len + 1 < self.ngram_size) * mask
         idx = (ngrams[..., -1] * mask.to(dtype=ngrams.dtype)).long()
 
-        val = torch.ones_like(idx) * VERY_LARGE_NEGATIVE_CONST
+        val = torch.any(mask, -1) * torch.ones_like(idx) * VERY_LARGE_NEGATIVE_CONST
         scores.scatter_add_(1, idx, val)
         return scores
 
@@ -138,7 +138,7 @@ class IPUSuppressTokensAtBeginLogitsProcessor(SuppressTokensAtBeginLogitsProcess
     ) -> torch.FloatTensor:
         mask = self.mask.to(scores.device)
         cond = absolute_step != self.begin_index
-        mask |= cond
+        mask = mask | cond
         return mask * scores + (1 - mask) * VERY_LARGE_NEGATIVE_CONST
 
 
