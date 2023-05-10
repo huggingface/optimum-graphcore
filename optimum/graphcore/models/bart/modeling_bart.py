@@ -799,7 +799,7 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
         self.model.change_bart_encoder_and_decoder_classes(restore=False)
         self.model.change_bart_attention_class(restore=False, use_cache=use_cache and for_generation, **kwargs)
         self.model.change_decoder_positional_embedding(restore=False)
-        self.change_lm_head_to_indexed_input_linear(restore=use_cache and not for_generation))
+        self.change_lm_head_to_indexed_input_linear(restore=use_cache and not for_generation)
         self.use_encoder_output_buffer = kwargs.get("use_encoder_output_buffer", False)
         self.set_on_device_generation_steps(kwargs.get("on_device_generation_steps", 0))
 
