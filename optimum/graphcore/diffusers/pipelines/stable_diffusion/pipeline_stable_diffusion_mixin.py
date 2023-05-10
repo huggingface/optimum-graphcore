@@ -38,8 +38,9 @@ logger = logging.get_logger(__name__)
 
 class IPUSlicedAttnProcessor:
     """
-    SlicedAttnProcessor but we slice across the query sequence length instead of across heads.
-    NB: this ignores the `slice_size` factor since we interpret it differently and use a value that is
+    `SlicedAttnProcessor` but sliced across the query sequence length instead of across heads.
+
+    Note: This ignores the `slice_size` factor since we interpret it differently and use a value that is
     derived from the sequence length based on an empirical attention matrix memory target.
     """
 
@@ -172,9 +173,12 @@ class IPUUNet2DConditionModel(UNet2DConditionModel, PipelineMixin):
 
 
 class UNetCastingWrapper(torch.nn.Module):
-    """Schedulers differ in the dtype they store the timesteps in, so changing a
-    scheduler would trigger a recompilation as the input dtype would change. This wrapper
-    simply ensures that the timestep dtype provided to the PoplarExecutor is consistent."""
+    """
+    Ensures that the timestep dtype provided to `PoplarExecutor` is consistent.
+
+    Schedulers differ in the dtype they store the timesteps in, so changing a
+    scheduler would trigger a recompilation as the input dtype would change. This wrapper ensures that the data types are consistent.
+    """
 
     def __init__(self, unet, input_dtype=torch.float16, output_dtype=torch.float32):
         super().__init__()
@@ -413,7 +417,7 @@ class IPUStableDiffusionPipelineMixin:
         # a different processor than what we intended, so do the simple thing for now.
         logger.warn(
             "Attention slicing is enabled by default. Specifying a custom value "
-            "for the `slice_size` is currently unsupported."
+            "for `slice_size` is currently unsupported."
         )
 
     def detach_from_device(self):

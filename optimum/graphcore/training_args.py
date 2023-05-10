@@ -46,7 +46,7 @@ class ParallelMode(Enum):
 
 class OptimizerNames(ExplicitEnum):
     """
-    Stores the acceptable string identifiers for optimizers.
+    Stores the allowed string identifiers for optimizers.
     """
 
     ADAMW_HF = "adamw_hf"
@@ -62,30 +62,31 @@ class OptimizerNames(ExplicitEnum):
 @dataclass
 class IPUTrainingArguments:
     """
-    `IPUTrainingArguments` is the subset of the arguments we use in our example scripts **which relate to the training loop
-    itself**.
+    `IPUTrainingArguments` is the class that contains the subset of the input
+    arguments **which relate to the training loop itself**.
 
     Using [`transformers.HfArgumentParser`] we can turn this class into
-    [argparse](https://docs.python.org/3/library/argparse#module-argparse) arguments that can be specified on the
-    command line.
+    [argparse](https://docs.python.org/3/library/argparse#module-argparse)
+    arguments that can be specified on the command line.
 
     Parameters:
         output_dir (`str`):
             The output directory where the model predictions and checkpoints will be written.
         overwrite_output_dir (`bool`, *optional*, defaults to `False`):
-            If `True`, overwrite the content of the output directory. Use this to continue training if `output_dir`
-            points to a checkpoint directory.
+            If `True`, overwrites the contents of the output directory. Use this
+            to continue training if `output_dir` points to a checkpoint
+            directory.
         do_train (`bool`, *optional*, defaults to `False`):
-            Whether to run training or not. This argument is not directly used by [`Trainer`], it's intended to be used
+            If `True`, runs training. This argument is not directly used by [`Trainer`]. It's intended to be used
             by your training/evaluation scripts instead. See the [example
             scripts](https://github.com/huggingface/transformers/tree/main/examples) for more details.
         do_eval (`bool`, *optional*):
-            Whether to run evaluation on the validation set or not. Will be set to `True` if `evaluation_strategy` is
-            different from `"no"`. This argument is not directly used by [`Trainer`], it's intended to be used by your
+            If `True`, runs evaluation on the validation set. Will be set to `True` if `evaluation_strategy` is
+            different from `"no"`. This argument is not directly used by [`Trainer`]. It's intended to be used by your
             training/evaluation scripts instead. See the [example
             scripts](https://github.com/huggingface/transformers/tree/main/examples) for more details.
         do_predict (`bool`, *optional*, defaults to `False`):
-            Whether to run predictions on the test set or not. This argument is not directly used by [`Trainer`], it's
+            If `True`, runs predictions on the test set. This argument is not directly used by [`Trainer`]. It's
             intended to be used by your training/evaluation scripts instead. See the [example
             scripts](https://github.com/huggingface/transformers/tree/main/examples) for more details.
         evaluation_strategy (`str` or [`~trainer_utils.IntervalStrategy`], *optional*, defaults to `"no"`):
@@ -96,7 +97,7 @@ class IPUTrainingArguments:
                 - `"epoch"`: Evaluation is done at the end of each epoch.
 
         prediction_loss_only (`bool`, *optional*, defaults to `False`):
-            When performing evaluation and generating predictions, only returns the loss.
+            If `True`, only returns the loss, when performing evaluation and generating predictions.
         per_device_train_batch_size (`int`, *optional*, defaults to 1):
             The batch size per IPU for training.
         per_device_eval_batch_size (`int`, *optional*, defaults to 1):
@@ -106,12 +107,13 @@ class IPUTrainingArguments:
 
             <Tip warning={true}>
 
-            When using gradient accumulation, one step is counted as one step with backward pass. Therefore, logging,
-            evaluation, save will be conducted every `gradient_accumulation_steps * xxx_step` training examples.
+            When using gradient accumulation, one step is counted as one step with a backward pass. Therefore, logging,
+            evaluation and saving will be conducted every `gradient_accumulation_steps * xxx_step` training examples.
 
             </Tip>
 
         eval_delay (`float`, *optional*):
+            The number of epochs or steps to wait before the first evaluation can be performed, depending on the evaluation strategy.
         adam_beta1 (`float`, *optional*, defaults to 0.9):
             The beta1 hyperparameter for the [`AdamW`] optimizer.
         adam_beta2 (`float`, *optional*, defaults to 0.999):
@@ -121,22 +123,20 @@ class IPUTrainingArguments:
         max_grad_norm (`float`, *optional*, defaults to 1.0):
             Maximum gradient norm (for gradient clipping).
         num_train_epochs(`float`, *optional*, defaults to 3.0):
-            Total number of training epochs to perform (if not an integer, will perform the decimal part percents of
-            the last epoch before stopping training).
+            Total number of training epochs to perform (if not an integer, training will continue for the indicated fraction of the last epoch before stopping).
         max_steps (`int`, *optional*, defaults to -1):
             If set to a positive number, the total number of training steps to perform. Overrides `num_train_epochs`.
-            In case of using a finite iterable dataset the training may stop before reaching the set number of steps
+            In the case of using a finite iterable dataset, the training may stop before reaching the set number of steps
             when all data is exhausted
         lr_scheduler_type (`str` or [`SchedulerType`], *optional*, defaults to `"linear"`):
-            The scheduler type to use. See the documentation of [`SchedulerType`] for all possible values.
+            The type of scheduler to use. See the documentation of [`SchedulerType`] for all possible values.
         warmup_ratio (`float`, *optional*, defaults to 0.0):
-            Ratio of total training steps used for a linear warmup from 0 to `learning_rate`.
+            The fraction of total steps to be used to linear warmup. Ranges from 0 to `learning_rate`.
         warmup_steps (`int`, *optional*, defaults to 0):
-            Number of steps used for a linear warmup from 0 to `learning_rate`. Overrides any effect of `warmup_ratio`.
+            Number of steps used for a linear warmup. Ranges from 0 to `learning_rate`*total steps. Overrides any effect of `warmup_ratio`.
         log_level (`str`, *optional*, defaults to `passive`):
             Logger log level to use on the main process. Possible choices are the log levels as strings: 'debug',
-            'info', 'warning', 'error' and 'critical', plus a 'passive' level which doesn't set anything and lets the
-            application set the level.
+            'info', 'warning', 'error' and 'critical', plus a 'passive' level which lets the application set the level.
         logging_dir (`str`, *optional*):
             [TensorBoard](https://www.tensorflow.org/tensorboard) log directory. Will default to
             *output_dir/runs/**CURRENT_DATETIME_HOSTNAME***.
@@ -148,30 +148,31 @@ class IPUTrainingArguments:
                 - `"steps"`: Logging is done every `logging_steps`.
 
         logging_first_step (`bool`, *optional*, defaults to `False`):
-            Whether to log and evaluate the first `global_step` or not.
+            If `True`, logs and evaluates the first `global_step`.
         logging_steps (`int`, *optional*, defaults to 500):
             Number of update steps between two logs if `logging_strategy="steps"`.
         logging_nan_inf_filter (`bool`, *optional*, defaults to `True`):
-            Whether to filter `nan` and `inf` losses for logging. If set to `True` the loss of every step that is `nan`
+            If `True`, the loss of every step that is `nan`
             or `inf` is filtered and the average loss of the current logging window is taken instead.
 
             <Tip>
 
-            `logging_nan_inf_filter` only influences the logging of loss values, it does not change the behavior the
-            gradient is computed or applied to the model.
+            `logging_nan_inf_filter` only influences the logging of loss values
+            and it does not change the behavior of how the gradient is computed
+            or applied to the model.
 
             </Tip>
 
         save_strategy (`str` or [`~trainer_utils.IntervalStrategy`], *optional*, defaults to `"steps"`):
             The checkpoint save strategy to adopt during training. Possible values are:
 
-                - `"no"`: No save is done during training.
-                - `"epoch"`: Save is done at the end of each epoch.
-                - `"steps"`: Save is done every `save_steps`.
+                - `"no"`: No save during training.
+                - `"epoch"`: Save at the end of each epoch.
+                - `"steps"`: Save every `save_steps`.
         save_steps (`int`, *optional*, defaults to 500):
-            Number of updates steps before two checkpoint saves if `save_strategy="steps"`.
+            Number of update steps before two checkpoint saves if `save_strategy="steps"`.
         save_total_limit (`int`, *optional*):
-            If a value is passed, will limit the total amount of checkpoints. Deletes the older checkpoints in
+            If a value is passed, will limit the total number of checkpoints. Deletes the older checkpoints in
             `output_dir`.
         seed (`int`, *optional*, defaults to 42):
             Random seed that will be set at the beginning of training. To ensure reproducibility across runs, use the
@@ -181,8 +182,7 @@ class IPUTrainingArguments:
             same seed as `seed`. This can be used to ensure reproducibility of data sampling, independent of the model
             seed.
         dataloader_drop_last (`bool`, *optional*, defaults to `False`):
-            Whether to drop the last incomplete batch (if the length of the dataset is not divisible by the batch size)
-            or not.
+            If `True`, drops the last incomplete batch (if the length of the dataset is not divisible by the batch size).
         eval_steps (`int`, *optional*):
             Number of update steps between two evaluations if `evaluation_strategy="steps"`. Will default to the same
             value as `logging_steps` if not set.
@@ -191,43 +191,43 @@ class IPUTrainingArguments:
             main process.
         past_index (`int`, *optional*, defaults to -1):
             Some models like [TransformerXL](../model_doc/transformerxl) or [XLNet](../model_doc/xlnet) can make use of
-            the past hidden states for their predictions. If this argument is set to a positive int, the `Trainer` will
+            past hidden states for their predictions. If this argument is set to a positive int, `Trainer` will
             use the corresponding output (usually index 2) as the past state and feed it to the model at the next
             training step under the keyword argument `mems`.
         run_name (`str`, *optional*):
-            A descriptor for the run. Typically used for [wandb](https://www.wandb.com/) and
-            [mlflow](https://www.mlflow.org/) logging.
+            A descriptor for the run. Typically used for [WandB](https://www.wandb.com/) and
+            [MLflow](https://www.mlflow.org/) logging.
         disable_tqdm (`bool`, *optional*):
-            Whether or not to disable the tqdm progress bars and table of metrics produced by
+            If `True`, disables the tqdm progress bars and table of metrics produced by
             [`~notebook.NotebookTrainingTracker`] in Jupyter Notebooks. Will default to `True` if the logging level is
             set to warn or lower (default), `False` otherwise.
         remove_unused_columns (`bool`, *optional*, defaults to `True`):
-            Whether or not to automatically remove the columns unused by the model forward method.
+            If `True`, automatically removes the columns unused by the model forward method.
         label_names (`List[str]`, *optional*):
             The list of keys in your dictionary of inputs that correspond to the labels.
 
             Will eventually default to `["labels"]` except if the model used is one of the `XxxForQuestionAnswering` in
             which case it will default to `["start_positions", "end_positions"]`.
         load_best_model_at_end (`bool`, *optional*, defaults to `False`):
-            Whether or not to load the best model found during training at the end of training.
+            If `True`, loads the best model found during training at the end of training.
 
             <Tip>
 
-            When set to `True`, the parameters `save_strategy` needs to be the same as `evaluation_strategy`, and in
+            When set to `True`, the parameter `save_strategy` needs to be the same as `evaluation_strategy`, and in
             the case it is "steps", `save_steps` must be a round multiple of `eval_steps`.
 
             </Tip>
 
         metric_for_best_model (`str`, *optional*):
-            Use in conjunction with `load_best_model_at_end` to specify the metric to use to compare two different
+            Use in conjunction with `load_best_model_at_end` to specify the metric for comparing two different
             models. Must be the name of a metric returned by the evaluation with or without the prefix `"eval_"`. Will
             default to `"loss"` if unspecified and `load_best_model_at_end=True` (to use the evaluation loss).
 
-            If you set this value, `greater_is_better` will default to `True`. Don't forget to set it to `False` if
+            If you set this parameter, `greater_is_better` will default to `True`. Don't forget to set it to `False` if
             your metric is better when lower.
         greater_is_better (`bool`, *optional*):
             Use in conjunction with `load_best_model_at_end` and `metric_for_best_model` to specify if better models
-            should have a greater metric or not. Will default to:
+            should have a higher metric or not. Will default to:
 
             - `True` if `metric_for_best_model` is set to a value that isn't `"loss"` or `"eval_loss"`.
             - `False` if `metric_for_best_model` is not set, or set to `"loss"` or `"eval_loss"`.
@@ -252,41 +252,40 @@ class IPUTrainingArguments:
             The optimizer to use: adamw_hf, adamw_torch, adamw_apex_fused, or adafactor.
             **Note**: currently not supported.
         lamb (`bool`, *optional*, defaults to `False`):
-            Whether or not to replace AdamW by LAMB.
+            If `True`, replaces AdamW with LAMB.
         lamb_no_bias_correction (`bool`, *optional*, defaults to `False`):
-            Whether or not to replace AdamW by LAMB without bias correction.
+            If `True`, replaces AdamW with LAMB without bias correction.
         group_by_length (`bool`, *optional*, defaults to `False`):
-            Whether or not to group together samples of roughly the same length in the training dataset (to minimize
+            If `True`, groups together samples of roughly the same length in the training dataset (to minimize
             padding applied and be more efficient). Only useful if applying dynamic padding.
         length_column_name (`str`, *optional*, defaults to `"length"`):
-            Column name for precomputed lengths. If the column exists, grouping by length will use these values rather
-            than computing them on train startup. Ignored unless `group_by_length` is `True` and the dataset is an
+            The column name for precomputed lengths. If the column exists, grouping by length will use these values rather
+            than computing them on training startup. Ignored unless `group_by_length` is `True` and the dataset is an
             instance of `Dataset`.
         report_to (`str` or `List[str]`, *optional*, defaults to `"all"`):
             The list of integrations to report the results and logs to. Supported platforms are `"azure_ml"`,
             `"comet_ml"`, `"mlflow"`, `"neptune"`, `"tensorboard"` and `"wandb"`. Use `"all"` to report to all
             integrations installed, `"none"` for no integrations.
         dataloader_pin_memory (`bool`, *optional*, defaults to `True`):
-            Whether you want to pin memory in data loaders or not. Will default to `True`.
+            If `True`, pins memory in data loaders. Will default to `True`.
         skip_memory_metrics (`bool`, *optional*, defaults to `True`):
-            Whether to skip adding of memory profiler reports to metrics. This is skipped by default because it slows
-            down the training and evaluation speed.
+            If `True`, skips adding of memory profiler reports to metrics. This is skipped by default because it slows down the training and evaluation.
         push_to_hub (`bool`, *optional*, defaults to `False`):
-            Whether or not to push the model to the Hub every time the model is saved. If this is activated,
-            `output_dir` will begin a git directory synced with the repo (determined by `hub_model_id`) and the content
+            If `True`, pushes the model to the Hub every time the model is saved. If this is activated,
+            `output_dir` will begin a Git directory synced with the repo (determined by `hub_model_id`) and the content
             will be pushed each time a save is triggered (depending on your `save_strategy`). Calling
             [`~Trainer.save_model`] will also trigger a push.
 
             <Tip warning={true}>
 
-            If `output_dir` exists, it needs to be a local clone of the repository to which the [`Trainer`] will be
+            If `output_dir` exists, it needs to be a local clone of the repository to which the [`Trainer`] instance will be
             pushed.
 
             </Tip>
 
         resume_from_checkpoint (`str`, *optional*):
             The path to a folder with a valid checkpoint for your model. This argument is not directly used by
-            [`Trainer`], it's intended to be used by your training/evaluation scripts instead. See the [example
+            [`Trainer`]. It's intended to be used by your training/evaluation scripts instead. See the [example
             scripts](https://github.com/huggingface/transformers/tree/main/examples) for more details.
         hub_model_id (`str`, *optional*):
             The name of the repository to keep in sync with the local *output_dir*. It can be a simple model ID in
@@ -299,12 +298,11 @@ class IPUTrainingArguments:
         hub_strategy (`str` or [`~trainer_utils.HubStrategy`], *optional*, defaults to `"every_save"`):
             Defines the scope of what is pushed to the Hub and when. Possible values are:
 
-            - `"end"`: push the model, its configuration, the tokenizer (if passed along to the [`Trainer`]) and a
+            - `"end"`: push the model, its configuration, the tokenizer (if passed along to [`Trainer`]) and a
               draft of a model card when the [`~Trainer.save_model`] method is called.
-            - `"every_save"`: push the model, its configuration, the tokenizer (if passed along to the [`Trainer`]) and
+            - `"every_save"`: push the model, its configuration, the tokenizer (if passed along to [`Trainer`]) and
               a draft of a model card each time there is a model save. The pushes are asynchronous to not block
-              training, and in case the save are very frequent, a new push is only attempted if the previous one is
-              finished. A last push is made with the final model at the end of training.
+              training, and if the saves are very frequent, a new push is only attempted if the previous push has completed. A last push is made with the final model at the end of training.
             - `"checkpoint"`: like `"every_save"` but the latest checkpoint is also pushed in a subfolder named
               last-checkpoint, allowing you to resume training easily with
               `trainer.train(resume_from_checkpoint="last-checkpoint")`.
@@ -315,40 +313,40 @@ class IPUTrainingArguments:
             The token to use to push the model to the Hub. Will default to the token in the cache folder obtained with
             `huggingface-cli login`.
         hub_private_repo (`bool`, *optional*, defaults to `False`):
-            If True, the Hub repo will be set to private.
+            If `True`, the Hub repo will be set to private.
         gradient_checkpointing (`bool`, *optional*, defaults to `False`):
-            If True, use gradient checkpointing to save memory at the expense of slower backward pass.
+            If `True`, use gradient checkpointing to save memory at the expense of slower backward pass.
         include_inputs_for_metrics (`bool`, *optional*, defaults to `False`):
-            Whether or not the inputs will be passed to the `compute_metrics` function. This is intended for metrics
-            that need inputs, predictions and references for scoring calculation in Metric class.
+            If `True`, the inputs will be passed to the `compute_metrics` function. This is intended for metrics
+            that need inputs, predictions and references for scoring calculation in the `Metric` class.
             **Note**: currently not supported.
         ipu_config_name (`str`, *optional*):
             The pretrained IPU config name or path if not the same as the model name or path.
         n_ipu (`int`, *optional*):
             The number of IPUs to use. Must be a power of 2 and a multiple of the number of IPUs required by your model.
         fp32 (`bool`, *optional*, defaults to `False`):
-            Whether to use 32-bit (full) precision instead of 16-bit
+            If `True`, uses 32-bit (full) precision instead of 16-bit.
         loss_scaling (`float`, *optional*):
             The loss scaling factor (using a power of 2 is recommended). If using automatic loss scaling, this value will
             be the initial value.
         auto_loss_scaling (`bool`, *optional*, defaults to `False`):
-            Enables automatic lauss scaling for half precision training.
+            If `True`, enables automatic loss scaling for half precision training.
             **Note**: this feature is experimental.
         dataloader_mode (`str`, *optional*, defaults to `"sync"`):
-            The way data should be accessed. Possible values:
+            The way in which data should be accessed. Possible values:
 
             - sync
             - async
             - async_rebatched
 
         compile_only (`bool`, *optional*, defaults to `False`):
-            If `True`, the [`IPUTrainer`] will only perform model compilation and stop.
+            If `True`, the [`IPUTrainer`] instance will only perform model compilation and stop.
         ipu_config_overrides (`str`, *optional*):
             Overrides some existing IPU config settings.
             Example: `device_iterations=4,gradient_accumulation_steps=64`
         pad_on_batch_axis (`bool`, *optional*, defaults to `False`):
             Will pad each batch up to a fixed size. This ensures that the compiled model will have an input with the
-            proper shape, and allows to not use `dataloader_drop_last` during training.
+            proper shape, and means that `dataloader_drop_last` will not have to be used during training.
     """
 
     output_dir: str = field(
@@ -358,22 +356,22 @@ class IPUTrainingArguments:
         default=False,
         metadata={
             "help": (
-                "Overwrite the content of the output directory. "
+                "If `True`, overwrites the contents of the output directory. "
                 "Use this to continue training if output_dir points to a checkpoint directory."
             )
         },
     )
 
-    do_train: bool = field(default=False, metadata={"help": "Whether to run training."})
-    do_eval: bool = field(default=False, metadata={"help": "Whether to run eval on the dev set."})
-    do_predict: bool = field(default=False, metadata={"help": "Whether to run predictions on the test set."})
+    do_train: bool = field(default=False, metadata={"help": "If `True`, run training."})
+    do_eval: bool = field(default=False, metadata={"help": "If `True`, run evaluation on the development set."})
+    do_predict: bool = field(default=False, metadata={"help": "If `True`, run predictions on the test set."})
     evaluation_strategy: IntervalStrategy = field(
         default="no",
         metadata={"help": "The evaluation strategy to use."},
     )
     prediction_loss_only: bool = field(
         default=False,
-        metadata={"help": "When performing evaluation and predictions, only returns the loss."},
+        metadata={"help": "If `True`, only return the loss when performing evaluation and predictions."},
     )
 
     per_device_train_batch_size: int = field(default=1, metadata={"help": "Batch size per IPU for training."})
@@ -381,12 +379,12 @@ class IPUTrainingArguments:
 
     gradient_accumulation_steps: int = field(
         default=None,
-        metadata={"help": "Number of updates steps to accumulate before performing a backward/update pass."},
+        metadata={"help": "Number of update steps to accumulate before performing a backward/update pass."},
     )
     eval_delay: Optional[float] = field(
         default=0,
         metadata={
-            "help": "Number of epochs or steps to wait for before the first evaluation can be performed, depending on the evaluation_strategy."
+            "help": "Number of epochs or steps to wait before the first evaluation can be performed. Depends on the evaluation strategy."
         },
     )
     learning_rate: float = field(default=5e-5, metadata={"help": "The initial learning rate for AdamW."})
@@ -399,34 +397,34 @@ class IPUTrainingArguments:
     num_train_epochs: float = field(default=3.0, metadata={"help": "Total number of training epochs to perform."})
     max_steps: int = field(
         default=-1,
-        metadata={"help": "If > 0: set total number of training steps to perform. Override num_train_epochs."},
+        metadata={"help": "If > 0, set total number of training steps to perform. Overrides num_train_epochs."},
     )
     lr_scheduler_type: SchedulerType = field(
         default="linear",
-        metadata={"help": "The scheduler type to use."},
+        metadata={"help": "The scheduler type to use. Defaults to 'linear'."},
     )
     warmup_ratio: float = field(
-        default=0.0, metadata={"help": "Linear warmup over warmup_ratio fraction of total steps."}
+        default=0.0, metadata={"help": "The fraction of total steps to be used to linear warmup."}
     )
-    warmup_steps: int = field(default=0, metadata={"help": "Linear warmup over warmup_steps."})
+    warmup_steps: int = field(default=0, metadata={"help": "The number of steps to be used for linear warmup."})
 
     log_level: Optional[str] = field(
         default="passive",
         metadata={
             "help": (
-                "Logger log level to use on the main node. Possible choices are the log levels as strings: 'debug',"
-                " 'info', 'warning', 'error' and 'critical', plus a 'passive' level which doesn't set anything and"
+                "Logger log level to use on the main node. Possible choices are: 'debug',"
+                " 'info', 'warning', 'error' and 'critical', plus a 'passive' level which"
                 " lets the application set the level. Defaults to 'passive'."
             ),
             "choices": trainer_log_levels.keys(),
         },
     )
-    logging_dir: Optional[str] = field(default=None, metadata={"help": "Tensorboard log dir."})
+    logging_dir: Optional[str] = field(default=None, metadata={"help": "TensorBoard log dir."})
     logging_strategy: IntervalStrategy = field(
         default="steps",
         metadata={"help": "The logging strategy to use."},
     )
-    logging_first_step: bool = field(default=False, metadata={"help": "Log the first global_step"})
+    logging_first_step: bool = field(default=False, metadata={"help": "Log the first global_step."})
     logging_steps: int = field(default=500, metadata={"help": "Log every X updates steps."})
     logging_nan_inf_filter: bool = field(default=False, metadata={"help": "Filter nan and inf losses for logging."})
     save_strategy: IntervalStrategy = field(
@@ -438,8 +436,8 @@ class IPUTrainingArguments:
         default=None,
         metadata={
             "help": (
-                "Limit the total amount of checkpoints. "
-                "Deletes the older checkpoints in the output_dir. Default is unlimited checkpoints"
+                "Limit the total number of checkpoints. "
+                "Deletes the older checkpoints in the output directory. Default is unlimited checkpoints."
             )
         },
     )
@@ -448,7 +446,7 @@ class IPUTrainingArguments:
     debug: str = field(
         default="",
         metadata={
-            "help": "Whether or not to enable debug mode. Current options: "
+            "help": "Select whether or not to enable debug mode. Current options: "
             "`underflow_overflow` (Detect underflow and overflow in activations and weights), "
         },
     )
@@ -469,7 +467,7 @@ class IPUTrainingArguments:
     )
 
     run_name: Optional[str] = field(
-        default=None, metadata={"help": "An optional descriptor for the run. Notably used for wandb logging."}
+        default=None, metadata={"help": "An optional descriptor for the run. Notably used for WandB logging."}
     )
     disable_tqdm: Optional[bool] = field(
         default=None, metadata={"help": "Whether or not to disable the tqdm progress bars."}
@@ -484,22 +482,22 @@ class IPUTrainingArguments:
 
     load_best_model_at_end: Optional[bool] = field(
         default=False,
-        metadata={"help": "Whether or not to load the best model found during training at the end of training."},
+        metadata={"help": "If `True`, loads the best model found during training at the end of training."},
     )
     metric_for_best_model: Optional[str] = field(
         default=None, metadata={"help": "The metric to use to compare two different models."}
     )
     greater_is_better: Optional[bool] = field(
-        default=None, metadata={"help": "Whether the `metric_for_best_model` should be maximized or not."}
+        default=None, metadata={"help": "If `True`, maximizes `metric_for_best_model`."}
     )
     ignore_data_skip: bool = field(
         default=False,
         metadata={
-            "help": "When resuming training, whether or not to skip the first epochs and batches to get to the same training data."
+            "help": "If `True`, skips the first epochs and batches to get to the same training data, when resuming training. Default: False."
         },
     )
     label_smoothing_factor: float = field(
-        default=0.0, metadata={"help": "The label smoothing epsilon to apply (zero means no label smoothing)."}
+        default=0.0, metadata={"help": "The label smoothing epsilon to apply. 0 (default) means no label smoothing."}
     )
     # TODO: support this.
     # Type annotation not supported in transformers 4.20.1
@@ -509,23 +507,23 @@ class IPUTrainingArguments:
     # )
     group_by_length: bool = field(
         default=False,
-        metadata={"help": "Whether or not to group samples of roughly the same length together when batching."},
+        metadata={"help": "If `True`, groups samples of roughly the same length together when batching. Default: False."},
     )
     length_column_name: Optional[str] = field(
         default="length",
-        metadata={"help": "Column name with precomputed lengths to use when grouping by length."},
+        metadata={"help": "The column name with precomputed lengths to use when grouping by length. Default: 'length'"},
     )
     report_to: Optional[List[str]] = field(
         default="none", metadata={"help": "The list of integrations to report the results and logs to."}
     )
     dataloader_pin_memory: bool = field(
-        default=True, metadata={"help": "Whether or not to pin memory for DataLoader."}
+        default=True, metadata={"help": "If `True`, pins memory for DataLoader. Default: True."}
     )
     skip_memory_metrics: bool = field(
-        default=True, metadata={"help": "Whether or not to skip adding of memory profiler reports to metrics."}
+        default=True, metadata={"help": "If `True`, skips adding of memory profiler reports to metrics."}
     )
     push_to_hub: bool = field(
-        default=False, metadata={"help": "Whether or not to upload the trained model to the model hub after training."}
+        default=False, metadata={"help": "If `True`, Whether or not to upload the trained model to the model hub after training. Default: False."}
     )
     resume_from_checkpoint: Optional[str] = field(
         default=None,
@@ -536,27 +534,27 @@ class IPUTrainingArguments:
     )
     hub_strategy: HubStrategy = field(
         default="every_save",
-        metadata={"help": "The hub strategy to use when `--push_to_hub` is activated."},
+        metadata={"help": "The Hub strategy to use when `--push_to_hub` is activated."},
     )
     hub_token: str = field(default=None, metadata={"help": "The token to use to push to the Model Hub."})
-    hub_private_repo: bool = field(default=False, metadata={"help": "Whether the model repository is private or not."})
+    hub_private_repo: bool = field(default=False, metadata={"help": "If `True`, indicates that the Hub Model repository is private."})
     gradient_checkpointing: bool = field(
         default=False,
         metadata={
-            "help": "If True, use gradient checkpointing to save memory at the expense of slower backward pass."
+            "help": "If `True`, use gradient checkpointing to save memory at the expense of slower backward pass. Default: False."
         },
     )
     # TODO: support this.
     include_inputs_for_metrics: bool = field(
-        default=False, metadata={"help": "Whether or not the inputs will be passed to the `compute_metrics` function."}
+        default=False, metadata={"help": "If `True`, pass the inputs to the `compute_metrics` function. Default: False."}
     )
 
     # Deprecated arguments
     push_to_hub_model_id: str = field(
-        default=None, metadata={"help": "The name of the repository to which push the `Trainer`."}
+        default=None, metadata={"help": "The name of the repository to which push `Trainer` to."}
     )
     push_to_hub_organization: str = field(
-        default=None, metadata={"help": "The name of the organization in with to which push the `Trainer`."}
+        default=None, metadata={"help": "The name of the organization to use when pushing `Trainer`."}
     )
     push_to_hub_token: str = field(default=None, metadata={"help": "The token to use to push to the Model Hub."})
     pod_type: Optional[str] = field(
@@ -565,7 +563,7 @@ class IPUTrainingArguments:
     )
     # IPU Specific arguments
     ipu_config_name: Optional[str] = field(
-        default=None, metadata={"help": "Pretrained IPU config name or path if not the same as model_name."}
+        default=None, metadata={"help": "Pre-trained IPU config name or path if not the same as model_name."}
     )
     n_ipu: Optional[int] = field(
         default=None,
@@ -573,11 +571,11 @@ class IPUTrainingArguments:
     )
     fp32: bool = field(
         default=False,
-        metadata={"help": "Whether to use 32-bit (full) precision instead of 16-bit"},
+        metadata={"help": "If `True`, use 32-bit (full) precision instead of 16-bit."},
     )
-    lamb: bool = field(default=False, metadata={"help": "Whether or not to replace AdamW by LAMB."})
+    lamb: bool = field(default=False, metadata={"help": "If `True`, replace AdamW with LAMB. Default: False."})
     lamb_no_bias_correction: bool = field(
-        default=False, metadata={"help": "Whether or not to replace AdamW by LAMB without bias correction."}
+        default=False, metadata={"help": "If `True`, replace AdamW with LAMB without bias correction."}
     )
     loss_scaling: Optional[float] = field(
         default=None,
@@ -589,7 +587,7 @@ class IPUTrainingArguments:
     auto_loss_scaling: bool = field(
         default=False,
         metadata={
-            "help": "Enable automatic loss scaling for half precision training. Note that this is an experimental feature."
+            "help": "If `True`, enable automatic loss scaling for half precision training. Note that this is an experimental feature."
         },
     )
     dataloader_mode: str = field(
@@ -597,12 +595,12 @@ class IPUTrainingArguments:
         metadata={"help": "The way data should be accessed.", "choices": ["sync", "async", "async_rebatched"]},
     )
     compile_only: bool = field(
-        default=False, metadata={"help": "If True, the `IPUTrainer` will only perform model compilation and stop."}
+        default=False, metadata={"help": "If `True`, `IPUTrainer` will only perform model compilation and stop."}
     )
     ipu_config_overrides: Optional[str] = field(
         default=None,
         metadata={
-            "help": "Override some existing ipu config settings. Example: device_iterations=4,gradient_accumulation_steps=64"
+            "help": "Override some existing IPU config settings. Example: device_iterations=4,gradient_accumulation_steps=64"
         },
     )
     pad_on_batch_axis: bool = field(
@@ -610,7 +608,7 @@ class IPUTrainingArguments:
         metadata={
             "help": (
                 "Will pad each batch up to a fixed size. This ensures that the compiled model will have an input with",
-                " the proper shape, and allows to not use drop_last during training.",
+                " the proper shape. This means drop_last doesn't have to be used during training.",
             ),
         },
     )
@@ -635,7 +633,7 @@ class IPUTrainingArguments:
 
         if isinstance(self.evaluation_strategy, EvaluationStrategy):
             warnings.warn(
-                "using `EvaluationStrategy` for `evaluation_strategy` is deprecated and will be removed in version 5 of 🤗 Transformers. Use `IntervalStrategy` instead",
+                "Using `EvaluationStrategy` for `evaluation_strategy` is deprecated and will be removed in version 5 of 🤗 Transformers. Use `IntervalStrategy` instead",
                 FutureWarning,
             )
             # Go back to the underlying string or we won't be able to instantiate `IntervalStrategy` on it.
@@ -653,16 +651,16 @@ class IPUTrainingArguments:
         # eval_steps has to be defined and non-zero, fallbacks to logging_steps if the latter is non-zero
         if self.evaluation_strategy == IntervalStrategy.STEPS and (self.eval_steps is None or self.eval_steps == 0):
             if self.logging_steps > 0:
-                logger.info(f"using `logging_steps` to initialize `eval_steps` to {self.logging_steps}")
+                logger.info(f"Using `logging_steps` to initialize `eval_steps` to {self.logging_steps}")
                 self.eval_steps = self.logging_steps
             else:
                 raise ValueError(
-                    f"evaluation strategy {self.evaluation_strategy} requires either non-zero --eval_steps or --logging_steps"
+                    f"Evaluation strategy {self.evaluation_strategy} requires either non-zero --eval_steps or --logging_steps"
                 )
 
         # logging_steps must be non-zero for logging_strategy that is other than 'no'
         if self.logging_strategy == IntervalStrategy.STEPS and self.logging_steps == 0:
-            raise ValueError(f"logging strategy {self.logging_strategy} requires non-zero --logging_steps")
+            raise ValueError(f"Logging strategy {self.logging_strategy} requires non-zero --logging_steps")
 
         # Sanity checks for load_best_model_at_end: we require save and eval strategies to be compatible.
         if self.load_best_model_at_end:
@@ -698,7 +696,7 @@ class IPUTrainingArguments:
             raise ValueError("warmup_ratio must lie in range [0,1]")
         elif self.warmup_ratio > 0 and self.warmup_steps > 0:
             logger.info(
-                "Both warmup_ratio and warmup_steps given, warmup_steps will override any effect of warmup_ratio during training"
+                "Both warmup_ratio and warmup_steps given, warmup_steps will override any effect of warmup_ratio during training."
             )
 
         if isinstance(self.debug, str):
@@ -787,18 +785,18 @@ class IPUTrainingArguments:
     @property
     def should_save(self):
         """
-        Whether or not the current process should write to disk, e.g., to save models and checkpoints.
+        Returns whether the current process should write to disk or not, for example, to save models and checkpoints.
         """
         return True
 
     def get_process_log_level(self):
         """
-        Returns the log level to be used depending on whether this process is the main process of node 0, main process
+        Returns the log level to be used depending on whether this process is the main process of node 0, the main process
         of node non-0, or a non-main process.
 
-        For the main process the log level defaults to ``logging.INFO`` unless overridden by ``log_level`` argument.
+        For the main process, the log level defaults to ``logging.INFO`` unless overridden by the ``log_level`` argument.
 
-        For the replica processes the log level defaults to ``logging.WARNING`` unless overridden by
+        For the replica processes, the log level defaults to ``logging.WARNING`` unless overridden by the
         ``log_level_replica`` argument.
 
         The choice between the main and replica process settings is made according to the return value of
@@ -810,12 +808,14 @@ class IPUTrainingArguments:
     @contextlib.contextmanager
     def main_process_first(self, local=True, desc="work"):
         """
-            A context manager for torch distributed environment where on needs to do something on the main process,
-            while blocking replicas, and when it's finished releasing the replicas.
+            A context manager for a `torch` distributed environment where one
+            needs to run a task on the main process, while blocking replicas,
+            and when the task is finished to release the replicas.
 
-            One such use is for ``datasets``'s ``map`` feature which to be efficient should be run once on the main
-            process, which upon completion saves a cached version of results and which then automatically gets loaded
-            by the replicas.
+            An example is for the ``datasets`` ``map`` feature which, to be
+            efficient, should be run once on the main process. Upon completion,
+            it saves a cached version of results and which then automatically
+            gets loaded by the replicas.
 
         Args:
             local (:obj:`bool`, `optional`, defaults to :obj:`True`):
@@ -825,7 +825,7 @@ class IPUTrainingArguments:
                 filesystem is not shared, then the main process of each node will need to do the processing, which is
                 the default behavior.
             desc (:obj:`str`, `optional`, defaults to ``"work"``):
-                a work description to be used in debug logs
+                A work description to be used in debug logs
 
         """
         # Not useful, kept to save us from having to edit all the examples.
@@ -833,7 +833,7 @@ class IPUTrainingArguments:
 
     def get_warmup_steps(self, num_training_steps: int):
         """
-        Get number of steps used for a linear warmup.
+        Get the number of steps used for a linear warmup.
         """
         warmup_steps = (
             self.warmup_steps if self.warmup_steps > 0 else math.ceil(num_training_steps * self.warmup_ratio)
@@ -842,7 +842,7 @@ class IPUTrainingArguments:
 
     def to_dict(self):
         """
-        Serializes this instance while replace `Enum` by their values (for JSON serialization support). It obfuscates
+        Serializes this instance while replacing the `Enum` with their values (for JSON serialization support). It obfuscates
         the token values by removing their value.
         """
         d = asdict(self)
@@ -863,7 +863,7 @@ class IPUTrainingArguments:
 
     def to_sanitized_dict(self) -> Dict[str, Any]:
         """
-        Sanitized serialization to use with TensorBoard’s hparams
+        Sanitized serialization to use with TensorBoard HParams.
         """
         d = self.to_dict()
         d = {**d, **{"train_batch_size": self.train_batch_size, "eval_batch_size": self.eval_batch_size}}

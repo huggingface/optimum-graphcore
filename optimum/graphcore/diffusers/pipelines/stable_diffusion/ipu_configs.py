@@ -94,7 +94,7 @@ def get_default_ipu_configs(
     default_image_dim = 768 if "768" in engine else 512
     if default_image_dim == 768 and height < default_image_dim and width < default_image_dim:
         logger.warn(
-            "Generating an image of a size smaller than 768x768 with a checkpoint finetuned for 768x768 "
+            "Generating an image of a size smaller than 768x768 with a checkpoint fine-tuned for 768x768 "
             "can lead to images of poor quality."
         )
 

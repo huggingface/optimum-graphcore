@@ -396,7 +396,7 @@ class OnDeviceGenerationModel(torch.nn.Module):
             input_ids = kwargs.pop(input_ids_key, None)
             if input_ids is None:
                 raise ValueError(
-                    f"On device generation model was called with kwargs that are missing both `decoder_input_ids` "
+                    f"The on device generation model was called with kwargs that are missing both `decoder_input_ids` "
                     "and `input_ids`. Please provide one of these as inputs (default is `decoder_input_ids`)."
                 )
         if input_ids.shape[-1] > 1:
