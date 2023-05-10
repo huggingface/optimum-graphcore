@@ -418,27 +418,21 @@ class IPUConfig(BaseConfig):
             ipus_per_replica_mode_str = self._get_managed_attr_mode_name("ipus_per_replica")
 
             # len(matmul_proportion) must equal ipus_per_replica
-            # if matmul_proportion = [proportion], _to_options will replicate
-            # its value to [proportion] * ipus_per_replica
-            if (
-                isinstance(self.matmul_proportion, list)
-                and len(self.matmul_proportion) != self.ipus_per_replica
-                and len(self.matmul_proportion) > 1
-            ):
+            if isinstance(self._matmul_proportion, list) and len(self._matmul_proportion) != self._ipus_per_replica:
                 matmul_proportion_mode_str = self._get_managed_attr_mode_name("matmul_proportion")
                 raise IncompatibleIPUConfigError(
-                    f"{matmul_proportion_mode_str}={self.matmul_proportion} should use the"
-                    f" same number of IPUs as {ipus_per_replica_mode_str}={self.ipus_per_replica}"
+                    f"{matmul_proportion_mode_str}={self._matmul_proportion} should use the"
+                    f" same number of IPUs as {ipus_per_replica_mode_str}={self._ipus_per_replica}"
                 )
 
             # layers_per_ipu must have the same length as ipus per replica.
             # If wildcards are present in layers_per_ipu, let the call to `model.parallelize`
             # handle the validation
-            if -1 not in self.layers_per_ipu and len(self.layers_per_ipu) != self.ipus_per_replica:
+            if -1 not in self._layers_per_ipu and len(self._layers_per_ipu) != self._ipus_per_replica:
                 layers_per_ipu_mode_str = self._get_managed_attr_mode_name("layers_per_ipu")
                 raise IncompatibleIPUConfigError(
-                    f"{layers_per_ipu_mode_str}={self.layers_per_ipu} should use the"
-                    f" same number of IPUs as {ipus_per_replica_mode_str}={self.ipus_per_replica}"
+                    f"{layers_per_ipu_mode_str}={self._layers_per_ipu} should use the"
+                    f" same number of IPUs as {ipus_per_replica_mode_str}={self._ipus_per_replica}"
                 )
 
         self.mode = old_mode
