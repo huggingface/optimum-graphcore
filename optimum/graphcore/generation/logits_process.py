@@ -12,13 +12,13 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import poptorch
 import torch
 
+import poptorch
 from transformers.generation.utils import (
-    ForceTokensLogitsProcessor,
-    ForcedEOSTokenLogitsProcessor,
     ForcedBOSTokenLogitsProcessor,
+    ForcedEOSTokenLogitsProcessor,
+    ForceTokensLogitsProcessor,
     MinLengthLogitsProcessor,
     NoRepeatNGramLogitsProcessor,
     SuppressTokensAtBeginLogitsProcessor,
