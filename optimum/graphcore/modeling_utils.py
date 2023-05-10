@@ -256,7 +256,7 @@ def _expand_layers_per_ipu_wildcard(
 
             elif len(layers_per_ipu) != ipus_per_replica:
                 raise IncompatibleIPUConfigError(
-                    "layers_per_ipu has non-default value set, but its length does not match ipus_per_replica. "
+                    "layers_per_ipu has non-default value set, but its length does not match ipus_per_replica"
                     f"layers_per_ipu={layers_per_ipu}, ipus_per_replica={ipus_per_replica}. "
                 )
             # no wildcards used
