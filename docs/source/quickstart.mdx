@@ -19,12 +19,18 @@ limitations under the License.
 
 🤗 Optimum Graphcore was designed with one goal in mind: **making training and evaluation straightforward for any 🤗 Transformers user while leveraging the complete power of IPUs.**
 
-There are two main classes one needs to know:
+## Installation
 
-- [`IPUTrainer`]: the trainer class that takes care of compiling the model to run on IPUs, and of performing training and evaluation, check [here](trainer) for more information..
-- [`IPUConfig`]: the class that specifies attributes and configuration parameters to compile and put the model on the device, check [here](ipu_config) for more information.
 
-The [`IPUTrainer`] is very similar to the [🤗 Transformers Trainer](https://huggingface.co/docs/transformers/main_classes/trainer), and adapting a script using the `Trainer` to make it work with IPUs will mostly consists of simply swapping the `Trainer` class for the [`IPUTrainer`] one. That's how most of the [example scripts](https://github.com/huggingface/optimum-graphcore/tree/main/examples) were adapted from their [original counterparts](https://github.com/huggingface/transformers/tree/master/examples/pytorch).
+
+## Using Optimum Graphcore
+
+There are two main classes you need to know about:
+
+- [`IPUTrainer`]: This class handles compiling the model to run on IPUs, as well as performing the training and evaluation. Refer to the [`IPUTrainer`](trainer) section for more information..
+- [`IPUConfig`]: This class specifies attributes and configuration parameters to compile and put the model on the IPU. Refer to the [`IPUConfig`](ipu_config) section for more information.
+
+[`IPUTrainer`] is very similar to the 🤗 Transformers [Trainer](https://huggingface.co/docs/transformers/main_classes/trainer) class, and you can easily adapt a script that currently uses `Trainer` to make it work with IPUs. You will mostly swap `Trainer` for [`IPUTrainer`]. This is how most of the [Optimum Graphcore example scripts](https://github.com/huggingface/optimum-graphcore/tree/main/examples) were adapted from the [original Hugging Face](https://github.com/huggingface/transformers/tree/master/examples/pytorch) scripts.
 
 ```diff
 -from transformers import Trainer, TrainingArguments

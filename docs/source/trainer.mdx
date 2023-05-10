@@ -14,13 +14,17 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 
-# IPUTrainer
+# Training, Evaluation and Prediction
 
-The [`IPUTrainer`] class provides a similar API than the [Transformers Trainer](https://huggingface.co/docs/transformers/main_classes/trainer) to perform training, evaluation and prediction on Graphcore's IPUs. It is the class used in all the [example scripts](https://github.com/huggingface/optimum-graphcore/tree/main/examples).
+The [`IPUTrainer`] class provides a similar API to the 🤗 Transformers [Trainer](https://huggingface.co/docs/transformers/main_classes/trainer) class to perform training, evaluation and prediction on Graphcore's IPUs. It is the class used in all the [example scripts](https://github.com/huggingface/optimum-graphcore/tree/main/examples).
 
-Compared to the regular [Transformers Trainer](https://huggingface.co/docs/transformers/main_classes/trainer), to instantiate a [`IPUTrainer`] you need to create:
+Compared to the 🤗 Transformers [Trainer](https://huggingface.co/docs/transformers/main_classes/trainer) class, to instantiate a [`IPUTrainer`] you need to create:
   - An instance of [`IPUTrainingArguments`], which allows you to customize the behaviour of the trainer
-  - An instance of [`IPUConfig`], which specifies IPU specific parameters
+  - An instance of [`IPUConfig`], which defines IPU-specific parameters
+
+## 
+
+
 
 ### IPUTrainer
 
@@ -29,8 +33,14 @@ Compared to the regular [Transformers Trainer](https://huggingface.co/docs/trans
 
 ### IPUSeq2SeqTrainer
 
-The [`IPUSeq2SeqTrainer`] is used to train seq2seq models. It's behaviour is exactly the same as [`IPUTrainer`] except that it expects [`IPUSeq2SeqTrainingArguments`] instead of [`IPUTrainingArguments`].
+The [`IPUSeq2SeqTrainer`] class is used to train seq2seq models. Its behaviour is exactly the same as [`IPUTrainer`] except that it expects [`IPUSeq2SeqTrainingArguments`] instead of [`IPUTrainingArguments`].
 
 [[autodoc]] IPUSeq2SeqTrainer
   - evaluate
   - predict
+
+
+### IPUTrainingArguments
+
+[[autodoc]] IPUTrainingArguments
+  - all

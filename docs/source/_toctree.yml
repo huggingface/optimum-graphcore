@@ -4,10 +4,10 @@
   - local: quickstart
     title: Quickstart
   - local: ipu_config
-    title: IPU Configuration
+    title: Configuration
   - local: trainer
-    title: IPU Trainer
+    title: Training, evaluation and prediction on IPUs
   - local: add_support_for_new_model
-    title: Add support for an architecutre
+    title: Add support for new model architectures
   title: Optimum Graphcore
   isExpanded: false
