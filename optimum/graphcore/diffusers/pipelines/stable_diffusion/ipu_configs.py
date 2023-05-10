@@ -88,13 +88,13 @@ def get_default_ipu_configs(
         raise ValueError(f"{engine} should be one of {', '.join(INFERENCE_ENGINES_TO_MODEL_NAMES)}")
     if n_ipu not in ALLOWED_N_IPU:
         raise ValueError(
-            f"{n_ipu=} is not a correct value for a POD type, supported POD types: {', '.join(ALLOWED_N_IPU)}"
+            f"{n_ipu=} is not a valid value for a Pod type, supported Pod types: {', '.join(ALLOWED_N_IPU)}"
         )
 
     default_image_dim = 768 if "768" in engine else 512
     if default_image_dim == 768 and height < default_image_dim and width < default_image_dim:
         logger.warn(
-            "Generating an image of a size smaller than 768x768 with a checkpoint fine-tuned for 768x768 "
+            "Generating an image smaller than 768x768 with a checkpoint fine-tuned for 768x768 "
             "can lead to images of poor quality."
         )
 
