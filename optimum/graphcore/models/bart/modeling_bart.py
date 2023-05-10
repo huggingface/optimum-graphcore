@@ -618,7 +618,7 @@ class _BartModelWithSharedEmbedding(BartModel):
         """
         use_cache = kwargs.get("use_cache", False)
         batch_size = kwargs.get("batch_size", 1)
-        max_length = kwargs.get("max_length", 448)
+        max_length = kwargs.get("max_length", 128)
         num_beams = kwargs.get("num_beams", 1)
 
         for encoder_layer in self.encoder.layers:
@@ -799,7 +799,7 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
         self.model.change_bart_encoder_and_decoder_classes(restore=False)
         self.model.change_bart_attention_class(restore=False, use_cache=use_cache and for_generation, **kwargs)
         self.model.change_decoder_positional_embedding(restore=False)
-        # self.change_lm_head_to_indexed_input_linear(restore=not for_generation)
+        self.change_lm_head_to_indexed_input_linear(restore=use_cache and not for_generation))
         self.use_encoder_output_buffer = kwargs.get("use_encoder_output_buffer", False)
         self.set_on_device_generation_steps(kwargs.get("on_device_generation_steps", 0))
 
@@ -864,7 +864,7 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
         self.model.change_decoder_positional_embedding(restore=True)
         self.model.__class__ = BartModel
 
-        # self.change_lm_head_to_indexed_input_linear(restore=True)
+        self.change_lm_head_to_indexed_input_linear(restore=True)
         self.set_on_device_generation_steps(0)
 
         if self.ipu_config.embedding_serialization_factor > 1:
