@@ -507,11 +507,15 @@ class IPUTrainingArguments:
     # )
     group_by_length: bool = field(
         default=False,
-        metadata={"help": "If `True`, groups samples of roughly the same length together when batching. Default: False."},
+        metadata={
+            "help": "If `True`, groups samples of roughly the same length together when batching. Default: False."
+        },
     )
     length_column_name: Optional[str] = field(
         default="length",
-        metadata={"help": "The column name with precomputed lengths to use when grouping by length. Default: 'length'"},
+        metadata={
+            "help": "The column name with precomputed lengths to use when grouping by length. Default: 'length'"
+        },
     )
     report_to: Optional[List[str]] = field(
         default="none", metadata={"help": "The list of integrations to report the results and logs to."}
@@ -523,7 +527,10 @@ class IPUTrainingArguments:
         default=True, metadata={"help": "If `True`, skips adding of memory profiler reports to metrics."}
     )
     push_to_hub: bool = field(
-        default=False, metadata={"help": "If `True`, Whether or not to upload the trained model to the model hub after training. Default: False."}
+        default=False,
+        metadata={
+            "help": "If `True`, Whether or not to upload the trained model to the model hub after training. Default: False."
+        },
     )
     resume_from_checkpoint: Optional[str] = field(
         default=None,
@@ -537,7 +544,9 @@ class IPUTrainingArguments:
         metadata={"help": "The Hub strategy to use when `--push_to_hub` is activated."},
     )
     hub_token: str = field(default=None, metadata={"help": "The token to use to push to the Model Hub."})
-    hub_private_repo: bool = field(default=False, metadata={"help": "If `True`, indicates that the Hub Model repository is private."})
+    hub_private_repo: bool = field(
+        default=False, metadata={"help": "If `True`, indicates that the Hub Model repository is private."}
+    )
     gradient_checkpointing: bool = field(
         default=False,
         metadata={
@@ -546,7 +555,8 @@ class IPUTrainingArguments:
     )
     # TODO: support this.
     include_inputs_for_metrics: bool = field(
-        default=False, metadata={"help": "If `True`, pass the inputs to the `compute_metrics` function. Default: False."}
+        default=False,
+        metadata={"help": "If `True`, pass the inputs to the `compute_metrics` function. Default: False."},
     )
 
     # Deprecated arguments

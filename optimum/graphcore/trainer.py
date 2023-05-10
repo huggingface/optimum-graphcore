@@ -1082,7 +1082,9 @@ class IPUTrainer:
         logger.info(f"  Num examples = {num_examples}")
         logger.info(f"  Num epochs = {num_train_epochs}")
         logger.info(f"  Instantaneous batch size per device = {batch_size}")
-        logger.info(f"  Total training batch size (w. parallel, distributed & accumulation) = {total_train_batch_size}")
+        logger.info(
+            f"  Total training batch size (w. parallel, distributed & accumulation) = {total_train_batch_size}"
+        )
         logger.info(f"  Gradient accumulation steps = {self.ipu_config.gradient_accumulation_steps}")
         logger.info(f"  Total optimization steps = {max_steps}")
 
