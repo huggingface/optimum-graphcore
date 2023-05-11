@@ -16,4 +16,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from .feature_extraction_whisper import WhisperFeatureExtractorTorch
 from .modeling_whisper import PipelinedWhisperForConditionalGeneration
+from .processing_whisper import WhisperProcessorTorch
