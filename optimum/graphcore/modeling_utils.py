@@ -341,14 +341,18 @@ def split_encoder_decoder_ipu_config(
     ipu_configs["encoder"]._layers_per_ipu = layers_per_ipu[:cut]
     ipu_configs["decoder"]._layers_per_ipu = layers_per_ipu[cut:]
 
-    # Split the per ipu configurations for SerializedEmbedding and SplitLinear if they have been provided
+    # Split the per ipu configurations for SerializedEmbedding and SplitProjection if they have been provided
     # Note that serialized layers across IPUs cannot be present in both the encoder and decoder
     if ipu_config._serialized_embedding_splits_per_ipu is not None:
-        ipu_configs["encoder"]._serialized_embedding_splits_per_ipu = ipu_config._serialized_embedding_splits_per_ipu[:cut]
+        ipu_configs["encoder"]._serialized_embedding_splits_per_ipu = ipu_config._serialized_embedding_splits_per_ipu[
+            :cut
+        ]
         ipu_configs["decoder"]._serialized_embedding_splits_per_ipu = None
         # dec_split must contain all zeros, this layer cannot be split across the encoder and decoder
         if sum(dec_split := ipu_config._serialized_embedding_splits_per_ipu[cut:]):
-            serialized_embedding_splits_per_ipu_mode_str = ipu_config._get_managed_attr_mode_name("serialized_embedding_splits_per_ipu")
+            serialized_embedding_splits_per_ipu_mode_str = ipu_config._get_managed_attr_mode_name(
+                "serialized_embedding_splits_per_ipu"
+            )
             raise ValueError(
                 "The `SerializedEmbedding` must have all splits placed on the encoder, but"
                 f" {serialized_embedding_splits_per_ipu_mode_str}={ipu_config._serialized_embedding_splits_per_ipu} results in"
@@ -357,11 +361,15 @@ def split_encoder_decoder_ipu_config(
 
     if ipu_config._serialized_projection_splits_per_ipu is not None:
         ipu_configs["encoder"]._serialized_projection_splits_per_ipu = None
-        ipu_configs["decoder"]._serialized_projection_splits_per_ipu = ipu_config._serialized_projection_splits_per_ipu[cut:]
+        ipu_configs[
+            "decoder"
+        ]._serialized_projection_splits_per_ipu = ipu_config._serialized_projection_splits_per_ipu[cut:]
         if sum(enc_split := ipu_config._serialized_projection_splits_per_ipu[:cut]):
-            serialized_projection_splits_per_ipu_mode_str = ipu_config._get_managed_attr_mode_name("serialized_projection_splits_per_ipu")
+            serialized_projection_splits_per_ipu_mode_str = ipu_config._get_managed_attr_mode_name(
+                "serialized_projection_splits_per_ipu"
+            )
             raise ValueError(
-                "The `SplitLinear` must have all splits placed on the decoder, but"
+                "The `SplitProjection` must have all splits placed on the decoder, but"
                 f" {serialized_projection_splits_per_ipu_mode_str}={ipu_config._serialized_projection_splits_per_ipu} results in"
                 f" {enc_split} being placed on the encoder"
             )
@@ -585,7 +593,7 @@ class SerializedLinear(nn.Linear):
         return output
 
 
-class SplitLinear(torch.nn.Module):
+class SplitProjection(torch.nn.Module):
     """
     Exactly equivalent to `nn.Linear` layer, but with the linear layer split into
     partial linear layers in order to reduce resident memory. The linear layer
@@ -614,9 +622,9 @@ class SplitLinear(torch.nn.Module):
         self.split_linear_layers = torch.nn.ModuleList()
         for i in range(0, self.in_features, self.split_size):
             split_linear = torch.nn.Linear(self.split_size, self.out_features, bias=False, dtype=linear.weight.dtype)
-            # initialise linear layer using a section of`linear` weight,
+            # initialise linear layer using a section of `linear` weight,
             with torch.no_grad():
-                split_linear.weight.copy_(linear.weight[:, i:i + self.split_size].detach())
+                split_linear.weight.copy_(linear.weight[:, i : i + self.split_size].detach())
             self.split_linear_layers.append(split_linear)
 
         self.bias = None
