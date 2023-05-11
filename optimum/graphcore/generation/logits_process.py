@@ -95,13 +95,14 @@ class IPUNoRepeatNGramLogitsProcessor(NoRepeatNGramLogitsProcessor):
         last_tokens = poptorch.dynamic_slice(input_ids, 1, start_idx, self.ngram_size - 1, 1).unsqueeze(1)
         last_tokens = (start_idx > self.ngram_size) * last_tokens
 
-        mask = (ngrams[..., : self.ngram_size - 1] == last_tokens).float().prod(-1)
+        mask = torch.all(ngrams[..., : self.ngram_size - 1] == last_tokens, -1)
 
         # If absolute_step + 1 < ngram_size set indices all to zero
         mask = ~(cur_len + 1 < self.ngram_size) * mask
-        idx = (ngrams[..., -1] * mask.to(dtype=ngrams.dtype)).long()
+        # idx = (ngrams[..., -1] * mask).long()
+        idx = torch.where(mask.bool(), ngrams[..., -1], -100)
 
-        val = (idx != 0) * torch.ones_like(idx) * VERY_LARGE_NEGATIVE_CONST
+        val = (idx != -100) * torch.ones_like(idx) * VERY_LARGE_NEGATIVE_CONST
         scores.scatter_add_(1, idx, val)
         return scores
 
