@@ -26,18 +26,18 @@ class IPUAttentionMixin:
     The aim of this class is to provide common, model-agnostic functionality such as KV caching and attention
     serialization to transformer attention layers.
 
-    Currently, KV caching is implemented for self-attention, with more to follow.
-
     The intended usage is best demonstrated with an existing example, Whisper. There are roughly two steps:
     1. subclass the parent attention layer to inject this mixin, e.g. `class IPUWhisperAttention(WhisperAttention, IPUAttentionMixin)`
     and use the `add_to_kv_cache` and `update_attention_mask` methods to add the KV values at the current time
-    step to the cache.
+    step to the cache, or `serialized_attention` to serialize attention across the batch or sequence dimensions.
 
     2. replace the existing attention layers with above via the provided class method `from_model`, e.g.
     `decoder_layer.self_attn = IPUWhisperAttention.from_model(decoder_layer.self_attn, use_cache=True, **kwargs)`.
     """
 
     _kv_cache_initialised: bool = False
+    _batch_serialization_factor: int = 1
+    _sequence_serialization_factor: int = 1
 
     @property
     def kv_cache_initialised(self) -> bool:
@@ -71,6 +71,8 @@ class IPUAttentionMixin:
         max_length: int = 128,
         num_beams: int = 1,
         dtype: torch.dtype = torch.float16,
+        batch_serialization_factor: int = 1,
+        sequence_serialization_factor: int = 1,
     ):
         clone = copy.deepcopy(attention_layer)
         clone.__class__ = cls
@@ -82,10 +84,27 @@ class IPUAttentionMixin:
                 uses_beams=num_beams > 1,
             )
 
+        if batch_serialization_factor < 1 or sequence_serialization_factor < 1:
+            raise ValueError(
+                "`batch_serialization_factor` and `sequence_serialization_factor` must be > 0 if provided."
+            )
+        elif batch_serialization_factor > 1 and sequence_serialization_factor > 1:
+            raise ValueError(
+                "If serializing attention, only one of `batch_serialization_factor` "
+                "and `sequence_serialization_factor` should be greater than 1, not both."
+            )
+        elif batch_serialization_factor > 1 or sequence_serialization_factor > 1:
+            if use_cache:
+                raise ValueError("Attention serialization is redundant when KV caching is enabled.")
+
+            clone._batch_serialization_factor = batch_serialization_factor
+            clone._sequence_serialization_factor = sequence_serialization_factor
+
         return clone
 
     def to_model(self, cls) -> torch.nn.Module:
         self._delete_kv_cache()
+        self._delete_serialization_factors()
 
         original = copy.deepcopy(self)
         original.__class__ = cls
@@ -158,3 +177,115 @@ class IPUAttentionMixin:
             mask = mask + attention_mask
 
         return mask
+
+    @property
+    def is_attention_serialized(self) -> bool:
+        return self._batch_serialization_factor > 1 or self._sequence_serialization_factor > 1
+
+    def _delete_serialization_factors(self):
+        if not self.is_attention_serialized:
+            return
+
+        del self._batch_serialization_factor
+        del self._sequence_serialization_factor
+
+    def serialized_attention(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        scale: Optional[float] = 1.0,
+        attention_mask: Optional[torch.Tensor] = None,
+    ):
+        """
+        Serializes the attention operation either across the batch (if `batch_serialization_factor > 1`)
+        or the sequence (if `sequence_serialization_factor > 1`) dimensions to reduce peak memory usage.
+        NB: if serializing across the batch, this will include `num_heads` wherein we expect the leading
+        dimension to be of size `batch_size * num_heads`.
+        """
+        if query.ndim != 3 or key.ndim != 3 or value.ndim != 3:
+            raise ValueError(
+                "Expected query, key, value all to be 3D, which we will interpret "
+                "as (batch_size * num_heads, sequence_length, head_dim). Received "
+                f"{query.shape}, {key.shape}, {value.shape}."
+            )
+
+        if self._batch_serialization_factor > 1:
+            return self._batch_serialized_attention(
+                query, key, value, scale, attention_mask, self._batch_serialization_factor
+            )
+        elif self._sequence_serialization_factor > 1:
+            return self._sequence_serialized_attention(
+                query, key, value, scale, attention_mask, self._sequence_serialization_factor
+            )
+        else:
+            raise ValueError(
+                "Attempting to serialize attention but neither serialization factor is >1. "
+                "To serialize attention, please provide either a `batch_serialization_factor` or "
+                "`sequence_serialization_factor` kwarg to `IPUWhisperAttention.from_model` with "
+                "values greater than 1."
+            )
+
+    def _batch_serialized_attention(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        scale: Optional[float] = 1.0,
+        attention_mask: Optional[torch.Tensor] = None,
+        serialization_factor: Optional[int] = 1,
+    ):
+        if query.shape[0] % serialization_factor != 0:
+            raise ValueError(
+                f"Cannot evenly divide query batch dim: {query.shape[0]} by `serialization_factor`: {serialization_factor}."
+            )
+        slice_size = query.shape[0] // serialization_factor
+
+        hidden_states = []
+        key = key.transpose(1, 2)
+        for i in range(serialization_factor):
+            start_idx = i * slice_size
+            end_idx = (i + 1) * slice_size
+
+            attn_slice = torch.matmul(query[start_idx:end_idx], key[start_idx:end_idx]) * scale
+            if attention_mask is not None:
+                attn_slice = attn_slice + attention_mask[start_idx:end_idx]
+            attn_slice = attn_slice.softmax(dim=-1)
+            attn_slice = torch.matmul(attn_slice, value[start_idx:end_idx])
+
+            hidden_states.append(attn_slice)
+
+        hidden_states = torch.cat(hidden_states, dim=0)
+        return hidden_states
+
+    def _sequence_serialized_attention(
+        self,
+        query: torch.Tensor,
+        key: torch.Tensor,
+        value: torch.Tensor,
+        scale: Optional[float] = 1.0,
+        attention_mask: Optional[torch.Tensor] = None,
+        serialization_factor: Optional[int] = 1,
+    ):
+        if query.shape[1] % serialization_factor != 0:
+            raise ValueError(
+                f"Cannot evenly divide query sequence dim: {query.shape[1]} by `serialization_factor`: {serialization_factor}."
+            )
+        slice_size = query.shape[1] // serialization_factor
+
+        hidden_states = []
+        key = key.transpose(1, 2)
+        for i in range(serialization_factor):
+            start_idx = i * slice_size
+            end_idx = (i + 1) * slice_size
+
+            attn_slice = torch.matmul(query[:, start_idx:end_idx], key) * scale
+            if attention_mask is not None:
+                attn_slice = attn_slice + attention_mask[:, start_idx:end_idx]
+            attn_slice = attn_slice.softmax(dim=-1)
+            attn_slice = torch.matmul(attn_slice, value)
+
+            hidden_states.append(attn_slice)
+
+        hidden_states = torch.cat(hidden_states, dim=1)
+        return hidden_states
