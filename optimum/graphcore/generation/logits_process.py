@@ -99,8 +99,7 @@ class IPUNoRepeatNGramLogitsProcessor(NoRepeatNGramLogitsProcessor):
 
         # If absolute_step + 1 < ngram_size set indices all to zero
         mask = ~(cur_len + 1 < self.ngram_size) * mask
-        # idx = (ngrams[..., -1] * mask).long()
-        idx = torch.where(mask.bool(), ngrams[..., -1], -100)
+        idx = torch.where(mask, ngrams[..., -1], -100)
 
         val = (idx != -100) * torch.ones_like(idx) * VERY_LARGE_NEGATIVE_CONST
         scores.scatter_add_(1, idx, val)
