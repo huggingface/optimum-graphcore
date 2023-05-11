@@ -84,7 +84,11 @@ class IPUAttentionMixin:
                 uses_beams=num_beams > 1,
             )
 
-        if batch_serialization_factor > 1 and sequence_serialization_factor > 1:
+        if batch_serialization_factor < 1 or sequence_serialization_factor < 1:
+            raise ValueError(
+                "`batch_serialization_factor` and `sequence_serialization_factor` must be > 0 if provided."
+            )
+        elif batch_serialization_factor > 1 and sequence_serialization_factor > 1:
             raise ValueError(
                 "If serializing attention, only one of `batch_serialization_factor` "
                 "and `sequence_serialization_factor` should be greater than 1, not both."
@@ -196,6 +200,8 @@ class IPUAttentionMixin:
         """
         Serializes the attention operation either across the batch (if `batch_serialization_factor > 1`)
         or the sequence (if `sequence_serialization_factor > 1`) dimensions to reduce peak memory usage.
+        NB: if serializing across the batch, this will include `num_heads` wherein we expect the leading
+        dimension to be of size `batch_size * num_heads`.
         """
         if query.ndim != 3 or key.ndim != 3 or value.ndim != 3:
             raise ValueError(
