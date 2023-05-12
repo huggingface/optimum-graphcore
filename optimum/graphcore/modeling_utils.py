@@ -262,7 +262,7 @@ def _expand_layers_per_ipu_wildcard(
 
             elif len(layers_per_ipu) != ipus_per_replica:
                 raise IncompatibleIPUConfigError(
-                    f"{layers_per_ipu_mode_str} has non-default value set, but its length does not match {ipus_per_replica_mode_str}. "
+                    f"{layers_per_ipu_mode_str} has a non-default value set, but its length does not match {ipus_per_replica_mode_str}"
                     f"{layers_per_ipu_mode_str}={layers_per_ipu}, {ipus_per_replica_mode_str}={ipus_per_replica}. "
                 )
             # no wildcards used
@@ -314,7 +314,7 @@ def split_encoder_decoder_ipu_config(
     # Need at least two IPUs to do the split
     if ipu_config._ipus_per_replica < 2:
         raise IncompatibleIPUConfigError(
-            f"Need {ipus_per_replica_mode_str} of at least 2" " to split ipu_config into encoder and decoder configs"
+            f"Need {ipus_per_replica_mode_str} of at least 2 to split ipu_config into encoder and decoder configs"
         )
 
     ipu_configs = {name: copy.deepcopy(ipu_config) for name in ["encoder", "decoder"]}
@@ -328,7 +328,7 @@ def split_encoder_decoder_ipu_config(
         cut = max([num for num in cut if num & (num - 1) == 0])
     except:
         raise IncompatibleIPUConfigError(
-            f"Unable to find valid split of ipu_config.{layers_per_ipu_mode_str}\n"
+            f"Unable to find a valid split of ipu_config.{layers_per_ipu_mode_str}\n"
             "Arguments: \n"
             f"\tipu_config.{layers_per_ipu_mode_str}={ipu_config._layers_per_ipu}\n"
             f"\tnum_encoder_layers={num_encoder_layers}\n"
