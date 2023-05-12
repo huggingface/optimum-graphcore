@@ -509,7 +509,7 @@ class SerializedLinear(nn.Linear):
 
     def to_model(self) -> nn.Linear:
         del self.factor
-        def self.mode
+        del self.mode
         original = copy.deepcopy(self)
         original.__class__ = nn.Linear
         return original
