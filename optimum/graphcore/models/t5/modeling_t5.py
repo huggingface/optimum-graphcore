@@ -217,15 +217,7 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
         logger.info("Embedding  --> IPU 0")
 
         if self.ipu_config.embedding_serialization_factor > 1:
-            serialized_lm_head = SerializedLinear(
-                self.config.d_model,
-                self.shared.num_embeddings,
-                self.ipu_config.embedding_serialization_factor,
-                bias=False,
-                mode=poptorch.MatMulSerializationMode.OutputChannels,
-            )
-            serialized_lm_head.load_state_dict(self.lm_head.state_dict())
-            self.lm_head = serialized_lm_head
+            self.lm_head = SerializedLinear.from_model(self.lm_head, self.ipu_config.embedding_serialization_factor)
             # TODO: is it needed to check?
             if self.config.tie_word_embeddings:
                 self.tie_weights()
@@ -348,14 +340,8 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
 
         self.change_lm_head_to_indexed_input_linear(restore=True)
 
-        if self.ipu_config.embedding_serialization_factor > 1:
-            old_lm_head = nn.Linear(
-                self.config.d_model,
-                self.shared.num_embeddings,
-                bias=False,
-            )
-            old_lm_head.load_state_dict(self.lm_head.state_dict())
-            self.lm_head = old_lm_head
+        if isinstance(self.lm_head, SerializedLinear):
+            self.lm_head = self.lm_head.to_model()
             # TODO: is it needed to check?
             if self.config.tie_word_embeddings:
                 self.tie_weights()

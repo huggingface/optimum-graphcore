@@ -519,13 +519,25 @@ class SerializedLinear(nn.Linear):
         self.mode = mode
         self.factor = factor
 
+    @classmethod
+    def from_model(cls, model: nn.Linear, factor: int, mode=poptorch.MatMulSerializationMode.OutputChannels):
+        clone = copy.deepcopy(model)
+        clone.__class__ = cls
+        clone.factor = factor
+        clone.mode = mode
+        return clone
+
+    def to_model(self) -> nn.Linear:
+        del self.factor
+        del self.mode
+        original = copy.deepcopy(self)
+        original.__class__ = nn.Linear
+        return original
+
     def forward(self, x):
-        if not self.training:
-            output = super().forward(x)
-        else:
-            output = poptorch.serializedMatMul(x, self.weight.t(), self.mode, self.factor)
-            if self.bias is not None:
-                output += self.bias
+        output = poptorch.serializedMatMul(x, self.weight.t(), self.mode, self.factor)
+        if self.bias is not None:
+            output += self.bias
         return output
 
 

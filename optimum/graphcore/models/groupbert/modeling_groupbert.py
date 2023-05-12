@@ -425,15 +425,9 @@ class PipelinedGroupBertForPreTraining(GroupBertForPreTraining, PipelineMixin):
         super().parallelize()
 
         if self.ipu_config.embedding_serialization_factor > 1:
-            serialized_decoder = SerializedLinear(
-                self.config.hidden_size,
-                self.config.vocab_size,
-                self.ipu_config.embedding_serialization_factor,
-                bias=True,
-                mode=poptorch.MatMulSerializationMode.OutputChannels,
+            self.cls.predictions.decoder = SerializedLinear.from_model(
+                self.cls.predictions.decoder, self.ipu_config.embedding_serialization_factor
             )
-            serialized_decoder.load_state_dict(self.cls.predictions.decoder.state_dict())
-            self.cls.predictions.decoder = serialized_decoder
             self.tie_weights()
 
         layer_ipu = get_layer_ipu(self.ipu_config, self.bert.encoder.layer)
@@ -470,14 +464,8 @@ class PipelinedGroupBertForPreTraining(GroupBertForPreTraining, PipelineMixin):
         """
         super().deparallelize()
 
-        if self.ipu_config.embedding_serialization_factor > 1:
-            decoder = nn.Linear(
-                self.config.hidden_size,
-                self.config.vocab_size,
-                bias=True,
-            )
-            decoder.load_state_dict(self.cls.predictions.decoder.state_dict())
-            self.cls.predictions.decoder = decoder
+        if isinstance(self.cls.predictions.decoder, SerializedLinear):
+            self.cls.predictions.decoder = self.cls.predictions.decoder.to_model()
             self.tie_weights()
         return self
 

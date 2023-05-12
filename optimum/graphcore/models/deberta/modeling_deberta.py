@@ -305,15 +305,9 @@ class DebertaPipelineMixin(PipelineMixin):
         logger.info("Embedding  --> IPU 0")
         if self.ipu_config.embedding_serialization_factor > 1:
             if isinstance(self, PipelinedDebertaForMaskedLM):
-                serialized_decoder = SerializedLinear(
-                    self.config.hidden_size,
-                    self.config.vocab_size,
-                    self.ipu_config.embedding_serialization_factor,
-                    bias=True,
-                    mode=poptorch.MatMulSerializationMode.OutputChannels,
+                self.cls.predictions.decoder = SerializedLinear.from_model(
+                    self.cls.predictions.decoder, self.ipu_config.embedding_serialization_factor
                 )
-                serialized_decoder.load_state_dict(self.cls.predictions.decoder.state_dict())
-                self.cls.predictions.decoder = serialized_decoder
                 self.tie_weights()
             else:
                 self.deberta.embeddings.word_embeddings = SerializedEmbedding(
@@ -353,14 +347,8 @@ class DebertaPipelineMixin(PipelineMixin):
         super().deparallelize()
         self.change_modules_for_ipu(True)
         if self.ipu_config.embedding_serialization_factor > 1:
-            if isinstance(self, PipelinedDebertaForMaskedLM):
-                decoder = nn.Linear(
-                    self.config.hidden_size,
-                    self.config.vocab_size,
-                    bias=True,
-                )
-                decoder.load_state_dict(self.cls.predictions.decoder.state_dict())
-                self.cls.predictions.decoder = decoder
+            if isinstance(self.cls.predictions.decoder, SerializedLinear):
+                self.cls.predictions.decoder = self.cls.predictions.decoder.to_model()
                 self.tie_weights()
             else:
                 # Deserialize the serialized word embedding

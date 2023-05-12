@@ -78,15 +78,9 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
             layer.attention.self.__class__ = BertFusedSelfAttention
 
         if self.ipu_config.embedding_serialization_factor > 1:
-            serialized_decoder = SerializedLinear(
-                self.config.hidden_size,
-                self.config.vocab_size,
-                self.ipu_config.embedding_serialization_factor,
-                bias=True,
-                mode=poptorch.MatMulSerializationMode.OutputChannels,
+            self.cls.predictions.decoder = SerializedLinear.from_model(
+                self.cls.predictions.decoder, self.ipu_config.embedding_serialization_factor
             )
-            serialized_decoder.load_state_dict(self.cls.predictions.decoder.state_dict())
-            self.cls.predictions.decoder = serialized_decoder
             self.tie_weights()
 
         logger.info("-------------------- Device Allocation --------------------")
@@ -125,14 +119,8 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
         for layer in self.bert.encoder.layer:
             layer.attention.self.__class__ = BertSelfAttention
 
-        if self.ipu_config.embedding_serialization_factor > 1:
-            decoder = nn.Linear(
-                self.config.hidden_size,
-                self.config.vocab_size,
-                bias=True,
-            )
-            decoder.load_state_dict(self.cls.predictions.decoder.state_dict())
-            self.cls.predictions.decoder = decoder
+        if isinstance(self.cls.predictions.decoder, SerializedLinear):
+            self.cls.predictions.decoder = self.cls.predictions.decoder.to_model()
             self.tie_weights()
         return self
 
@@ -250,15 +238,9 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
             layer.attention.self.__class__ = BertFusedSelfAttention
 
         if self.ipu_config.embedding_serialization_factor > 1:
-            serialized_decoder = SerializedLinear(
-                self.config.hidden_size,
-                self.config.vocab_size,
-                self.ipu_config.embedding_serialization_factor,
-                bias=True,
-                mode=poptorch.MatMulSerializationMode.OutputChannels,
+            self.cls.predictions.decoder = SerializedLinear.from_model(
+                self.cls.predictions.decoder, self.ipu_config.embedding_serialization_factor
             )
-            serialized_decoder.load_state_dict(self.cls.predictions.decoder.state_dict())
-            self.cls.predictions.decoder = serialized_decoder
             self.tie_weights()
 
         logger.info("-------------------- Device Allocation --------------------")
@@ -294,14 +276,8 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
         for layer in self.bert.encoder.layer:
             layer.attention.self.__class__ = BertSelfAttention
 
-        if self.ipu_config.embedding_serialization_factor > 1:
-            decoder = nn.Linear(
-                self.config.hidden_size,
-                self.config.vocab_size,
-                bias=True,
-            )
-            decoder.load_state_dict(self.cls.predictions.decoder.state_dict())
-            self.cls.predictions.decoder = decoder
+        if isinstance(self.cls.predictions.decoder, SerializedLinear):
+            self.cls.predictions.decoder = self.cls.predictions.decoder.to_model()
             self.tie_weights()
         return self
 
