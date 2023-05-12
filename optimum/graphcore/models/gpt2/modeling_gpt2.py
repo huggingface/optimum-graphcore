@@ -137,15 +137,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin, IPUGenerationMixi
                 # There is a tie_weights operation in resize_token_embeddings so the lm_head's weight is also resized.
                 self.resize_token_embeddings(new_vocab_size)
 
-            serialized_lm_head = SerializedLinear(
-                self.config.n_embd,
-                self.config.vocab_size,  # Note that if padding is done, self.config.vocab_size == new_vocab_size
-                self.ipu_config.embedding_serialization_factor,
-                bias=False,
-                mode=poptorch.MatMulSerializationMode.OutputChannels,
-            )
-            serialized_lm_head.load_state_dict(self.lm_head.state_dict())
-            self.lm_head = serialized_lm_head
+            self.lm_head = SerializedLinear.from_model(self.lm_head, self.ipu_config.embedding_serialization_factor)
             self.tie_weights()
 
         self.change_lm_head_to_indexed_input_linear(restore=not for_generation)
@@ -177,15 +169,8 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin, IPUGenerationMixi
 
         self.change_lm_head_to_indexed_input_linear(restore=True)
 
-        if self.ipu_config.embedding_serialization_factor > 1:
-            # Deserialize the serialized linear layer
-            old_lm_head = nn.Linear(
-                self.config.n_embd,
-                self.config.vocab_size,  # Note that if padding is done, self.config.vocab_size == new_vocab_size
-                bias=False,
-            )
-            old_lm_head.load_state_dict(self.lm_head.state_dict())
-            self.lm_head = old_lm_head
+        if isinstance(self.lm_head, SerializedLinear):
+            self.lm_head = self.lm_head.to_model()
             self.tie_weights()
 
             # Resize token embeddings back to origianl vocab_size.

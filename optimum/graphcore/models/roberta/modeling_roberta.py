@@ -112,15 +112,7 @@ class PipelinedRobertaForMaskedLM(RobertaForMaskedLM, PipelineMixin):
         super().parallelize()
 
         if self.ipu_config.embedding_serialization_factor > 1:
-            serialized_decoder = SerializedLinear(
-                self.config.hidden_size,
-                self.config.vocab_size,
-                self.ipu_config.embedding_serialization_factor,
-                bias=True,
-                mode=poptorch.MatMulSerializationMode.OutputChannels,
-            )
-            serialized_decoder.load_state_dict(self.lm_head.decoder.state_dict())
-            self.lm_head.decoder = serialized_decoder
+            self.lm_head.decoder = SerializedLinear.from_model(self.lm_head.decoder, self.ipu_config.embedding_serialization_factor)
             self.tie_weights()
 
         logger.info("-------------------- Device Allocation --------------------")
@@ -151,14 +143,8 @@ class PipelinedRobertaForMaskedLM(RobertaForMaskedLM, PipelineMixin):
         """
         super().deparallelize()
 
-        if self.ipu_config.embedding_serialization_factor > 1:
-            decoder = nn.Linear(
-                self.config.hidden_size,
-                self.config.vocab_size,
-                bias=True,
-            )
-            decoder.load_state_dict(self.lm_head.decoder.state_dict())
-            self.lm_head.decoder = decoder
+        if isinstance(self.lm_head.decoder, SerializedLinear):
+            self.lm_head.decoder = self.lm_head.decoder.to_model()
             self.tie_weights()
         return self
 

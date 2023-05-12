@@ -175,15 +175,7 @@ class PipelinedDistilBertForMaskedLM(DistilBertForMaskedLM, DistilBertPipelineMi
         super().parallelize()
 
         if self.ipu_config.embedding_serialization_factor > 1:
-            serialized_vocab_projector = SerializedLinear(
-                self.config.dim,
-                self.config.vocab_size,
-                self.ipu_config.embedding_serialization_factor,
-                bias=True,
-                mode=poptorch.MatMulSerializationMode.OutputChannels,
-            )
-            serialized_vocab_projector.load_state_dict(self.vocab_projector.state_dict())
-            self.vocab_projector = serialized_vocab_projector
+            self.vocab_projector = SerializedLinear.from_model(self.vocab_projector, self.ipu_config.embedding_serialization_factor)
             self.tie_weights()
 
         logger.info("LM Head --> IPU 0")
@@ -196,14 +188,8 @@ class PipelinedDistilBertForMaskedLM(DistilBertForMaskedLM, DistilBertPipelineMi
     def deparallelize(self):
         super().deparallelize()
 
-        if self.ipu_config.embedding_serialization_factor > 1:
-            vocab_projector = nn.Linear(
-                self.config.hidden_size,
-                self.config.vocab_size,
-                bias=True,
-            )
-            vocab_projector.load_state_dict(self.vocab_projector.state_dict())
-            self.vocab_projector = vocab_projector
+        if isinstance(self.vocab_projector, SerializedLinear):
+            self.vocab_projector = self.vocab_projector.to_model()
             self.tie_weights()
 
     def forward(
