@@ -336,8 +336,8 @@ def split_encoder_decoder_ipu_config(
     # Split matmul_proportion between the given num layers
     matmul_proportion = ipu_config._matmul_proportion
     if isinstance(matmul_proportion, list):
-        ipu_configs["encoder"].matmul_proportion = matmul_proportion[:cut]
-        ipu_configs["decoder"].matmul_proportion = matmul_proportion[cut:]
+        ipu_configs["encoder"]._matmul_proportion = matmul_proportion[:cut]
+        ipu_configs["decoder"]._matmul_proportion = matmul_proportion[cut:]
 
     return ipu_configs.values()
 

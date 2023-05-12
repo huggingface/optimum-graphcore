@@ -14,15 +14,51 @@
 
 import torch
 
+import poptorch
 from transformers.generation.utils import (
+    ForcedBOSTokenLogitsProcessor,
+    ForcedEOSTokenLogitsProcessor,
     ForceTokensLogitsProcessor,
     MinLengthLogitsProcessor,
+    NoRepeatNGramLogitsProcessor,
     SuppressTokensAtBeginLogitsProcessor,
     SuppressTokensLogitsProcessor,
 )
 
 
 VERY_LARGE_NEGATIVE_CONST = -1e18
+
+
+class IPUForcedBOSTokenLogitsProcessor(ForcedBOSTokenLogitsProcessor):
+    @classmethod
+    def from_model(cls, inst, vocab_size: int):
+        self = inst
+        self.bos_scores = VERY_LARGE_NEGATIVE_CONST * torch.ones((1, vocab_size), dtype=torch.int32)
+        self.bos_scores[:, self.bos_token_id] = 0
+        self.__class__ = cls
+        return self
+
+    def __call__(
+        self, input_ids: torch.LongTensor, scores: torch.FloatTensor, absolute_step: torch.IntTensor
+    ) -> torch.FloatTensor:
+        cond = (absolute_step > 1).int()
+        return cond * scores + (1 - cond) * self.bos_scores.to(device=scores.device)
+
+
+class IPUForcedEOSTokenLogitsProcessor(ForcedEOSTokenLogitsProcessor):
+    @classmethod
+    def from_model(cls, inst, vocab_size: int):
+        self = inst
+        self.eos_scores = VERY_LARGE_NEGATIVE_CONST * torch.ones((1, vocab_size), dtype=torch.int32)
+        self.eos_scores[:, self.eos_token_id] = 0
+        self.__class__ = cls
+        return self
+
+    def __call__(
+        self, input_ids: torch.LongTensor, scores: torch.FloatTensor, absolute_step: torch.IntTensor
+    ) -> torch.FloatTensor:
+        cond = (absolute_step < self.max_length).int()
+        return cond * scores + (1 - cond) * self.eos_scores.to(device=scores.device)
 
 
 class IPUMinLengthLogitsProcessor(MinLengthLogitsProcessor):
@@ -40,8 +76,34 @@ class IPUMinLengthLogitsProcessor(MinLengthLogitsProcessor):
     ) -> torch.FloatTensor:
         mask = self.mask.to(scores.device)
         cond = absolute_step >= self.min_length
-        mask |= cond
+        mask = mask | cond
         return mask * scores + (1 - mask) * VERY_LARGE_NEGATIVE_CONST
+
+
+class IPUNoRepeatNGramLogitsProcessor(NoRepeatNGramLogitsProcessor):
+    def __call__(
+        self, input_ids: torch.LongTensor, scores: torch.FloatTensor, absolute_step: torch.IntTensor
+    ) -> torch.FloatTensor:
+        # mask out values above cur_len
+        cur_len = absolute_step
+        cur_len_mask = torch.arange(0, input_ids.shape[-1], device=input_ids.device).unsqueeze(0) < cur_len
+        input_ids = input_ids.view(-1, input_ids.shape[-1])
+        input_ids = input_ids * cur_len_mask
+
+        start_idx = torch.maximum(cur_len + 1 - self.ngram_size, torch.tensor(self.ngram_size))
+        ngrams = input_ids.unfold(-1, self.ngram_size, 1)
+        last_tokens = poptorch.dynamic_slice(input_ids, 1, start_idx, self.ngram_size - 1, 1).unsqueeze(1)
+        last_tokens = (start_idx > self.ngram_size) * last_tokens
+
+        mask = torch.all(ngrams[..., : self.ngram_size - 1] == last_tokens, -1)
+
+        # If absolute_step + 1 < ngram_size set indices all to zero
+        mask = ~(cur_len + 1 < self.ngram_size) * mask
+        idx = torch.where(mask, ngrams[..., -1], -100)
+
+        val = (idx != -100) * torch.ones_like(idx) * VERY_LARGE_NEGATIVE_CONST
+        scores.scatter_add_(1, idx, val)
+        return scores
 
 
 class IPUSuppressTokensLogitsProcessor(SuppressTokensLogitsProcessor):
@@ -76,7 +138,7 @@ class IPUSuppressTokensAtBeginLogitsProcessor(SuppressTokensAtBeginLogitsProcess
     ) -> torch.FloatTensor:
         mask = self.mask.to(scores.device)
         cond = absolute_step != self.begin_index
-        mask |= cond
+        mask = mask | cond
         return mask * scores + (1 - mask) * VERY_LARGE_NEGATIVE_CONST
 
 
@@ -97,8 +159,11 @@ class IPUForceTokensLogitsProcessor(ForceTokensLogitsProcessor):
 
 
 IPULogitsProcessors = {
+    ForcedBOSTokenLogitsProcessor: IPUForcedBOSTokenLogitsProcessor,
+    ForcedEOSTokenLogitsProcessor: IPUForcedEOSTokenLogitsProcessor,
     ForceTokensLogitsProcessor: IPUForceTokensLogitsProcessor,
     MinLengthLogitsProcessor: IPUMinLengthLogitsProcessor,
+    NoRepeatNGramLogitsProcessor: IPUNoRepeatNGramLogitsProcessor,
     SuppressTokensLogitsProcessor: IPUSuppressTokensLogitsProcessor,
     SuppressTokensAtBeginLogitsProcessor: IPUSuppressTokensAtBeginLogitsProcessor,
 }
