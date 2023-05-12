@@ -513,7 +513,7 @@ class IPUConfig(BaseConfig):
                 matmul_proportion_mode_str = self._get_managed_attr_mode_name("matmul_proportion")
                 raise IncompatibleIPUConfigError(
                     f"{matmul_proportion_mode_str}={self._matmul_proportion} should use the"
-                    f" same number of IPUs as {ipus_per_replica_mode_str}={self._ipus_per_replica}"
+                    f" same number of IPUs as {ipus_per_replica_mode_str}={self._ipus_per_replica}."
                 )
 
             # Layers_per_ipu must have the same length as ipus per replica.
@@ -523,7 +523,7 @@ class IPUConfig(BaseConfig):
                 layers_per_ipu_mode_str = self._get_managed_attr_mode_name("layers_per_ipu")
                 raise IncompatibleIPUConfigError(
                     f"{layers_per_ipu_mode_str}={self._layers_per_ipu} should use the"
-                    f" same number of IPUs as {ipus_per_replica_mode_str}={self._ipus_per_replica}"
+                    f" same number of IPUs as {ipus_per_replica_mode_str}={self._ipus_per_replica}."
                 )
 
             # Validate non-transformer layer placement configuration
@@ -553,7 +553,7 @@ class IPUConfig(BaseConfig):
                 if mode_layer_splits_per_ipu and len(mode_layer_splits_per_ipu) != self._ipus_per_replica:
                     raise ValueError(
                         f"{mode_layer_splits_per_ipu_str}={mode_layer_splits_per_ipu}"
-                        f" should use the same number of IPUs as {ipus_per_replica_mode_str}={self._ipus_per_replica}"
+                        f" should use the same number of IPUs as {ipus_per_replica_mode_str}={self._ipus_per_replica}."
                     )
 
         self.mode = old_mode
