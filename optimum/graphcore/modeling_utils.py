@@ -314,7 +314,7 @@ def split_encoder_decoder_ipu_config(
     # Need at least two IPUs to do the split
     if ipu_config._ipus_per_replica < 2:
         raise IncompatibleIPUConfigError(
-            f"Need {ipus_per_replica_mode_str} of at least 2 to split ipu_config into encoder and decoder configs"
+            f"Need {ipus_per_replica_mode_str} to be at least 2 to split ipu_config into encoder and decoder configs"
         )
 
     ipu_configs = {name: copy.deepcopy(ipu_config) for name in ["encoder", "decoder"]}
