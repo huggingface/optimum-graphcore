@@ -215,14 +215,20 @@ def _expand_layers_per_ipu_wildcard(
     Returns:
         :obj:`List[int]`: The `layers_per_ipu` with wildcards replaced by the number of layers per IPU.
     """
-    layers_per_ipu = copy.deepcopy(ipu_config.layers_per_ipu)
-    ipus_per_replica = ipu_config.ipus_per_replica
+    layers_per_ipu = copy.deepcopy(ipu_config._layers_per_ipu)
+    layers_per_ipu_mode_str = ipu_config._get_managed_attr_mode_name("layers_per_ipu")
+    ipus_per_replica = ipu_config._ipus_per_replica
+    ipus_per_replica_mode_str = ipu_config._get_managed_attr_mode_name("ipus_per_replica")
 
     # Check inputs are valid
     if not all(isinstance(n, int) and n >= -1 for n in layers_per_ipu):
-        raise IncompatibleIPUConfigError("Invalid values in layers_per_ipu. " f"layers_per_ipu={layers_per_ipu}")
+        raise IncompatibleIPUConfigError(
+            f"Invalid values in {layers_per_ipu_mode_str}. {layers_per_ipu_mode_str}={layers_per_ipu}"
+        )
     if ipus_per_replica < 1:
-        raise IncompatibleIPUConfigError("Invalid value for ipus_per_replica. " f"ipus_per_replica={ipus_per_replica}")
+        raise IncompatibleIPUConfigError(
+            f"Invalid value for {ipus_per_replica_mode_str}. {ipus_per_replica_mode_str}={ipus_per_replica}"
+        )
 
     if target_number_of_layers is not None:
         if not isinstance(target_number_of_layers, int):
@@ -256,16 +262,16 @@ def _expand_layers_per_ipu_wildcard(
 
             elif len(layers_per_ipu) != ipus_per_replica:
                 raise IncompatibleIPUConfigError(
-                    "layers_per_ipu has non-default value set, but its length does not match ipus_per_replica"
-                    f"layers_per_ipu={layers_per_ipu}, ipus_per_replica={ipus_per_replica}. "
+                    f"{layers_per_ipu_mode_str} has non-default value set, but its length does not match {ipus_per_replica_mode_str}. "
+                    f"{layers_per_ipu_mode_str}={layers_per_ipu}, {ipus_per_replica_mode_str}={ipus_per_replica}. "
                 )
             # no wildcards used
             elif sum(layers_per_ipu) != target_number_of_layers:
                 raise IncompatibleIPUConfigError(
-                    "layers_per_ipu does not define the correct number of layers for the current model."
+                    f"{layers_per_ipu_mode_str} does not define the correct number of layers for the current model."
                     " The current IPU Config specifies IPU assignments for "
                     f"{sum(layers_per_ipu)} layers but there are {target_number_of_layers} layers "
-                    f"in the model. layers_per_ipu={layers_per_ipu}"
+                    f"in the model. {layers_per_ipu_mode_str}={layers_per_ipu}"
                 )
     return layers_per_ipu
 
@@ -301,10 +307,14 @@ def split_encoder_decoder_ipu_config(
     Returns:
         The configuration for the encoder part, `encoder_ipu_config`, and the configuration for the decoder part, `decoder_ipu_config`.
     """
+
+    layers_per_ipu_mode_str = ipu_config._get_managed_attr_mode_name("layers_per_ipu")
+    ipus_per_replica_mode_str = ipu_config._get_managed_attr_mode_name("ipus_per_replica")
+
     # Need at least two IPUs to do the split
-    if ipu_config.ipus_per_replica < 2:
+    if ipu_config._ipus_per_replica < 2:
         raise IncompatibleIPUConfigError(
-            "Need ipus_per_replica to be at least 2 to split ipu_config into encoder and decoder configs"
+            f"Need {ipus_per_replica_mode_str} of at least 2" " to split ipu_config into encoder and decoder configs"
         )
 
     ipu_configs = {name: copy.deepcopy(ipu_config) for name in ["encoder", "decoder"]}
@@ -318,24 +328,24 @@ def split_encoder_decoder_ipu_config(
         cut = max([num for num in cut if num & (num - 1) == 0])
     except:
         raise IncompatibleIPUConfigError(
-            f"Unable to find a valid split of ipu_config.layers_per_ipu\n"
+            f"Unable to find valid split of ipu_config.{layers_per_ipu_mode_str}\n"
             "Arguments: \n"
-            f"\tipu_config.layers_per_ipu={ipu_config.layers_per_ipu}\n"
+            f"\tipu_config.{layers_per_ipu_mode_str}={ipu_config._layers_per_ipu}\n"
             f"\tnum_encoder_layers={num_encoder_layers}\n"
             f"\tnum_decoder_layers={num_decoder_layers}\n"
             "Possible causes: \n"
             "Encoder and decoder layers cannot be placed on the same IPUs.\n"
-            "The encoder and decoder layers_per_ipu splits each need a number of devices that's a power of 2."
+            f"The encoder and decoder {layers_per_ipu_mode_str} splits each need a number of devices that's a power of 2."
         )
-    ipu_configs["encoder"].layers_per_ipu = layers_per_ipu[:cut]
-    ipu_configs["decoder"].layers_per_ipu = layers_per_ipu[cut:]
+    ipu_configs["encoder"]._layers_per_ipu = layers_per_ipu[:cut]
+    ipu_configs["decoder"]._layers_per_ipu = layers_per_ipu[cut:]
 
     # Modify the ipus_per_replica
-    ipu_configs["encoder"].ipus_per_replica = len(ipu_configs["encoder"].layers_per_ipu)
-    ipu_configs["decoder"].ipus_per_replica = len(ipu_configs["decoder"].layers_per_ipu)
+    ipu_configs["encoder"]._ipus_per_replica = len(ipu_configs["encoder"]._layers_per_ipu)
+    ipu_configs["decoder"]._ipus_per_replica = len(ipu_configs["decoder"]._layers_per_ipu)
 
     # Split matmul_proportion between the given num layers
-    matmul_proportion = ipu_config.matmul_proportion
+    matmul_proportion = ipu_config._matmul_proportion
     if isinstance(matmul_proportion, list):
         ipu_configs["encoder"].matmul_proportion = matmul_proportion[:cut]
         ipu_configs["decoder"].matmul_proportion = matmul_proportion[cut:]
