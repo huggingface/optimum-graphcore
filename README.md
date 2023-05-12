@@ -7,7 +7,7 @@
 # Optimum Graphcore
 
 🤗 Optimum Graphcore is the interface between the 🤗 Transformers library and [Graphcore IPUs](https://www.graphcore.ai/products/ipu).
-It provides a set of tools enabling model parallelization and loading on IPUs, training and fine-tuning on all the tasks already supported by 🤗 Transformers while being compatible with the Hugging Face Hub and every model available on it out of the box.
+It provides a set of tools enabling model parallelization and loading on IPUs, training, fine-tuning and inference on all the tasks already supported by 🤗 Transformers while being compatible with the 🤗 Hub and every model available on it out of the box.
 
 ## What is an Intelligence Processing Unit (IPU)?
 Quote from the Hugging Face [blog post](https://huggingface.co/blog/graphcore#what-is-an-intelligence-processing-unit):
