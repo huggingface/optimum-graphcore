@@ -500,12 +500,9 @@ class SerializedLinear(nn.Linear):
         self.factor = factor
 
     def forward(self, x):
-        if not self.training:
-            output = super().forward(x)
-        else:
-            output = poptorch.serializedMatMul(x, self.weight.t(), self.mode, self.factor)
-            if self.bias is not None:
-                output += self.bias
+        output = poptorch.serializedMatMul(x, self.weight.t(), self.mode, self.factor)
+        if self.bias is not None:
+            output += self.bias
         return output
 
 
