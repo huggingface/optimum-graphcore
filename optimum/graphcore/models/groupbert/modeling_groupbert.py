@@ -464,7 +464,7 @@ class PipelinedGroupBertForPreTraining(GroupBertForPreTraining, PipelineMixin):
         """
         super().deparallelize()
 
-        if isinstance(self.cls.preidctions.decoder, SerializedLinear):
+        if isinstance(self.cls.predictions.decoder, SerializedLinear):
             self.cls.predictions.decoder = self.cls.predictions.decoder.to_model()
             self.tie_weights()
         return self
