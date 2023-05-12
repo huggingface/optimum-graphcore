@@ -18,29 +18,45 @@ limitations under the License.
 
 The [`IPUTrainer`] class provides a similar API to the 🤗 Transformers [Trainer](https://huggingface.co/docs/transformers/main_classes/trainer) class to perform training, evaluation and prediction on Graphcore's IPUs. It is the class used in all the [example scripts](https://github.com/huggingface/optimum-graphcore/tree/main/examples).
 
-Compared to the 🤗 Transformers [Trainer](https://huggingface.co/docs/transformers/main_classes/trainer) class, to instantiate a [`IPUTrainer`] you need to create:
+Compared to the 🤗 Transformers [Trainer](https://huggingface.co/docs/transformers/main_classes/trainer) class, to instantiate [`IPUTrainer`] you need to create:
   - An instance of [`IPUTrainingArguments`], which allows you to customize the behaviour of the trainer
   - An instance of [`IPUConfig`], which defines IPU-specific parameters
 
-## 
+Most of the examples in the `/examples` directory use `IPUTrainer` as do most of the Jupyter notebooks in the `/notebooks` directory.
+
+There is an equivalent [`IPUSeq2SeqTrainer`] class for seq2seq models which requires you to define:
+  - An instance of [`IPUSeq2SeqTrainingArguments`]
+  - An instance of [`IPUConfig`]
+
+## Examples of use
+
+Most example scripts in [`/examples`](https://github.com/huggingface/optimum-graphcore/tree/main/examples) and Jupyter notebooks in [`/notebooks`](https://github.com/huggingface/optimum-graphcore/tree/main/notebooks) use `IPUTrainer` and `IPUTrainingArguments`.
 
 
+To see how to use `IPUSeq2SeqTrainer` and `IPUSeq2SeqTrainingArguments` look at:
 
-### IPUTrainer
+* Jupyter notebooks
+  * [Summarization on IPUs - Fine-tuning](https://github.com/huggingface/optimum-graphcore/blob/main/notebooks/summarization.ipynb)
+  * [Translation on IPUs - Fine-tuning](https://github.com/huggingface/optimum-graphcore/blob/main/notebooks/translation.ipynb)
+
+* Example scripts
+  * [Summarization](https://github.com/huggingface/optimum-graphcore/tree/main/examples/summarization)
+  * [Translation](https://github.com/huggingface/optimum-graphcore/tree/main/examples/translation)
+
+
+### IPUTrainer API reference
 
 [[autodoc]] IPUTrainer
   - all
 
 ### IPUSeq2SeqTrainer
 
-The [`IPUSeq2SeqTrainer`] class is used to train seq2seq models. Its behaviour is exactly the same as [`IPUTrainer`] except that it expects [`IPUSeq2SeqTrainingArguments`] instead of [`IPUTrainingArguments`].
-
-[[autodoc]] IPUSeq2SeqTrainer
+[[autodoc]] IPUSeq2SeqTrainer API reference
   - evaluate
   - predict
 
 
-### IPUTrainingArguments
+### IPUTrainingArguments API reference
 
 [[autodoc]] IPUTrainingArguments
   - all

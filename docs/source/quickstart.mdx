@@ -42,7 +42,7 @@ You need to have the Poplar SDK enabled to use 🤗 Optimum Graphcore. Refer to 
 
 The main Optimum Graphcore classes are:
 
-- [`IPUTrainer`]: This class handles compiling the model to run on IPUs, as well as performing the training and evaluation. Refer to the [`IPUTrainer`](trainer) section for more information..
+- [`IPUTrainer`]: This class handles compiling the model to run on IPUs, as well as performing the training and evaluation. Refer to the [`IPUTrainer`](trainer) section for more information.
 - [`IPUConfig`]: This class specifies attributes and configuration parameters to compile and put the model on the IPU. Refer to the [`IPUConfig`](ipu_config) section for more information.
 
 
@@ -75,7 +75,7 @@ The main Optimum Graphcore classes are:
      ...  # Other arguments
 ```
 
-We also support the `pipeline` API, so you can easily run a model on a given input (text, image, audio, ...) on IPUs:
+We also support the `pipeline` API, so you can easily run a model on a given input, for example text image or audio, on IPUs:
 
 ```diff
 ->>> from transformers import pipeline

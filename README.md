@@ -54,7 +54,7 @@ cd <example-folder>
 pip install -r requirements.txt
 ```
 
-## How to use it?
+## How to use Optimum Graphcore
 🤗 Optimum Graphcore was designed with one goal in mind: **make training and evaluation straightforward for any 🤗 Transformers user while leveraging the complete power of IPUs.**
 It requires minimal changes if you are already using 🤗 Transformers.
 
@@ -100,9 +100,9 @@ It is also super easy to use the `Trainer` API:
      ...  # Other arguments
 ```
 
-For more information, check our [documentation](https://huggingface.co/docs/optimum/graphcore_index)
+For more information, refer to the full [🤗 Optimum Graphcore documentation](https://huggingface.co/docs/optimum/graphcore_index).
 
-## Supported Models
+## Supported models
 The following model architectures and tasks are currently supported by 🤗 Optimum Graphcore:
 |            | Pre-Training | Masked LM | Causal LM | Seq2Seq LM (Summarization, Translation, etc) | Sequence Classification | Token Classification | Question Answering | Multiple Choice | Image Classification | CTC |
 |------------|--------------|-----------|-----------|----------------------------------------------|-------------------------|----------------------|--------------------|-----------------|----------------------| ------------ |
