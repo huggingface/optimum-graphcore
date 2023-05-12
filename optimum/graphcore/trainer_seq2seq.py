@@ -29,6 +29,10 @@ logger = logging.get_logger(__name__)
 
 
 class IPUSeq2SeqTrainer(IPUTrainer):
+    """
+    The [`IPUSeq2SeqTrainer`] class is used to train seq2seq models. Its behaviour is exactly the same as [`IPUTrainer`] except that it expects [`IPUSeq2SeqTrainingArguments`] instead of [`IPUTrainingArguments`].
+    """
+
     def _wrap_and_compile_model_for_evaluation(self, dataloader, prediction_loss_only):
         if prediction_loss_only:
             return super()._wrap_and_compile_model_for_evaluation(dataloader, prediction_loss_only)
@@ -83,7 +87,7 @@ class IPUSeq2SeqTrainer(IPUTrainer):
             max_length (`int`, *optional*):
                 The maximum target length to use when predicting with the generate method.
             num_beams (`int`, *optional*):
-                Number of beams for beam search that will be used when predicting with the generate method. 1 means no
+                Number of beams for the beam search that will be used when predicting with the generate method. 1 means no
                 beam search.
 
         Returns:
@@ -105,14 +109,14 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         num_beams: Optional[int] = None,
     ) -> "PredictionOutput":
         """
-        Run prediction and returns predictions and potential metrics.
+        Runs prediction and returns predictions and potential metrics.
 
         Depending on the dataset and your use case, your test dataset may contain labels. In that case, this method
-        will also return metrics, like in `evaluate()`.
+        will also return metrics, like `evaluate()`.
 
         Args:
             test_dataset (`Dataset`):
-                Dataset to run the predictions on. If it is an `datasets.Dataset`, columns not accepted by the
+                Dataset to run the predictions on. If it is a `datasets.Dataset` dataset, the columns not accepted by the
                 `model.forward()` method are automatically removed. Has to implement the method `__len__`
             ignore_keys (`List[str]`, *optional*):
                 A list of keys in the output of your model (if it is a dictionary) that should be ignored when
@@ -123,7 +127,7 @@ class IPUSeq2SeqTrainer(IPUTrainer):
             max_length (`int`, *optional*):
                 The maximum target length to use when predicting with the generate method.
             num_beams (`int`, *optional*):
-                Number of beams for beam search that will be used when predicting with the generate method. 1 means no
+                Number of beams for the beam search that will be used when predicting with the generate method. 1 means no
                 beam search.
 
         <Tip>
@@ -136,10 +140,13 @@ class IPUSeq2SeqTrainer(IPUTrainer):
 
         Returns: *NamedTuple* A namedtuple with the following keys:
 
-            - predictions (`np.ndarray`): The predictions on `test_dataset`.
-            - label_ids (`np.ndarray`, *optional*): The labels (if the dataset contained some).
-            - metrics (`Dict[str, float]`, *optional*): The potential dictionary of metrics (if the dataset contained
-              labels).
+            - predictions (`np.ndarray`):
+                The predictions on `test_dataset`.
+            - label_ids (`np.ndarray`, *optional*):
+                The labels (if the dataset contained some).
+            - metrics (`Dict[str, float]`, *optional*):
+                The potential dictionary of metrics (if the dataset contained
+                labels).
         """
         self._max_length = max_length if max_length is not None else self.args.generation_max_length
         self._num_beams = num_beams if num_beams is not None else self.args.generation_num_beams
@@ -156,7 +163,7 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         is_last_batch: bool = False,
     ) -> Tuple[Optional[float], Optional[torch.Tensor], Optional[torch.Tensor]]:
         """
-        Perform an evaluation step on `model` using `inputs`.
+        Performs an evaluation step on a model using the inputs.
 
         Subclass and override to inject custom behavior.
 
@@ -169,11 +176,11 @@ class IPUSeq2SeqTrainer(IPUTrainer):
                 The dictionary will be unpacked before being fed to the model. Most models expect the targets under the
                 argument `labels`. Check your model's documentation for all accepted arguments.
             prediction_loss_only (`bool`):
-                Whether or not to return the loss only.
+                If `True`, only returns the loss.
 
         Return:
-            Tuple[Optional[float], Optional[torch.Tensor], Optional[torch.Tensor]]: A tuple with the loss, logits and
-            labels (each being optional).
+            Tuple[Optional[float], Optional[torch.Tensor], Optional[torch.Tensor]]:
+                A tuple with the loss, logits and labels (each being optional).
         """
 
         if not self.args.predict_with_generate or prediction_loss_only:

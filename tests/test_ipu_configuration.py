@@ -178,7 +178,7 @@ class IPUConfigTester(unittest.TestCase):
         ipu_config = IPUConfig(layers_per_ipu=[1, -1], ipus_per_replica=4)
         with pytest.raises(
             IncompatibleIPUConfigError,
-            match=r"layers_per_ipu has non-default value set, but its length does not match ipus_per_replica",
+            match=r"layers_per_ipu has a non-default value set, but its length does not match ipus_per_replica",
         ):
             layer_ipu = get_layer_ipu(ipu_config, 3)
 
@@ -298,7 +298,7 @@ class IPUConfigTester(unittest.TestCase):
         # Encoder and decoder layers defined on same IPU should raise an exception
         ipu_config = IPUConfig(layers_per_ipu=[4, 3])
         with pytest.raises(
-            IncompatibleIPUConfigError, match=r"Unable to find valid split of ipu_config.layers_per_ipu"
+            IncompatibleIPUConfigError, match=r"Unable to find a valid split of ipu_config.layers_per_ipu"
         ):
             e_ipu_config, d_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 3, 4)
 
@@ -306,7 +306,7 @@ class IPUConfigTester(unittest.TestCase):
         ipu_config = IPUConfig(layers_per_ipu=[4])
         with pytest.raises(
             IncompatibleIPUConfigError,
-            match=r"Need ipus_per_replica of at least 2 to split ipu_config into encoder and decoder configs",
+            match=r"Need ipus_per_replica to be at least 2 to split ipu_config into encoder and decoder configs",
         ):
             e_ipu_config, d_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 2, 2)
 

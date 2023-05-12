@@ -27,7 +27,7 @@ class IPUAttentionMixin:
     serialization to transformer attention layers.
 
     The intended usage is best demonstrated with an existing example, Whisper. There are roughly two steps:
-    1. subclass the parent attention layer to inject this mixin, e.g. `class IPUWhisperAttention(WhisperAttention, IPUAttentionMixin)`
+    1. subclass the parent attention layer to inject this mixin, for example, `class IPUWhisperAttention(WhisperAttention, IPUAttentionMixin)`
     and use the `add_to_kv_cache` and `update_attention_mask` methods to add the KV values at the current time
     step to the cache, or `serialized_attention` to serialize attention across the batch or sequence dimensions.
 
@@ -112,7 +112,7 @@ class IPUAttentionMixin:
 
     def add_to_kv_cache(self, key: torch.Tensor, value: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Copies the key-value pair into their corresponding key-value caches. Each copy, cache pair is assumed
+        Copies the key-value pair into their corresponding key-value caches. Each copy-cache pair is assumed
         to be of shape [batch_size, num_heads, 1, head_dim] and [batch_size, num_heads, max_length, head_dim] respectively.
         """
         if not self.kv_cache_initialised:

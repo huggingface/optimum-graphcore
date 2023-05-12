@@ -237,7 +237,7 @@ def get_poplar_executor(
     except Exception as error:
         new_message = (
             "The model and ipu_config seem to be incompatible,"
-            " please try a different IPU config or customizing it for the model."
+            " please try a different IPU config or customize it for the model."
             f" The config provided is '{ipu_config_arg}'\n"
             f"{error}"
         )
@@ -255,7 +255,7 @@ def get_poplar_executor(
 
 def check_model_type(self, supported_models: Union[List[str], dict]):
     """
-    Check if the model class is in supported by the pipeline.
+    Check if the model class is supported by the pipeline.
 
     Args:
         supported_models (`List[str]` or `dict`):
@@ -307,9 +307,9 @@ def pipeline(
         tokenizer : The tokenizer, see docs for ``transformers.pipeline`` for supported options.
         feature_extractor : The feature extractor, see docs for ``transformers.pipeline`` for supported options.
         revision : Revision of the model.
-        use_auth_token : An authorization token to use for these calls to the hub.
-        pipeline_class : Override the Pipeline class defined by the task.
-        fp16 : Whether to use Float 16 or not.
+        use_auth_token : An authorization token to use for calls to the Hub.
+        pipeline_class : Override the `Pipeline` class defined by the task.
+        fp16 : If `True`, uses float16.
 
         **kwargs: Additional keyword arguments that are passed to the ``transformers.pipeline`` function
 
@@ -326,7 +326,7 @@ def pipeline(
     if task is None and model is not None:
         if not isinstance(model, str):
             raise RuntimeError(
-                "Inferring the task automatically requires to check the hub with a model_id defined as a `str`."
+                "Inferring the task automatically requires to check the Hub with a model_id defined as a `str`."
                 f"{model} is not a valid model_id."
             )
         task = get_task(model, use_auth_token)
@@ -383,7 +383,7 @@ def pipeline(
     else:
         raise ValueError(
             f"""Model {model} is not supported. Please provide a valid model either as string, PreTrainedModel or
-            poptorch._poplar_executor.PoplarExecutor. You can also provide non model then a default one will be used"""
+            poptorch._poplar_executor.PoplarExecutor. If you don't provide a model, a default model will be used."""
         )
 
     # Upstream pipeline creation does not easily support loading these when an actual model
@@ -443,10 +443,10 @@ def pipeline(
             kwargs["padding"] = kwargs.get("padding", "max_length")
             if kwargs.get("max_length") is None:
                 logger.warning(
-                    f"No padding arguments specified, so pad to {default_max_length} by default. "
+                    f"No padding arguments specified, so padding to {default_max_length} by default. "
                     f"Inputs longer than {default_max_length} will be truncated."
                     " To change this behaviour, pass the `padding='max_length'` and"
-                    "`max_length=<your desired input length>` arguments to the pipeline function"
+                    "`max_length=<your desired input length>` arguments to the pipeline function."
                 )
         kwargs["max_length"] = kwargs.get("max_length", default_max_length)
 
@@ -460,7 +460,7 @@ def pipeline(
     if targeted_task in {"question-answering"}:
         kwargs["padding"] = kwargs.get("padding", "max_length")
         logger.warning(
-            "No padding arguments specified, so pad to 384 by default. Inputs longer than 384 will be truncated."
+            "No padding arguments specified, so padding to 384 by default. Inputs longer than 384 will be truncated."
         )
 
     # Set pad_token for models that do not have pad_token

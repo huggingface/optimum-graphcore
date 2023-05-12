@@ -64,7 +64,7 @@ def to_pipelined(model: nn.Module, ipu_config: IPUConfig, force: bool = False):
     else:
         if force:
             logger.warning(
-                f"No pipelined version exists for {model_cls.__name__}, creating it dynamically, it might not work as expected."
+                f"No pipelined version exists for {model_cls.__name__}, creating it dynamically so it might not work as expected."
             )
             pipelined_cls = type(f"Pipelined{model_cls.__name__}", (model_cls, PipelineMixin), {})
             return pipelined_cls.from_model(model)
@@ -77,13 +77,13 @@ class PipelineMixin:
     @classmethod
     def from_transformers(cls, model: PreTrainedModel, ipu_config: IPUConfig):
         """
-        Creates a pipeline model from a [`~transformers.PreTrainedModel`].
+        Creates a pipelined version of model from a [`~transformers.PreTrainedModel`] instance.
 
         Args:
             model ([`~transformers.PreTrainedModel`]):
                 The model to convert to a pipelined model.
             ipu_config ([`IPUConfig`]):
-                The IPUConfig of the pipelined model.
+                The `IPUConfig` instance of the pipelined model.
 
         Returns:
             The pipelined version of the model.
@@ -98,13 +98,13 @@ class PipelineMixin:
     @classmethod
     def from_pretrained_transformers(cls, model_name_or_path: str, ipu_config: IPUConfig, *model_args, **kwargs):
         """
-        Creates a pipeline model by using `from_pretrained`.
+        Creates a pipelined version of a model by using the `from_pretrained` function.
 
         Args:
             model_name_or_path (`str`):
                 The model name or path.
             ipu_config ([`IPUConfig`]):
-                The IPUConfig of the pipelined model.
+                The `IPUConfig` of the pipelined model.
             model_args (`Tuple[Any]`):
                 The positional arguments to use when instantiating the model.
             kwargs (`Dict[str, Any]`):
@@ -128,11 +128,11 @@ class PipelineMixin:
     def _has_ipu_config_check(self):
         _ipu_config = getattr(self, "_ipu_config", None)
         if _ipu_config is None:
-            raise AttributeError("No IPUConfig was found, please set the ipu_config attribute")
+            raise AttributeError("No IPUConfig was found. Please set the ipu_config attribute")
 
     @property
     def ipu_config(self):
-        """Property that checks that the model has an [`IPUConfig`] attached, and returns it."""
+        """Checks that the model has an [`IPUConfig`] attached, and returns it."""
         self._has_ipu_config_check()
         return self._ipu_config
 
@@ -151,7 +151,7 @@ class PipelineMixin:
     def deparallelize(self):
         """
         Undoes the changes to the model done by `parallelize`.
-        You should call this before doing `save_pretrained` so that the `model.state_dict` is fully compatible with the
+        You should call this function before calling `save_pretrained` so that the `model.state_dict` dictionary is fully compatible with the
         original model.
         """
         # Remove hooks
@@ -166,14 +166,14 @@ class PipelineMixin:
 
     def num_parameters(self, only_trainable: bool = False, exclude_embeddings: bool = False) -> int:
         """
-        Get number of (optionally, trainable or non-embeddings) parameters in the module.
+        Gets the number of (optionally, trainable or non-embeddings) parameters in the module.
 
         Args:
             only_trainable (:obj:`bool`, `optional`, defaults to :obj:`False`):
-                Whether or not to return only the number of trainable parameters
+                If `True`, only returns the number of trainable parameters.
 
             exclude_embeddings (:obj:`bool`, `optional`, defaults to :obj:`False`):
-                Whether or not to return only the number of non-embeddings parameters
+                If `True`, only returns the number of non-embeddings parameters.
 
         Returns:
             :obj:`int`: The number of parameters.
@@ -196,7 +196,7 @@ def _expand_layers_per_ipu_wildcard(
     ipu_config: IPUConfig, target_number_of_layers: Optional[Union[int, List]] = None
 ) -> List[int]:
     """
-    Expand any wildcard values in `ipu_config.layers_per_ipu`.
+    Expands any wildcard values in `layers_per_ipu` of the IPU configuration.
 
     For example, if we have:
     ```
@@ -204,6 +204,16 @@ def _expand_layers_per_ipu_wildcard(
     target_number_of_layers = 9
     ```
     this function will expand the wildcard values to `layers_per_ipu = [4, 5]`
+
+    Args:
+    ipu_config ([`IPUConfig`]):
+        The `IPUConfig` instance of the model.
+
+    target_number_of_layers (:obj:`int` or `List[int]`, `optional`):
+        The total number of target layers.
+
+    Returns:
+        :obj:`List[int]`: The `layers_per_ipu` with wildcards replaced by the number of layers per IPU.
     """
     layers_per_ipu = copy.deepcopy(ipu_config._layers_per_ipu)
     layers_per_ipu_mode_str = ipu_config._get_managed_attr_mode_name("layers_per_ipu")
@@ -252,7 +262,7 @@ def _expand_layers_per_ipu_wildcard(
 
             elif len(layers_per_ipu) != ipus_per_replica:
                 raise IncompatibleIPUConfigError(
-                    f"{layers_per_ipu_mode_str} has non-default value set, but its length does not match {ipus_per_replica_mode_str}. "
+                    f"{layers_per_ipu_mode_str} has a non-default value set, but its length does not match {ipus_per_replica_mode_str}"
                     f"{layers_per_ipu_mode_str}={layers_per_ipu}, {ipus_per_replica_mode_str}={ipus_per_replica}. "
                 )
             # no wildcards used
@@ -270,11 +280,9 @@ def split_encoder_decoder_ipu_config(
     ipu_config: IPUConfig, num_encoder_layers: int, num_decoder_layers: int
 ) -> List[IPUConfig]:
     """
-    Given an `ipu_config` for an entire encoder-decoder model and the number of encoder and decoder layers,
-    this function will split the `ipu_config` into two separate configs:
-      `encoder_ipu_config` and `decoder_ipu_config`.
-    It will split the `ipu_config.layers_per_ipu` into two given the inputted numbers of encoder and decoder
-    layers.
+    Splits  an `IPUConfig` instance for an encoder-decoder model into a configuration for the encoder part and a configuration for the decoder part.
+
+    It also splits `layers_per_ipu` into two given the numbers of encoder and decoder layers.
 
     Example:
     ```
@@ -289,12 +297,15 @@ def split_encoder_decoder_ipu_config(
     ```
 
     Args:
-        ipu_config: The `IPUConfig` for the the whole encoder-decoder model
-        num_encoder_layers: Number of encoder layers in the model
-        num_decoder_layers: Number of decoder layers in the model
+        ipu_config:
+            The `IPUConfig` instance for the the whole encoder-decoder model.
+        num_encoder_layers:
+            The number of encoder layers in the model.
+        num_decoder_layers:
+            The number of decoder layers in the model.
 
     Returns:
-        encoder_ipu_config, decoder_ipu_config
+        The configuration for the encoder part, `encoder_ipu_config`, and the configuration for the decoder part, `decoder_ipu_config`.
     """
 
     layers_per_ipu_mode_str = ipu_config._get_managed_attr_mode_name("layers_per_ipu")
@@ -303,7 +314,7 @@ def split_encoder_decoder_ipu_config(
     # Need at least two IPUs to do the split
     if ipu_config._ipus_per_replica < 2:
         raise IncompatibleIPUConfigError(
-            f"Need {ipus_per_replica_mode_str} of at least 2" " to split ipu_config into encoder and decoder configs"
+            f"Need {ipus_per_replica_mode_str} to be at least 2 to split ipu_config into encoder and decoder configs"
         )
 
     ipu_configs = {name: copy.deepcopy(ipu_config) for name in ["encoder", "decoder"]}
@@ -317,7 +328,7 @@ def split_encoder_decoder_ipu_config(
         cut = max([num for num in cut if num & (num - 1) == 0])
     except:
         raise IncompatibleIPUConfigError(
-            f"Unable to find valid split of ipu_config.{layers_per_ipu_mode_str}\n"
+            f"Unable to find a valid split of ipu_config.{layers_per_ipu_mode_str}\n"
             "Arguments: \n"
             f"\tipu_config.{layers_per_ipu_mode_str}={ipu_config._layers_per_ipu}\n"
             f"\tnum_encoder_layers={num_encoder_layers}\n"
@@ -355,7 +366,7 @@ def get_layer_ipu(ipu_config: IPUConfig, target_number_of_layers: Optional[Union
 
 def recomputation_checkpoint(module: nn.Module) -> torch.utils.hooks.RemovableHandle:
     """Annotates the output of a module to be checkpointed instead of
-    recomputed"""
+    recomputed."""
 
     def recompute_outputs(module, inputs, outputs):
         if isinstance(outputs, torch.Tensor):
@@ -368,8 +379,11 @@ def recomputation_checkpoint(module: nn.Module) -> torch.utils.hooks.RemovableHa
 
 def outline_attribute(module: nn.Module, value: str):
     """Adds an attribute to a module. This attribute will be used
-    when comparing operation equivalence in outlining. For example:
+    when comparing operation equivalence in outlining.
 
+    For example:
+
+    ```
     layer1 = nn.Linear(...)
     layer2 = nn.Linear(...)
     layer3 = nn.Linear(...)
@@ -377,9 +391,10 @@ def outline_attribute(module: nn.Module, value: str):
     outline_attribute(layer1, "A")
     outline_attribute(layer2, "A")
     outline_attribute(layer3, "B")
+    ```
 
-    The code for layer1 can be reused for layer2.
-    But it can't be used for layer3 or layer4.
+    The code for `layer1` can be reused for `layer2`, but
+    it can't be used for `layer3` or `layer4`.
     """
     context = poptorch.Attribute(__outline={"layer": value})
 
@@ -397,13 +412,15 @@ def outline_attribute(module: nn.Module, value: str):
 
 class SerializedEmbedding(nn.Module):
     """
-    Wrapper for `nn.Embedding` layer that performs the embedding look-up into
+    Wrapper for an `nn.Embedding` layer that performs the embedding look-up into
     smaller serialized steps in order to reduce memory in the embedding gradient
     calculation.
 
     Args:
-        embedding: A `nn.Embedding` to wrap
-        serialization_factor: The number of serialized embedding look-ups
+        embedding:
+            An `nn.Embedding` instance to wrap.
+        serialization_factor:
+            The number of serialized embedding look-ups.
     """
 
     def __init__(self, embedding: nn.Embedding, serialization_factor: int):
@@ -429,11 +446,11 @@ class SerializedEmbedding(nn.Module):
 
     def deserialize(self):
         """
-        Deserialize the internal wrapped embedding layer and return it as a
+        Deserialize the internal wrapped embedding layer and return it as an
         `nn.Embedding` object.
 
         Returns:
-            `nn.Embedding` layer
+            An `nn.Embedding` layer.
         """
 
         freeze = not self.split_embeddings[0].weight.requires_grad
@@ -473,14 +490,17 @@ class SerializedLinear(nn.Linear):
     to reduce the memory requirements of the multiplication and its gradient calculation.
 
     Args:
-        in_features: Size of each input sample
-        out_features: Size of each output sample
-        factor: Number of serialized multiplications. Must be a factor of
+        in_features:
+            Size of each input sample
+        out_features:
+            Size of each output sample
+        factor:
+            Number of serialized multiplications. Must be a factor of
             the dimension to serialize on.
-        bias: If set to False, the layer will not learn an additive bias.
-            Default: True
-        mode: Which dimension of the matmul to serialize on:
-            for matrix A (m by n) multiplied by matrix B (n by p).
+        bias: If set to `False`, the layer will not learn an additive bias.
+            Default: `True`.
+        mode: The dimension of the matmul to serialize on.
+            For matrix A (m by n) multiplied by matrix B (n by p).
             * InputChannels: Split across the input channels (dimension m).
             * ReducingDim: Split across the reducing dimension (n).
             * OutputChannels: Split across the output channels (dimension p).
@@ -510,10 +530,12 @@ class SerializedLinear(nn.Linear):
 
 
 class SharedEmbedding(nn.Module):
-    """Wrapper around the shared embedding between the encoder and the decoder stacks.
+    """
+    Wrapper around the shared embedding between the encoder and the decoder stacks.
 
     Attributes:
-        shared: The shared embedding layer.
+        shared:
+            The shared embedding layer.
     """
 
     def __init__(self, shared: nn.Embedding):
@@ -571,7 +593,7 @@ class OnehotGather(nn.Module):
 
     def forward(self, sequence, positions):
         """
-        Gather the vectors at the specific positions over a batch.
+        Gathers the vectors at the specific positions over a batch.
         """
         num_classes = int(sequence.shape[1])
         one_hot_positions = F.one_hot(positions, num_classes).to(dtype=sequence.dtype)
