@@ -25,7 +25,7 @@ Each example script in [`/examples`](https://github.com/huggingface/optimum-grap
 
 ## Note about `layers_per_ipu` and `inference_layers_per_ipu` for encoder/decoder models
 
-The configuration parameter [`IPUConfig.layers_per_ipu`] specifies the number of layers that will be put on each IPU for pipelined execution during training. There is an equivalent parameter for inference, [`IPUConfig.inference_layers_per_ipu`].
+The configuration parameter `layers_per_ipu` specifies the number of layers that will be put on each IPU for pipelined execution during training. There is an equivalent parameter for inference, `inference_layers_per_ipu`.
 
 Ordinarily, you can specify the number of layers that you want on each IPU, but the situation is slightly different for the encoder/decoder models that are used in, for example, text generation.
 
@@ -44,6 +44,7 @@ ipu_config = IPUConfig.from_pretrained(
 )
 ```
 
+## API reference
 
 ### IPUConfig
 

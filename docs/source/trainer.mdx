@@ -22,8 +22,6 @@ Compared to the 🤗 Transformers [Trainer](https://huggingface.co/docs/transfor
   - An instance of [`IPUTrainingArguments`], which allows you to customize the behaviour of the trainer
   - An instance of [`IPUConfig`], which defines IPU-specific parameters
 
-Most of the examples in the `/examples` directory use `IPUTrainer` as do most of the Jupyter notebooks in the `/notebooks` directory.
-
 There is an equivalent [`IPUSeq2SeqTrainer`] class for seq2seq models which requires you to define:
   - An instance of [`IPUSeq2SeqTrainingArguments`]
   - An instance of [`IPUConfig`]
@@ -44,19 +42,21 @@ To see how to use `IPUSeq2SeqTrainer` and `IPUSeq2SeqTrainingArguments` look at:
   * [Translation](https://github.com/huggingface/optimum-graphcore/tree/main/examples/translation)
 
 
-### IPUTrainer API reference
+## API reference
+
+### IPUTrainer
 
 [[autodoc]] IPUTrainer
   - all
 
 ### IPUSeq2SeqTrainer
 
-[[autodoc]] IPUSeq2SeqTrainer API reference
+[[autodoc]] IPUSeq2SeqTrainer
   - evaluate
   - predict
 
 
-### IPUTrainingArguments API reference
+### IPUTrainingArguments
 
 [[autodoc]] IPUTrainingArguments
   - all
