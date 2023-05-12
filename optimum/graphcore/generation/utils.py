@@ -148,7 +148,9 @@ class DecoderWrapper(nn.Module):
         # When generation is done on host, the beam_idx has to be provided as an input.
         # When generation is done on device, the beam_idx is stored in a separate buffer.
         if beam_idx is None:
-            if hasattr(self.pipelined_model.generation_strategy, "_cached_beam_idx"):
+            if hasattr(self.pipelined_model, "generation_strategy") and hasattr(
+                self.pipelined_model.generation_strategy, "_cached_beam_idx"
+            ):
                 beam_idx = self.pipelined_model.generation_strategy._cached_beam_idx.int()
         for module in self._modules_with_attributes_in_buffers["_beam_idx"]:
             if beam_idx is None:
