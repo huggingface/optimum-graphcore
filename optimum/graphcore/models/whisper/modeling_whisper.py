@@ -120,38 +120,58 @@ class IPUWhisperAttention(WhisperAttention, IPUAttentionMixin):
         value_states = value_states.view(*proj_shape)
 
         src_len = key_states.size(1)
-        attn_weights = torch.bmm(query_states, key_states.transpose(1, 2))
 
-        if attn_weights.size() != (bsz * self.num_heads, tgt_len, src_len):
-            raise ValueError(
-                f"Attention weights should be of size {(bsz * self.num_heads, tgt_len, src_len)}, but is"
-                f" {attn_weights.size()}"
-            )
+        # Change: optionally serialize attention, mainly intended for the encoder with large sequence length.
+        if self.is_attention_serialized:
+            if layer_head_mask is not None:
+                raise ValueError("layer_head_mask is not supported yet with serialized attention.")
 
-        if attention_mask is not None:
-            if attention_mask.size() != (bsz, 1, tgt_len, src_len):
+            if self.dropout or self.training:
+                raise ValueError("dropout is not supported yet with serialized attention.")
+
+            if attention_mask is not None:
+                if attention_mask.size() != (bsz, 1, tgt_len, src_len):
+                    raise ValueError(
+                        f"Attention mask should be of size {(bsz, 1, tgt_len, src_len)}, but is {attention_mask.size()}"
+                    )
+                attention_mask = attention_mask.view(bsz, tgt_len, src_len).repeat(self.num_heads, 1, 1)
+
+            attn_output = self.serialized_attention(query_states, key_states, value_states, 1.0, attention_mask)
+        else:
+            attn_weights = torch.bmm(query_states, key_states.transpose(1, 2))
+
+            if attn_weights.size() != (bsz * self.num_heads, tgt_len, src_len):
                 raise ValueError(
-                    f"Attention mask should be of size {(bsz, 1, tgt_len, src_len)}, but is {attention_mask.size()}"
+                    f"Attention weights should be of size {(bsz * self.num_heads, tgt_len, src_len)}, but is"
+                    f" {attn_weights.size()}"
                 )
-            attn_weights = attn_weights.view(bsz, self.num_heads, tgt_len, src_len) + attention_mask
-            attn_weights = attn_weights.view(bsz * self.num_heads, tgt_len, src_len)
 
-        attn_weights = nn.functional.softmax(attn_weights, dim=-1)
+            if attention_mask is not None:
+                if attention_mask.size() != (bsz, 1, tgt_len, src_len):
+                    raise ValueError(
+                        f"Attention mask should be of size {(bsz, 1, tgt_len, src_len)}, but is {attention_mask.size()}"
+                    )
+                attn_weights = attn_weights.view(bsz, self.num_heads, tgt_len, src_len) + attention_mask
+                attn_weights = attn_weights.view(bsz * self.num_heads, tgt_len, src_len)
 
-        if layer_head_mask is not None:
-            if layer_head_mask.size() != (self.num_heads,):
-                raise ValueError(
-                    f"Head mask for a single layer should be of size {(self.num_heads,)}, but is"
-                    f" {layer_head_mask.size()}"
+            attn_weights = nn.functional.softmax(attn_weights, dim=-1)
+
+            if layer_head_mask is not None:
+                if layer_head_mask.size() != (self.num_heads,):
+                    raise ValueError(
+                        f"Head mask for a single layer should be of size {(self.num_heads,)}, but is"
+                        f" {layer_head_mask.size()}"
+                    )
+                attn_weights = layer_head_mask.view(1, -1, 1, 1) * attn_weights.view(
+                    bsz, self.num_heads, tgt_len, src_len
                 )
-            attn_weights = layer_head_mask.view(1, -1, 1, 1) * attn_weights.view(bsz, self.num_heads, tgt_len, src_len)
-            attn_weights = attn_weights.view(bsz * self.num_heads, tgt_len, src_len)
+                attn_weights = attn_weights.view(bsz * self.num_heads, tgt_len, src_len)
 
-        # Change: delete optional reshaping of attn_weights
+            # Change: delete optional reshaping of attn_weights
 
-        attn_probs = nn.functional.dropout(attn_weights, p=self.dropout, training=self.training)
+            attn_probs = nn.functional.dropout(attn_weights, p=self.dropout, training=self.training)
 
-        attn_output = torch.bmm(attn_probs, value_states)
+            attn_output = torch.bmm(attn_probs, value_states)
 
         if attn_output.size() != (bsz * self.num_heads, tgt_len, self.head_dim):
             raise ValueError(
@@ -335,6 +355,20 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         batch_size = kwargs.get("batch_size", 1)
         max_length = kwargs.get("max_length", 448)
         num_beams = kwargs.get("num_beams", 1)
+        batch_serialization_factor = kwargs.get("batch_serialization_factor", 1)
+        sequence_serialization_factor = kwargs.get("sequence_serialization_factor", 1)
+
+        for encoder_layer in self.model.encoder.layers:
+            if restore:
+                encoder_layer.self_attn = encoder_layer.self_attn.to_model(WhisperAttention)
+                continue
+
+            encoder_layer.self_attn = IPUWhisperAttention.from_model(
+                encoder_layer.self_attn,
+                use_cache=False,
+                batch_serialization_factor=batch_serialization_factor,
+                sequence_serialization_factor=sequence_serialization_factor,
+            )
 
         for decoder_layer in self.model.decoder.layers:
             if restore:

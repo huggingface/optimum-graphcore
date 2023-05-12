@@ -18,9 +18,9 @@ import torch
 
 import poptorch
 import transformers.pipelines
-from optimum.graphcore import IPUConfig
 from optimum.graphcore.generation.utils import IPUGenerationMixin
-from optimum.graphcore.modeling_utils import IncompatibleIPUConfigError, to_pipelined
+from optimum.graphcore.ipu_configuration import IncompatibleIPUConfigError, IPUConfig
+from optimum.graphcore.modeling_utils import to_pipelined
 from transformers import (
     AudioClassificationPipeline,
     AutoFeatureExtractor,

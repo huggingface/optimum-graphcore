@@ -271,7 +271,7 @@ class PipelinedDistilBertForSequenceClassification(DistilBertForSequenceClassifi
     def parallelize(self):
         super().parallelize()
 
-        last_ipu = self.ipu_config.ipus_per_replica - 1
+        last_ipu = self.ipu_config._ipus_per_replica - 1
         logger.info(f"Classifier --> IPU {last_ipu}")
         self.pre_classifier = poptorch.BeginBlock(self.pre_classifier, "Classifier", ipu_id=last_ipu)
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier", ipu_id=last_ipu)
@@ -284,7 +284,7 @@ class PipelinedDistilBertForQuestionAnswering(DistilBertForQuestionAnswering, Di
     def parallelize(self):
         super().parallelize()
 
-        last_ipu = self.ipu_config.ipus_per_replica - 1
+        last_ipu = self.ipu_config._ipus_per_replica - 1
         logger.info(f"QA Outputs --> IPU {last_ipu}")
         self.qa_outputs = poptorch.BeginBlock(self.qa_outputs, "QA Outputs", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
@@ -335,7 +335,7 @@ class PipelinedDistilBertForTokenClassification(DistilBertForTokenClassification
     def parallelize(self):
         super().parallelize()
 
-        last_ipu = self.ipu_config.ipus_per_replica - 1
+        last_ipu = self.ipu_config._ipus_per_replica - 1
         logger.info(f"Classifier --> IPU {last_ipu}")
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
@@ -347,7 +347,7 @@ class PipelinedDistilBertForMultipleChoice(DistilBertForMultipleChoice, DistilBe
     def parallelize(self):
         super().parallelize()
 
-        last_ipu = self.ipu_config.ipus_per_replica - 1
+        last_ipu = self.ipu_config._ipus_per_replica - 1
         logger.info(f"Classifier --> IPU {last_ipu}")
         self.pre_classifier = poptorch.BeginBlock(self.pre_classifier, "Classifier", ipu_id=last_ipu)
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier", ipu_id=last_ipu)

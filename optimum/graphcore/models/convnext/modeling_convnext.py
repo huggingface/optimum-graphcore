@@ -47,7 +47,7 @@ class PipelinedConvNextForImageClassification(ConvNextForImageClassification, Pi
                 layer = poptorch.BeginBlock(layer, f"Encoder_stage_{stage_idx}_layer_{layer_idx}", ipu_id=ipu)
                 global_layer_idx += 1
 
-        last_ipu = self.ipu_config.ipus_per_replica - 1
+        last_ipu = self.ipu_config._ipus_per_replica - 1
         logger.info(f"Head --> IPU {last_ipu}")
         logger.info("---------------------------------------")
         self.convnext.layernorm = poptorch.BeginBlock(self.convnext.layernorm, "LayerNorm", ipu_id=last_ipu)
