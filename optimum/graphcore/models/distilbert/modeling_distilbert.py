@@ -175,7 +175,9 @@ class PipelinedDistilBertForMaskedLM(DistilBertForMaskedLM, DistilBertPipelineMi
         super().parallelize()
 
         if self.ipu_config.embedding_serialization_factor > 1:
-            self.vocab_projector = SerializedLinear.from_model(self.vocab_projector, self.ipu_config.embedding_serialization_factor)
+            self.vocab_projector = SerializedLinear.from_model(
+                self.vocab_projector, self.ipu_config.embedding_serialization_factor
+            )
             self.tie_weights()
 
         logger.info("LM Head --> IPU 0")

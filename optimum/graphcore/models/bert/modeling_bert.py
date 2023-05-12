@@ -78,7 +78,9 @@ class PipelinedBertForPreTraining(BertForPreTraining, PipelineMixin):
             layer.attention.self.__class__ = BertFusedSelfAttention
 
         if self.ipu_config.embedding_serialization_factor > 1:
-            self.cls.predictions.decoder = SerializedLinear.from_model(self.cls.predictions.decoder, self.ipu_config.embedding_serialization_factor)
+            self.cls.predictions.decoder = SerializedLinear.from_model(
+                self.cls.predictions.decoder, self.ipu_config.embedding_serialization_factor
+            )
             self.tie_weights()
 
         logger.info("-------------------- Device Allocation --------------------")
@@ -236,7 +238,9 @@ class PipelinedBertForMaskedLM(BertForMaskedLM, PipelineMixin):
             layer.attention.self.__class__ = BertFusedSelfAttention
 
         if self.ipu_config.embedding_serialization_factor > 1:
-            self.cls.predictions.decoder = SerializedLinear.from_model(self.cls.predictions.decoder, self.ipu_config.embedding_serialization_factor)
+            self.cls.predictions.decoder = SerializedLinear.from_model(
+                self.cls.predictions.decoder, self.ipu_config.embedding_serialization_factor
+            )
             self.tie_weights()
 
         logger.info("-------------------- Device Allocation --------------------")

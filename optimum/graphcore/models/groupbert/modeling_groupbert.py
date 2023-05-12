@@ -425,7 +425,9 @@ class PipelinedGroupBertForPreTraining(GroupBertForPreTraining, PipelineMixin):
         super().parallelize()
 
         if self.ipu_config.embedding_serialization_factor > 1:
-            self.cls.predictions.decoder = SerializedLinear.from_model(self.cls.predictions.decoder, self.ipu_config.embedding_serialization_factor)
+            self.cls.predictions.decoder = SerializedLinear.from_model(
+                self.cls.predictions.decoder, self.ipu_config.embedding_serialization_factor
+            )
             self.tie_weights()
 
         layer_ipu = get_layer_ipu(self.ipu_config, self.bert.encoder.layer)

@@ -504,7 +504,7 @@ class SerializedLinear(nn.Linear):
         clone = copy.deepcopy(model)
         clone.__class__ = cls
         clone.factor = factor
-        clone.mode=mode
+        clone.mode = mode
         return clone
 
     def to_model(self) -> nn.Linear:

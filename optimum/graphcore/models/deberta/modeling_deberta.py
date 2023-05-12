@@ -305,7 +305,9 @@ class DebertaPipelineMixin(PipelineMixin):
         logger.info("Embedding  --> IPU 0")
         if self.ipu_config.embedding_serialization_factor > 1:
             if isinstance(self, PipelinedDebertaForMaskedLM):
-                self.cls.predictions.decoder = SerializedLinear.from_model(self.cls.predictions.decoder, self.ipu_config.embedding_serialization_factor)
+                self.cls.predictions.decoder = SerializedLinear.from_model(
+                    self.cls.predictions.decoder, self.ipu_config.embedding_serialization_factor
+                )
                 self.tie_weights()
             else:
                 self.deberta.embeddings.word_embeddings = SerializedEmbedding(

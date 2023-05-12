@@ -112,7 +112,9 @@ class PipelinedRobertaForMaskedLM(RobertaForMaskedLM, PipelineMixin):
         super().parallelize()
 
         if self.ipu_config.embedding_serialization_factor > 1:
-            self.lm_head.decoder = SerializedLinear.from_model(self.lm_head.decoder, self.ipu_config.embedding_serialization_factor)
+            self.lm_head.decoder = SerializedLinear.from_model(
+                self.lm_head.decoder, self.ipu_config.embedding_serialization_factor
+            )
             self.tie_weights()
 
         logger.info("-------------------- Device Allocation --------------------")
