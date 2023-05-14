@@ -637,7 +637,7 @@ class SplitProjection(torch.nn.Module):
         # each linear layer processes a partition of the input
         out = None
         for i, split_linear_layer in enumerate(self.split_linear_layers):
-            h = split_linear_layer(x[:, :, i * self.split_size : (i + 1) * self.split_size])
+            h = split_linear_layer(x[..., i * self.split_size : (i + 1) * self.split_size])
             if out is None:
                 out = h
             else:
@@ -667,7 +667,7 @@ class SplitProjection(torch.nn.Module):
             `nn.Linear` layer
         """
         dtype = self.split_linear_layers[0].weight.dtype
-        layer = nn.Linear(self.in_features, self.out_features, bias=False)
+        layer = nn.Linear(self.in_features, self.out_features, bias=False if self.bias is None else True)
         if dtype == torch.float16:
             layer = layer.half()
         with torch.no_grad():
