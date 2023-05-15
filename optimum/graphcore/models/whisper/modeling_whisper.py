@@ -94,7 +94,7 @@ class IPUWhisperAttention(WhisperAttention, IPUAttentionMixin):
             # cross attention
             key_states = self._shape(self.k_proj(key_value_states), -1, bsz)
             value_states = self._shape(self.v_proj(key_value_states), -1, bsz)
-        elif self.kv_cache_initialised:
+        elif self.kv_cache_initialized:
             # self attention with kv cache
             key_states = self._shape(self.k_proj(hidden_states), -1, bsz)
             value_states = self._shape(self.v_proj(hidden_states), -1, bsz)

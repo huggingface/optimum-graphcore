@@ -35,13 +35,13 @@ class IPUAttentionMixin:
     `decoder_layer.self_attn = IPUWhisperAttention.from_model(decoder_layer.self_attn, use_cache=True, **kwargs)`.
     """
 
-    _kv_cache_initialised: bool = False
+    _kv_cache_initialized: bool = False
     _batch_serialization_factor: int = 1
     _sequence_serialization_factor: int = 1
 
     @property
-    def kv_cache_initialised(self) -> bool:
-        return self._kv_cache_initialised
+    def kv_cache_initialized(self) -> bool:
+        return self._kv_cache_initialized
 
     def _create_kv_cache(self, cache_shape: Tuple[int], dtype: torch.dtype, uses_beams=False):
         self.register_buffer("_generation_step", torch.tensor([0], dtype=torch.int32), persistent=False)
@@ -49,10 +49,10 @@ class IPUAttentionMixin:
         self.register_buffer("_v_cache", torch.zeros(cache_shape, dtype=dtype), persistent=False)
         if uses_beams:
             self.register_buffer("_beam_idx", torch.arange(cache_shape[0], dtype=torch.int32), persistent=False)
-        self._kv_cache_initialised = True
+        self._kv_cache_initialized = True
 
     def _delete_kv_cache(self):
-        if not self._kv_cache_initialised:
+        if not self._kv_cache_initialized:
             return
 
         del self._generation_step
@@ -60,7 +60,7 @@ class IPUAttentionMixin:
         del self._v_cache
         if hasattr(self, "_beam_idx"):
             del self._beam_idx
-        del self._kv_cache_initialised
+        del self._kv_cache_initialized
 
     @classmethod
     def from_model(
@@ -115,7 +115,7 @@ class IPUAttentionMixin:
         Copies the key-value pair into their corresponding key-value caches. Each copy-cache pair is assumed
         to be of shape [batch_size, num_heads, 1, head_dim] and [batch_size, num_heads, max_length, head_dim] respectively.
         """
-        if not self.kv_cache_initialised:
+        if not self.kv_cache_initialized:
             raise ValueError(
                 f"{self.__class__.__name__} assumes that self-attention has KV caching enabled. "
                 f"Please instantiate using `{self.__class__.__name__}.from_model()` so the KV "
