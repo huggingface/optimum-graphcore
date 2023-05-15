@@ -646,22 +646,13 @@ class SplitProjection(torch.nn.Module):
             out += self.bias
         return out
 
-    def parallelize(self, splits_per_ipu: List[int]):
-        for ipu_id, splits in enumerate(splits_per_ipu):
-            if splits:
-                from_split = sum(splits_per_ipu[:ipu_id])
-                to_split = from_split + splits - 1
-                shard_range = f"{from_split}-{to_split}" if from_split != to_split else f"{from_split}"
-                logger.info(f"Linear splits: {shard_range} --> IPU {ipu_id}")
-                self.split_linear_layers[from_split] = poptorch.BeginBlock(
-                    self.split_linear_layers[from_split], ipu_id=ipu_id, user_id=f"Linear-{shard_range}"
-                )
-        return self
+    @classmethod
+    def from_model(cls, linear: torch.nn.Linear, serialization_factor: int):
+        return cls(linear, serialization_factor)
 
-    def deserialize(self):
+    def to_model(self):
         """
-        Deserialize the internal wrapped linear layer and return it as a
-        `nn.Linear` object.
+        Merge the sub linear layers into one
 
         Returns:
             `nn.Linear` layer
@@ -675,6 +666,18 @@ class SplitProjection(torch.nn.Module):
             if self.bias is not None:
                 layer.bias.copy_(self.bias)
         return layer
+
+    def parallelize(self, splits_per_ipu: List[int]):
+        for ipu_id, splits in enumerate(splits_per_ipu):
+            if splits:
+                from_split = sum(splits_per_ipu[:ipu_id])
+                to_split = from_split + splits - 1
+                shard_range = f"{from_split}-{to_split}" if from_split != to_split else f"{from_split}"
+                logger.info(f"Linear splits: {shard_range} --> IPU {ipu_id}")
+                self.split_linear_layers[from_split] = poptorch.BeginBlock(
+                    self.split_linear_layers[from_split], ipu_id=ipu_id, user_id=f"Linear-{shard_range}"
+                )
+        return self
 
 
 class SharedEmbedding(nn.Module):
