@@ -513,7 +513,7 @@ class IPUConfig(BaseConfig):
                     f" same number of IPUs as {ipus_per_replica_mode_str}={self._ipus_per_replica}."
                 )
 
-            # Layers_per_ipu must have the same length as ipus per replica.
+            # layers_per_ipu must have the same length as ipus per replica.
             # If wildcards are present in layers_per_ipu, let the call to `model.parallelize`
             # handle the validation
             if -1 not in self._layers_per_ipu and len(self._layers_per_ipu) != self._ipus_per_replica:
