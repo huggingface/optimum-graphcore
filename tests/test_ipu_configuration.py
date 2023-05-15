@@ -25,6 +25,7 @@ import pytest
 from optimum.graphcore import IPUConfig
 from optimum.graphcore.ipu_configuration import IncompatibleIPUConfigError
 from optimum.graphcore.modeling_utils import get_layer_ipu, split_encoder_decoder_ipu_config
+from parameterized import parameterized
 from poptorch import OutputMode
 
 
@@ -37,7 +38,45 @@ def create_ipu_config() -> IPUConfig:
     return IPUConfig.from_dict(initial_dict)
 
 
+def create_mode_ipu_config(test_attributes: Dict[str, Any], mode):
+    helper_config = IPUConfig()
+    helper_config.mode = mode
+    ipu_config = IPUConfig(
+        **{helper_config._get_managed_attr_mode_name(attr): value for attr, value in test_attributes.items()}
+    )
+    ipu_config.mode = mode
+    return ipu_config
+
+
 class IPUConfigTester(unittest.TestCase):
+    def test_attribute_default_values(self):
+        # ipus_per_replica should equal to len(layers_per_ipu) if not provided
+        ipu_config = IPUConfig(layers_per_ipu=[1, 2, 3])
+        self.assertEqual(ipu_config.ipus_per_replica, 3)
+
+        # inference_matmul_proportion not specified but matmul_proportion is
+        ipu_config = IPUConfig(
+            layers_per_ipu=[1, 2, 3, 4],
+            matmul_proportion=[0.1, 0.2, 0.3, 0.4],
+        )
+        self.assertEqual(ipu_config.inference_matmul_proportion, [0.1, 0.2, 0.3, 0.4])
+
+        # inference_matmul_proportion not specified but inference_layers_per_ipu != len(matmul_proportion)
+        ipu_config = IPUConfig(
+            layers_per_ipu=[1, 2, 3, 4], matmul_proportion=[0.1, 0.2, 0.3, 0.4], inference_layers_per_ipu=[3, 7]
+        )
+        self.assertEqual(ipu_config.inference_matmul_proportion, 0.2)
+
+        # inference_ipus_per_replica not specified but ipus_per_replica is
+        ipu_config = IPUConfig(
+            ipus_per_replica=10,
+        )
+        self.assertEqual(ipu_config.inference_ipus_per_replica, 10)
+
+        # inference_ipus_per_replica not specified but inference_layers_per_ipu is
+        ipu_config = IPUConfig(ipus_per_replica=10, inference_layers_per_ipu=[1, 2, 3])
+        self.assertEqual(ipu_config.inference_ipus_per_replica, 3)
+
     def _test_to_options(self, for_inference: bool):
         def make_poptorch_options_comparable_to_ipu_config(options_dict):
             options_dict = copy.deepcopy(options_dict)
@@ -98,6 +137,7 @@ class IPUConfigTester(unittest.TestCase):
         if for_inference:
             ipu_config_dict["replication_factor"] = ipu_config_dict["inference_replication_factor"]
             ipu_config_dict["device_iterations"] = ipu_config_dict["inference_device_iterations"]
+            ipu_config_dict["matmul_proportion"] = ipu_config_dict["inference_matmul_proportion"]
             ipu_config_dict["gradient_accumulation_steps"] = 1
             ipu_config_dict["output_mode"] = "all"
         ipu_config_dict, options_dict = intersection_of_dicts(
@@ -205,56 +245,6 @@ class IPUConfigTester(unittest.TestCase):
         layer_ipu = get_layer_ipu(ipu_config, 7)
         self.assertEqual(layer_ipu, [0, 1, 1, 2, 2, 3, 3])
 
-    def test_execution_mode_specific_options(self):
-        ipu_config = IPUConfig(
-            layers_per_ipu=[1, 2, 3, 4],
-            matmul_proportion=[0.1, 0.2, 0.3, 0.4],
-            ipus_per_replica=4,
-            inference_layers_per_ipu=[3, 7],
-            inference_matmul_proportion=[0.3, 0.7],
-            inference_ipus_per_replica=2,
-        )
-
-        # Default mode is training
-        self.assertEqual(ipu_config.mode, "training")
-
-        # Training versions retreived
-        self.assertEqual(ipu_config._layers_per_ipu, [1, 2, 3, 4])
-        self.assertEqual(ipu_config._matmul_proportion, [0.1, 0.2, 0.3, 0.4])
-        self.assertEqual(ipu_config._ipus_per_replica, 4)
-
-        # Inference options created when mode is training
-        opts = ipu_config.train().to_options(for_inference=True)
-        self.assertEqual(opts._values["available_memory_proportion"], {0: 0.3, 1: 0.7})
-        self.assertEqual(ipu_config.mode, "training")
-
-        # Inference versions retreived
-        ipu_config.eval()
-        self.assertEqual(ipu_config._layers_per_ipu, [3, 7])
-        self.assertEqual(ipu_config._matmul_proportion, [0.3, 0.7])
-        self.assertEqual(ipu_config._ipus_per_replica, 2)
-
-        # Test encoder decoder model IPUConfig splitting for generation
-        e_ipu_config, d_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 3, 7)
-        self.assertEqual(e_ipu_config._layers_per_ipu, [3])
-        self.assertEqual(e_ipu_config._ipus_per_replica, 1)
-        self.assertEqual(d_ipu_config._layers_per_ipu, [7])
-        self.assertEqual(d_ipu_config._ipus_per_replica, 1)
-
-        # layers_per_ipu wildcard
-        ipu_config = IPUConfig(ipus_per_replica=4, layers_per_ipu=[-1])
-        layer_ipu = get_layer_ipu(ipu_config, 8)
-        self.assertEqual(ipu_config._ipus_per_replica, 4)
-        self.assertEqual(layer_ipu, [0, 0, 1, 1, 2, 2, 3, 3])
-
-        # inference_matmul_proportion not specified but matmul_proportion is
-        ipu_config = IPUConfig(
-            layers_per_ipu=[1, 2, 3, 4],
-            matmul_proportion=[0.1, 0.2, 0.3, 0.4],
-            inference_layers_per_ipu=[3, 7],
-        )
-        self.assertEqual(ipu_config.inference_matmul_proportion, 0.2)
-
     def test_split_encoder_decoder_ipu_config(self):
         # Test splitting two IPUs
         ipu_config = IPUConfig(layers_per_ipu=[1, 2])
@@ -334,101 +324,126 @@ class IPUConfigTester(unittest.TestCase):
         self.assertEqual(d_ipu_config.layers_per_ipu, [0, 7])
         self.assertEqual(d_ipu_config.ipus_per_replica, 2)
 
-    def test_attribute_value_validation(self):
+
+class IPUConfigExecutionModeTester(unittest.TestCase):
+    def test_mode_set(self):
+        # Default mode should be training
+        config = IPUConfig()
+        self.assertEqual(config.mode, "training")
+
+        # Set with convenience methods
+        config.train()
+        self.assertEqual(config.mode, "training")
+        config.eval()
+        self.assertEqual(config.mode, "inference")
+
+        # Set with invalid mode value
+        with pytest.raises(ValueError, match="`IPUConfig` mode can only take"):
+            config.mode = "invalid"
+
+    @parameterized.expand(
+        (
+            (attr, test_value, mode)
+            for mode in IPUConfig.modes
+            for attr, test_value in {
+                "layers_per_ipu": [1, 2, 3, 4],
+                "matmul_proportion": 0.6,
+                "ipus_per_replica": 4,
+            }.items()
+        )
+    )
+    def test_attr_mode_retrieval(self, attr, value, mode):
+        ipu_config = create_mode_ipu_config({attr: value}, mode)
+        self.assertEqual(getattr(ipu_config, f"_{attr}"), value)
+
+    @parameterized.expand((mode for mode in IPUConfig.modes))
+    def test_layers_per_ipu_wildcard(self, mode):
+        ipu_config = create_mode_ipu_config({"ipus_per_replica": 4, "layers_per_ipu": [-1]}, mode=mode)
+        layer_ipu = get_layer_ipu(ipu_config, 8)
+        self.assertEqual(ipu_config._ipus_per_replica, 4)
+        self.assertEqual(layer_ipu, [0, 0, 1, 1, 2, 2, 3, 3])
+
+    @parameterized.expand((mode for mode in IPUConfig.modes))
+    def test_split_encoder_decoder_ipu_config(self, mode):
+        ipu_config = create_mode_ipu_config(
+            {
+                "layers_per_ipu": [1, 2, 3, 4],
+                "matmul_proportion": [0.1, 0.2, 0.3, 0.4],
+                "ipus_per_replica": 4,
+            },
+            mode,
+        )
+
+        e_ipu_config, d_ipu_config = split_encoder_decoder_ipu_config(ipu_config, 3, 7)
+        self.assertEqual(e_ipu_config._layers_per_ipu, [1, 2])
+        self.assertEqual(e_ipu_config._ipus_per_replica, 2)
+        self.assertEqual(e_ipu_config._matmul_proportion, [0.1, 0.2])
+        self.assertEqual(d_ipu_config._layers_per_ipu, [3, 4])
+        self.assertEqual(d_ipu_config._ipus_per_replica, 2)
+        self.assertEqual(d_ipu_config._matmul_proportion, [0.3, 0.4])
+
+
+class IPUConfigAttributeValidationTester(unittest.TestCase):
+    @parameterized.expand(
+        (
+            (attr, test_value, mode)
+            for mode in IPUConfig.modes
+            for attr, test_value in {
+                "layers_per_ipu": [-1],
+                "matmul_proportion": [0.2, 0.3, 0.0, 0.4],
+                "replication_factor": 1,
+                "gradient_accumulation_steps": 1,
+                "ipus_per_replica": 1,
+                "embedding_serialization_factor": 1,
+                "device_iterations": 1,
+            }.items()
+        )
+    )
+    def test_contents_geq_value_validator(self, attr, value, mode):
         ipu_config = IPUConfig()
+        ipu_config.mode = mode
+        attr = ipu_config._get_managed_attr_mode_name(attr)
+        setattr(ipu_config, attr, value)
 
-        # *layers_per_ipu attributes (List[int>=-1]) cannot contain
-        # values less than -1
-        for test_attr in ("layers_per_ipu", "inference_layers_per_ipu"):
-            with pytest.raises(ValueError, match=f"`IPUConfig` attribute `{test_attr}` must have all elements >= -1"):
-                setattr(ipu_config, test_attr, [3, 5, -2])
-            # should not raise
-            setattr(ipu_config, test_attr, [1, 2, 3])
+        with pytest.raises(ValueError, match=f"`IPUConfig` attribute `.*{attr}` must .* >="):
+            if isinstance(value, list):
+                argmin = min(enumerate(value), key=lambda x: x[1])[0]
+                value[argmin] -= 1
+            else:
+                value -= 1
+            setattr(ipu_config, attr, value)
 
-        # *matmul proportion attributes cannot contain values less than 0
-        for test_attr in ("matmul_proportion", "inference_matmul_proportion"):
-            with pytest.raises(ValueError, match=f"`IPUConfig` attribute `{test_attr}` must have all elements >= 0"):
-                setattr(ipu_config, test_attr, [-0.5, 0, 0.5])
-            # should not raise
-            setattr(ipu_config, test_attr, [0.5, 0.5])
-
-        # Scalar attributes like *replication_factor must be atleast 1
-        for test_attr in (
-            "replication_factor",
-            "inference_replication_factor",
-            "gradient_accumulation_steps",
-            "ipus_per_replica",
-            "inference_ipus_per_replica",
-            "embedding_serialization_factor",
-            "device_iterations",
-            "inference_device_iterations",
-        ):
-            with pytest.raises(ValueError, match=f"`IPUConfig` attribute `{test_attr}` must be >= 1"):
-                setattr(ipu_config, test_attr, 0)
-            # should not raise
-            setattr(ipu_config, test_attr, 8)
-
-        # output mode must be one of ("all", "sum", "final", "default")
-        with pytest.raises(ValueError, match=f"`IPUConfig` attribute `output_mode` can only take values in"):
-            ipu_config.output_mode = "reduce"
+    def test_output_mode_validator(self):
+        with pytest.raises(ValueError):
+            IPUConfig(output_mode="invalid")
         # should not raise
-        ipu_config.output_mode = "final"
+        allowed_output_modes = ("all", "sum", "final", "default")
+        for output_mode in allowed_output_modes:
+            with self.subTest(output_mode=output_mode):
+                IPUConfig(output_mode=output_mode)
 
-    def test_validate_ipu_config(self):
-        # If *matmul_proportion is a List[float], it must
-        # use the same number of IPUs as *ipus_per_replica
-        ipus_per_replica = 4
-        matmul_proportion = [0.2] * (ipus_per_replica + 1)
-        with pytest.raises(
-            IncompatibleIPUConfigError,
-            match=re.escape(f"matmul_proportion={matmul_proportion} should use the same number"),
+    @parameterized.expand((mode for mode in IPUConfig.modes))
+    def test_validate_ipu_config(self, mode):
+        with self.subTest(
+            "if *matmul_proportion is a List[float], it must use the same number of IPUs as *ipus_per_replica"
         ):
-            IPUConfig(ipus_per_replica=ipus_per_replica, matmul_proportion=matmul_proportion)
-        # Should not raise
-        matmul_proportion = [0.2] * ipus_per_replica
-        IPUConfig(ipus_per_replica=ipus_per_replica, matmul_proportion=matmul_proportion)
+            ipus_per_replica = 4
+            matmul_proportion = [0.2] * (ipus_per_replica + 1)
+            with pytest.raises(
+                IncompatibleIPUConfigError,
+                match=re.escape(f"matmul_proportion={matmul_proportion} should use the same number"),
+            ):
+                create_mode_ipu_config(
+                    {"ipus_per_replica": ipus_per_replica, "matmul_proportion": matmul_proportion}, mode
+                )
+                IPUConfig(ipus_per_replica=ipus_per_replica, matmul_proportion=matmul_proportion)
 
-        inference_matmul_proportion = [0.2] * (ipus_per_replica - 1)
-        with pytest.raises(
-            IncompatibleIPUConfigError,
-            match=re.escape(f"inference_matmul_proportion={inference_matmul_proportion} should use the same number"),
+        with self.subTest(
+            "If there are no wildcards in *layers_per_ipu, the pipeline length should equal *ipus_per_replica"
         ):
-            IPUConfig(ipus_per_replica=ipus_per_replica, inference_matmul_proportion=inference_matmul_proportion)
-        # Should not raise
-        inference_matmul_proportion = [0.2] * ipus_per_replica
-        IPUConfig(ipus_per_replica=ipus_per_replica, inference_matmul_proportion=inference_matmul_proportion)
-
-        # If there are no wildcards in *layers_per_ipu, the pipeline length
-        # should equal *ipus_per_replica
-        layers_per_ipu = [2] * (ipus_per_replica + 1)
-        with pytest.raises(
-            IncompatibleIPUConfigError,
-            match=re.escape(f"layers_per_ipu={layers_per_ipu} should use the same number"),
-        ):
-            IPUConfig(ipus_per_replica=ipus_per_replica, layers_per_ipu=layers_per_ipu)
-        # Should not raise
-        layers_per_ipu = [2] * ipus_per_replica
-        IPUConfig(ipus_per_replica=ipus_per_replica, layers_per_ipu=layers_per_ipu)
-
-        inference_layers_per_ipu = [2] * (ipus_per_replica - 1)
-        with pytest.raises(
-            IncompatibleIPUConfigError,
-            match=re.escape(f"inference_layers_per_ipu={inference_layers_per_ipu} should use the same number"),
-        ):
-            IPUConfig(ipus_per_replica=ipus_per_replica, inference_layers_per_ipu=inference_layers_per_ipu)
-        # Should not raise
-        inference_layers_per_ipu = [2] * ipus_per_replica
-        IPUConfig(ipus_per_replica=ipus_per_replica, inference_layers_per_ipu=inference_layers_per_ipu)
-
-        # Test validation after construction
-        ipu_config = IPUConfig(ipus_per_replica=ipus_per_replica, layers_per_ipu=[-1])
-        layers_per_ipu = [2, 2, 2]
-        ipu_config.layers_per_ipu = layers_per_ipu
-        with pytest.raises(
-            IncompatibleIPUConfigError,
-            match=re.escape(f"layers_per_ipu={layers_per_ipu} should use the same number"),
-        ):
-            ipu_config.validate_ipu_config()
-        # Should not raise
-        ipu_config.layers_per_ipu = [2] * ipus_per_replica
-        ipu_config.validate_ipu_config()
+            layers_per_ipu = [2] * (ipus_per_replica + 1)
+            with pytest.raises(
+                IncompatibleIPUConfigError,
+                match=re.escape(f"layers_per_ipu={layers_per_ipu} should use the same number"),
+            ):
+                create_mode_ipu_config({"ipus_per_replica": ipus_per_replica, "layers_per_ipu": layers_per_ipu}, mode)
