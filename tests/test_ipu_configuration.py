@@ -21,11 +21,11 @@ from collections.abc import Iterable
 from typing import Any, Dict, Optional, Set
 
 import pytest
-from parameterized import parameterized
 
 from optimum.graphcore import IPUConfig
 from optimum.graphcore.ipu_configuration import IncompatibleIPUConfigError
 from optimum.graphcore.modeling_utils import get_layer_ipu, split_encoder_decoder_ipu_config
+from parameterized import parameterized
 from poptorch import OutputMode
 
 

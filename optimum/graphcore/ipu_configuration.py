@@ -14,9 +14,9 @@
 #  limitations under the License.
 
 import copy
-from collections import defaultdict
 import json
 import warnings
+from collections import defaultdict
 from functools import partial
 from tempfile import NamedTemporaryFile
 from typing import Any, Dict, List, Optional, Sequence, Set, Type, Union, get_type_hints
