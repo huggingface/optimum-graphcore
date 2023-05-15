@@ -171,7 +171,7 @@ class IPUAttentionMixin:
 
         return self._k_cache, self._v_cache
 
-    def update_attention_mask(self, attention_mask: Optional[torch.Tensor] = None) -> Optional[torch.Tensor]:
+    def update_attention_mask(self, attention_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         """
         Creates a default attention mask intended for use with KV caches. It masks up to and including the current generation step,
         marking the point up to which the caches have been populated.
