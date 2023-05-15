@@ -49,6 +49,34 @@ def create_mode_ipu_config(test_attributes: Dict[str, Any], mode):
 
 
 class IPUConfigTester(unittest.TestCase):
+    def test_attribute_default_values(self):
+        # ipus_per_replica should equal to len(layers_per_ipu) if not provided
+        ipu_config = IPUConfig(layers_per_ipu=[1, 2, 3])
+        self.assertEqual(ipu_config.ipus_per_replica, 3)
+
+        # inference_matmul_proportion not specified but matmul_proportion is
+        ipu_config = IPUConfig(
+            layers_per_ipu=[1, 2, 3, 4],
+            matmul_proportion=[0.1, 0.2, 0.3, 0.4],
+        )
+        self.assertEqual(ipu_config.inference_matmul_proportion, [0.1, 0.2, 0.3, 0.4])
+
+        # inference_matmul_proportion not specified but inference_layers_per_ipu != len(matmul_proportion)
+        ipu_config = IPUConfig(
+            layers_per_ipu=[1, 2, 3, 4], matmul_proportion=[0.1, 0.2, 0.3, 0.4], inference_layers_per_ipu=[3, 7]
+        )
+        self.assertEqual(ipu_config.inference_matmul_proportion, 0.2)
+
+        # inference_ipus_per_replica not specified but ipus_per_replica is
+        ipu_config = IPUConfig(
+            ipus_per_replica=10,
+        )
+        self.assertEqual(ipu_config.inference_ipus_per_replica, 10)
+
+        # inference_ipus_per_replica not specified but inference_layers_per_ipu is
+        ipu_config = IPUConfig(ipus_per_replica=10, inference_layers_per_ipu=[1, 2, 3])
+        self.assertEqual(ipu_config.inference_ipus_per_replica, 3)
+
     def _test_to_options(self, for_inference: bool):
         def make_poptorch_options_comparable_to_ipu_config(options_dict):
             options_dict = copy.deepcopy(options_dict)
@@ -109,6 +137,7 @@ class IPUConfigTester(unittest.TestCase):
         if for_inference:
             ipu_config_dict["replication_factor"] = ipu_config_dict["inference_replication_factor"]
             ipu_config_dict["device_iterations"] = ipu_config_dict["inference_device_iterations"]
+            ipu_config_dict["matmul_proportion"] = ipu_config_dict["inference_matmul_proportion"]
             ipu_config_dict["gradient_accumulation_steps"] = 1
             ipu_config_dict["output_mode"] = "all"
         ipu_config_dict, options_dict = intersection_of_dicts(
