@@ -14,6 +14,7 @@
 #  limitations under the License.
 
 import copy
+from collections import defaultdict
 import json
 import warnings
 from functools import partial
@@ -163,9 +164,8 @@ class IPUConfig(BaseConfig):
     _ipus_per_replica = ManagedAttribute("ipus_per_replica")
     _matmul_proportion = ManagedAttribute("matmul_proportion")
 
-    # Create a mapping of attribute value validating functions to a set of attributes
-    # to be validated by that function
-    attribute_validators = dict()
+    # Create a mapping of attributes to their list of validation functions
+    attribute_validators = defaultdict(list)
 
     def contents_geq_value_validator(
         name: str, value: Union[float, int, Sequence], floor_value: Union[float, int]
@@ -187,29 +187,26 @@ class IPUConfig(BaseConfig):
         else:
             raise ValueError(
                 f"`contents_geq_value_validator` validates inputs of type:"
-                f" Union[float, int, Sequence[Union[int, float]]]. You provided: {value=},{type(value)}"
+                f" Union[float, int, Sequence[Union[int, float]]]. You provided"
+                f" attribute `{name}`, {value=}, {type(value)}"
             )
 
-    attribute_validators[partial(contents_geq_value_validator, floor_value=1)] = {
-        "replication_factor",
-        "inference_replication_factor",
-        "gradient_accumulation_steps",
-        "ipus_per_replica",
-        "inference_ipus_per_replica",
-        "embedding_serialization_factor",
-        "device_iterations",
-        "inference_device_iterations",
-    }
-
-    attribute_validators[partial(contents_geq_value_validator, floor_value=0)] = {
-        "matmul_proportion",
-        "inference_matmul_proportion",
-    }
-
-    attribute_validators[partial(contents_geq_value_validator, floor_value=-1)] = {
-        "layers_per_ipu",
-        "inference_layers_per_ipu",
-    }
+    for attr, floor_value in (
+        ("layers_per_ipu", -1),
+        ("inference_layers_per_ipu", -1),
+        ("matmul_proportion", 0),
+        ("inference_matmul_proportion", 0),
+        ("replication_factor", 1),
+        ("inference_replication_factor", 1),
+        ("gradient_accumulation_steps", 1),
+        ("ipus_per_replica", 1),
+        ("inference_ipus_per_replica", 1),
+        ("embedding_serialization_factor", 1),
+        ("device_iterations", 1),
+        ("inference_device_iterations", 1),
+    ):
+        func = partial(contents_geq_value_validator, floor_value=floor_value)
+        attribute_validators[attr].append(func)
 
     def output_mode_validator(name: str, value: str):
         allowed_values = ("all", "sum", "final", "default")
@@ -219,7 +216,7 @@ class IPUConfig(BaseConfig):
                 f" {allowed_values}. You provided: {value=}"
             )
 
-    attribute_validators[output_mode_validator] = {"output_mode"}
+    attribute_validators["output_mode"].append(output_mode_validator)
 
     def __init__(
         self,
@@ -360,9 +357,8 @@ class IPUConfig(BaseConfig):
         # a managed attribute
         if hasattr(self, attr) and hasattr(self, f"inference_{attr}"):
             return attr if self.mode == "training" else f"inference_{attr}"
-        else:
-            warnings.warn(f"{attr} is not a `ManagedAttribute`. Returning modeless name: {attr}")
-            return attr
+        # return attr if its not a managed attribute 
+        return attr
 
     def _get_attribute_type(self, name: str) -> Any:
         """
@@ -390,10 +386,10 @@ class IPUConfig(BaseConfig):
                 f" with {value=}, type: {type(value)} is invalid."
             ) from e
 
-        # Run additional attribute value validators
-        for func, attrs in self.attribute_validators.items():
-            if name in attrs:
-                func(name, value)
+        # Run attribute value validators
+        if name in self.attribute_validators:
+            for vfunc in self.attribute_validators[name]:
+                vfunc(name, value)
 
         return super().__setattr__(name, value)
 
