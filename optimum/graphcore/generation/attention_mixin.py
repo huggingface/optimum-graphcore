@@ -74,6 +74,15 @@ class IPUAttentionMixin:
         batch_serialization_factor: Optional[int] = 1,
         sequence_serialization_factor: Optional[int] = 1,
     ):
+        """
+        Returns an instance of the provided `attention_layer` with functionality provided by `IPUAttentionMixin`.
+
+        If `use_cache=True`, instantiates the self-attention KV caches, each of shape
+        `(batch_size * num_beams, num_heads, max_length, head_dim)`.
+
+        If `batch_serialization_factor > 1` or `sequence_serialization_factor > 1`, attention will be serialized
+        along the batch or sequence dimension respectively.
+        """
         clone = copy.deepcopy(attention_layer)
         clone.__class__ = cls
 
@@ -103,6 +112,9 @@ class IPUAttentionMixin:
         return clone
 
     def to_model(self, cls) -> torch.nn.Module:
+        """
+        Returns an instance of the `attention_layer` provided to `from_model` with functionality provided by `IPUAttentionMixin` removed.
+        """
         self._delete_kv_cache()
         self._delete_serialization_factors()
 
@@ -112,8 +124,11 @@ class IPUAttentionMixin:
 
     def add_to_kv_cache(self, key: torch.Tensor, value: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Copies the key-value pair into their corresponding key-value caches. Each copy-cache pair is assumed
-        to be of shape [batch_size, num_heads, 1, head_dim] and [batch_size, num_heads, max_length, head_dim] respectively.
+        Copies the key-value pair into their corresponding key-value caches.
+
+        Args:
+            key (`torch.FloatTensor`): key tensor of shape `(batch_size * num_beams, num_heads, 1, head_dim)`.
+            value (`torch.FloatTensor`): value tensor of shape `(batch_size * num_beams, num_heads, 1, head_dim)`.
         """
         if not self.kv_cache_initialized:
             raise ValueError(
@@ -158,8 +173,8 @@ class IPUAttentionMixin:
 
     def update_attention_mask(self, attention_mask: Optional[torch.Tensor] = None) -> Optional[torch.Tensor]:
         """
-        Creates a default mask up to and including the current generation step, marking the point
-        up to which the caches have been populated.
+        Creates a default attention mask intended for use with KV caches. It masks up to and including the current generation step,
+        marking the point up to which the caches have been populated.
         """
         bsz, _, src_len, _ = self._k_cache.shape
         mask = torch.full((1, src_len), -FLOAT16_LIMIT)
