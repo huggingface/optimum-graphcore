@@ -195,9 +195,6 @@ class IPUConfig(BaseConfig):
     # `self.mode` ("training" by default). For example `_layers_per_ipu`
     # switches between `layers_per_ipu` and `inference_layers_per_ipu`
     modes = ("training", "inference")
-
-    # Create a mapping of attributes to their list of validation functions
-    attribute_validators = defaultdict(list)
     _layers_per_ipu = ManagedAttribute("layers_per_ipu")
     _ipus_per_replica = ManagedAttribute("ipus_per_replica")
     _matmul_proportion = ManagedAttribute("matmul_proportion")
@@ -205,6 +202,9 @@ class IPUConfig(BaseConfig):
     _serialized_embedding_splits_per_ipu = ManagedAttribute("serialized_embedding_splits_per_ipu")
     _projection_serialization_factor = ManagedAttribute("projection_serialization_factor")
     _serialized_projection_splits_per_ipu = ManagedAttribute("serialized_projection_splits_per_ipu")
+
+    # Create a mapping of attributes to their list of validation functions
+    attribute_validators = defaultdict(list)
 
     def _contents_geq_value_validator(
         name: str, value: Union[float, int, Sequence], floor_value: Union[float, int]
