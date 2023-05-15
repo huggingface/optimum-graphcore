@@ -66,13 +66,13 @@ class IPUAttentionMixin:
     def from_model(
         cls,
         attention_layer: torch.nn.Module,
-        use_cache: bool = False,
-        batch_size: int = 1,
-        max_length: int = 128,
-        num_beams: int = 1,
-        dtype: torch.dtype = torch.float16,
-        batch_serialization_factor: int = 1,
-        sequence_serialization_factor: int = 1,
+        use_cache: Optional[bool] = False,
+        batch_size: Optional[int] = 1,
+        max_length: Optional[int] = 128,
+        num_beams: Optional[int] = 1,
+        dtype: Optional[torch.dtype] = torch.float16,
+        batch_serialization_factor: Optional[int] = 1,
+        sequence_serialization_factor: Optional[int] = 1,
     ):
         clone = copy.deepcopy(attention_layer)
         clone.__class__ = cls
@@ -156,7 +156,7 @@ class IPUAttentionMixin:
 
         return self._k_cache, self._v_cache
 
-    def update_attention_mask(self, attention_mask: Optional[torch.Tensor] = None):
+    def update_attention_mask(self, attention_mask: Optional[torch.Tensor] = None) -> Optional[torch.Tensor]:
         """
         Creates a default mask up to and including the current generation step, marking the point
         up to which the caches have been populated.
@@ -196,7 +196,7 @@ class IPUAttentionMixin:
         value: torch.Tensor,
         scale: Optional[float] = 1.0,
         attention_mask: Optional[torch.Tensor] = None,
-    ):
+    ) -> torch.Tensor:
         """
         Serializes the attention operation either across the batch (if `batch_serialization_factor > 1`)
         or the sequence (if `sequence_serialization_factor > 1`) dimensions to reduce peak memory usage.
@@ -234,7 +234,7 @@ class IPUAttentionMixin:
         scale: Optional[float] = 1.0,
         attention_mask: Optional[torch.Tensor] = None,
         serialization_factor: Optional[int] = 1,
-    ):
+    ) -> torch.Tensor:
         if query.shape[0] % serialization_factor != 0:
             raise ValueError(
                 f"Cannot evenly divide query batch dim: {query.shape[0]} by `serialization_factor`: {serialization_factor}."
@@ -266,7 +266,7 @@ class IPUAttentionMixin:
         scale: Optional[float] = 1.0,
         attention_mask: Optional[torch.Tensor] = None,
         serialization_factor: Optional[int] = 1,
-    ):
+    ) -> torch.Tensor:
         if query.shape[1] % serialization_factor != 0:
             raise ValueError(
                 f"Cannot evenly divide query sequence dim: {query.shape[1]} by `serialization_factor`: {serialization_factor}."
