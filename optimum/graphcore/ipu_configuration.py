@@ -261,7 +261,7 @@ class IPUConfig(BaseConfig):
 
     attribute_validators["output_mode"].append(_output_mode_validator)
 
-    def _serialized_layer_splits_per_ipu_validator(name: str, value: str):
+    def _serialized_layer_splits_per_ipu_validator(name: str, value: int):
         """
         Validates serialized_{projection/embedding}_splits_per_ipu attributes.
         If `value` is not None. `value` must be of type List[int>=0] with
