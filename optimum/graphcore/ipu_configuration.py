@@ -205,10 +205,6 @@ class IPUConfig(BaseConfig):
     _embedding_serialization_factor = ManagedAttribute("embedding_serialization_factor")
     _serialized_embedding_splits_per_ipu = ManagedAttribute("serialized_embedding_splits_per_ipu")
 
-    # Create a mapping of attribute value validating functions to a set of attributes
-    # to be validated by that function
-    attribute_validators = dict()
-
     def _contents_geq_value_validator(
         name: str, value: Union[float, int, Sequence], floor_value: Union[float, int]
     ) -> None:
@@ -287,7 +283,7 @@ class IPUConfig(BaseConfig):
             if splits and value[i + 1] == 0 and sum(value[i + 1 :]) != 0:
                 raise ValueError(f"`IPUConfig` attribute `{name}={value}` must have its splits on consecutive IPUs.")
 
-    for attr in  (
+    for attr in (
         "serialized_projection_splits_per_ipu",
         "inference_serialized_projection_splits_per_ipu",
         "serialized_embedding_splits_per_ipu",
