@@ -618,7 +618,7 @@ class SplitProjection(torch.nn.Module):
         if self.in_features % serialization_factor != 0:
             raise ValueError(f"{linear.in_features=} must be divisible by {serialization_factor=}")
 
-        self.split_size = int(self.in_features / serialization_factor)
+        self.split_size = self.in_features // serialization_factor
         self.split_linear_layers = torch.nn.ModuleList()
         for i in range(0, self.in_features, self.split_size):
             split_linear = torch.nn.Linear(self.split_size, self.out_features, bias=False, dtype=linear.weight.dtype)

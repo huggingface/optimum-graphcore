@@ -277,13 +277,13 @@ class IPUConfigTester(unittest.TestCase):
             failing_ipu_config = IPUConfig(
                 layers_per_ipu=[0, 2, 2, 0], serialized_projection_splits_per_ipu=[0, 2, 2, 0]
             )
-            _ = split_encoder_decoder_ipu_config(failing_ipu_config, 2, 2)
+            split_encoder_decoder_ipu_config(failing_ipu_config, 2, 2)
 
         with pytest.raises(ValueError, match=f"must have all splits placed on the"):
             failing_ipu_config = IPUConfig(
                 layers_per_ipu=[0, 2, 2, 0], serialized_embedding_splits_per_ipu=[0, 2, 2, 0]
             )
-            _ = split_encoder_decoder_ipu_config(failing_ipu_config, 2, 2)
+            split_encoder_decoder_ipu_config(failing_ipu_config, 2, 2)
 
         # Test that all the other values from the original ipu_config are intact
         ipu_config = ipu_config.to_dict()
