@@ -16,14 +16,14 @@ limitations under the License.
 
 # Add support for new model architectures
 
-To contribute and add support for a model architecture that is not currently supported by `optimum.graphcore`, you will have to:
+To contribute and add support for a model architecture that is not currently supported by the `optimum.graphcore` library, you will have to:
 
-1. Make sure the original model implementation inherhints from `transformers.PreTrainedModel`. This is not 100% needed, but it is highly recommended to have access to all the features.
-2. Create a "pipelined" version of the original class, to do that:
+1. Make sure the original model implementation inherits from `transformers.PreTrainedModel`. This is not 100% needed, but it is highly recommended to have access to all the features.
+2. Create a "pipelined" version of the original class. To do that:
   - Inherit from both the original class and [`modeling_utils.PieplineMixin`]
   - Implement the [`~modeling_utils.PipelineMixin.parallelize`] method, which specifies how each part of the model should be placed on the hardware.
-  - Implement the [`~modeling_utils.PipelineMixin.deparallize`] method, which takes a parallelized instance of the model back to its original version. This is needed to make sure both the original and pipelined versions can share the same state dict.
-3. Register the pipelined version. This will enable the [`IPUTrainer`] to automatically convert an original instance of the model to its pipelined counterpart.
+  - Implement the [`~modeling_utils.PipelineMixin.deparallize`] method, which takes a parallelized instance of the model back to its original version. This is needed to make sure that both the original and pipelined versions of the model can share the same state dictionary.
+3. Register the pipelined version of the class. This will enable the [`IPUTrainer`] class to automatically convert the original instance of a model to its pipelined counterpart.
 
 **Example:** `transformers.ViTForImageClassification` to `PipelinedViTForImageClassification`
 
@@ -62,8 +62,8 @@ class PipelinedViTForImageClassification(transformers.ViTForImageClassification,
         return self
 ```
 
-As you can see, you can specify where each part of the model should be put by wrapping them around `poptorch.BeginBlock`, which takes a layer, a block name, and an IPU id as inputs.
-To know which IPU id to use, you can use the `ipu_config.layers_per_ipu` attribute, for more information check [here](ipu_config.mdx#IPUConfig)
+As you can see, you can specify where each part of the model should be put by wrapping them around `poptorch.BeginBlock`, which takes a layer, a block name, and an IPU ID as inputs.
+To know which IPU ID to use, you can use the `ipu_config.layers_per_ipu` attribute, for more information check [here](ipu_config.mdx#IPUConfig)
 
 
 ## PipelineMixin

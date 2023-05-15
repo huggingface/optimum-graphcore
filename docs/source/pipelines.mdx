@@ -1,0 +1,70 @@
+<!---
+Copyright 2023 The HuggingFace Team. All rights reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+# IPU Pipelines
+
+There are a number of [🤗 pipelines](https://huggingface.co/docs/transformers/main_classes/pipelines) that have been adapted for use with IPUs. The available IPU pipelines are:
+
+* [`IPUFillMaskPipeline`]
+* [`IPUText2TextGenerationPipeline`]
+* [`IPUSummarizationPipeline`]
+* [`IPUTranslationPipeline`]
+* [`IPUTokenClassificationPipeline`]
+* [`IPUZeroShotClassificationPipeline`]
+
+## API reference
+
+### IPUFillMaskPipeline
+
+Based on the [🤗 FillMaskPipeline](https://huggingface.co/docs/transformers/main/en/main_classes/pipelines#transformers.FillMaskPipeline) pipeline.
+
+[[autodoc]] pipelines.IPUFillMaskPipeline
+  - all
+
+### IPUText2TextGenerationPipeline
+
+Based on the [🤗 Text2TextGenerationPipeline](https://huggingface.co/docs/transformers/main/en/main_classes/pipelines#transformers.Text2TextGenerationPipeline) pipeline.
+
+[[autodoc]] pipelines.IPUText2TextGenerationPipeline
+  - all
+
+### IPUSummarizationPipeline
+
+Based on the [🤗 SummarizationPipeline](https://huggingface.co/docs/transformers/main/en/main_classes/pipelines#transformers.SummarizationPipeline) pipeline.
+
+[[autodoc]] pipelines.IPUSummarizationPipeline
+  - all
+
+### IPUTranslationPipeline
+
+Based on the [🤗 TranslationPipeline](https://huggingface.co/docs/transformers/main/en/main_classes/pipelines#transformers.TranslationPipeline) pipeline.
+
+[[autodoc]] pipelines.IPUTranslationPipeline
+  - all
+
+### IPUTokenClassificationPipeline
+
+Based on the [🤗 TokenClassificationPipeline](https://huggingface.co/docs/transformers/main/en/main_classes/pipelines#transformers.TokenClassificationPipeline) pipeline.
+
+[[autodoc]] pipelines.IPUTokenClassificationPipeline
+  - all
+
+### IPUZeroShotClassificationPipeline
+
+Based on the [🤗 ZeroShotClassificationPipeline](https://huggingface.co/docs/transformers/main/en/main_classes/pipelines#transformers.ZeroShotClassificationPipeline) pipeline.
+
+[[autodoc]] pipelines.IPUZeroShotClassificationPipeline
+  - all

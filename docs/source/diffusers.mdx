@@ -1,0 +1,52 @@
+<!---
+Copyright 2023 The HuggingFace Team. All rights reserved.
+
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
+
+    http://www.apache.org/licenses/LICENSE-2.0
+
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
+-->
+
+# IPU Diffusers
+
+A few [🤗 diffusers](https://huggingface.co/docs/diffusers/index) have been adapted for use with IPUs. The available IPU diffusers are:
+
+* [IPUStableDiffusionPipeline](#IPUStableDiffusionPipeline)
+* [IPUStableDiffusionImg2ImgPipeline](#IPUStableDiffusionImg2ImgPipeline)
+* [IPUStableDiffusionInpaintPipeline](#IPUStableDiffusionInpaintPipeline)
+
+## API reference
+
+### IPUStableDiffusionPipeline
+
+This class is based on the [🤗 StableDiffusionPipeline](https://huggingface.co/docs/diffusers/api/pipelines/stable_diffusion/text2img) pipeline.
+
+Run the following notebooks to see how this pipeline is used:
+
+* [Stable Diffusion Text-to-Image Generation on IPUs](https://github.com/huggingface/optimum-graphcore/blob/main/notebooks/stable_diffusion/text_to_image.ipynb)
+* [Text-to-Image Generation on IPUs using Stable Diffusion 2.0 - Inference](https://github.com/huggingface/optimum-graphcore/blob/main/notebooks/stable_diffusion/text_to_image_sd2.ipynb)
+
+### IPUStableDiffusionImg2ImgPipeline
+
+This class is based on the [🤗 StableDiffusionImg2ImgPipeline](https://huggingface.co/docs/diffusers/api/pipelines/stable_diffusion/img2img) pipeline.
+
+Run the [Stable Diffusion Image-to-Image Generation on IPUs](https://github.com/huggingface/optimum-graphcore/blob/main/notebooks/stable_diffusion/image_to_image.ipynb) notebook for an example of how this pipeline is used.
+
+[[autodoc]] diffusers.IPUStableDiffusionImg2ImgPipeline
+  - all
+
+### IPUStableDiffusionInpaintPipeline
+
+Based on the [🤗 StableDiffusionInpaintPipeline](https://huggingface.co/docs/diffusers/api/pipelines/stable_diffusion/inpaint) pipeline.
+
+Run the [Text-guided Inpainting on IPUs using Stable Diffusion - Inference](https://github.com/huggingface/optimum-graphcore/blob/main/notebooks/stable_diffusion/inpainting.ipynb) notebook for an example of how this pipeline is used.
+
+[[autodoc]] diffusers.IPUStableDiffusionInpaintPipeline
+  - all
