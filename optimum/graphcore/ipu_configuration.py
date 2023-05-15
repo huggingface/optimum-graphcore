@@ -357,7 +357,7 @@ class IPUConfig(BaseConfig):
         # a managed attribute
         if hasattr(self, attr) and hasattr(self, f"inference_{attr}"):
             return attr if self.mode == "training" else f"inference_{attr}"
-        # return attr if its not a managed attribute 
+        # return attr if its not a managed attribute
         return attr
 
     def _get_attribute_type(self, name: str) -> Any:

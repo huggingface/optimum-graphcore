@@ -295,6 +295,7 @@ class IPUConfigTester(unittest.TestCase):
         self.assertEqual(d_ipu_config.layers_per_ipu, [0, 7])
         self.assertEqual(d_ipu_config.ipus_per_replica, 2)
 
+
 class IPUConfigExecutionModeTester(unittest.TestCase):
     def test_mode_set(self):
         # Default mode should be training
@@ -370,12 +371,11 @@ class IPUConfigAttributeValidationTester(unittest.TestCase):
         )
     )
     def test_contents_geq_value_validator(self, attr, value, mode):
-        
         ipu_config = IPUConfig()
         ipu_config.mode = mode
         attr = ipu_config._get_managed_attr_mode_name(attr)
         setattr(ipu_config, attr, value)
-        
+
         with pytest.raises(ValueError, match=f"`IPUConfig` attribute `.*{attr}` must .* >="):
             if isinstance(value, list):
                 argmin = min(enumerate(value), key=lambda x: x[1])[0]
@@ -417,6 +417,4 @@ class IPUConfigAttributeValidationTester(unittest.TestCase):
                 IncompatibleIPUConfigError,
                 match=re.escape(f"layers_per_ipu={layers_per_ipu} should use the same number"),
             ):
-                create_mode_ipu_config(
-                    {"ipus_per_replica": ipus_per_replica, "layers_per_ipu": layers_per_ipu}, mode
-                )
+                create_mode_ipu_config({"ipus_per_replica": ipus_per_replica, "layers_per_ipu": layers_per_ipu}, mode)
