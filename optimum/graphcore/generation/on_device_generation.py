@@ -331,11 +331,23 @@ class OnDeviceBeamSearch(torch.nn.Module):
 class OnDeviceGenerationModel(torch.nn.Module):
     """
     A wrapper around a user generation model that effectively runs the entire generation loop
-    on device without returning to host after each generated token. Instead, each generated token is stored
-    in a torch buffer, and appended to the input at the next time step.
-    Suppose the input tensor is of shape [B, C]; B = batch size, C = context length. C is currently
-    restricted to C=1. To generate up to a max sequence length of S, device iterations should be set to <= S - C.
-    Further, this is only compatible with poptorch.ShardedExecution.
+    on device for a selected number of steps before returning to host. Each generated token is
+    stored in appropriate buffers on device.
+
+    We currently support greedy search and beam search. For beam search, the additional state is similarly
+    stored in buffers on device.
+
+    Let B = batch size * num beams, C = context length, S = max length.
+    The input token tensor is of shape [B, C]. To do D on-device generation steps at a time,
+    the device iterations should be set to D, for example D=16.
+
+    If using this class outside of the `IPUGenerationMixin`, the user must ensure generation does not
+    exceed the max sequence length of S.
+
+    Current limitations:
+    a) context length is restricted to C=1;
+    b) user generation model must have KV caching enabled;
+    c) poptorch execution strategy must be poptorch.ShardedExecution.
     """
 
     def __init__(
