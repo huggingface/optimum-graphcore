@@ -205,8 +205,7 @@ class IPUConfig(BaseConfig):
         ("device_iterations", 1),
         ("inference_device_iterations", 1),
     ):
-        func = partial(contents_geq_value_validator, floor_value=floor_value)
-        attribute_validators[attr].append(func)
+        attribute_validators[attr].append(partial(contents_geq_value_validator, floor_value=floor_value))
 
     def output_mode_validator(name: str, value: str):
         allowed_values = ("all", "sum", "final", "default")
