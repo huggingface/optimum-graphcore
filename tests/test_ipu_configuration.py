@@ -269,7 +269,7 @@ class IPUConfigTester(unittest.TestCase):
         self.assertEqual(e_ipu_config.matmul_proportion, [0.1, 0.2])
         self.assertEqual(d_ipu_config.matmul_proportion, [0.3, 0.4])
 
-        # For generation using encoder decoder models and layers `SplitLinear`
+        # For generation using encoder decoder models and layers `SplitProjection`
         # and `SerializedEmbedding` placed on different IPUs, cannot
         # have serialized_{linear/embedding}_splits_per_ipu present in
         # both the encoder and decoder
