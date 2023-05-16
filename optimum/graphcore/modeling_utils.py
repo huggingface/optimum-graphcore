@@ -11,6 +11,7 @@
 #  WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
+from __future__ import annotations
 
 import copy
 from inspect import signature
@@ -445,10 +446,10 @@ class SerializedEmbedding(nn.Module):
         )
 
     @classmethod
-    def from_model(cls, embedding: nn.Embedding, serialization_factor: int):
+    def from_model(cls, embedding: nn.Embedding, serialization_factor: int) -> SerializedEmbedding:
         return cls(embedding, serialization_factor)
 
-    def to_model(self):
+    def to_model(self) -> nn.Embedding:
         """
         Deserialize the internal wrapped embedding layer and return it as an
         `nn.Embedding` object.
@@ -524,7 +525,7 @@ class SerializedLinear(nn.Linear):
         self.factor = factor
 
     @classmethod
-    def from_model(cls, model: nn.Linear, factor: int, mode=poptorch.MatMulSerializationMode.OutputChannels):
+    def from_model(cls, model: nn.Linear, factor: int, mode=poptorch.MatMulSerializationMode.OutputChannels) -> SerializedLinear:
         clone = copy.deepcopy(model)
         clone.__class__ = cls
         clone.factor = factor
