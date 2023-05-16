@@ -647,10 +647,10 @@ class SplitProjection(torch.nn.Module):
         return out
 
     @classmethod
-    def from_model(cls, linear: torch.nn.Linear, serialization_factor: int):
+    def from_model(cls, linear: torch.nn.Linear, serialization_factor: int) -> SplitProjection:
         return cls(linear, serialization_factor)
 
-    def to_model(self):
+    def to_model(self) -> nn.Linear:
         """
         Merge the sub linear layers into one
 
