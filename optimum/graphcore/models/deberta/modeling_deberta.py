@@ -310,7 +310,7 @@ class DebertaPipelineMixin(PipelineMixin):
                 )
                 self.tie_weights()
             else:
-                self.deberta.embeddings.word_embeddings = SerializedEmbedding(
+                self.deberta.embeddings.word_embeddings = SerializedEmbedding.from_model(
                     self.deberta.embeddings.word_embeddings, self.ipu_config.embedding_serialization_factor
                 )
 
@@ -352,7 +352,7 @@ class DebertaPipelineMixin(PipelineMixin):
                 self.tie_weights()
             else:
                 # Deserialize the serialized word embedding
-                self.deberta.embeddings.word_embeddings = self.deberta.embeddings.word_embeddings.deserialize()
+                self.deberta.embeddings.word_embeddings = self.deberta.embeddings.word_embeddings.to_model()
         return self
 
 

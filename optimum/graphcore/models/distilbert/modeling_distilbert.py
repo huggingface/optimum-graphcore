@@ -132,7 +132,7 @@ class DistilBertPipelineMixin(PipelineMixin):
         logger.info("Embedding --> IPU 0")
         is_masked_lm = isinstance(self, DistilBertForMaskedLM)
         if self.ipu_config.embedding_serialization_factor > 1 and not is_masked_lm:
-            self.distilbert.embeddings.word_embeddings = SerializedEmbedding(
+            self.distilbert.embeddings.word_embeddings = SerializedEmbedding.from_model(
                 self.distilbert.embeddings.word_embeddings, self.ipu_config.embedding_serialization_factor
             )
         self.distilbert.embeddings = poptorch.BeginBlock(self.distilbert.embeddings, "Embedding", 0)
@@ -160,7 +160,7 @@ class DistilBertPipelineMixin(PipelineMixin):
 
         is_masked_lm = isinstance(self, DistilBertForMaskedLM)
         if self.ipu_config.embedding_serialization_factor > 1 and not is_masked_lm:
-            self.distilbert.embeddings.word_embeddings = self.distilbert.embeddings.word_embeddings.deserialize()
+            self.distilbert.embeddings.word_embeddings = self.distilbert.embeddings.word_embeddings.to_model()
 
         return self
 

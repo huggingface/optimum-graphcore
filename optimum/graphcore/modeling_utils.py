@@ -444,7 +444,11 @@ class SerializedEmbedding(nn.Module):
             ]
         )
 
-    def deserialize(self):
+    @classmethod
+    def from_model(cls, embedding: nn.Embedding, serialization_factor: int):
+        return cls(embedding, serialization_factor)
+
+    def to_model(self):
         """
         Deserialize the internal wrapped embedding layer and return it as an
         `nn.Embedding` object.
