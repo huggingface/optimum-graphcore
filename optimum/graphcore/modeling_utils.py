@@ -525,7 +525,9 @@ class SerializedLinear(nn.Linear):
         self.factor = factor
 
     @classmethod
-    def from_model(cls, model: nn.Linear, factor: int, mode=poptorch.MatMulSerializationMode.OutputChannels) -> SerializedLinear:
+    def from_model(
+        cls, model: nn.Linear, factor: int, mode=poptorch.MatMulSerializationMode.OutputChannels
+    ) -> SerializedLinear:
         clone = copy.deepcopy(model)
         clone.__class__ = cls
         clone.factor = factor
