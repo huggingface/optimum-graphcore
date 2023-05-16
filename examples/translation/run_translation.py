@@ -54,7 +54,7 @@ from transformers.utils.versions import require_version
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-tf_check_min_version("4.25.0")
+tf_check_min_version("4.28.0")
 
 # Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
 check_min_version("0.2.4.dev0")
