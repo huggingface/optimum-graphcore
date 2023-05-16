@@ -19,16 +19,16 @@ import warnings
 from collections import defaultdict
 from functools import partial
 from tempfile import NamedTemporaryFile
-from typing import Any, Dict, List, Optional, Sequence, Set, Type, Union, get_type_hints
-
-import torch
+from typing import Any, Dict, List, Optional, Sequence, Union, get_type_hints
 
 import popart
 import poptorch
+import torch
 import typeguard
+from poptorch import Options, OutputMode
+
 from optimum.configuration_utils import BaseConfig
 from optimum.utils import logging
-from poptorch import Options, OutputMode
 
 
 # For container types check all items for type correctness

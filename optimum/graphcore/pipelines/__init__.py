@@ -14,13 +14,9 @@
 
 from typing import Any, List, Optional, Union
 
-import torch
-
 import poptorch
+import torch
 import transformers.pipelines
-from optimum.graphcore.generation.utils import IPUGenerationMixin
-from optimum.graphcore.ipu_configuration import IncompatibleIPUConfigError, IPUConfig
-from optimum.graphcore.modeling_utils import to_pipelined
 from transformers import (
     AudioClassificationPipeline,
     AutoFeatureExtractor,
@@ -46,6 +42,10 @@ from transformers.feature_extraction_utils import PreTrainedFeatureExtractor
 from transformers.modeling_utils import PreTrainedModel
 from transformers.pipelines import get_task
 from transformers.utils import HUGGINGFACE_CO_RESOLVE_ENDPOINT, logging
+
+from optimum.graphcore.generation.utils import IPUGenerationMixin
+from optimum.graphcore.ipu_configuration import IncompatibleIPUConfigError, IPUConfig
+from optimum.graphcore.modeling_utils import to_pipelined
 
 from .fill_mask import IPUFillMaskPipeline
 from .text2text_generation import IPUSummarizationPipeline, IPUText2TextGenerationPipeline, IPUTranslationPipeline

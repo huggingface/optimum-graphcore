@@ -19,7 +19,6 @@ from typing import Tuple
 
 import torch
 import torch.nn as nn
-
 from transformers.models.bert.modeling_bert import BertSelfAttention
 
 
@@ -29,10 +28,10 @@ class BertFusedSelfAttention(BertSelfAttention):
         combined_weight = torch.cat(weights, dim=0)
         combined_result = hidden_state @ torch.transpose(combined_weight, -2, -1)
         biases = (self.query.bias, self.key.bias, self.value.bias)
-        if all(map(lambda b: b is not None, biases)):
+        if all((b is not None for b in biases)):
             combined_bias = torch.cat(biases, dim=0)
             combined_result += combined_bias
-        elif any(map(lambda b: b is not None, biases)):
+        elif any((b is not None for b in biases)):
             raise RuntimeError(
                 "Some attention layers had biases but not all. This is not supported. "
                 "Please enable biases on all Query, Key and Value or none. "

@@ -14,11 +14,12 @@
 
 import unittest
 
-from optimum.graphcore import pipeline
-from transformers import MODEL_FOR_QUESTION_ANSWERING_MAPPING, LxmertConfig, QuestionAnsweringPipeline
+from transformers import MODEL_FOR_QUESTION_ANSWERING_MAPPING, LxmertConfig
 from transformers.data.processors.squad import SquadExample
 from transformers.pipelines import QuestionAnsweringArgumentHandler
 from transformers.testing_utils import nested_simplify, require_torch, slow
+
+from optimum.graphcore import pipeline
 
 from .test_pipelines_common import ANY, PipelineTestCaseMeta
 

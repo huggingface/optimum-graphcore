@@ -12,15 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import inspect
-from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import torch
+from poptorch._impl import rewrapModelIfNecessary, unwrapModelIfNecessary
 from torch import nn
 from torch.utils.data import Dataset
+from transformers.trainer_utils import PredictionOutput
 
 from optimum.utils import logging
-from poptorch._impl import rewrapModelIfNecessary, unwrapModelIfNecessary
 
 from .trainer import IPUTrainer
 
@@ -108,7 +108,7 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         metric_key_prefix: str = "test",
         max_length: Optional[int] = None,
         num_beams: Optional[int] = None,
-    ) -> "PredictionOutput":
+    ) -> PredictionOutput:
         """
         Runs prediction and returns predictions and potential metrics.
 
@@ -193,7 +193,6 @@ class IPUSeq2SeqTrainer(IPUTrainer):
                 is_last_batch=is_last_batch,
             )
 
-        has_labels = "labels" in inputs
         inputs = self._prepare_inputs(inputs)
 
         gen_kwargs = {

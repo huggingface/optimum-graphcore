@@ -14,12 +14,11 @@
 import copy
 from typing import Optional, Tuple
 
+import poptorch
 import torch
 from torch import nn
-
-import poptorch
-from optimum.utils import logging
 from transformers import WhisperConfig
+from transformers.activations import ACT2FN
 from transformers.models.whisper.modeling_whisper import (
     WhisperAttention,
     WhisperDecoder,
@@ -27,6 +26,8 @@ from transformers.models.whisper.modeling_whisper import (
     WhisperForConditionalGeneration,
     WhisperPositionalEmbedding,
 )
+
+from optimum.utils import logging
 
 from ...generation import IPUAttentionMixin, IPUGenerationMixin, supports_kv_cache
 from ...modeling_utils import (
@@ -39,8 +40,6 @@ from ...modeling_utils import (
 
 
 logger = logging.get_logger(__name__)
-
-from transformers.activations import ACT2FN
 
 
 FLOAT16_LIMIT = 1e4
@@ -467,7 +466,7 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
             self.model.decoder.layer_norm, "Decoder Layer Norm", ipu_id=ipu
         )
 
-        logger.info(f"Head       --> IPU 0")
+        logger.info("Head       --> IPU 0")
         logger.info("---------------------------------------")
         self.proj_out = poptorch.BeginBlock(self.proj_out, "Output Projection", ipu_id=0)
         return self

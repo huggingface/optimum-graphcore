@@ -28,12 +28,8 @@ from typing import Optional, Union
 import datasets
 import numpy as np
 import torch
-from datasets import load_dataset
-
 import transformers
-from optimum.graphcore import IPUConfig, IPUTrainer
-from optimum.graphcore import IPUTrainingArguments as TrainingArguments
-from optimum.graphcore.utils import check_min_version
+from datasets import load_dataset
 from transformers import (
     AutoConfig,
     AutoModelForMultipleChoice,
@@ -44,9 +40,12 @@ from transformers import (
 )
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase
 from transformers.trainer_utils import get_last_checkpoint
-from transformers.utils import PaddingStrategy
+from transformers.utils import PaddingStrategy, send_example_telemetry
 from transformers.utils import check_min_version as tf_check_min_version
-from transformers.utils import send_example_telemetry
+
+from optimum.graphcore import IPUConfig, IPUTrainer
+from optimum.graphcore import IPUTrainingArguments as TrainingArguments
+from optimum.graphcore.utils import check_min_version
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
@@ -470,14 +469,14 @@ def main():
         trainer.log_metrics("eval", metrics)
         trainer.save_metrics("eval", metrics)
 
-    kwargs = dict(
-        finetuned_from=model_args.model_name_or_path,
-        tasks="multiple-choice",
-        dataset_tags="swag",
-        dataset_args="regular",
-        dataset="SWAG",
-        language="en",
-    )
+    kwargs = {
+        "finetuned_from": model_args.model_name_or_path,
+        "tasks": "multiple-choice",
+        "dataset_tags": "swag",
+        "dataset_args": "regular",
+        "dataset": "SWAG",
+        "language": "en",
+    }
 
     if training_args.push_to_hub:
         trainer.push_to_hub(**kwargs)

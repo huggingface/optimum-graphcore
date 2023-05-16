@@ -15,48 +15,34 @@
 import copy
 import importlib
 import logging
-import os
 import random
 import re
 import string
 import sys
-import tempfile
 import unittest
 from abc import abstractmethod
 from functools import lru_cache
 from pathlib import Path
 from unittest import skipIf
 
-import numpy as np
-
-from huggingface_hub import HfFolder, Repository, delete_repo
-from optimum.graphcore import pipeline
-from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
-from requests.exceptions import HTTPError
 from transformers import (
     CONFIG_MAPPING,
     FEATURE_EXTRACTOR_MAPPING,
     TOKENIZER_MAPPING,
     AutoConfig,
     AutoFeatureExtractor,
-    AutoModelForSequenceClassification,
     AutoTokenizer,
     DistilBertForSequenceClassification,
     TextClassificationPipeline,
 )
-from transformers.pipelines import PIPELINE_REGISTRY, get_task
-from transformers.pipelines.base import Pipeline, _pad
 from transformers.testing_utils import (
-    TOKEN,
-    USER,
-    CaptureLogger,
-    is_staging_test,
     nested_simplify,
     require_torch,
     slow,
 )
-from transformers.utils import is_torch_available
-from transformers.utils import logging as transformers_logging
+
+from optimum.graphcore import pipeline
+from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
 
 from ..utils import MODELS_TO_TEST_MAPPING
 

@@ -15,12 +15,10 @@
 import math
 from typing import Optional, Tuple, Union
 
+import poptorch
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-import poptorch
-from optimum.utils import logging
 from transformers import (
     DistilBertForMaskedLM,
     DistilBertForMultipleChoice,
@@ -30,6 +28,8 @@ from transformers import (
 )
 from transformers.modeling_outputs import MaskedLMOutput, QuestionAnsweringModelOutput
 from transformers.models.distilbert.modeling_distilbert import MultiHeadSelfAttention
+
+from optimum.utils import logging
 
 from ...modeling_utils import (
     OnehotGather,

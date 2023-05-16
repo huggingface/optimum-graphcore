@@ -24,18 +24,13 @@ from typing import Dict, List, Optional, Union
 import datasets
 import numpy as np
 import torch
-from datasets import DatasetDict, load_dataset
-
 import transformers
-from optimum.graphcore import IPUConfig, IPUTrainer
-from optimum.graphcore import IPUTrainingArguments as TrainingArguments
-from optimum.graphcore.models.wav2vec2.modeling_wav2vec2 import _sample_negative_indices
+from datasets import DatasetDict, load_dataset
 from transformers import (
     AutoConfig,
     AutoFeatureExtractor,
     AutoModelForPreTraining,
     HfArgumentParser,
-    TrainerCallback,
     Wav2Vec2FeatureExtractor,
     Wav2Vec2ForPreTraining,
     set_seed,
@@ -44,6 +39,10 @@ from transformers.models.wav2vec2.modeling_wav2vec2 import _compute_mask_indices
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version
 from transformers.utils.versions import require_version
+
+from optimum.graphcore import IPUConfig, IPUTrainer
+from optimum.graphcore import IPUTrainingArguments as TrainingArguments
+from optimum.graphcore.models.wav2vec2.modeling_wav2vec2 import _sample_negative_indices
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.

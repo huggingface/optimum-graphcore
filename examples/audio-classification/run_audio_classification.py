@@ -23,17 +23,17 @@ from random import randint
 from typing import Optional
 
 import datasets
-import numpy as np
-from datasets import DatasetDict, load_dataset
-
 import evaluate
+import numpy as np
 import transformers
-from optimum.graphcore import IPUConfig, IPUTrainer
-from optimum.graphcore import IPUTrainingArguments as TrainingArguments
+from datasets import DatasetDict, load_dataset
 from transformers import AutoConfig, AutoFeatureExtractor, AutoModelForAudioClassification, HfArgumentParser, set_seed
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
+
+from optimum.graphcore import IPUConfig, IPUTrainer
+from optimum.graphcore import IPUTrainingArguments as TrainingArguments
 
 
 logger = logging.getLogger(__name__)
@@ -278,7 +278,7 @@ def main():
     # Prepare label mappings.
     # We'll include these in the model's config to get human readable labels in the Inference API.
     labels = raw_datasets["train"].features[data_args.label_column_name].names
-    label2id, id2label = dict(), dict()
+    label2id, id2label = {}, {}
     for i, label in enumerate(labels):
         label2id[label] = str(i)
         id2label[str(i)] = label

@@ -19,11 +19,9 @@ import os
 import warnings
 from typing import Any, Callable, Dict, Optional, Union
 
+import poptorch
 import torch
 from torch import nn
-
-import poptorch
-from optimum.utils import logging
 from transformers.generation.stopping_criteria import validate_stopping_criteria
 from transformers.generation.utils import (
     BeamSampleDecoderOnlyOutput,
@@ -47,12 +45,12 @@ from transformers.modeling_outputs import BaseModelOutput, ModelOutput
 from transformers.pytorch_utils import torch_int_div
 from transformers.utils.versions import require_version
 
+from optimum.utils import logging
+
 from .logits_process import IPULogitsProcessors
 from .on_device_generation import (
-    OnDeviceBeamSearch,
     OnDeviceGenerationModel,
     OnDeviceGenerationModelOutput,
-    OnDeviceGreedySearch,
 )
 
 
@@ -1638,16 +1636,17 @@ class IPUGenerationMixin(GenerationMixin):
             model_inputs, self.on_device_generation_steps, batch_size
         )
 
-        on_device_generation_model_ctr = lambda inst: OnDeviceGenerationModel(
-            inst,
-            batch_size=batch_size,
-            max_length=max_length,
-            pad_token_id=pad_token_id,
-            eos_token_id=eos_token_id,
-            logits_processor=logits_processor,
-            num_beams=1,
-            use_cache=True,
-        )
+        def on_device_generation_model_ctr(inst):
+            return OnDeviceGenerationModel(
+                inst,
+                batch_size=batch_size,
+                max_length=max_length,
+                pad_token_id=pad_token_id,
+                eos_token_id=eos_token_id,
+                logits_processor=logits_processor,
+                num_beams=1,
+                use_cache=True,
+            )
 
         generation_step = 0
         while True:
@@ -1731,18 +1730,19 @@ class IPUGenerationMixin(GenerationMixin):
             model_inputs, self.on_device_generation_steps, batch_beam_size
         )
 
-        on_device_generation_model_ctr = lambda inst: OnDeviceGenerationModel(
-            inst,
-            batch_size=batch_size,
-            max_length=max_length,
-            pad_token_id=pad_token_id,
-            eos_token_id=eos_token_id,
-            logits_processor=logits_processor,
-            num_beams=num_beams,
-            use_cache=True,
-            length_penalty=beam_scorer.length_penalty,
-            early_stopping=beam_scorer.do_early_stopping,
-        )
+        def on_device_generation_model_ctr(inst):
+            return OnDeviceGenerationModel(
+                inst,
+                batch_size=batch_size,
+                max_length=max_length,
+                pad_token_id=pad_token_id,
+                eos_token_id=eos_token_id,
+                logits_processor=logits_processor,
+                num_beams=num_beams,
+                use_cache=True,
+                length_penalty=beam_scorer.length_penalty,
+                early_stopping=beam_scorer.do_early_stopping,
+            )
 
         generation_step = 0
         while True:

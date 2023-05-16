@@ -22,14 +22,16 @@ REAL_CLONE_NAME = $(if $(CLONE_NAME),$(CLONE_NAME),$(DEFAULT_CLONE_NAME))
 
 .PHONY:	style test
 
+check_dirs := examples tests optimum
+
 # Run code quality checks
 style_check:
-	black --check .
-	isort --check .
+	black --check $(check_dirs)
+	ruff $(check_dirs)
 
 style:
-	black .
-	isort .
+	black $(check_dirs)
+	ruff $(check_dirs) --fix
 
 # Run tests for the library
 test:

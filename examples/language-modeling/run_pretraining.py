@@ -30,14 +30,9 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import datasets
+import transformers
 from datasets import load_dataset, load_from_disk
 from torch.optim.lr_scheduler import LambdaLR
-
-import transformers
-from optimum.graphcore import IPUConfig, IPUTrainer
-from optimum.graphcore import IPUTrainingArguments as TrainingArguments
-from optimum.graphcore.data import DataCollatorForLanguageModelingWithMaxTokensMasked, pad_on_batch_axis
-from optimum.graphcore.utils import check_min_version
 from transformers import (
     CONFIG_MAPPING,
     MODEL_FOR_MASKED_LM_MAPPING,
@@ -51,6 +46,11 @@ from transformers.data import default_data_collator
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version as tf_check_min_version
 from transformers.utils.versions import require_version
+
+from optimum.graphcore import IPUConfig, IPUTrainer
+from optimum.graphcore import IPUTrainingArguments as TrainingArguments
+from optimum.graphcore.data import DataCollatorForLanguageModelingWithMaxTokensMasked, pad_on_batch_axis
+from optimum.graphcore.utils import check_min_version
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.

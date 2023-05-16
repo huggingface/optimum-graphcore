@@ -39,7 +39,7 @@ jobs:
           cd doc-builder
           git pull origin main
           pip install .
-          pip install black
+          pip install .[quality]
           cd ..
 
       - name: Make documentation

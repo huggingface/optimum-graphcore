@@ -14,9 +14,10 @@
 
 import unittest
 
-from optimum.graphcore import pipeline
-from transformers import MODEL_FOR_SEQUENCE_CLASSIFICATION_MAPPING, TextClassificationPipeline
+from transformers import MODEL_FOR_SEQUENCE_CLASSIFICATION_MAPPING
 from transformers.testing_utils import nested_simplify, require_torch, slow
+
+from optimum.graphcore import pipeline
 
 from .test_pipelines_common import ANY, PipelineTestCaseMeta
 

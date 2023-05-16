@@ -15,11 +15,10 @@
 import unittest
 
 import numpy as np
+from transformers import MODEL_FOR_AUDIO_CLASSIFICATION_MAPPING
+from transformers.testing_utils import require_torch, require_torchaudio
 
 from optimum.graphcore import pipeline
-from transformers import MODEL_FOR_AUDIO_CLASSIFICATION_MAPPING
-from transformers.pipelines import AudioClassificationPipeline
-from transformers.testing_utils import nested_simplify, require_torch, require_torchaudio, slow
 
 from .test_pipelines_common import ANY, PipelineTestCaseMeta
 

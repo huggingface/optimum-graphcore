@@ -13,11 +13,10 @@
 # limitations under the License.
 
 from functools import wraps
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import torch
 from torch import Tensor
-
 from transformers.data import DataCollatorForLanguageModeling
 from transformers.data.data_collator import DataCollator
 from transformers.tokenization_utils_base import BatchEncoding

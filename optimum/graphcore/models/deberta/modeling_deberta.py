@@ -14,12 +14,10 @@
 
 from typing import Optional, Tuple, Union
 
+import poptorch
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-import poptorch
-from optimum.utils import logging
 from transformers import (
     DebertaForMaskedLM,
     DebertaForQuestionAnswering,
@@ -33,6 +31,8 @@ from transformers.models.deberta.modeling_deberta import (
     StableDropout,
     build_relative_position,
 )
+
+from optimum.utils import logging
 
 from ...modeling_utils import (
     OnehotGather,

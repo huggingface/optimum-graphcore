@@ -15,11 +15,9 @@
 from typing import Optional, Tuple, Union
 
 import numpy as np
+import poptorch
 import torch
 import torch.nn.functional as F
-
-import poptorch
-from optimum.utils import logging
 from transformers import Wav2Vec2ForPreTraining, Wav2Vec2Model
 from transformers.modeling_outputs import CausalLMOutput
 from transformers.models.wav2vec2.modeling_wav2vec2 import (
@@ -30,6 +28,8 @@ from transformers.models.wav2vec2.modeling_wav2vec2 import (
     Wav2Vec2ForPreTrainingOutput,
     Wav2Vec2GumbelVectorQuantizer,
 )
+
+from optimum.utils import logging
 
 from ...modeling_utils import PipelineMixin, get_layer_ipu, recomputation_checkpoint, register
 from .ipu_gumbel_vector_quantizer import IPUWav2Vec2GumbelVectorQuantizer

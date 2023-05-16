@@ -14,10 +14,11 @@
 
 import unittest
 
-from optimum.graphcore import pipeline
-from transformers import MODEL_FOR_MASKED_LM_MAPPING, FillMaskPipeline
+from transformers import MODEL_FOR_MASKED_LM_MAPPING
 from transformers.pipelines import PipelineException
 from transformers.testing_utils import nested_simplify, require_torch, slow
+
+from optimum.graphcore import pipeline
 
 from .test_pipelines_common import ANY, PipelineTestCaseMeta
 
@@ -233,7 +234,7 @@ class FillMaskPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
 
     def run_test_targets(self, model, tokenizer):
         vocab = tokenizer.get_vocab()
-        targets = list(sorted(vocab.keys()))[:2]
+        targets = sorted(vocab.keys())[:2]
         # Pipeline argument
         fill_masker = pipeline(
             task="fill-mask",
@@ -250,8 +251,8 @@ class FillMaskPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
             ],
         )
         target_ids = {vocab[el] for el in targets}
-        self.assertEqual(set(el["token"] for el in outputs), target_ids)
-        self.assertEqual(set(el["token_str"] for el in outputs), set(targets))
+        self.assertEqual({el["token"] for el in outputs}, target_ids)
+        self.assertEqual({el["token_str"] for el in outputs}, set(targets))
 
         # Call argument
         fill_masker = pipeline(
@@ -268,8 +269,8 @@ class FillMaskPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
             ],
         )
         target_ids = {vocab[el] for el in targets}
-        self.assertEqual(set(el["token"] for el in outputs), target_ids)
-        self.assertEqual(set(el["token_str"] for el in outputs), set(targets))
+        self.assertEqual({el["token"] for el in outputs}, target_ids)
+        self.assertEqual({el["token_str"] for el in outputs}, set(targets))
 
         # Score equivalence
         outputs = fill_masker(f"This is a {tokenizer.mask_token}", targets=targets)
@@ -328,7 +329,7 @@ class FillMaskPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
         )
 
         # top_k=2, ntargets=3
-        targets = list(sorted(vocab.keys()))[:3]
+        targets = sorted(vocab.keys())[:3]
         outputs = fill_masker(f"This is a {tokenizer.mask_token}", top_k=2, targets=targets)
 
         # If we use the most probably targets, and filter differently, we should still
@@ -347,7 +348,7 @@ class FillMaskPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
         )
         vocab = tokenizer.get_vocab()
         # String duplicates + id duplicates
-        targets = list(sorted(vocab.keys()))[:3]
+        targets = sorted(vocab.keys())[:3]
         targets = [targets[0], targets[1], targets[0], targets[2], targets[1]]
         outputs = fill_masker(f"My name is {tokenizer.mask_token}", targets=targets, top_k=10)
 

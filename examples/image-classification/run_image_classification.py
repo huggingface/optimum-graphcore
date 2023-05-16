@@ -19,8 +19,10 @@ import sys
 from dataclasses import dataclass, field
 from typing import Optional
 
+import evaluate
 import numpy as np
 import torch
+import transformers
 from datasets import load_dataset
 from PIL import Image
 from torchvision.transforms import (
@@ -32,12 +34,6 @@ from torchvision.transforms import (
     Resize,
     ToTensor,
 )
-
-import evaluate
-import transformers
-from optimum.graphcore import IPUConfig, IPUTrainer
-from optimum.graphcore import IPUTrainingArguments as TrainingArguments
-from optimum.graphcore.utils import check_min_version
 from transformers import (
     MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING,
     AutoConfig,
@@ -50,6 +46,10 @@ from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version as tf_check_min_version
 from transformers.utils import send_example_telemetry
 from transformers.utils.versions import require_version
+
+from optimum.graphcore import IPUConfig, IPUTrainer
+from optimum.graphcore import IPUTrainingArguments as TrainingArguments
+from optimum.graphcore.utils import check_min_version
 
 
 """ Fine-tuning a 🤗 Transformers model for image classification"""
@@ -270,7 +270,7 @@ def main():
     # Prepare label mappings.
     # We'll include these in the model's config to get human readable labels in the Inference API.
     labels = dataset["train"].features["labels"].names
-    label2id, id2label = dict(), dict()
+    label2id, id2label = {}, {}
     for i, label in enumerate(labels):
         label2id[label] = str(i)
         id2label[str(i)] = label

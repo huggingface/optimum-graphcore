@@ -16,11 +16,9 @@ import copy
 import random
 from typing import List, Optional, Tuple, Union
 
+import poptorch
 import torch
 import torch.nn as nn
-
-import poptorch
-from optimum.utils import logging
 from transformers import BartForConditionalGeneration, BartForSequenceClassification, BartModel
 from transformers.modeling_outputs import (
     BaseModelOutput,
@@ -37,6 +35,8 @@ from transformers.models.bart.modeling_bart import (
     BartLearnedPositionalEmbedding,
     shift_tokens_right,
 )
+
+from optimum.utils import logging
 
 from ...generation import IPUAttentionMixin, IPUGenerationMixin, supports_kv_cache
 from ...modeling_utils import (
@@ -106,7 +106,6 @@ class IPUBartAttention(BartAttention, IPUAttentionMixin):
 
         # if key_value_states are provided this layer is used as a cross-attention layer
         # for the decoder
-        is_cross_attention = key_value_states is not None
 
         bsz, tgt_len, _ = hidden_states.size()
 

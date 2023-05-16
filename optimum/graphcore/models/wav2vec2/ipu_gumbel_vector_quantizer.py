@@ -27,7 +27,6 @@ Compared to the original implementation, the main differences are:
 import warnings
 
 import torch
-
 from transformers.models.wav2vec2.modeling_wav2vec2 import Wav2Vec2GumbelVectorQuantizer
 
 

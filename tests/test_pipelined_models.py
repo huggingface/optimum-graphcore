@@ -15,16 +15,13 @@
 import copy
 from unittest import TestCase
 
+import requests
 import torch
+import transformers
 from datasets import load_dataset
+from parameterized import parameterized
 from PIL import Image
 from torch.nn.utils.weight_norm import WeightNorm
-
-import requests
-import transformers
-from optimum.graphcore import IPUConfig
-from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
-from parameterized import parameterized
 from transformers import (
     CONFIG_MAPPING,
     MODEL_FOR_AUDIO_CLASSIFICATION_MAPPING,
@@ -45,6 +42,9 @@ from transformers import (
     AutoProcessor,
     AutoTokenizer,
 )
+
+from optimum.graphcore import IPUConfig
+from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
 
 from .utils import MODELS_TO_TEST_MAPPING
 

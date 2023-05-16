@@ -17,18 +17,13 @@ import unittest
 import numpy as np
 import pytest
 from datasets import load_dataset
-
 from huggingface_hub import snapshot_download
-from optimum.graphcore import pipeline
 from transformers import (
     MODEL_FOR_CTC_MAPPING,
-    MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING,
     AutoFeatureExtractor,
     AutoTokenizer,
-    Speech2TextForConditionalGeneration,
     Wav2Vec2ForCTC,
 )
-from transformers.pipelines import AutomaticSpeechRecognitionPipeline
 from transformers.pipelines.audio_utils import chunk_bytes_iter
 from transformers.pipelines.automatic_speech_recognition import chunk_iter
 from transformers.testing_utils import (
@@ -39,6 +34,8 @@ from transformers.testing_utils import (
     require_torchaudio,
     slow,
 )
+
+from optimum.graphcore import pipeline
 
 from .test_pipelines_common import ANY, PipelineTestCaseMeta
 
@@ -63,11 +60,10 @@ TINY_IPU_CONFIG_DICT = {
 class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
     # TODO: seq2seq disabled for now. Will be supported in the future.
     MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING = None
-    model_mapping = {
-        k: v
-        for k, v in (list(MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING.items()) if MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING else [])
+    model_mapping = dict(
+        (list(MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING.items()) if MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING else [])
         + (MODEL_FOR_CTC_MAPPING.items() if MODEL_FOR_CTC_MAPPING else [])
-    }
+    )
     task = "ctc"
 
     def get_test_pipeline(self, model, ipu_config, tokenizer, feature_extractor):

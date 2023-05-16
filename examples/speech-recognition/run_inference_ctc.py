@@ -18,16 +18,16 @@
 import logging
 from dataclasses import dataclass, field
 
+import poptorch
 import torch
 from datasets import load_dataset
 from tqdm import tqdm
-
-import poptorch
-from optimum.graphcore import IPUConfig
-from optimum.graphcore.modeling_utils import to_pipelined
 from transformers import AutoModelForCTC, HfArgumentParser, Wav2Vec2Processor
 from transformers.utils import check_min_version
 from transformers.utils.versions import require_version
+
+from optimum.graphcore import IPUConfig
+from optimum.graphcore.modeling_utils import to_pipelined
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.

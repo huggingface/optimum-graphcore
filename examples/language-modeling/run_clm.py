@@ -30,12 +30,8 @@ from itertools import chain
 from typing import Optional
 
 import datasets
-from datasets import load_dataset
-
 import transformers
-from optimum.graphcore import IPUConfig, IPUTrainer
-from optimum.graphcore import IPUTrainingArguments as TrainingArguments
-from optimum.graphcore.data import pad_on_batch_axis
+from datasets import load_dataset
 from transformers import (
     CONFIG_MAPPING,
     MODEL_FOR_CAUSAL_LM_MAPPING,
@@ -51,6 +47,9 @@ from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version as tf_check_min_version
 from transformers.utils import send_example_telemetry
 from transformers.utils.versions import require_version
+
+from optimum.graphcore import IPUConfig, IPUTrainer
+from optimum.graphcore import IPUTrainingArguments as TrainingArguments
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
@@ -383,7 +382,7 @@ def main():
         )
     else:
         model = AutoModelForCausalLM.from_config(config)
-        n_params = sum(dict((p.data_ptr(), p.numel()) for p in model.parameters()).values())
+        n_params = sum({p.data_ptr(): p.numel() for p in model.parameters()}.values())
         logger.info(f"Training new model from scratch - Total size={n_params/2**20:.2f}M params")
 
     # We resize the embeddings only when necessary to avoid index errors. If you are creating a model from scratch

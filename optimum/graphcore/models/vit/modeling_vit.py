@@ -14,6 +14,7 @@
 
 import poptorch
 import transformers
+
 from optimum.utils import logging
 
 from ...modeling_utils import PipelineMixin, get_layer_ipu, recomputation_checkpoint, register
