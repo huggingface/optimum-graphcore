@@ -123,8 +123,8 @@ class IPUWhisperAttention(WhisperAttention, IPUAttentionMixin):
 
         proj_shape = (bsz * self.num_heads, -1, self.head_dim)
         query_states = self._shape(query_states, tgt_len, bsz).view(*proj_shape)
-        key_states = key_states.view(*proj_shape)
-        value_states = value_states.view(*proj_shape)
+        key_states = key_states.reshape(*proj_shape)
+        value_states = value_states.reshape(*proj_shape)
 
         src_len = key_states.size(1)
 
@@ -482,9 +482,9 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         self.set_on_device_generation_steps(0)
 
     def prepare_inputs_for_generation(
-        self, decoder_input_ids, past=None, use_cache=None, encoder_outputs=None, attention_mask=None, **kwargs
+        self, decoder_input_ids, past_key_values=None, use_cache=None, encoder_outputs=None, attention_mask=None, **kwargs
     ):
-        # We don't use `past` for KV caching, and rely on `use_cache` instead.
+        # We don't use `past_key_values` for KV caching, and rely on `use_cache` instead.
         beam_idx = None
         if use_cache:
             decoder_input_ids = decoder_input_ids[:, -1:]
