@@ -35,13 +35,13 @@ class IPUAttentionMixin:
     `decoder_layer.self_attn = IPUWhisperAttention.from_model(decoder_layer.self_attn, use_cache=True, **kwargs)`.
     """
 
-    _kv_cache_initialised: bool = False
+    _kv_cache_initialized: bool = False
     _batch_serialization_factor: int = 1
     _sequence_serialization_factor: int = 1
 
     @property
-    def kv_cache_initialised(self) -> bool:
-        return self._kv_cache_initialised
+    def kv_cache_initialized(self) -> bool:
+        return self._kv_cache_initialized
 
     def _create_kv_cache(self, cache_shape: Tuple[int], dtype: torch.dtype, uses_beams=False):
         self.register_buffer("_generation_step", torch.tensor([0], dtype=torch.int32), persistent=False)
@@ -49,10 +49,10 @@ class IPUAttentionMixin:
         self.register_buffer("_v_cache", torch.zeros(cache_shape, dtype=dtype), persistent=False)
         if uses_beams:
             self.register_buffer("_beam_idx", torch.arange(cache_shape[0], dtype=torch.int32), persistent=False)
-        self._kv_cache_initialised = True
+        self._kv_cache_initialized = True
 
     def _delete_kv_cache(self):
-        if not self._kv_cache_initialised:
+        if not self._kv_cache_initialized:
             return
 
         del self._generation_step
@@ -60,20 +60,29 @@ class IPUAttentionMixin:
         del self._v_cache
         if hasattr(self, "_beam_idx"):
             del self._beam_idx
-        del self._kv_cache_initialised
+        del self._kv_cache_initialized
 
     @classmethod
     def from_model(
         cls,
         attention_layer: torch.nn.Module,
-        use_cache: bool = False,
-        batch_size: int = 1,
-        max_length: int = 128,
-        num_beams: int = 1,
-        dtype: torch.dtype = torch.float16,
-        batch_serialization_factor: int = 1,
-        sequence_serialization_factor: int = 1,
+        use_cache: Optional[bool] = False,
+        batch_size: Optional[int] = 1,
+        max_length: Optional[int] = 128,
+        num_beams: Optional[int] = 1,
+        dtype: Optional[torch.dtype] = torch.float16,
+        batch_serialization_factor: Optional[int] = 1,
+        sequence_serialization_factor: Optional[int] = 1,
     ):
+        """
+        Returns an instance of the provided `attention_layer` with functionality provided by `IPUAttentionMixin`.
+
+        If `use_cache=True`, instantiates the self-attention KV caches, each of shape
+        `(batch_size * num_beams, num_heads, max_length, head_dim)`.
+
+        If `batch_serialization_factor > 1` or `sequence_serialization_factor > 1`, attention will be serialized
+        along the batch or sequence dimension respectively.
+        """
         clone = copy.deepcopy(attention_layer)
         clone.__class__ = cls
 
@@ -103,6 +112,9 @@ class IPUAttentionMixin:
         return clone
 
     def to_model(self, cls) -> torch.nn.Module:
+        """
+        Returns an instance of the `attention_layer` provided to `from_model` with functionality provided by `IPUAttentionMixin` removed.
+        """
         self._delete_kv_cache()
         self._delete_serialization_factors()
 
@@ -112,10 +124,13 @@ class IPUAttentionMixin:
 
     def add_to_kv_cache(self, key: torch.Tensor, value: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
         """
-        Copies the key-value pair into their corresponding key-value caches. Each copy-cache pair is assumed
-        to be of shape [batch_size, num_heads, 1, head_dim] and [batch_size, num_heads, max_length, head_dim] respectively.
+        Copies the key-value pair into their corresponding key-value caches.
+
+        Args:
+            key (`torch.FloatTensor`): key tensor of shape `(batch_size * num_beams, num_heads, 1, head_dim)`.
+            value (`torch.FloatTensor`): value tensor of shape `(batch_size * num_beams, num_heads, 1, head_dim)`.
         """
-        if not self.kv_cache_initialised:
+        if not self.kv_cache_initialized:
             raise ValueError(
                 f"{self.__class__.__name__} assumes that self-attention has KV caching enabled. "
                 f"Please instantiate using `{self.__class__.__name__}.from_model()` so the KV "
@@ -156,10 +171,10 @@ class IPUAttentionMixin:
 
         return self._k_cache, self._v_cache
 
-    def update_attention_mask(self, attention_mask: Optional[torch.Tensor] = None):
+    def update_attention_mask(self, attention_mask: Optional[torch.Tensor] = None) -> torch.Tensor:
         """
-        Creates a default mask up to and including the current generation step, marking the point
-        up to which the caches have been populated.
+        Creates a default attention mask intended for use with KV caches. It masks up to and including the current generation step,
+        marking the point up to which the caches have been populated.
         """
         bsz, _, src_len, _ = self._k_cache.shape
         mask = torch.full((1, src_len), -FLOAT16_LIMIT)
@@ -196,7 +211,7 @@ class IPUAttentionMixin:
         value: torch.Tensor,
         scale: Optional[float] = 1.0,
         attention_mask: Optional[torch.Tensor] = None,
-    ):
+    ) -> torch.Tensor:
         """
         Serializes the attention operation either across the batch (if `batch_serialization_factor > 1`)
         or the sequence (if `sequence_serialization_factor > 1`) dimensions to reduce peak memory usage.
@@ -234,7 +249,7 @@ class IPUAttentionMixin:
         scale: Optional[float] = 1.0,
         attention_mask: Optional[torch.Tensor] = None,
         serialization_factor: Optional[int] = 1,
-    ):
+    ) -> torch.Tensor:
         if query.shape[0] % serialization_factor != 0:
             raise ValueError(
                 f"Cannot evenly divide query batch dim: {query.shape[0]} by `serialization_factor`: {serialization_factor}."
@@ -266,7 +281,7 @@ class IPUAttentionMixin:
         scale: Optional[float] = 1.0,
         attention_mask: Optional[torch.Tensor] = None,
         serialization_factor: Optional[int] = 1,
-    ):
+    ) -> torch.Tensor:
         if query.shape[1] % serialization_factor != 0:
             raise ValueError(
                 f"Cannot evenly divide query sequence dim: {query.shape[1]} by `serialization_factor`: {serialization_factor}."
