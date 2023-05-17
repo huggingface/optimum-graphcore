@@ -43,21 +43,20 @@ from transformers import (
     set_seed,
 )
 from transformers.trainer_utils import get_last_checkpoint
-from transformers.utils import check_min_version as tf_check_min_version
-from transformers.utils import send_example_telemetry
+from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 
 from optimum.graphcore import IPUConfig, IPUTrainer
 from optimum.graphcore import IPUTrainingArguments as TrainingArguments
 from optimum.graphcore.data import DataCollatorForLanguageModelingWithMaxTokensMasked
-from optimum.graphcore.utils import check_min_version
+from optimum.graphcore.utils import check_min_version as gc_check_min_version
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-tf_check_min_version("4.28.0")
+check_min_version("4.28.0")
 
 # Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
-check_min_version("0.2.4.dev0")
+gc_check_min_version("0.2.4.dev0")
 
 require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/language-modeling/requirements.txt")
 
@@ -117,6 +116,15 @@ class ModelArguments:
             "help": (
                 "Will use the token generated when running `huggingface-cli login` (necessary to use this script "
                 "with private models)."
+            )
+        },
+    )
+    low_cpu_mem_usage: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "It is an option to create the model as an empty shell, then only materialize its parameters when the pretrained weights are loaded."
+                "set True will benefit LLM loading time and RAM consumption."
             )
         },
     )
@@ -239,6 +247,10 @@ def main():
         datefmt="%m/%d/%Y %H:%M:%S",
         handlers=[logging.StreamHandler(sys.stdout)],
     )
+
+    if training_args.should_log:
+        # The default of training_args.log_level is passive, so we set log level at info here to have that default.
+        transformers.utils.logging.set_verbosity_info()
 
     log_level = training_args.get_process_log_level()
     logger.setLevel(log_level)
@@ -389,6 +401,7 @@ def main():
             cache_dir=model_args.cache_dir,
             revision=model_args.model_revision,
             use_auth_token=True if model_args.use_auth_token else None,
+            low_cpu_mem_usage=model_args.low_cpu_mem_usage,
         )
     else:
         logger.info("Training new model from scratch")
@@ -403,17 +416,18 @@ def main():
     # Preprocessing the datasets.
     # First we tokenize all the texts.
     if training_args.do_train:
-        column_names = raw_datasets["train"].column_names
+        column_names = list(raw_datasets["train"].features)
     else:
-        column_names = raw_datasets["validation"].column_names
+        column_names = list(raw_datasets["validation"].features)
     text_column_name = "text" if "text" in column_names else column_names[0]
 
     if data_args.max_seq_length is None:
         max_seq_length = tokenizer.model_max_length
         if max_seq_length > 1024:
             logger.warning(
-                f"The tokenizer picked seems to have a very large `model_max_length` ({tokenizer.model_max_length}). "
-                "Picking 1024 instead. You can change that default value by passing --max_seq_length xxx."
+                "The chosen tokenizer supports a `model_max_length` that is longer than the default `block_size` value"
+                " of 1024. If you would like to use a longer `block_size` up to `tokenizer.model_max_length` you can"
+                " override this default with `--block_size xxx`."
             )
             max_seq_length = 1024
     else:

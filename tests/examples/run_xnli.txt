@@ -1,47 +1,47 @@
-32a33,35
-> from optimum.graphcore import IPUConfig, IPUTrainer
-> from optimum.graphcore import IPUTrainingArguments as TrainingArguments
-> from optimum.graphcore.utils import check_min_version
-40,41d42
+30,31d29
+< from datasets import load_dataset
+< 
+32a31
+> from datasets import load_dataset
+37d35
+<     DataCollatorWithPadding,
+40,41d37
 <     Trainer,
 <     TrainingArguments,
-46c47,48
-< from transformers.utils import check_min_version, send_example_telemetry
----
-> from transformers.utils import check_min_version as tf_check_min_version
-> from transformers.utils import send_example_telemetry
-51c53,56
-< check_min_version("4.25.0")
----
-> tf_check_min_version("4.25.0")
+48a45,48
+> from optimum.graphcore import IPUConfig, IPUTrainer
+> from optimum.graphcore import IPUTrainingArguments as TrainingArguments
+> from optimum.graphcore.utils import gc_check_min_version
 > 
+52a53,55
 > # Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
-> check_min_version("0.2.4.dev0")
-196,200d200
+> gc_check_min_version("0.2.4.dev0")
+> 
+200,204d202
 <     # Log on each process the small summary:
 <     logger.warning(
 <         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
 <         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
 <     )
-276a277,282
+282a281,286
 >     ipu_config = IPUConfig.from_pretrained(
 >         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
 >         cache_dir=model_args.cache_dir,
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
-294a301,305
+300a305,309
 >     # Customize tokenization for GPT2. We reuse the EOS token as the PAD token.
 >     if config.model_type == "gpt2":
 >         tokenizer.pad_token = tokenizer.eos_token
 >         model.config.pad_token_id = model.config.eos_token_id
 > 
-365,366d375
+371,372d379
 <     elif training_args.fp16:
 <         data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8)
-371c380
+377c384
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-372a382
+378a386
 >         ipu_config=ipu_config,
