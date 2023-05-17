@@ -719,7 +719,7 @@ class BertPipelineMixin(PipelineMixin):
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding --> IPU 0")
         if self.ipu_config.embedding_serialization_factor > 1:
-            self.bert.embeddings.word_embeddings = SerializedEmbedding(
+            self.bert.embeddings.word_embeddings = SerializedEmbedding.from_model(
                 self.bert.embeddings.word_embeddings, self.ipu_config.embedding_serialization_factor
             )
         self.bert.embeddings = poptorch.BeginBlock(self.bert.embeddings, "Embedding", ipu_id=0)
@@ -745,7 +745,7 @@ class BertPipelineMixin(PipelineMixin):
 
         # Deserialize the serialized word embedding
         if self.ipu_config.embedding_serialization_factor > 1:
-            self.bert.embeddings.word_embeddings = self.bert.embeddings.word_embeddings.deserialize()
+            self.bert.embeddings.word_embeddings = self.bert.embeddings.word_embeddings.to_model()
         return self
 
 

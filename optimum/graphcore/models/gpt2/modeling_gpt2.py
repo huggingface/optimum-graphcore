@@ -64,7 +64,7 @@ class GPT2PipelineMixin(PipelineMixin):
             if new_vocab_size > self.actual_vocab_size:
                 self.resize_token_embeddings(new_vocab_size)
 
-            self.transformer.wte = SerializedEmbedding(
+            self.transformer.wte = SerializedEmbedding.from_model(
                 self.transformer.wte, self.ipu_config.embedding_serialization_factor
             )
 
@@ -95,7 +95,7 @@ class GPT2PipelineMixin(PipelineMixin):
 
         if self.ipu_config.embedding_serialization_factor > 1:
             # Deserialize the serialized word embedding
-            self.transformer.wte = self.transformer.wte.deserialize()
+            self.transformer.wte = self.transformer.wte.to_model()
 
             # Resize token embeddings back to origianl vocab_size
             if self.config.vocab_size > self.actual_vocab_size:

@@ -57,7 +57,7 @@ class RobertaPipelineMixin(PipelineMixin):
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding  --> IPU 0")
         if self.ipu_config.embedding_serialization_factor > 1:
-            self.roberta.embeddings.word_embeddings = SerializedEmbedding(
+            self.roberta.embeddings.word_embeddings = SerializedEmbedding.from_model(
                 self.roberta.embeddings.word_embeddings, self.ipu_config.embedding_serialization_factor
             )
         self.roberta.embeddings = poptorch.BeginBlock(self.roberta.embeddings, "Embedding", ipu_id=0)
@@ -83,7 +83,7 @@ class RobertaPipelineMixin(PipelineMixin):
         super().deparallelize()
         # Deserialize the serialized word embedding
         if self.ipu_config.embedding_serialization_factor > 1:
-            self.roberta.embeddings.word_embeddings = self.roberta.embeddings.word_embeddings.deserialize()
+            self.roberta.embeddings.word_embeddings = self.roberta.embeddings.word_embeddings.to_model()
         return self
 
 
