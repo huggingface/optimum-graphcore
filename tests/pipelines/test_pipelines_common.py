@@ -17,6 +17,7 @@ import importlib
 import logging
 import os
 import random
+import re
 import string
 import sys
 import tempfile
@@ -778,19 +779,30 @@ class PipelineUtilsTest(unittest.TestCase):
             # the pipeline model is deparallelized to avoid problems caused by serialized layers
             default_pipeline.model.deparallelize()
             # compare pipeline model with default model
-            models_are_equal = check_models_equal_fn(default_pipeline.model, model)
-            self.assertTrue(models_are_equal, f"{task} model doesn't match pipeline.")
+            check_models_equal_fn(default_pipeline.model, model)
 
             logger.debug(f"{task} succeeded with {model_id}.")
 
-    def check_models_equal_pt(self, model1, model2):
-        models_are_equal = True
-        for model1_p, model2_p in zip(model1.parameters(), model2.parameters()):
-            # cast default model's parameters to fp16 since pipeline model's parameters are by default in fp16
-            if model1_p.data.ne(model2_p.data.to(model1_p.dtype)).sum() > 0:
-                models_are_equal = False
+    def check_models_equal_pt(self, ipu_model, cpu_model):
+        import torch
 
-        return models_are_equal
+        for (ipu_name, ipu_param), (cpu_name, cpu_param) in zip(
+            ipu_model.named_parameters(), cpu_model.named_parameters()
+        ):
+            # For this specific layer in T5, mask out values that are <8 times the smallest normal number in fp16.
+            # This is because this layer is scaled down then up again by a factor of 8, turning these masked values
+            # into denormals, which we can no longer test for absolute equality.
+            mask = torch.ones_like(cpu_param, dtype=torch.bool)
+            if re.match(r"encoder\.block\.\d+\.layer\.1\.DenseReluDense\.wo\.weight", cpu_name):
+                mask = cpu_param >= 8 * torch.finfo(torch.float16).smallest_normal
+            # cast default model's parameters to fp16 since pipeline model's parameters are by default in fp16
+            torch.testing.assert_close(
+                ipu_param.data[mask],
+                cpu_param.data[mask].to(ipu_param.dtype),
+                rtol=0,
+                atol=0,
+                msg=lambda msg: f"ipu_model.{ipu_name} != cpu_model.{cpu_name}\n{msg}",
+            )
 
 
 # class CustomPipeline(Pipeline):
