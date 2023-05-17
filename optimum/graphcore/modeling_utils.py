@@ -481,7 +481,7 @@ class SerializedEmbedding(nn.Module):
     @classmethod
     def from_model(cls, embedding: nn.Embedding, serialization_factor: int) -> SerializedEmbedding:
         return cls(embedding, serialization_factor)
-    
+
     def parallelize(self, splits_per_ipu: List[int]):
         for ipu_id, splits in enumerate(splits_per_ipu):
             if splits:

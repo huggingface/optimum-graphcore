@@ -133,33 +133,33 @@ class SerializedLinearTester(unittest.TestCase, SerializedLayerTester):
         return evaluator, other_evaluator, dataset
 
 
-# class SerializedEmbeddingTester(unittest.TestCase, SerializedLayerTester):
-#     @classmethod
-#     def setup_test(cls, ipu_model=False):
-#         num_samples = 32
-#         num_tokens = 32
-#         num_embeddings = 64
-#         embedding_dim = 8
-#         dataset = torch.randint(high=num_embeddings, size=(num_samples, num_tokens))
+class SerializedEmbeddingTester(unittest.TestCase, SerializedLayerTester):
+    @classmethod
+    def setup_test(cls, ipu_model=False):
+        num_samples = 32
+        num_tokens = 32
+        num_embeddings = 64
+        embedding_dim = 8
+        dataset = torch.randint(high=num_embeddings, size=(num_samples, num_tokens))
 
-#         # embedding layer to test against
-#         embedding = torch.nn.Embedding(num_embeddings=num_embeddings, embedding_dim=embedding_dim)
-#         evaluator = PytorchEvaluator(embedding)
+        # embedding layer to test against
+        embedding = torch.nn.Embedding(num_embeddings=num_embeddings, embedding_dim=embedding_dim)
+        evaluator = PytorchEvaluator(embedding)
 
-#         serialized_embedding_splits_per_ipu = [3, 1]
-#         embedding_serialization_factor = sum(serialized_embedding_splits_per_ipu)
-#         serialized_embedding = SerializedEmbedding.from_model(embedding, embedding_serialization_factor)
+        serialized_embedding_splits_per_ipu = [3, 1]
+        embedding_serialization_factor = sum(serialized_embedding_splits_per_ipu)
+        serialized_embedding = SerializedEmbedding.from_model(embedding, embedding_serialization_factor)
 
-#         # Split serialized embedding layers across IPUs if using the IPU
-#         if ipu_model:
-#             options = poptorch.Options()
-#             options.deviceIterations(len(serialized_embedding_splits_per_ipu))
+        # Split serialized embedding layers across IPUs if using the IPU
+        if ipu_model:
+            options = poptorch.Options()
+            options.deviceIterations(len(serialized_embedding_splits_per_ipu))
 
-#             other_evaluator = PoptorchEvaluator(
-#                 serialized_embedding.parallelize(serialized_embedding_splits_per_ipu),
-#                 options,
-#             )
-#         else:
-#             other_evaluator = PytorchEvaluator(serialized_embedding)
+            other_evaluator = PoptorchEvaluator(
+                serialized_embedding.parallelize(serialized_embedding_splits_per_ipu),
+                options,
+            )
+        else:
+            other_evaluator = PytorchEvaluator(serialized_embedding)
 
-#         return evaluator, other_evaluator, dataset
+        return evaluator, other_evaluator, dataset
