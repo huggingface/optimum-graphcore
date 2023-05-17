@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional
 import torch
 from poptorch import DataLoaderMode
 from transformers.debug_utils import DebugOption
-from transformers.file_utils import cached_property, get_full_repo_name, is_torch_available, torch_required
+from transformers.file_utils import cached_property, get_full_repo_name, is_torch_available, requires_backends
 from transformers.trainer_utils import EvaluationStrategy, HubStrategy, IntervalStrategy, SchedulerType
 from transformers.training_args import default_logdir
 from transformers.utils import ExplicitEnum
@@ -779,17 +779,17 @@ class IPUTrainingArguments:
                 self.ipu_config_overrides = ",".join([self.ipu_config_overrides, override_str])
 
     @cached_property
-    @torch_required
     def _setup_devices(self) -> "torch.device":
+        requires_backends(self, ["torch"])
         device = torch.device("cpu")
         return device
 
     @property
-    @torch_required
     def device(self) -> "torch.device":
         """
         The device used by this process.
         """
+        requires_backends(self, ["torch"])
         return self._setup_devices
 
     @property
