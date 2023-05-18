@@ -225,7 +225,7 @@ class _WhisperEncoderLayerClamp(nn.Module):
     ):
         """
         Args:
-            hidden_states (`torch.FloatTensor`): input to the layer of shape `(seq_len, batch, embed_dim)`
+            hidden_states (`torch.FloatTensor`): input to the layer of shape `(batch, seq_len, embed_dim)`
             attention_mask (`torch.FloatTensor`): attention mask of size
                 `(batch, 1, tgt_len, src_len)` where padding elements are indicated by very large negative values.
             layer_head_mask (`torch.FloatTensor`): mask for attention heads in a given layer of size
@@ -290,7 +290,7 @@ class IPUWhisperPositionalEmbedding(WhisperPositionalEmbedding):
             # KV cache enabled.
             return poptorch.dynamic_slice(self.weight, 0, self._generation_step, 1, 1)
         else:
-            return self.weight[: input_ids.shape[-1]]
+            return self.weight[: input_ids.shape[1]]
 
 
 class _WhisperDecoderWithCustomMakeCausalAndExpandMask(WhisperDecoder):
