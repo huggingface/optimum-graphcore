@@ -791,7 +791,7 @@ class PipelineUtilsTest(unittest.TestCase):
         ):
             # For this specific layer in T5, check values that are <8 times the smallest normal number in fp16 less
             # strictly. This is because this layer is scaled down then up again by a factor of 8, turning these masked
-            # values into denormals, which we can no longer test for absolute equality.
+            # values into denormals, for which (x/8)*8 may not equal x.
             mask = torch.ones_like(cpu_param, dtype=torch.bool)
             if re.match(r"encoder\.block\.\d+\.layer\.1\.DenseReluDense\.wo\.weight", cpu_name):
                 mask = cpu_param >= 8 * torch.finfo(torch.float16).smallest_normal
