@@ -53,7 +53,8 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         return self.model
 
     def _rewrap_model_for_training(self):
-        self.model = self.model.deparallelize().parallelize()
+        self.model.deparallelize().ipu_config.train()
+        self.model.parallelize()
         # Restores the PoptorchParameter and PoptorchBuffer annotations in the model
         rewrapModelIfNecessary(self.model)
 
