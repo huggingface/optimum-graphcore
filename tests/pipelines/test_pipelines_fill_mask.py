@@ -167,18 +167,14 @@ class FillMaskPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
             ipu_config=ipu_config,
             tokenizer=tokenizer,
         )
-        examples = [
-            f"This is another {tokenizer.mask_token} test",
-        ]
+        examples = [f"This is a {tokenizer.mask_token} test"]
         return fill_masker, examples
 
     def run_pipeline_test(self, fill_masker, examples):
         tokenizer = fill_masker.tokenizer
         model = fill_masker.model
 
-        outputs = fill_masker(
-            f"This is a {tokenizer.mask_token}",
-        )
+        outputs = fill_masker(examples[0])
         self.assertEqual(
             outputs,
             [
@@ -190,7 +186,7 @@ class FillMaskPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
             ],
         )
 
-        outputs = fill_masker([f"This is a {tokenizer.mask_token}"])
+        outputs = fill_masker(examples)
         self.assertEqual(
             outputs,
             [
@@ -202,7 +198,7 @@ class FillMaskPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
             ],
         )
 
-        outputs = fill_masker([f"This is a {tokenizer.mask_token}", f"Another {tokenizer.mask_token} great test."])
+        outputs = fill_masker(examples * 2)
         self.assertEqual(
             outputs,
             [
