@@ -482,7 +482,13 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         self.set_on_device_generation_steps(0)
 
     def prepare_inputs_for_generation(
-        self, decoder_input_ids, past_key_values=None, use_cache=None, encoder_outputs=None, attention_mask=None, **kwargs
+        self,
+        decoder_input_ids,
+        past_key_values=None,
+        use_cache=None,
+        encoder_outputs=None,
+        attention_mask=None,
+        **kwargs,
     ):
         # We don't use `past_key_values` for KV caching, and rely on `use_cache` instead.
         beam_idx = None

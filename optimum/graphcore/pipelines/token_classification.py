@@ -1,4 +1,3 @@
-import warnings
 from typing import List, Optional, Tuple
 
 from transformers import TokenClassificationPipeline
@@ -25,5 +24,8 @@ class IPUTokenClassificationPipeline(TokenClassificationPipeline):
             stride=stride,
         )
         if tokenizer_kwargs:
-            preprocess_params["tokenizer_params"] = {**preprocess_params.get("tokenizer_params", {}), **tokenizer_kwargs}
+            preprocess_params["tokenizer_params"] = {
+                **preprocess_params.get("tokenizer_params", {}),
+                **tokenizer_kwargs,
+            }
         return preprocess_params, forward_params, postprocess_params

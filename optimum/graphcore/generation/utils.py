@@ -225,7 +225,9 @@ class IPUGenerationMixin(GenerationMixin):
                     if attention_mask is not None:
                         named_buffers["encoder_attention_mask"] = attention_mask.half()
                     if not named_buffers:
-                        raise ValueError("Found `encoder_output_buffer_enabled=True`, but encoder outputs missing when calling the model.")
+                        raise ValueError(
+                            "Found `encoder_output_buffer_enabled=True`, but encoder outputs missing when calling the model."
+                        )
                     decoder_wrapper.register_encoder_output_buffers(named_buffers)
                     decoder_options.updatableNamedBuffers(list(named_buffers.keys()))
 
