@@ -786,25 +786,22 @@ class PipelineUtilsTest(unittest.TestCase):
     def check_models_equal_pt(self, ipu_model, cpu_model):
         import torch
 
-        for (ipu_name, ipu_param), (cpu_name, cpu_param) in zip(
-            ipu_model.named_parameters(), cpu_model.named_parameters()
-        ):
+        ipu_params = ipu_model.named_parameters()
+        cpu_params = cpu_model.named_parameters()
+        for (ipu_name, ipu_param), (cpu_name, cpu_param) in zip(ipu_params, cpu_params):
+            msg = lambda msg: f"ipu_model.{ipu_name} != cpu_model.{cpu_name}\n{msg}"
+            # cast default model's parameters to fp16 since pipeline model's parameters are by default in fp16
+            ipu_data, cpu_data = ipu_param.data, cpu_param.data.to(ipu_param.dtype)
+
+            if not re.match(r"encoder\.block\.\d+\.layer\.1\.DenseReluDense\.wo\.weight", cpu_name):
+                torch.testing.assert_close(ipu_data, cpu_data, atol=0, rtol=0, msg=msg)
+
             # For this specific layer in T5, check values that are <8 times the smallest normal number in fp16 less
             # strictly. This is because this layer is scaled down then up again by a factor of 8, turning these masked
             # values into denormals, for which (x/8)*8 may not equal x.
-            mask = torch.ones_like(cpu_param, dtype=torch.bool)
-            if re.match(r"encoder\.block\.\d+\.layer\.1\.DenseReluDense\.wo\.weight", cpu_name):
-                mask = cpu_param >= 8 * torch.finfo(torch.float16).smallest_normal
-            # cast default model's parameters to fp16 since pipeline model's parameters are by default in fp16
-            msg = lambda msg: f"ipu_model.{ipu_name} != cpu_model.{cpu_name}\n{msg}"
-            torch.testing.assert_close(ipu_param.data[~mask], cpu_param.data[~mask].to(ipu_param.dtype), msg=msg)
-            torch.testing.assert_close(
-                ipu_param.data[mask],
-                cpu_param.data[mask].to(ipu_param.dtype),
-                rtol=0,
-                atol=0,
-                msg=msg,
-            )
+            mask = cpu_param >= 8 * torch.finfo(torch.float16).smallest_normal
+            torch.testing.assert_close(ipu_data[mask], cpu_data[mask], rtol=0, atol=0, msg=msg)
+            torch.testing.assert_close(ipu_data[~mask], cpu_data[~mask], msg=msg)
 
 
 # class CustomPipeline(Pipeline):
