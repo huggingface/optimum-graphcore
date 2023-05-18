@@ -29,3 +29,7 @@ class IPUFillMaskPipeline(FillMaskPipeline):
         model_inputs = self.tokenizer(inputs, return_tensors=return_tensors, **tokenizer_kwargs)
         self.ensure_exactly_one_mask_token(model_inputs)
         return model_inputs
+
+    def postprocess(self, model_outputs, top_k=5, target_ids=None):
+        model_outputs["logits"] = model_outputs["logits"].expand(-1, model_outputs["input_ids"].numel(), -1)
+        return super().postprocess(model_outputs, top_k, target_ids)
