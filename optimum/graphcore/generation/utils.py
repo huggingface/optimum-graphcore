@@ -217,32 +217,31 @@ class IPUGenerationMixin(GenerationMixin):
                     require_version(
                         "poptorch>=3.3", "Updatable encoder output buffer optimization only available in poptorch>=3.3"
                     )
-                    named_buffers = {"encoder_last_hidden_state": kwargs["encoder_outputs"]["last_hidden_state"]}
-                    if kwargs.get("attention_mask") is not None:
-                        named_buffers["encoder_attention_mask"] = kwargs["attention_mask"].half()
+                    named_buffers = {}
+                    encoder_last_hidden_state = kwargs.pop("encoder_outputs")["last_hidden_state"]
+                    if encoder_last_hidden_state is not None:
+                        named_buffers["encoder_last_hidden_state"] = encoder_last_hidden_state
+                    attention_mask = kwargs.pop("attention_mask", None)
+                    if attention_mask is not None:
+                        named_buffers["encoder_attention_mask"] = attention_mask.half()
+                    if not named_buffers:
+                        raise ValueError("Found `encoder_output_buffer_enabled=True`, but encoder outputs missing when calling the model.")
                     decoder_wrapper.register_encoder_output_buffers(named_buffers)
                     decoder_options.updatableNamedBuffers(list(named_buffers.keys()))
 
                 self.poptorch_decoder = poptorch.inferenceModel(decoder_wrapper, decoder_options)
-
-        if self.encoder_output_buffer_enabled:
-            kwargs.pop("encoder_outputs", None)
-            kwargs.pop("attention_mask", None)
+        elif self.encoder_output_buffer_enabled:
+            encoder_last_hidden_state = kwargs.pop("encoder_outputs")["last_hidden_state"]
+            attention_mask = kwargs.pop("attention_mask", None)
+            if generation_step == 0:
+                self.poptorch_decoder.encoder_last_hidden_state.copy_(encoder_last_hidden_state)
+                if attention_mask is not None:
+                    self.poptorch_decoder.encoder_attention_mask.copy_(attention_mask.half())
+                self.poptorch_decoder.copyNamedBuffersToDevice()
 
         # This will trigger a compile first time it's ran
         with graph_profile_dir_append("/decoder" if self.config.is_encoder_decoder else ""):
             return self.poptorch_decoder(*args, t=t, **kwargs)
-
-    def _update_model_buffers_if_needed(self, model_kwargs):
-        """
-        If decoder model then we cache the encoder values inside pytorch buffers to reduce the IO cost
-        """
-        if not (self.encoder_output_buffer_enabled and hasattr(self, "poptorch_decoder")):
-            return
-        self.poptorch_decoder.encoder_last_hidden_state.copy_(model_kwargs["encoder_outputs"]["last_hidden_state"])
-        if model_kwargs.get("attention_mask") is not None:
-            self.poptorch_decoder.encoder_attention_mask.copy_(model_kwargs["attention_mask"].half())
-        self.poptorch_decoder.copyNamedBuffersToDevice()
 
     def _prepare_encoder_decoder_kwargs_for_generation(
         self, inputs_tensor: torch.Tensor, model_kwargs, model_input_name: Optional[str] = None
@@ -456,8 +455,6 @@ class IPUGenerationMixin(GenerationMixin):
 
         use_cache = model_kwargs.get("use_cache", False)
         self._maybe_ensure_kv_cache_supported(use_cache)
-
-        self._update_model_buffers_if_needed(model_kwargs)
 
         # Change: intercept to optionally run the entire generation loop on device
         if self.on_device_generation_steps > 0:
@@ -744,8 +741,6 @@ class IPUGenerationMixin(GenerationMixin):
         use_cache = model_kwargs.get("use_cache", False)
         self._maybe_ensure_kv_cache_supported(use_cache)
 
-        self._update_model_buffers_if_needed(model_kwargs)
-
         # Change: intercept to optionally run the entire generation loop on device
         if self.on_device_generation_steps > 0:
             return self._on_device_beam_search(
@@ -854,8 +849,8 @@ class IPUGenerationMixin(GenerationMixin):
             model_kwargs = self._update_model_kwargs_for_generation(
                 outputs, model_kwargs, is_encoder_decoder=self.config.is_encoder_decoder
             )
-            if model_kwargs["past"] is not None:
-                model_kwargs["past"] = self._reorder_cache(model_kwargs["past"], beam_idx)
+            if model_kwargs["past_key_values"] is not None:
+                model_kwargs["past_key_values"] = self._reorder_cache(model_kwargs["past_key_values"], beam_idx)
             # Change: add beam_idx to model_kwargs so KV caching can be made aware of it on device
             model_kwargs["beam_idx"] = beam_idx
 
@@ -1057,8 +1052,6 @@ class IPUGenerationMixin(GenerationMixin):
 
         use_cache = model_kwargs.get("use_cache", False)
         self._maybe_ensure_kv_cache_supported(use_cache)
-
-        self._update_model_buffers_if_needed(model_kwargs)
 
         # Change: intercept to optionally run the entire generation loop on device
         if self.on_device_generation_steps > 0:
@@ -1342,8 +1335,6 @@ class IPUGenerationMixin(GenerationMixin):
         use_cache = model_kwargs.get("use_cache", False)
         self._maybe_ensure_kv_cache_supported(use_cache)
 
-        self._update_model_buffers_if_needed(model_kwargs)
-
         # Change: intercept to optionally run the entire generation loop on device
         if self.on_device_generation_steps > 0:
             return self._on_device_beam_sample()
@@ -1446,8 +1437,8 @@ class IPUGenerationMixin(GenerationMixin):
             model_kwargs = self._update_model_kwargs_for_generation(
                 outputs, model_kwargs, is_encoder_decoder=self.config.is_encoder_decoder
             )
-            if model_kwargs["past"] is not None:
-                model_kwargs["past"] = self._reorder_cache(model_kwargs["past"], beam_idx)
+            if model_kwargs["past_key_values"] is not None:
+                model_kwargs["past_key_values"] = self._reorder_cache(model_kwargs["past_key_values"], beam_idx)
             # Change: add beam_idx to model_kwargs so KV caching can be made aware of it on device
             model_kwargs["beam_idx"] = beam_idx
 
