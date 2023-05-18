@@ -341,6 +341,39 @@ def split_encoder_decoder_ipu_config(
     ipu_configs["encoder"]._layers_per_ipu = layers_per_ipu[:cut]
     ipu_configs["decoder"]._layers_per_ipu = layers_per_ipu[cut:]
 
+    # Split the per ipu configurations for SerializedEmbedding and SplitProjection if they have been provided
+    # Note that serialized layers across IPUs cannot be present in both the encoder and decoder
+    if ipu_config._serialized_embedding_splits_per_ipu is not None:
+        ipu_configs["encoder"]._serialized_embedding_splits_per_ipu = ipu_config._serialized_embedding_splits_per_ipu[
+            :cut
+        ]
+        ipu_configs["decoder"]._serialized_embedding_splits_per_ipu = None
+        # dec_split must contain all zeros, this layer cannot be split across the encoder and decoder
+        if sum(dec_split := ipu_config._serialized_embedding_splits_per_ipu[cut:]):
+            serialized_embedding_splits_per_ipu_mode_str = ipu_config._get_managed_attr_mode_name(
+                "serialized_embedding_splits_per_ipu"
+            )
+            raise ValueError(
+                "The `SerializedEmbedding` must have all splits placed on the encoder, but"
+                f" {serialized_embedding_splits_per_ipu_mode_str}={ipu_config._serialized_embedding_splits_per_ipu} results in"
+                f" {dec_split} being placed on the decoder"
+            )
+
+    if ipu_config._serialized_projection_splits_per_ipu is not None:
+        ipu_configs["encoder"]._serialized_projection_splits_per_ipu = None
+        ipu_configs[
+            "decoder"
+        ]._serialized_projection_splits_per_ipu = ipu_config._serialized_projection_splits_per_ipu[cut:]
+        if sum(enc_split := ipu_config._serialized_projection_splits_per_ipu[:cut]):
+            serialized_projection_splits_per_ipu_mode_str = ipu_config._get_managed_attr_mode_name(
+                "serialized_projection_splits_per_ipu"
+            )
+            raise ValueError(
+                "The `SplitProjection` must have all splits placed on the decoder, but"
+                f" {serialized_projection_splits_per_ipu_mode_str}={ipu_config._serialized_projection_splits_per_ipu} results in"
+                f" {enc_split} being placed on the encoder"
+            )
+
     # Modify the ipus_per_replica
     ipu_configs["encoder"]._ipus_per_replica = len(ipu_configs["encoder"]._layers_per_ipu)
     ipu_configs["decoder"]._ipus_per_replica = len(ipu_configs["decoder"]._layers_per_ipu)
@@ -449,6 +482,18 @@ class SerializedEmbedding(nn.Module):
     def from_model(cls, embedding: nn.Embedding, serialization_factor: int) -> SerializedEmbedding:
         return cls(embedding, serialization_factor)
 
+    def parallelize(self, splits_per_ipu: List[int]):
+        for ipu_id, splits in enumerate(splits_per_ipu):
+            if splits:
+                from_split = sum(splits_per_ipu[:ipu_id])
+                to_split = from_split + splits - 1
+                shard_range = f"{from_split}-{to_split}" if from_split != to_split else f"{from_split}"
+                logger.info(f"Embedding splits: {shard_range} --> IPU {ipu_id}")
+                self.split_embeddings[from_split] = poptorch.BeginBlock(
+                    self.split_embeddings[from_split], ipu_id=ipu_id, user_id=f"Embedding-{shard_range}"
+                )
+        return self
+
     def to_model(self) -> nn.Embedding:
         """
         Deserialize the internal wrapped embedding layer and return it as an
@@ -546,6 +591,93 @@ class SerializedLinear(nn.Linear):
         if self.bias is not None:
             output += self.bias
         return output
+
+
+class SplitProjection(torch.nn.Module):
+    """
+    Exactly equivalent to `nn.Linear` layer, but with the linear layer split into
+    partial linear layers in order to reduce resident memory. The linear layer
+    is split along the reducing dimension `nn.Linear.in_features` in equal parts.
+    The forward call aggregates the partial sums obtained from each linear layer.
+
+    Args:
+        linear: A `nn.Linear` to wrap
+        serialization_factor: The number of partitions of the linear layer. This must
+            be a factor of linear.in_features
+    """
+
+    def __init__(
+        self,
+        linear: torch.nn.Linear,
+        serialization_factor: int,
+    ) -> None:
+        super().__init__()
+
+        self.in_features = linear.in_features
+        self.out_features = linear.out_features
+        if self.in_features % serialization_factor != 0:
+            raise ValueError(f"{linear.in_features=} must be divisible by {serialization_factor=}")
+
+        self.split_size = self.in_features // serialization_factor
+        self.split_linear_layers = torch.nn.ModuleList()
+        for i in range(0, self.in_features, self.split_size):
+            split_linear = torch.nn.Linear(self.split_size, self.out_features, bias=False, dtype=linear.weight.dtype)
+            # initialise linear layer using a section of `linear` weight,
+            with torch.no_grad():
+                split_linear.weight.copy_(linear.weight[:, i : i + self.split_size].detach())
+            self.split_linear_layers.append(split_linear)
+
+        self.bias = None
+        if linear.bias is not None:
+            self.bias = torch.nn.Parameter(torch.zeros_like(linear.bias))
+            with torch.no_grad():
+                self.bias.copy_(linear.bias.detach())
+
+    def forward(self, x):
+        # each linear layer processes a partition of the input
+        out = None
+        for i, split_linear_layer in enumerate(self.split_linear_layers):
+            h = split_linear_layer(x[..., i * self.split_size : (i + 1) * self.split_size])
+            if out is None:
+                out = h
+            else:
+                out += h
+        if self.bias is not None:
+            out += self.bias
+        return out
+
+    @classmethod
+    def from_model(cls, linear: torch.nn.Linear, serialization_factor: int) -> SplitProjection:
+        return cls(linear, serialization_factor)
+
+    def to_model(self) -> nn.Linear:
+        """
+        Merge the sub linear layers into one
+
+        Returns:
+            `nn.Linear` layer
+        """
+        dtype = self.split_linear_layers[0].weight.dtype
+        layer = nn.Linear(self.in_features, self.out_features, bias=self.bias is not None)
+        if dtype == torch.float16:
+            layer = layer.half()
+        with torch.no_grad():
+            layer.weight.copy_(torch.hstack([l.weight.detach() for l in self.split_linear_layers]))
+            if self.bias is not None:
+                layer.bias.copy_(self.bias)
+        return layer
+
+    def parallelize(self, splits_per_ipu: List[int]):
+        for ipu_id, splits in enumerate(splits_per_ipu):
+            if splits:
+                from_split = sum(splits_per_ipu[:ipu_id])
+                to_split = from_split + splits - 1
+                shard_range = f"{from_split}-{to_split}" if from_split != to_split else f"{from_split}"
+                logger.info(f"Linear splits: {shard_range} --> IPU {ipu_id}")
+                self.split_linear_layers[from_split] = poptorch.BeginBlock(
+                    self.split_linear_layers[from_split], ipu_id=ipu_id, user_id=f"Linear-{shard_range}"
+                )
+        return self
 
 
 class SharedEmbedding(nn.Module):
