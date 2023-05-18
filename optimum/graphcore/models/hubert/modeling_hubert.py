@@ -178,7 +178,11 @@ class PipelinedHubertCTC(HubertForCTC, PipelineMixin):
             # ctc_loss doesn't support fp16
             log_probs = torch.nn.functional.log_softmax(logits.float(), dim=-1).transpose(0, 1)
 
-            loss_fn = torch.nn.CTCLoss(blank=self.config.pad_token_id, reduction=self.config.ctc_loss_reduction, zero_infinity=self.config.ctc_zero_infinity)
+            loss_fn = torch.nn.CTCLoss(
+                blank=self.config.pad_token_id,
+                reduction=self.config.ctc_loss_reduction,
+                zero_infinity=self.config.ctc_zero_infinity,
+            )
             loss = loss_fn(log_probs, labels, input_lengths, target_lengths)
             loss = poptorch.identity_loss(loss, "none")
 
