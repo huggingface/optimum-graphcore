@@ -231,7 +231,7 @@ def get_poplar_executor(
     try:
         model = to_pipelined(model, ipu_config, force=False)
         if model.config.is_encoder_decoder and isinstance(model, IPUGenerationMixin):
-            model.parallelize(for_generation=True)
+            model.parallelize(for_generation=task in SUPPORTED_GENERATION_TASKS)
         else:
             model.parallelize()
     except Exception as error:
