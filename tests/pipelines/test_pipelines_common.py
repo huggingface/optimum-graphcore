@@ -789,19 +789,21 @@ class PipelineUtilsTest(unittest.TestCase):
         for (ipu_name, ipu_param), (cpu_name, cpu_param) in zip(
             ipu_model.named_parameters(), cpu_model.named_parameters()
         ):
-            # For this specific layer in T5, mask out values that are <8 times the smallest normal number in fp16.
-            # This is because this layer is scaled down then up again by a factor of 8, turning these masked values
-            # into denormals, which we can no longer test for absolute equality.
+            # For this specific layer in T5, check values that are <8 times the smallest normal number in fp16 less
+            # strictly. This is because this layer is scaled down then up again by a factor of 8, turning these masked
+            # values into denormals, which we can no longer test for absolute equality.
             mask = torch.ones_like(cpu_param, dtype=torch.bool)
             if re.match(r"encoder\.block\.\d+\.layer\.1\.DenseReluDense\.wo\.weight", cpu_name):
                 mask = cpu_param >= 8 * torch.finfo(torch.float16).smallest_normal
             # cast default model's parameters to fp16 since pipeline model's parameters are by default in fp16
+            msg = lambda msg: f"ipu_model.{ipu_name} != cpu_model.{cpu_name}\n{msg}"
+            torch.testing.assert_close(ipu_param.data[~mask], cpu_param.data[~mask].to(ipu_param.dtype), msg=msg)
             torch.testing.assert_close(
                 ipu_param.data[mask],
                 cpu_param.data[mask].to(ipu_param.dtype),
                 rtol=0,
                 atol=0,
-                msg=lambda msg: f"ipu_model.{ipu_name} != cpu_model.{cpu_name}\n{msg}",
+                msg=msg,
             )
 
 
