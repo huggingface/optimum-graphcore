@@ -145,7 +145,7 @@ class IPUConfig(BaseConfig):
         inference_projection_serialization_factor (`int`, *optional*, defaults to 1 if `inference_serialized_projection_splits_per_ipu` is `None`):
             Same as `projection_serialization_factor` but for inference only.
         serialized_projection_splits_per_ipu (`List[int]`, *optional*, defaults to None):
-            Analogoues to `serialized_embedding_splits_per_ipu`.
+            Analogous to `serialized_embedding_splits_per_ipu`.
             Note: only one of `projection_serialization_factor` or `serialized_projection_splits_per_ipu` should be set.
         inference_serialized_projection_splits_per_ipu (`List[int]`, *optional*, defaults to None):
             Same as `serialized_projection_splits_per_ipu` but for inference only.
