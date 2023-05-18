@@ -651,6 +651,8 @@ class _BartModelWithSharedEmbedding(BartModel):
             restore: whether to restore the decoder positional embedding to their original version or not.
         """
         position_embedding = self.decoder.embed_positions
+        if isinstance(position_embedding, BartLearnedPositionalEmbedding) and restore:
+            return
         self.decoder.embed_positions = (
             position_embedding.to_model()
             if restore
@@ -784,7 +786,7 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
         self.model.encoder_and_decoder_embeddings_computation(use_shared_embedding=True)
         self.model.change_bart_encoder_and_decoder_classes(restore=False)
         self.model.change_bart_attention_class(restore=False, use_cache=use_cache and for_generation, **kwargs)
-        self.model.change_decoder_positional_embedding(restore=False)
+        self.model.change_decoder_positional_embedding(restore=not (for_generation and use_cache))
         self.change_lm_head_to_indexed_input_linear(restore=not (for_generation and not use_cache))
         self.use_encoder_output_buffer = kwargs.get("use_encoder_output_buffer", False)
         self.set_on_device_generation_steps(kwargs.get("on_device_generation_steps", 0))
