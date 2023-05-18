@@ -539,7 +539,7 @@ class _BartDecoderWithCustomMakeCausalAndExpandMask(BartDecoder):
         )
 
 
-class IPUBartPositionalLearnedEmbedding(BartLearnedPositionalEmbedding):
+class IPUBartLearnedPositionalEmbedding(BartLearnedPositionalEmbedding):
     """
     This module learns positional embeddings up to a fixed maximum size.
     """
@@ -559,13 +559,12 @@ class IPUBartPositionalLearnedEmbedding(BartLearnedPositionalEmbedding):
         return original
 
     def forward(self, input_ids: torch.Tensor, past_key_values_length: int = 0):
-        del past_key_values_length
-
         if input_ids.shape[-1] == 1:
             # KV cache enabled.
+            del past_key_values_length
             return poptorch.dynamic_slice(self.weight, 0, self._generation_step + self.offset, 1, 1)
         else:
-            return self.weight[self.offset : self.offset + input_ids.shape[-1]]
+            return super().forward(input_ids, past_key_values_length)
 
 
 class _BartModelWithSharedEmbedding(BartModel):
@@ -654,7 +653,7 @@ class _BartModelWithSharedEmbedding(BartModel):
         self.decoder.embed_positions = (
             position_embedding.to_model()
             if restore
-            else IPUBartPositionalLearnedEmbedding.from_model(position_embedding)
+            else IPUBartLearnedPositionalEmbedding.from_model(position_embedding)
         )
 
     def forward(
