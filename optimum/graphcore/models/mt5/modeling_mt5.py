@@ -24,13 +24,14 @@ from optimum.utils import logging
 from transformers import MT5ForConditionalGeneration
 from transformers.activations import NewGELUActivation
 from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
-from transformers.models.t5.modeling_t5 import T5Block, T5Stack, __HEAD_MASK_WARNING_MSG
+from transformers.models.t5.modeling_t5 import __HEAD_MASK_WARNING_MSG, T5Block, T5Stack
+
 from ...generation import IPUGenerationMixin
 from ...modeling_utils import (
     PipelineMixin,
+    SerializedEmbedding,
     SerializedLinear,
     SharedEmbedding,
-    SerializedEmbedding,
     SplitProjection,
     get_layer_ipu,
     recomputation_checkpoint,
@@ -274,7 +275,9 @@ class PipelinedMT5ForConditionalGeneration(MT5ForConditionalGeneration, Pipeline
                 if self.config.tie_word_embeddings:
                     self.tie_weights()
             else:
-                self.lm_head = SplitProjection.from_model(self.lm_head, serialization_factor=projection_serialization_factor)
+                self.lm_head = SplitProjection.from_model(
+                    self.lm_head, serialization_factor=projection_serialization_factor
+                )
 
         self.encoder_and_decoder_embeddings_computation(True)
 

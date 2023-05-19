@@ -43,6 +43,7 @@ from .models.gpt2 import (
 )
 from .models.hubert import PipelinedHubertForSequenceClassification
 from .models.lxmert import PipelinedLxmertForQuestionAnswering
+from .models.mt5 import PipelinedMT5ForConditionalGeneration
 from .models.roberta import (
     PipelinedRobertaForMaskedLM,
     PipelinedRobertaForMultipleChoice,
@@ -50,7 +51,6 @@ from .models.roberta import (
     PipelinedRobertaForSequenceClassification,
     PipelinedRobertaForTokenClassification,
 )
-from .models.mt5 import PipelinedMT5ForConditionalGeneration
 from .models.t5 import PipelinedT5ForConditionalGeneration
 from .models.vit import PipelinedViTForImageClassification
 from .models.wav2vec2 import PipelinedWav2Vec2ForPreTraining

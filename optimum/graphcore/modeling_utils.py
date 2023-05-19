@@ -599,7 +599,7 @@ class SplitProjection(torch.nn.Module):
     partial linear layers in order to reduce resident memory. The linear layer
     is split along the reducing dimension `nn.Linear.in_features` in equal parts.
     The forward call aggregates the partial sums obtained from each linear layer.
-    
+
     Args:
         linear: A `nn.Linear` to wrap
         serialization_factor: The number of partitions of the linear layer. This must
