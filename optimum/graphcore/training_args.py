@@ -793,6 +793,13 @@ class IPUTrainingArguments:
         return self._setup_devices
 
     @property
+    def should_log(self):
+        """
+        Whether or not the current process should produce log.
+        """
+        return True
+
+    @property
     def should_save(self):
         """
         Returns whether the current process should write to disk or not, for example, to save models and checkpoints.
