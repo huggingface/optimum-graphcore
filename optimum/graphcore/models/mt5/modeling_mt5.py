@@ -24,8 +24,7 @@ from optimum.utils import logging
 from transformers import MT5ForConditionalGeneration
 from transformers.activations import NewGELUActivation
 from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
-from transformers.models.mt5.modeling_mt5 import __HEAD_MASK_WARNING_MSG, MT5Block, MT5Stack
-
+from transformers.models.t5.modeling_t5 import T5Block, T5Stack, __HEAD_MASK_WARNING_MSG
 from ...generation import IPUGenerationMixin
 from ...modeling_utils import (
     PipelineMixin,
@@ -67,7 +66,7 @@ class CustomGELU(NewGELUActivation):
 
 
 # Copied from optimum.graphcore.models.t5.modeling_t5.CustomT5Block with t5->mt5 and T5->MT5
-class CustomMT5Block(MT5Block):
+class CustomMT5Block(T5Block):
     def forward(
         self,
         hidden_states,
@@ -173,7 +172,7 @@ class CustomMT5Block(MT5Block):
 
 
 # Copied from optimum.graphcore.models.t5.modeling_t5.CustomT5Stack with t5->mt5 and T5->MT5
-class CustomMT5Stack(MT5Stack):
+class CustomMT5Stack(T5Stack):
     def invert_attention_mask(self, *args, **kwargs) -> Tensor:
         return super().invert_attention_mask(*args, **kwargs) * 0.75
 
@@ -240,19 +239,24 @@ class PipelinedMT5ForConditionalGeneration(MT5ForConditionalGeneration, Pipeline
         # tied weights. Using `SerializedLinear` is exempt since
         # the weights are not sharded
         if self.config.tie_word_embeddings and (
-            embedding_serialization_factor > 1
-            or serialized_projection_splits_per_ipu is not None
+            embedding_serialization_factor > 1 or serialized_projection_splits_per_ipu is not None
         ):
-            serialized_projection_splits_per_ipu_mode_str = self.ipu_config._get_managed_attr_mode_name("serialized_projection_splits_per_ipu")
-            serialized_embedding_splits_per_ipu_mode_str = self.ipu_config._get_managed_attr_mode_name("serialized_embedding_splits_per_ipu")
-            embedding_serialization_factor_mode_str = self.ipu_config._get_managed_attr_mode_name("embedding_serialization_factor")
+            serialized_projection_splits_per_ipu_mode_str = self.ipu_config._get_managed_attr_mode_name(
+                "serialized_projection_splits_per_ipu"
+            )
+            serialized_embedding_splits_per_ipu_mode_str = self.ipu_config._get_managed_attr_mode_name(
+                "serialized_embedding_splits_per_ipu"
+            )
+            embedding_serialization_factor_mode_str = self.ipu_config._get_managed_attr_mode_name(
+                "embedding_serialization_factor"
+            )
             raise ValueError(
                 "Cannot shard input and output embedding layers when using tied weights."
                 f" {serialized_projection_splits_per_ipu_mode_str}={serialized_projection_splits_per_ipu}"
                 f" {serialized_embedding_splits_per_ipu_mode_str}={serialized_embedding_splits_per_ipu}"
                 " should not be provided when using tied input and output embeddings as it is"
                 " redundant to split layers that can only reside on 1 IPU."
-                f" {embedding_serialization_factor_mode_str}={embedding_serialization_factor}" 
+                f" {embedding_serialization_factor_mode_str}={embedding_serialization_factor}"
                 " should also be set to 1 as creating a `SerializedEmbedding` will split the"
                 " embedding table into sub embedding tables."
             )
@@ -261,30 +265,19 @@ class PipelinedMT5ForConditionalGeneration(MT5ForConditionalGeneration, Pipeline
         logger.info("Embedding  --> IPU 0")
 
         if embedding_serialization_factor > 1:
-            self.shared = SerializedEmbedding(self. shared, embedding_serialization_factor)
-        
+            self.shared = SerializedEmbedding.from_model(self.shared, embedding_serialization_factor)
+
         if projection_serialization_factor > 1:
             if serialized_projection_splits_per_ipu is None:
-                serialized_lm_head = SerializedLinear(
-                    self.config.d_model,
-                    self.shared.num_embeddings,
-                    projection_serialization_factor,
-                    bias=False,
-                    mode=poptorch.MatMulSerializationMode.OutputChannels
-                )
-                serialized_lm_head.load_state_dict(self.lm_head.state_dict())
-                self.lm_head = serialized_lm_head
+                self.lm_head = SerializedLinear.from_model(self.lm_head, projection_serialization_factor)
                 # TODO: is it needed to check?
                 if self.config.tie_word_embeddings:
                     self.tie_weights()
             else:
-                self.lm_head = SplitProjection(
-                    self.lm_head,
-                    serialization_factor=projection_serialization_factor
-                )
-        
+                self.lm_head = SplitProjection.from_model(self.lm_head, serialization_factor=projection_serialization_factor)
+
         self.encoder_and_decoder_embeddings_computation(True)
-        
+
         # Parallelize the embedding layer
         if embedding_serialization_factor > 1 and serialized_embedding_splits_per_ipu is not None:
             # Sharing encoder and decoder computation wraps the
@@ -298,7 +291,7 @@ class PipelinedMT5ForConditionalGeneration(MT5ForConditionalGeneration, Pipeline
         # Use a custom MT5Stack implementation because sharing the position bias causes OOM error
         self.encoder.__class__ = CustomMT5Stack
         self.decoder.__class__ = CustomMT5Stack
-        
+
         # Upcast input embeddings so that the residuals remain in FP32. This
         # cast is reversed where necessary by the MT5LayerNorm layers in:
         # - first layer of MT5LayerSelfAttention
@@ -382,7 +375,7 @@ class PipelinedMT5ForConditionalGeneration(MT5ForConditionalGeneration, Pipeline
             # Place LM head on the last IPU if serialized_projection_splits_per_ipu is not provided
             # For generation: override serialized_projection_splits_per_ipu for generation
             if for_generation:
-                serialized_projection_splits_per_ipu = self.decoder_ipu_config.serialized_projection_splits_per_ipu
+                serialized_projection_splits_per_ipu = self.decoder_ipu_config._serialized_projection_splits_per_ipu
             # Parallelize `SplitLinear` layer if configuration is provided
             if serialized_projection_splits_per_ipu is not None:
                 logger.info("LM Head Placement: ")
@@ -394,7 +387,7 @@ class PipelinedMT5ForConditionalGeneration(MT5ForConditionalGeneration, Pipeline
                 self.lm_head = poptorch.BeginBlock(self.lm_head, "LM Head Output", ipu_id=ipu_id)
 
         self.change_lm_head_to_indexed_input_linear(restore=not for_generation)
-        
+
         logger.info("-----------------------------------------------------------")
         return self
 
@@ -411,13 +404,13 @@ class PipelinedMT5ForConditionalGeneration(MT5ForConditionalGeneration, Pipeline
 
         self.encoder_and_decoder_embeddings_computation(False)
 
-        self.encoder.__class__ = MT5Stack
-        self.decoder.__class__ = MT5Stack
+        self.encoder.__class__ = T5Stack
+        self.decoder.__class__ = T5Stack
 
         self.encoder.embed_tokens = self.encoder.embed_tokens.module
 
         for block in self.encoder.block:
-            block.__class__ = MT5Block
+            block.__class__ = T5Block
             block.layer[0].dropout = block.layer[0].dropout.module
             with torch.no_grad():
                 block.layer[1].DenseReluDense.wo.weight *= block.layer[1].dropout.scale
@@ -425,29 +418,23 @@ class PipelinedMT5ForConditionalGeneration(MT5ForConditionalGeneration, Pipeline
             if self.config.dense_act_fn == "gelu_new":
                 block.layer[1].DenseReluDense.act = NewGELUActivation()
         for block in self.decoder.block:
-            block.__class__ = MT5Block
+            block.__class__ = T5Block
             if self.config.dense_act_fn == "gelu_new":
                 block.layer[2].DenseReluDense.act = NewGELUActivation()
 
         self.change_lm_head_to_indexed_input_linear(restore=True)
 
         if self.lm_head.__class__ == SerializedLinear:
-            old_lm_head = nn.Linear(
-                self.config.d_model,
-                self.shared.num_embeddings,
-                bias=False,
-            )
-            old_lm_head.load_state_dict(self.lm_head.state_dict())
-            self.lm_head = old_lm_head
+            self.lm_head = self.lm_head.to_model()
             # TODO: is it needed to check?
             if self.config.tie_word_embeddings:
                 self.tie_weights()
         elif self.lm_head.__class__ == SplitProjection:
-            self.lm_head = self.lm_head.deserialize()
-        
+            self.lm_head = self.lm_head.to_model()
+
         if self.shared.__class__ == SerializedEmbedding:
-            self.shared = self.shared.deserialize()
-            
+            self.shared = self.shared.to_model()
+
         return self
 
     # Copied from optimum.graphcore.models.t5.modeling_t5.PipelinedT5ForConditionalGenerationCustomT5Stack.forward
