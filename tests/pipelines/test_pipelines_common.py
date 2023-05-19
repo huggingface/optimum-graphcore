@@ -775,7 +775,10 @@ class PipelineUtilsTest(unittest.TestCase):
         ipu_params = ipu_model.named_parameters()
         cpu_params = cpu_model.named_parameters()
         for (ipu_name, ipu_param), (cpu_name, cpu_param) in zip(ipu_params, cpu_params):
-            msg = lambda msg: f"ipu_model.{ipu_name} != cpu_model.{cpu_name}\n{msg}"
+
+            def msg(msg):
+                return f"ipu_model.{ipu_name} != cpu_model.{cpu_name}\n{msg}"
+
             # cast default model's parameters to fp16 since pipeline model's parameters are by default in fp16
             ipu_data, cpu_data = ipu_param.data, cpu_param.data.to(ipu_param.dtype)
 

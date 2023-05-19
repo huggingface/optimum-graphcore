@@ -271,13 +271,13 @@ class IPUConfigTester(unittest.TestCase):
         # and `SerializedEmbedding` placed on different IPUs, cannot
         # have serialized_{linear/embedding}_splits_per_ipu present in
         # both the encoder and decoder
-        with pytest.raises(ValueError, match=f"must have all splits placed on the"):
+        with pytest.raises(ValueError, match="must have all splits placed on the"):
             failing_ipu_config = IPUConfig(
                 layers_per_ipu=[0, 2, 2, 0], serialized_projection_splits_per_ipu=[0, 2, 2, 0]
             )
             split_encoder_decoder_ipu_config(failing_ipu_config, 2, 2)
 
-        with pytest.raises(ValueError, match=f"must have all splits placed on the"):
+        with pytest.raises(ValueError, match="must have all splits placed on the"):
             failing_ipu_config = IPUConfig(
                 layers_per_ipu=[0, 2, 2, 0], serialized_embedding_splits_per_ipu=[0, 2, 2, 0]
             )
@@ -432,7 +432,6 @@ class IPUConfigAttributeValidationTester(unittest.TestCase):
                 "embedding_serialization_factor": 1,
                 "device_iterations": 1,
                 "projection_serialization_factor": 1,
-                "embedding_serialization_factor": 1,
             }.items()
         )
     )

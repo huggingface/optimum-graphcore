@@ -13,7 +13,6 @@
 # limitations under the License.
 import numpy as np
 import torch
-
 from transformers import WhisperFeatureExtractor
 
 

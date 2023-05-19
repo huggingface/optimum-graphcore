@@ -15,16 +15,16 @@
 import warnings
 from typing import Optional, Tuple, Union
 
+import poptorch
 import torch
 import torch.nn as nn
 from torch import Tensor
-
-import poptorch
-from optimum.utils import logging
 from transformers import MT5ForConditionalGeneration
 from transformers.activations import NewGELUActivation
 from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
 from transformers.models.t5.modeling_t5 import __HEAD_MASK_WARNING_MSG, T5Block, T5Stack
+
+from optimum.utils import logging
 
 from ...generation import IPUGenerationMixin
 from ...modeling_utils import (
