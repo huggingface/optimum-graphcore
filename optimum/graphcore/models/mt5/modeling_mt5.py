@@ -263,7 +263,6 @@ class PipelinedMT5ForConditionalGeneration(MT5ForConditionalGeneration, Pipeline
             )
 
         logger.info("-------------------- Device Allocation --------------------")
-        logger.info("Embedding  --> IPU 0")
 
         if embedding_serialization_factor > 1:
             self.shared = SerializedEmbedding.from_model(self.shared, embedding_serialization_factor)
