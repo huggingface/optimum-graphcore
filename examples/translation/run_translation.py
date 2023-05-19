@@ -48,7 +48,7 @@ from transformers.utils.versions import require_version
 
 from optimum.graphcore import IPUConfig, IPUSeq2SeqTrainer
 from optimum.graphcore import IPUSeq2SeqTrainingArguments as Seq2SeqTrainingArguments
-from optimum.graphcore.utils import gc_check_min_version
+from optimum.graphcore.utils import check_min_version as gc_check_min_version
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.

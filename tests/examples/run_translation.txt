@@ -10,7 +10,7 @@
 52a49,52
 > from optimum.graphcore import IPUConfig, IPUSeq2SeqTrainer
 > from optimum.graphcore import IPUSeq2SeqTrainingArguments as Seq2SeqTrainingArguments
-> from optimum.graphcore.utils import gc_check_min_version
+> from optimum.graphcore.utils import check_min_version as gc_check_min_version
 > 
 56a57,59
 > # Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.

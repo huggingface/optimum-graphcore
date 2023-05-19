@@ -11,7 +11,7 @@
 > 
 > from optimum.graphcore import IPUConfig
 > from optimum.graphcore import IPUTrainingArguments as TrainingArguments
-> from optimum.graphcore.utils import gc_check_min_version
+> from optimum.graphcore.utils import check_min_version as gc_check_min_version
 53a56,58
 > # Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
 > gc_check_min_version("0.2.4.dev0")

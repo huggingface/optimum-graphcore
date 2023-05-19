@@ -47,7 +47,7 @@ from utils_qa import postprocess_qa_predictions
 
 from optimum.graphcore import IPUConfig
 from optimum.graphcore import IPUTrainingArguments as TrainingArguments
-from optimum.graphcore.utils import gc_check_min_version
+from optimum.graphcore.utils import check_min_version as gc_check_min_version
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
