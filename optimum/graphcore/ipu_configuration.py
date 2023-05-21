@@ -604,13 +604,12 @@ class IPUConfig(BaseConfig):
         # Enable replicated tensor sharding of optimizer state
         # with optimizer state residing either on-chip or in DRAM.
         # RTS is only enabled if replication factor is also greater than 1
-        enable_rts = self.replicated_tensor_sharding and opts.replication_factor > 1
         opts.TensorLocations.setOptimizerLocation(
             poptorch.TensorLocationSettings()
             # Optimizer state lives on- or off-chip
             .useOnChipStorage(not self.optimizer_state_offchip)
             # Shard optimizer state between replicas with zero-redundancy
-            .useReplicatedTensorSharding(enable_rts)
+            .useReplicatedTensorSharding(self.replicated_tensor_sharding and opts.replication_factor > 1)
         )
 
         if for_inference:
