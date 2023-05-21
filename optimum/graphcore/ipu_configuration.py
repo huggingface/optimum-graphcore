@@ -496,8 +496,7 @@ class IPUConfig(BaseConfig):
             IncompatibleIPUConfigError: Raised if any `IPUConfig` attributes are not coherent.
         """
         if self.replicated_tensor_sharding and self.replication_factor == 1:
-            logger.warning("Setting replicated_tensor_sharding to False when replication_factor=1")
-            self.replicated_tensor_sharding = False
+            logger.warning("`replicated_tensor_sharding` is not used when `replication_factor=1`")
 
         old_mode = self.mode
         for mode in self.modes:
@@ -603,7 +602,9 @@ class IPUConfig(BaseConfig):
             opts.randomSeed(self.seed)
 
         # Enable replicated tensor sharding of optimizer state
-        # with optimizer state residing either on-chip or in DRAM
+        # with optimizer state residing either on-chip or in DRAM.
+        # RTS is only enabled if replication factor is also greater than 1
+        enable_rts = self.replicated_tensor_sharding and opts.replication_factor > 1
         opts.TensorLocations.setOptimizerLocation(
             poptorch.TensorLocationSettings()
             # Optimizer state lives on- or off-chip
