@@ -610,7 +610,7 @@ class IPUConfig(BaseConfig):
             # Optimizer state lives on- or off-chip
             .useOnChipStorage(not self.optimizer_state_offchip)
             # Shard optimizer state between replicas with zero-redundancy
-            .useReplicatedTensorSharding(self.replicated_tensor_sharding)
+            .useReplicatedTensorSharding(enable_rts)
         )
 
         if for_inference:
