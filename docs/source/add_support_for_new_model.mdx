@@ -20,10 +20,10 @@ To contribute and add support for a model architecture that is not currently sup
 
 1. Make sure the original model implementation inherits from `transformers.PreTrainedModel`. This is not 100% needed, but it is highly recommended to have access to all the features.
 2. Create a "pipelined" version of the original class. To do that:
-  - Inherit from both the original class and [`modeling_utils.PieplineMixin`]
-  - Implement the [`~modeling_utils.PipelineMixin.parallelize`] method, which specifies how each part of the model should be placed on the hardware.
-  - Implement the [`~modeling_utils.PipelineMixin.deparallize`] method, which takes a parallelized instance of the model back to its original version. This is needed to make sure that both the original and pipelined versions of the model can share the same state dictionary.
-3. Register the pipelined version of the class. This will enable the [`IPUTrainer`] class to automatically convert the original instance of a model to its pipelined counterpart.
+  - Inherit from both the original class and [`modeling_utils.PipelineMixin`](https://huggingface.co/docs/optimum/graphcore/add_support_for_new_model#optimum.graphcore.modeling_utils.PipelineMixin)
+  - Implement the [`~modeling_utils.PipelineMixin.parallelize`](https://huggingface.co/docs/optimum/graphcore/add_support_for_new_model#optimum.graphcore.modeling_utils.PipelineMixin.parallelize) method, which specifies how each part of the model should be placed on the hardware.
+  - Implement the [`~modeling_utils.PipelineMixin.deparallelize`](https://huggingface.co/docs/optimum/graphcore/add_support_for_new_model#optimum.graphcore.modeling_utils.PipelineMixin.deparallelize) method, which takes a parallelized instance of the model back to its original version. This is needed to make sure that both the original and pipelined versions of the model can share the same state dictionary.
+3. Register the pipelined version of the class. This will enable the [`IPUTrainer`](https://huggingface.co/docs/optimum/graphcore/trainer#optimum.graphcore.IPUTrainer) class to automatically convert the original instance of a model to its pipelined counterpart.
 
 **Example:** `transformers.ViTForImageClassification` to `PipelinedViTForImageClassification`
 
