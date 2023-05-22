@@ -467,6 +467,7 @@ class SerializedEmbedding(nn.Module):
         self.split_size = self.num_embeddings // self.serialization_factor
 
         freeze = not embedding.weight.requires_grad
+        self.padding_idx = embedding.padding_idx
         self.split_embeddings = nn.ModuleList(
             [
                 nn.Embedding.from_pretrained(
@@ -505,7 +506,7 @@ class SerializedEmbedding(nn.Module):
 
         freeze = not self.split_embeddings[0].weight.requires_grad
         return nn.Embedding.from_pretrained(
-            torch.vstack([l.weight for l in self.split_embeddings]), padding_idx=0, freeze=freeze
+            torch.vstack([l.weight for l in self.split_embeddings]), padding_idx=self.padding_idx, freeze=freeze
         )
 
     def forward(self, indices):
