@@ -266,6 +266,8 @@ class PipelinedMT5ForConditionalGeneration(MT5ForConditionalGeneration, Pipeline
 
         if embedding_serialization_factor > 1:
             self.shared = SerializedEmbedding.from_model(self.shared, embedding_serialization_factor)
+            self.encoder.embed_tokens = self.shared
+            self.decoder.embed_tokens = self.shared
 
         if projection_serialization_factor > 1:
             if serialized_projection_splits_per_ipu is None:
@@ -324,6 +326,7 @@ class PipelinedMT5ForConditionalGeneration(MT5ForConditionalGeneration, Pipeline
                 # this with block.layer[1].DenseReluDense.act = torch.nn.GELU(approximate="tanh")
                 # when bug is fixed
                 block.layer[1].DenseReluDense.act = CustomGELU()
+
         for block in self.decoder.block:
             block.__class__ = CustomMT5Block
             # Work-around bug with torch.nn.GELU(approximate="tanh")
@@ -406,23 +409,10 @@ class PipelinedMT5ForConditionalGeneration(MT5ForConditionalGeneration, Pipeline
 
         self.encoder_and_decoder_embeddings_computation(False)
 
-        self.encoder.__class__ = T5Stack
-        self.decoder.__class__ = T5Stack
-
-        self.encoder.embed_tokens = self.encoder.embed_tokens.module
-
-        for block in self.encoder.block:
-            block.__class__ = T5Block
-            block.layer[0].dropout = block.layer[0].dropout.module
-            with torch.no_grad():
-                block.layer[1].DenseReluDense.wo.weight *= block.layer[1].dropout.scale
-            block.layer[1].dropout = block.layer[1].dropout.module
-            if self.config.dense_act_fn == "gelu_new":
-                block.layer[1].DenseReluDense.act = NewGELUActivation()
-        for block in self.decoder.block:
-            block.__class__ = T5Block
-            if self.config.dense_act_fn == "gelu_new":
-                block.layer[2].DenseReluDense.act = NewGELUActivation()
+        if self.shared.__class__ == SerializedEmbedding:
+            self.shared = self.shared.to_model()
+            self.encoder.embed_tokens = self.shared
+            self.decoder.embed_tokens = self.shared
 
         self.change_lm_head_to_indexed_input_linear(restore=True)
 
@@ -434,8 +424,22 @@ class PipelinedMT5ForConditionalGeneration(MT5ForConditionalGeneration, Pipeline
         elif self.lm_head.__class__ == SplitProjection:
             self.lm_head = self.lm_head.to_model()
 
-        if self.shared.__class__ == SerializedEmbedding:
-            self.shared = self.shared.to_model()
+        self.encoder.__class__ = T5Stack
+        self.decoder.__class__ = T5Stack
+
+        for block in self.encoder.block:
+            block.__class__ = T5Block
+            block.layer[0].dropout = block.layer[0].dropout.module
+            with torch.no_grad():
+                block.layer[1].DenseReluDense.wo.weight *= block.layer[1].dropout.scale
+            block.layer[1].dropout = block.layer[1].dropout.module
+            if self.config.dense_act_fn == "gelu_new":
+                block.layer[1].DenseReluDense.act = NewGELUActivation()
+
+        for block in self.decoder.block:
+            block.__class__ = T5Block
+            if self.config.dense_act_fn == "gelu_new":
+                block.layer[2].DenseReluDense.act = NewGELUActivation()
 
         return self
 
