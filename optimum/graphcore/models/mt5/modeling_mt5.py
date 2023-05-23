@@ -383,7 +383,7 @@ class PipelinedMT5ForConditionalGeneration(MT5ForConditionalGeneration, Pipeline
             if for_generation:
                 serialized_projection_splits_per_ipu = self.decoder_ipu_config._serialized_projection_splits_per_ipu
                 ipu_id = self.decoder_ipu_config._ipus_per_replica - 1
-                
+
             # Parallelize `SplitLinear` layer if configuration is provided
             if self.lm_head.__class__ == SplitProjection:
                 logger.info("LM Head Placement: ")
