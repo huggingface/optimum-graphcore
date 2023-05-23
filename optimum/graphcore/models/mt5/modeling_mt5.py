@@ -272,7 +272,6 @@ class PipelinedMT5ForConditionalGeneration(MT5ForConditionalGeneration, Pipeline
         if projection_serialization_factor > 1:
             if serialized_projection_splits_per_ipu is None:
                 self.lm_head = SerializedLinear.from_model(self.lm_head, projection_serialization_factor)
-                # TODO: is it needed to check?
                 if self.config.tie_word_embeddings:
                     self.tie_weights()
             else:
@@ -420,7 +419,6 @@ class PipelinedMT5ForConditionalGeneration(MT5ForConditionalGeneration, Pipeline
 
         if self.lm_head.__class__ == SerializedLinear:
             self.lm_head = self.lm_head.to_model()
-            # TODO: is it needed to check?
             if self.config.tie_word_embeddings:
                 self.tie_weights()
         elif self.lm_head.__class__ == SplitProjection:
