@@ -16,4 +16,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from . import bart, bert, convnext, deberta, gpt2, groupbert, hubert, lxmert, mt5, roberta, t5, vit, wav2vec2, whisper
+from .modeling_mt5 import PipelinedMT5ForConditionalGeneration

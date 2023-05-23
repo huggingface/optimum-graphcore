@@ -28,6 +28,7 @@ MODELS_TO_TEST_MAPPING = {
     "lxmert": ("unc-nlp/lxmert-base-uncased", "Graphcore/lxmert-base-ipu"),
     "roberta": ("roberta-base", "Graphcore/roberta-base-ipu"),
     "t5": ("t5-small", "Graphcore/t5-small-ipu"),
+    "mt5": ("google/mt5-small", "Graphcore/mt5-small-ipu"),
     "vit": ("google/vit-base-patch16-224-in21k", "Graphcore/vit-base-ipu"),
     "wav2vec2": {
         "default": ("facebook/wav2vec2-base", "Graphcore/wav2vec2-base-ipu"),
