@@ -378,16 +378,18 @@ class PipelinedMT5ForConditionalGeneration(MT5ForConditionalGeneration, Pipeline
             self.lm_head = poptorch.BeginBlock(self.lm_head, "LM Head Output", ipu_id=ipu_id)
         else:
             # Place LM head on the last IPU if serialized_projection_splits_per_ipu is not provided
-            # For generation: override serialized_projection_splits_per_ipu for generation
+            # For generation: override serialized_projection_splits_per_ipu
+            ipu_id = self.ipu_config._ipus_per_replica - 1
             if for_generation:
                 serialized_projection_splits_per_ipu = self.decoder_ipu_config._serialized_projection_splits_per_ipu
+                ipu_id = self.decoder_ipu_config._ipus_per_replica - 1
+                
             # Parallelize `SplitLinear` layer if configuration is provided
-            if serialized_projection_splits_per_ipu is not None:
+            if self.lm_head.__class__ == SplitProjection:
                 logger.info("LM Head Placement: ")
                 self.lm_head = self.lm_head.parallelize(serialized_projection_splits_per_ipu)
             else:
                 # Place SerializedLinear and nn.Linear forms of the lm head on the last IPU
-                ipu_id = self.ipu_config._ipus_per_replica - 1
                 logger.info(f"LM Head Output --> IPU {ipu_id}")
                 self.lm_head = poptorch.BeginBlock(self.lm_head, "LM Head Output", ipu_id=ipu_id)
 
