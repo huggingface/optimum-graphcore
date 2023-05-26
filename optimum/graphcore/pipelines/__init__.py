@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from typing import Any, List, Optional, Union
-
+import copy
 import torch
 
 import poptorch
@@ -492,8 +492,9 @@ def pipeline(
             pipeline_clone.model = model.compile
             try:
                 pipeline_clone.__call__(*inputs, **kwargs)
-            except:
+            except TypeError:
                 pass
+
         else:
             self.__call__(*inputs, **kwargs)
 
