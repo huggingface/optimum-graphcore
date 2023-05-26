@@ -15,8 +15,10 @@
 from typing import Any, List, Optional, Union
 
 import torch
+import copy
 
 import poptorch
+from poptorch import enums
 import transformers.pipelines
 from optimum.graphcore.generation.utils import IPUGenerationMixin
 from optimum.graphcore.ipu_configuration import IncompatibleIPUConfigError, IPUConfig
@@ -209,6 +211,7 @@ def get_poplar_executor(
     model: PreTrainedModel,
     ipu_config: Union[IPUConfig, str, dict] = None,
     fp16: bool = True,
+    compile_only = False
 ) -> PreTrainedModel:
     ipu_config_arg = ipu_config
 
@@ -244,7 +247,7 @@ def get_poplar_executor(
         raise IncompatibleIPUConfigError(new_message) from error
     if fp16:
         model.half()
-    opts = ipu_config.to_options(for_inference=True)
+    opts = ipu_config.to_options(for_inference=True, compile_only=compile_only)
     opts.setExecutionStrategy(poptorch.ShardedExecution())
 
     # Text generation models have an internal Poplar executor so don't wrap model in that case
@@ -316,6 +319,17 @@ def pipeline(
     Returns:
         The pipeline object for the specified task.
     """
+    initial_state = [   task,
+                        model,
+                        ipu_config,
+                        tokenizer,
+                        feature_extractor,
+                        revision,
+                        use_auth_token,
+                        pipeline_class,
+                        fp16,
+                        kwargs
+                    ]
 
     if task is None and model is None:
         raise RuntimeError(
@@ -352,6 +366,7 @@ def pipeline(
     if ipu_config is None and not isinstance(model, poptorch._poplar_executor.PoplarExecutor):
         ipu_config = SUPPORTED_TASKS[targeted_task]["default"]["ipu_config"]
 
+    cpu_model = model
     if model is None:
         model_id, revision = SUPPORTED_TASKS[targeted_task]["default"]["model"]
         logger.warning(
@@ -467,6 +482,26 @@ def pipeline(
     if model.config.model_type in {"gpt2"}:
         tokenizer.pad_token = tokenizer.eos_token
         model.config.pad_token_id = model.config.eos_token_id
+
+    def compile(self, *inputs, **kwargs):
+        offline_compilation = kwargs.get("offline", False)
+
+        if offline_compilation:
+            print("Using offline compilation")
+            # make a clone to not alter the original poplarExecutor
+            pipeline_clone = pipeline(*initial_state[:-1], **initial_state[-1])
+            options = copy.deepcopy(self.model._options)
+            options.useOfflineIpuTarget()
+            pipeline_clone.model._options = options
+            pipeline_clone.model = model.compile
+            try:
+                pipeline_clone.__call__(*inputs, **kwargs)
+            except:
+                pass
+        else:
+            self.__call__(*inputs, **kwargs)
+
+    pipeline_class.compile = compile
 
     return transformers.pipelines.pipeline(
         task,
