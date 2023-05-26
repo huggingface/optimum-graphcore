@@ -434,7 +434,17 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         self.model.encoder.layer_norm = poptorch.BeginBlock(
             self.model.encoder.layer_norm, "Encoder Layer Norm", ipu_id=ipu
         )
-        logger.info(f"Encoder LN {index:<2} --> IPU {ipu}")
+        logger.info(f"Encoder LN --> IPU {ipu}")
+
+        if (decoder_embed_ipu := self.ipu_config._serialized_embedding_splits_per_ipu) is not None:
+            assert (
+                sum(decoder_embed_ipu) == 1
+            ), "For Whisper, this option is used to place the whole embedding on a single IPU of your choice. Serialization is not currently supported"
+            decoder_embed_ipu = decoder_embed_ipu.index(1)
+            self.model.decoder.embed_tokens = poptorch.BeginBlock(
+                self.model.decoder.embed_tokens, "Decoder Embedding", ipu_id=decoder_embed_ipu
+            )
+            logger.info(f"Decoder Embedding  --> IPU {decoder_embed_ipu}")
 
         for index, (layer, ipu) in enumerate(zip(self.model.decoder.layers, decoder_layer_ipu)):
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
@@ -446,9 +456,15 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
             self.model.decoder.layer_norm, "Decoder Layer Norm", ipu_id=ipu
         )
 
-        logger.info(f"Head       --> IPU 0")
+        proj_out_ipu = 0
+        if (proj_out_ipu := self.ipu_config._serialized_projection_splits_per_ipu) is not None:
+            assert (
+                sum(proj_out_ipu) == 1
+            ), "For Whisper, this option is used to place the whole output projection on a single IPU of your choice. Serialization is not currently supported"
+            proj_out_ipu = proj_out_ipu.index(1)
+        logger.info(f"Head       --> IPU {proj_out_ipu}")
         logger.info("---------------------------------------")
-        self.proj_out = poptorch.BeginBlock(self.proj_out, "Output Projection", ipu_id=0)
+        self.proj_out = poptorch.BeginBlock(self.proj_out, "Output Projection", ipu_id=proj_out_ipu)
         return self
 
     def deparallelize(self):
