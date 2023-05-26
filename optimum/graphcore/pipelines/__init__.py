@@ -366,7 +366,6 @@ def pipeline(
     if ipu_config is None and not isinstance(model, poptorch._poplar_executor.PoplarExecutor):
         ipu_config = SUPPORTED_TASKS[targeted_task]["default"]["ipu_config"]
 
-    cpu_model = model
     if model is None:
         model_id, revision = SUPPORTED_TASKS[targeted_task]["default"]["model"]
         logger.warning(
