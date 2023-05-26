@@ -15,10 +15,8 @@
 from typing import Any, List, Optional, Union
 
 import torch
-import copy
 
 import poptorch
-from poptorch import enums
 import transformers.pipelines
 from optimum.graphcore.generation.utils import IPUGenerationMixin
 from optimum.graphcore.ipu_configuration import IncompatibleIPUConfigError, IPUConfig
@@ -487,7 +485,6 @@ def pipeline(
 
         if offline_compilation:
             print("Using offline compilation")
-            # make a clone to not alter the original poplarExecutor
             pipeline_clone = pipeline(*initial_state[:-1], **initial_state[-1])
             options = copy.deepcopy(self.model._options)
             options.useOfflineIpuTarget()
