@@ -143,18 +143,24 @@ class IPUSuppressTokensAtBeginLogitsProcessor(SuppressTokensAtBeginLogitsProcess
 
 
 class IPUForceTokensLogitsProcessor(ForceTokensLogitsProcessor):
+    @classmethod
+    def from_model(cls, inst, vocab_size: int):
+        self = inst
+        self.__class__ = cls
+
+        self.force_token_map_keys = torch.tensor(list(self.force_token_map.keys()))
+        self.force_token_map_values = torch.tensor(list(self.force_token_map.values()))
+        return self
+
     def __call__(
         self, input_ids: torch.LongTensor, scores: torch.FloatTensor, absolute_step: torch.IntTensor
     ) -> torch.FloatTensor:
-        force_token_map_keys = torch.tensor(list(self.force_token_map.keys()))
-        force_token_map_values = torch.tensor(list(self.force_token_map.values()))
-        mask = absolute_step == force_token_map_keys
-        selected_value = torch.amax(mask * force_token_map_values)
+        mask = absolute_step == self.force_token_map_keys.to(scores.device)
+        selected_value = torch.amax(mask * self.force_token_map_values.to(scores.device))
+        value_mask = torch.arange(scores.shape[1], dtype=torch.long) == selected_value
         cond = torch.any(mask).int()
         scores = cond * torch.ones_like(scores) * VERY_LARGE_NEGATIVE_CONST + (1 - cond) * scores
-        idx = torch.ones((scores.shape[0], 1), dtype=torch.long) * selected_value
-        val = cond * torch.ones_like(idx) * -VERY_LARGE_NEGATIVE_CONST
-        scores.scatter_add_(1, idx, val)
+        scores -= cond * value_mask.unsqueeze(0) * VERY_LARGE_NEGATIVE_CONST
         return scores
 
 
