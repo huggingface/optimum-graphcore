@@ -91,9 +91,17 @@ class IPUWhisperAttention(WhisperAttention, IPUAttentionMixin):
 
         query_states = self.q_proj(hidden_states) * self.scaling
         if key_value_states is not None:
-            # cross attention
-            key_states = self._shape(self.k_proj(key_value_states), -1, bsz)
-            value_states = self._shape(self.v_proj(key_value_states), -1, bsz)
+            if self.cross_kv_cache_initialized:
+                # cross attention with cross kv cache
+                key_states, value_states = self.add_to_cross_kv_cache(
+                    key_value_states,
+                    lambda x: self._shape(self.k_proj(x), -1, bsz),
+                    lambda x: self._shape(self.v_proj(x), -1, bsz),
+                )
+            else:
+                # cross attention
+                key_states = self._shape(self.k_proj(key_value_states), -1, bsz)
+                value_states = self._shape(self.v_proj(key_value_states), -1, bsz)
         elif self.kv_cache_initialized:
             # self attention with kv cache
             key_states = self._shape(self.k_proj(hidden_states), -1, bsz)
@@ -351,10 +359,12 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         Args:
             restore: whether to restore the attention layers to their original version or not.
         """
-        use_cache = kwargs.get("use_cache", False)
         batch_size = kwargs.get("batch_size", 1)
-        max_length = kwargs.get("max_length", 448)
         num_beams = kwargs.get("num_beams", 1)
+        use_cache = kwargs.get("use_cache", False)
+        max_length = kwargs.get("max_length", 448)
+        use_cross_cache = kwargs.get("use_cross_cache", False)
+        encoder_max_length = kwargs.get("encoder_max_length", 1500)
         batch_serialization_factor = kwargs.get("batch_serialization_factor", 1)
         sequence_serialization_factor = kwargs.get("sequence_serialization_factor", 1)
 
@@ -379,6 +389,7 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
             decoder_layer.self_attn = IPUWhisperAttention.from_model(
                 decoder_layer.self_attn,
                 use_cache=use_cache,
+                use_cross_cache=False,
                 batch_size=batch_size,
                 max_length=max_length,
                 num_beams=num_beams,
@@ -387,15 +398,25 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
             decoder_layer.encoder_attn = IPUWhisperAttention.from_model(
                 decoder_layer.encoder_attn,
                 use_cache=False,
+                use_cross_cache=use_cross_cache,
+                batch_size=batch_size,
+                encoder_max_length=encoder_max_length,
+                num_beams=num_beams,
+                dtype=decoder_layer.encoder_attn.k_proj.weight.dtype,
             )
 
-    def parallelize(self, for_generation=False, use_cache=False, **kwargs):
+    def parallelize(self, for_generation=False, use_cache=False, use_cross_cache=False, **kwargs):
         super().parallelize()
 
         self.change_encoder_layer_class(restore=False)
         self.change_decoder_class(restore=False)
         self.change_decoder_positional_embedding(restore=False)
-        self.change_attention_class(restore=False, use_cache=use_cache and for_generation, **kwargs)
+        self.change_attention_class(
+            restore=False,
+            use_cache=use_cache and for_generation,
+            use_cross_cache=use_cross_cache and for_generation,
+            **kwargs,
+        )
         self.change_lm_head_to_indexed_input_linear(restore=use_cache or not for_generation)
         self.use_encoder_output_buffer = kwargs.get("use_encoder_output_buffer", False)
         self.set_on_device_generation_steps(kwargs.get("on_device_generation_steps", 0))
