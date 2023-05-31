@@ -163,3 +163,9 @@ class SerializedEmbeddingTester(unittest.TestCase, SerializedLayerTester):
             other_evaluator = PytorchEvaluator(serialized_embedding)
 
         return evaluator, other_evaluator, dataset
+
+    @parameterized.expand(((1, 0, 1), (63, 3, 15)))
+    def test_padding_idx(self, padding_idx, split, expected_padding_idx):
+        embedding = torch.nn.Embedding(num_embeddings=64, embedding_dim=8, padding_idx=padding_idx)
+        serialized_embedding = SerializedEmbedding.from_model(embedding, 4)
+        assert serialized_embedding.split_embeddings[split].padding_idx == expected_padding_idx
