@@ -477,7 +477,7 @@ class SerializedEmbedding(nn.Module):
                     embedding.weight[i * self.split_size : (i + 1) * self.split_size, :].detach(),
                     freeze=freeze,
                     padding_idx=self.padding_idx - i * self.split_size
-                    if i == torch.bucketize(self.padding_idx, boundaries).item()
+                    if self.padding_idx and i == torch.bucketize(self.padding_idx, boundaries).item()
                     else None,
                 )
                 for i in range(self.serialization_factor)
