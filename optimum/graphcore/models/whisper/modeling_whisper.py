@@ -31,6 +31,8 @@ from transformers.models.whisper.modeling_whisper import (
 from ...generation import IPUAttentionMixin, IPUGenerationMixin, supports_kv_cache
 from ...modeling_utils import (
     PipelineMixin,
+    SerializedEmbedding,
+    SerializedLinear,
     get_layer_ipu,
     recomputation_checkpoint,
     register,
@@ -457,15 +459,15 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         )
         logger.info(f"Encoder LN --> IPU {ipu}")
 
-        if (decoder_embed_ipu := self.ipu_config._serialized_embedding_splits_per_ipu) is not None:
-            assert (
-                sum(decoder_embed_ipu) == 1
-            ), "For Whisper, this option is used to place the whole embedding on a single IPU of your choice. Serialization is not currently supported"
-            decoder_embed_ipu = decoder_embed_ipu.index(1)
-            self.model.decoder.embed_tokens = poptorch.BeginBlock(
-                self.model.decoder.embed_tokens, "Decoder Embedding", ipu_id=decoder_embed_ipu
+        if (embedding_serialization_factor := self.ipu_config._embedding_serialization_factor) > 1:
+            self.model.decoder.embed_tokens = SerializedEmbedding.from_model(
+                self.model.decoder.embed_tokens, embedding_serialization_factor
             )
-            logger.info(f"Decoder Embedding  --> IPU {decoder_embed_ipu}")
+
+        self.model.decoder.embed_tokens = poptorch.BeginBlock(
+            self.model.decoder.embed_tokens, "Decoder Embedding", ipu_id=decoder_layer_ipu[0]
+        )
+        logger.info(f"Decoder Embedding  --> IPU {decoder_layer_ipu[0]}")
 
         for index, (layer, ipu) in enumerate(zip(self.model.decoder.layers, decoder_layer_ipu)):
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
@@ -477,15 +479,13 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
             self.model.decoder.layer_norm, "Decoder Layer Norm", ipu_id=ipu
         )
 
-        proj_out_ipu = 0
-        if (proj_out_ipu := self.ipu_config._serialized_projection_splits_per_ipu) is not None:
-            assert (
-                sum(proj_out_ipu) == 1
-            ), "For Whisper, this option is used to place the whole output projection on a single IPU of your choice. Serialization is not currently supported"
-            proj_out_ipu = proj_out_ipu.index(1)
-        logger.info(f"Head       --> IPU {proj_out_ipu}")
+        if (projection_serialization_factor := self.ipu_config._projection_serialization_factor) > 1:
+            self.proj_out = SerializedLinear.from_model(self.proj_out, projection_serialization_factor)
+            self.tie_weights()
+
+        logger.info(f"Head       --> IPU {decoder_layer_ipu[0]}")
         logger.info("---------------------------------------")
-        self.proj_out = poptorch.BeginBlock(self.proj_out, "Output Projection", ipu_id=proj_out_ipu)
+        self.proj_out = poptorch.BeginBlock(self.proj_out, "Output Projection", ipu_id=decoder_layer_ipu[0])
         return self
 
     def deparallelize(self):
@@ -497,6 +497,13 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         self.change_attention_class(restore=True)
         self.change_lm_head_to_indexed_input_linear(restore=True)
         self.set_on_device_generation_steps(0)
+
+        if isinstance(self.model.decoder.embed_tokens, SerializedEmbedding):
+            self.model.decoder.embed_tokens = self.model.decoder.embed_tokens.to_model()
+        if isinstance(self.proj_out, SerializedLinear):
+            self.proj_out = self.proj_out.to_model()
+
+        return self
 
     def prepare_inputs_for_generation(
         self, decoder_input_ids, past=None, use_cache=None, encoder_outputs=None, attention_mask=None, **kwargs
