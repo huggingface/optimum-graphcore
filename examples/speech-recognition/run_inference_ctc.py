@@ -31,7 +31,7 @@ from optimum.graphcore.modeling_utils import to_pipelined
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-check_min_version("4.18.0")
+check_min_version("4.29.0")
 
 require_version(
     "datasets>=1.18.0",

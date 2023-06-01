@@ -40,19 +40,19 @@ from transformers import (
     set_seed,
 )
 from transformers.trainer_utils import get_last_checkpoint
-from transformers.utils import check_min_version as tf_check_min_version
+from transformers.utils import check_min_version
 from transformers.utils.versions import require_version
 
 from optimum.graphcore import IPUConfig, IPUTrainer
 from optimum.graphcore import IPUTrainingArguments as TrainingArguments
-from optimum.graphcore.utils import check_min_version
+from optimum.graphcore.utils import gc_check_min_version
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-tf_check_min_version("4.18.0")
+check_min_version("4.29.0")
 
 # Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
-check_min_version("0.2.4.dev")
+gc_check_min_version("0.6.0.dev")
 
 require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/question-answering/requirements.txt")
 

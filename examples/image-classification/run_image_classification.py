@@ -59,7 +59,7 @@ logger = logging.getLogger(__name__)
 check_min_version("4.29.0")
 
 # Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
-gc_check_min_version("0.2.4.dev0")
+gc_check_min_version("0.6.0.dev0")
 
 require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/image-classification/requirements.txt")
 
