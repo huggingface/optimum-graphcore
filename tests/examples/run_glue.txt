@@ -48,12 +48,12 @@
 >             else:
 >                 model.config.problem_type = "multi_label_classification"
 > 
-511,512d529
+508,509d526
 <     elif training_args.fp16:
 <         data_collator = DataCollatorWithPadding(tokenizer, pad_to_multiple_of=8)
-517c534
+514c531
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-518a536
+515a533
 >         ipu_config=ipu_config,
