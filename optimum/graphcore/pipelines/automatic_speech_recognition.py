@@ -47,6 +47,9 @@ class IPUAutomaticSpeechRecognitionPipeline(AutomaticSpeechRecognitionPipeline):
 
         # Change: If the last batch contains fewer than `batch_size` elements, pad it.
         def batch_padding(items, batch_size):
+            if isinstance(items["is_last"], bool):
+                return items
+
             actual_batch_size = len(items["is_last"])
             if actual_batch_size >= batch_size:
                 return items
@@ -64,9 +67,9 @@ class IPUAutomaticSpeechRecognitionPipeline(AutomaticSpeechRecognitionPipeline):
             items = {"is_last": is_last, "stride": stride, "input_features": new_input_features}
             return items
 
-        batch_padder = PipelineIterator(dataloader, batch_padding, {"batch_size": batch_size})
-        model_iterator = PipelinePackIterator(batch_padder, self.forward, forward_params, loader_batch_size=batch_size)
-
+        if self.type == "seq2seq_whisper":
+            dataloader = PipelineIterator(dataloader, batch_padding, {"batch_size": batch_size})
+        model_iterator = PipelinePackIterator(dataloader, self.forward, forward_params, loader_batch_size=batch_size)
         final_iterator = PipelineIterator(model_iterator, self.postprocess, postprocess_params)
         return final_iterator
 
