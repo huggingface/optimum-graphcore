@@ -37,6 +37,7 @@ from transformers import (
     QuestionAnsweringPipeline,
     TextClassificationPipeline,
     TextGenerationPipeline,
+    WhisperForConditionalGeneration
 )
 from transformers.feature_extraction_utils import PreTrainedFeatureExtractor
 from transformers.modeling_utils import PreTrainedModel
@@ -186,7 +187,6 @@ SUPPORTED_TASKS = {
     },
 }
 SUPPORTED_GENERATION_TASKS = {
-    "automatic-speech-recognition",
     "summarization",
     "text-generation",
     "text2text-generation",
@@ -215,6 +215,7 @@ def get_poplar_executor(
     model: PreTrainedModel,
     ipu_config: Union[IPUConfig, str, dict] = None,
     fp16: bool = True,
+    for_generation: bool = False,
     **parallelize_kwargs,
 ) -> PreTrainedModel:
     ipu_config_arg = ipu_config
@@ -238,7 +239,7 @@ def get_poplar_executor(
     try:
         model = to_pipelined(model, ipu_config, force=False)
         if model.config.is_encoder_decoder and isinstance(model, IPUGenerationMixin):
-            model.parallelize(for_generation=task in SUPPORTED_GENERATION_TASKS, **parallelize_kwargs)
+            model.parallelize(for_generation=for_generation, **parallelize_kwargs)
         else:
             model.parallelize()
     except Exception as error:
@@ -255,7 +256,7 @@ def get_poplar_executor(
     opts.setExecutionStrategy(poptorch.ShardedExecution())
 
     # Text generation models have an internal Poplar executor so don't wrap model in that case
-    if task not in SUPPORTED_GENERATION_TASKS:
+    if not for_generation:
         model = poptorch.inferenceModel(model.eval(), opts)
     return model
 
@@ -287,7 +288,7 @@ def check_model_type(self, supported_models: Union[List[str], dict]):
 
     if model_class_name not in supported_models:
         logger.error(
-            f"The model '{self.model._user_model.__class__.__bases__[0].__name__}' is not supported for {self.task}. Supported models are"
+            f"The model '{model_class_name}' is not supported for {self.task}. Supported models are"
             f" {supported_models}."
         )
 
@@ -354,13 +355,6 @@ def pipeline(
     load_tokenizer = targeted_task not in NO_TOKENIZER_TASKS
     load_feature_extractor = targeted_task not in NO_FEATURE_EXTRACTOR_TASKS
 
-    if pipeline_class is None:
-        pipeline_class = SUPPORTED_TASKS[targeted_task]["impl"]
-
-    if ipu_config is None and not isinstance(model, poptorch._poplar_executor.PoplarExecutor):
-        ipu_config = SUPPORTED_TASKS[targeted_task]["default"]["ipu_config"]
-
-    parallelize_kwargs = parallelize_kwargs or {}
     if model is None:
         model_id, revision = SUPPORTED_TASKS[targeted_task]["default"]["model"]
         logger.warning(
@@ -369,7 +363,6 @@ def pipeline(
             "Using a pipeline without specifying a model name and revision in production is not recommended."
         )
         model = SUPPORTED_TASKS[targeted_task]["class"][0].from_pretrained(model_id, revision=revision)
-        model = get_poplar_executor(targeted_task, model, ipu_config, fp16, **parallelize_kwargs)
     elif isinstance(model, str):
         model_id = model
         for cl in SUPPORTED_TASKS[targeted_task]["class"]:
@@ -378,13 +371,22 @@ def pipeline(
                 break
             except ValueError:
                 continue
-        model = get_poplar_executor(targeted_task, model, ipu_config, fp16, **parallelize_kwargs)
     elif isinstance(model, PreTrainedModel):
-        model = get_poplar_executor(targeted_task, model, ipu_config, fp16, **parallelize_kwargs)
         if tokenizer is None and load_tokenizer:
             raise ValueError("If you pass a model as a PreTrainedModel, you must pass a tokenizer as well")
         if feature_extractor is None and load_feature_extractor:
             raise ValueError("If you pass a model as a PreTrainedModel, you must pass a feature extractor as well")
+    
+    for_generation = targeted_task in SUPPORTED_GENERATION_TASKS
+    if isinstance(model, PreTrainedModel):
+        if ipu_config is None:
+            ipu_config = SUPPORTED_TASKS[targeted_task]["default"]["ipu_config"]
+
+        parallelize_kwargs = parallelize_kwargs or {}
+        # Task of automatic speech recognition is a bit of an edge case where it separates into CTC (not generation) and seq2seq (generation).
+        # This check will do for now.
+        for_generation |= isinstance(model, WhisperForConditionalGeneration)
+        model = get_poplar_executor(targeted_task, model, ipu_config=ipu_config, fp16=fp16, for_generation=for_generation, **parallelize_kwargs)
     elif isinstance(model, poptorch._poplar_executor.PoplarExecutor):
         if tokenizer is None and load_tokenizer:
             raise ValueError(
@@ -411,11 +413,14 @@ def pipeline(
     # Override Pipeline methods
     Pipeline.check_model_type = check_model_type
 
+    if pipeline_class is None:
+        pipeline_class = SUPPORTED_TASKS[targeted_task]["impl"]
+
     # Override pipelines' _forward
     old_forward = pipeline_class._forward
 
     def new_forward(self, model_inputs, *args, **kwargs):
-        if isinstance(self.model, poptorch.PoplarExecutor) and targeted_task not in SUPPORTED_GENERATION_TASKS:
+        if isinstance(self.model, poptorch.PoplarExecutor) and not for_generation:
             # For non-text generation models, support batch size changes.
             poplar_executor = self.model
             if poplar_executor._executable_inputs:
@@ -453,7 +458,7 @@ def pipeline(
     # Auto padding for some tasks
     if "max_length" in SUPPORTED_TASKS[targeted_task]["default"]:
         default_max_length = SUPPORTED_TASKS[targeted_task]["default"]["max_length"]
-        if targeted_task not in SUPPORTED_GENERATION_TASKS:
+        if not for_generation:
             kwargs["padding"] = kwargs.get("padding", "max_length")
             if kwargs.get("max_length") is None:
                 logger.warning(
