@@ -29,7 +29,6 @@ class Seq2SeqTrainerTester(TestCasePlus):
     @slow
     @require_torch
     def test_finetune_t5_small(self):
-        
         total_steps_on_device = 5
         batch_size = 2
 
@@ -86,7 +85,7 @@ class Seq2SeqTrainerTester(TestCasePlus):
 
             # all unnecessary tokens are removed
             pred_str = tokenizer.batch_decode(pred_ids, skip_special_tokens=True)
-            
+
             labels_ids = np.where(labels_ids != -100, labels_ids, tokenizer.pad_token_id)
             label_str = tokenizer.batch_decode(labels_ids, skip_special_tokens=True)
 
