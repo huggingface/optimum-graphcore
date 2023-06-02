@@ -13,7 +13,6 @@
 # limitations under the License.
 import os
 
-import torch
 from transformers import AutomaticSpeechRecognitionPipeline
 from transformers.pipelines.base import (
     DataLoader,
@@ -46,7 +45,7 @@ class IPUAutomaticSpeechRecognitionPipeline(AutomaticSpeechRecognitionPipeline):
         collate_fn = no_collate_fn if batch_size == 1 else pad_collate_fn(self.tokenizer, self.feature_extractor)
         dataloader = DataLoader(dataset, num_workers=num_workers, batch_size=batch_size, collate_fn=collate_fn)
 
-        # IPU: the last batch may contain fewer than batch_size elements. In that case we must pad it
+        # Change: If the last batch contains fewer than `batch_size` elements, pad it.
         def batch_padding(items, batch_size):
             actual_batch_size = len(items["is_last"])
             if actual_batch_size >= batch_size:
@@ -56,10 +55,12 @@ class IPUAutomaticSpeechRecognitionPipeline(AutomaticSpeechRecognitionPipeline):
             is_last = items["is_last"]
             stride = items["stride"]
             input_features = items["input_features"]
-            is_last = is_last + [False] * n_to_pad
+            is_last = is_last + [is_last[-1]] * n_to_pad
             stride = stride + [stride[-1]] * n_to_pad
-            new_input_features = torch.zeros(batch_size, *(input_features.shape[1:]), dtype=input_features.dtype)
-            new_input_features[:actual_batch_size] = input_features
+            new_input_features = input_features.repeat(
+                n_to_pad // actual_batch_size + 1, *([1] * (input_features.ndim - 1))
+            )
+            new_input_features = new_input_features[:batch_size]
             items = {"is_last": is_last, "stride": stride, "input_features": new_input_features}
             return items
 
@@ -98,4 +99,18 @@ class IPUAutomaticSpeechRecognitionPipeline(AutomaticSpeechRecognitionPipeline):
             out["stride"] = stride
 
         extra = model_inputs
-        return {"is_last": is_last, **out, **extra}
+        maybe_padded_ret = {"is_last": is_last, **out, **extra}
+
+        # Remove inputs and outputs associated with padded inputs.
+        first_padding_idx = tokens.shape[0]
+        for idx, last in enumerate(is_last):
+            if last:
+                first_padding_idx = idx + 1
+                break
+
+        if first_padding_idx == tokens.shape[0]:
+            return maybe_padded_ret
+
+        for padded_key in ["is_last", "stride", "tokens"]:
+            maybe_padded_ret[padded_key] = maybe_padded_ret[padded_key][:first_padding_idx]
+        return maybe_padded_ret
