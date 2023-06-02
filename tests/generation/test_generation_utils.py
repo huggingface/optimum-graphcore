@@ -19,6 +19,9 @@ import unittest
 from typing import TYPE_CHECKING, List, Optional, Union
 
 import pytest
+
+from optimum.graphcore import IPUConfig
+from optimum.graphcore.modeling_utils import to_pipelined
 from transformers import is_torch_available
 from transformers.testing_utils import require_torch, slow, torch_device
 
@@ -1524,112 +1527,113 @@ class GenerationTesterMixin:
         self.assertTrue(flag)
 
 
-@pytest.mark.skip(reason="Generation not supported yet")
-@require_torch
-class UtilsFunctionsTest(unittest.TestCase):
-    # tests whether the top_k_top_p function behaves as expected
-    def test_top_k_top_p_filtering(self):
-        logits = torch.tensor(
-            [
-                [
-                    8.2220991,  # 3rd highest value; idx. 0
-                    -0.5620044,
-                    5.23229752,
-                    4.0386393,
-                    -6.8798378,
-                    -0.54785802,
-                    -3.2012153,
-                    2.92777176,
-                    1.88171953,
-                    7.35341276,
-                    8.43207833,  # 2nd highest value; idx. 10
-                    -9.85711836,
-                    -5.96209236,
-                    -1.13039161,
-                    -7.1115294,
-                    -0.8369633,
-                    -5.3186408,
-                    7.06427407,
-                    0.81369344,
-                    -0.82023817,
-                    -5.9179796,
-                    0.58813443,
-                    -6.99778438,
-                    4.71551189,
-                    -0.18771637,
-                    7.44020759,  # 4th highest value; idx. 25
-                    9.38450987,  # 1st highest value; idx. 26
-                    2.12662941,
-                    -9.32562038,
-                    2.35652522,
-                ],  # cummulative prob of 4 highest values <= 0.6
-                [
-                    0.58425518,
-                    4.53139238,
-                    -5.57510464,
-                    -6.28030699,
-                    -7.19529503,
-                    -4.02122551,
-                    1.39337037,
-                    -6.06707057,
-                    1.59480517,
-                    -9.643119,
-                    0.03907799,
-                    0.67231762,
-                    -8.88206726,
-                    6.27115922,  # 4th highest value; idx. 13
-                    2.28520723,
-                    4.82767506,
-                    4.30421368,
-                    8.8275313,  # 2nd highest value; idx. 17
-                    5.44029958,
-                    -4.4735794,
-                    7.38579536,  # 3rd highest value; idx. 20
-                    -2.91051663,
-                    2.61946077,
-                    -2.5674762,
-                    -9.48959302,
-                    -4.02922645,
-                    -1.35416918,
-                    9.67702323,  # 1st highest value; idx. 27
-                    -5.89478553,
-                    1.85370467,
-                ],  # cummulative prob of 4 highest values <= 0.6
-            ],
-            dtype=torch.float,
-            device=torch_device,
-        )
+# Test below does not test anything IPU specific
+# @pytest.mark.skip(reason="Generation not supported yet")
+# @require_torch
+# class UtilsFunctionsTest(unittest.TestCase):
+#     # tests whether the top_k_top_p function behaves as expected
+#     def test_top_k_top_p_filtering(self):
+#         logits = torch.tensor(
+#             [
+#                 [
+#                     8.2220991,  # 3rd highest value; idx. 0
+#                     -0.5620044,
+#                     5.23229752,
+#                     4.0386393,
+#                     -6.8798378,
+#                     -0.54785802,
+#                     -3.2012153,
+#                     2.92777176,
+#                     1.88171953,
+#                     7.35341276,
+#                     8.43207833,  # 2nd highest value; idx. 10
+#                     -9.85711836,
+#                     -5.96209236,
+#                     -1.13039161,
+#                     -7.1115294,
+#                     -0.8369633,
+#                     -5.3186408,
+#                     7.06427407,
+#                     0.81369344,
+#                     -0.82023817,
+#                     -5.9179796,
+#                     0.58813443,
+#                     -6.99778438,
+#                     4.71551189,
+#                     -0.18771637,
+#                     7.44020759,  # 4th highest value; idx. 25
+#                     9.38450987,  # 1st highest value; idx. 26
+#                     2.12662941,
+#                     -9.32562038,
+#                     2.35652522,
+#                 ],  # cummulative prob of 4 highest values <= 0.6
+#                 [
+#                     0.58425518,
+#                     4.53139238,
+#                     -5.57510464,
+#                     -6.28030699,
+#                     -7.19529503,
+#                     -4.02122551,
+#                     1.39337037,
+#                     -6.06707057,
+#                     1.59480517,
+#                     -9.643119,
+#                     0.03907799,
+#                     0.67231762,
+#                     -8.88206726,
+#                     6.27115922,  # 4th highest value; idx. 13
+#                     2.28520723,
+#                     4.82767506,
+#                     4.30421368,
+#                     8.8275313,  # 2nd highest value; idx. 17
+#                     5.44029958,
+#                     -4.4735794,
+#                     7.38579536,  # 3rd highest value; idx. 20
+#                     -2.91051663,
+#                     2.61946077,
+#                     -2.5674762,
+#                     -9.48959302,
+#                     -4.02922645,
+#                     -1.35416918,
+#                     9.67702323,  # 1st highest value; idx. 27
+#                     -5.89478553,
+#                     1.85370467,
+#                 ],  # cummulative prob of 4 highest values <= 0.6
+#             ],
+#             dtype=torch.float,
+#             device=torch_device,
+#         )
 
-        non_inf_expected_idx = torch.tensor(
-            [[0, 0], [0, 10], [0, 25], [0, 26], [1, 13], [1, 17], [1, 20], [1, 27]],
-            dtype=torch.long,
-            device=torch_device,
-        )  # expected non filtered idx as noted above
+#         non_inf_expected_idx = torch.tensor(
+#             [[0, 0], [0, 10], [0, 25], [0, 26], [1, 13], [1, 17], [1, 20], [1, 27]],
+#             dtype=torch.long,
+#             device=torch_device,
+#         )  # expected non filtered idx as noted above
 
-        non_inf_expected_output = torch.tensor(
-            [
-                8.2221,
-                8.4321,
-                7.4402,
-                9.3845,
-                6.2712,
-                8.8275,
-                7.3858,
-                9.6770,
-            ],  # expected non filtered values as noted above
-            dtype=torch.float,
-            device=torch_device,
-        )
+#         non_inf_expected_output = torch.tensor(
+#             [
+#                 8.2221,
+#                 8.4321,
+#                 7.4402,
+#                 9.3845,
+#                 6.2712,
+#                 8.8275,
+#                 7.3858,
+#                 9.6770,
+#             ],  # expected non filtered values as noted above
+#             dtype=torch.float,
+#             device=torch_device,
+#         )
 
-        output = top_k_top_p_filtering(logits, top_k=10, top_p=0.6, min_tokens_to_keep=4)
-        non_inf_output = output[output != -float("inf")].to(device=torch_device)
-        non_inf_idx = (output != -float("inf")).nonzero().to(device=torch_device)
+#         output = top_k_top_p_filtering(logits, top_k=10, top_p=0.6, min_tokens_to_keep=4)
+#         non_inf_output = output[output != -float("inf")].to(device=torch_device)
+#         non_inf_idx = (output != -float("inf")).nonzero().to(device=torch_device)
 
-        self.assertTrue(torch.allclose(non_inf_expected_output, non_inf_output, atol=1e-12))
-        self.assertTrue(torch.all(torch.eq(non_inf_expected_idx, non_inf_idx)))
+#         self.assertTrue(torch.allclose(non_inf_expected_output, non_inf_output, atol=1e-12))
+#         self.assertTrue(torch.all(torch.eq(non_inf_expected_idx, non_inf_idx)))
 
 
-@pytest.mark.skip(reason="Generation not supported yet")
+# @pytest.mark.skip(reason="Generation not supported yet")
 @require_torch
 class GenerationIntegrationTests(unittest.TestCase):
     def _compile_pipelined_model_and_return_input_ids(
@@ -1642,27 +1646,44 @@ class GenerationIntegrationTests(unittest.TestCase):
         num_return_sequences: int = 1,
         do_sample: bool = False,
         max_length: Optional[int] = None,
+        decoder_max_length: Optional[int] = None,
         padding_strategy: Union[str, bool] = "max_length",
         return_all_inputs: bool = False,
     ):
-        if max_length is None:
-            max_length = model.config.max_length
         num_examples = 1 if isinstance(text, str) else len(text)
         inputs = tokenizer(
             text, return_tensors="pt", padding=padding_strategy if padding_strategy != "max_length" else False
         )
-        inputs["decoder_input_ids"] = tokenizer(
-            ["This is the decoder input"] * num_examples,
-            padding="max_length",
-            max_length=max_length,
-            return_tensors="pt",
-        ).input_ids.to(torch_device)
-        model.parallelize()
+        if max_length is None:
+            max_length = model.config.max_length
+        # inputs["decoder_input_ids"] = tokenizer(
+        #     ["This is the decoder input"] * num_examples,
+        #     padding="max_length",
+        #     max_length=max_length,
+        #     return_tensors="pt",
+        # ).input_ids.to(torch_device)
+        model.parallelize(for_generation=True)
         if batch_size > 1:
             inputs = {k: v.repeat(batch_size, 1) for (k, v) in inputs.items()}
-        model.compile_for_generate(inputs, num_beams, num_return_sequences, do_sample)
+
+        model.generate(
+            inputs=inputs["input_ids"],
+            num_beams=num_beams,
+            num_return_sequences=num_return_sequences,
+            do_sample=do_sample,
+            max_length=max_length,
+        )
+
+        # The generate call passes the values output_attentions, output_hidden_states and use_cache
+        # via model_kwargs to prepare_encoder_and_decoder_kwargs_for_generation().
+        # Return these values as part of the inputs dict so that test function
+        # can use the values if making direct calls to prepare_encoder_and_decoder_kwargs_for_generation()
+        inputs["output_hidden_states"] = model.config.output_hidden_states
+        inputs["output_attentions"] = model.config.output_attentions
+        inputs["use_cache"] = None
         return inputs if return_all_inputs else inputs["input_ids"]
 
+    @pytest.mark.skip("Group beam search is currently not supported in Optimum Graphcore")
     @slow
     def test_diverse_beam_search(self):
         article = """Justin Timberlake and Jessica Biel, welcome to parenthood.
@@ -1671,9 +1692,18 @@ class GenerationIntegrationTests(unittest.TestCase):
         The couple announced the pregnancy in January, with an Instagram post. It is the first baby for both."""
 
         bart_tokenizer = BartTokenizer.from_pretrained("facebook/bart-large-cnn")
-        bart_model = BartForConditionalGeneration.from_pretrained("facebook/bart-large-cnn").to(torch_device)
-        input_ids = bart_tokenizer(article, return_tensors="pt").input_ids.to(torch_device)
+        ipu_config = IPUConfig(
+            layers_per_ipu=[-1],
+            inference_layers_per_ipu=[-1],
+            ipus_per_replica=4,
+        )
+        bart_model = (
+            to_pipelined(BartForConditionalGeneration.from_pretrained("facebook/bart-large-cnn"), ipu_config)
+            .half()
+            .parallelize(for_generation=True)
+        )
 
+        input_ids = bart_tokenizer(article, return_tensors="pt").input_ids.to(torch_device)
         outputs = bart_model.generate(
             input_ids,
             num_beams=4,
@@ -1696,26 +1726,35 @@ class GenerationIntegrationTests(unittest.TestCase):
     def test_max_length_backward_compat_greedy(self):
         article = """Justin Timberlake and Jessica Biel, welcome to parenthood."""
         bart_tokenizer = BartTokenizer.from_pretrained("hf-internal-testing/tiny-random-bart")
-        ipu_config = IPUConfig.from_pretrained("Graphcore/internal-testing-tiny-ipu")
+        ipu_config = IPUConfig.from_pretrained(
+            "Graphcore/internal-testing-tiny-ipu", inference_layers_per_ipu=[-1]
+        ).eval()
         bart_model = PipelinedBartForConditionalGeneration.from_pretrained_transformers(
             "hf-internal-testing/tiny-random-bart", ipu_config
-        ).to(torch_device)
-        inputs = self._compile_pipelined_model_and_return_input_ids(
-            bart_model, bart_tokenizer, article, return_all_inputs=True
-        )
+        ).parallelize(for_generation=True)
+
         max_length = 20
 
-        inputs = {k: v.expand(2, -1) for k, v in inputs.items()}
-        input_ids = inputs.pop("input_ids")
-        model_kwargs = bart_model._prepare_encoder_decoder_kwargs_for_generation(input_ids, inputs)
-        # decoder_input_ids were needed to run the encoder (if it was executed on IPUs), but cannot be specified for the
-        # rest.
-        model_kwargs.pop("decoder_input_ids")
-        input_ids = bart_model._prepare_decoder_input_ids_for_generation(
-            input_ids.shape[0],
+        input_ids = bart_tokenizer(article, return_tensors="pt", padding=False).input_ids.to(torch_device)
+
+        input_ids = input_ids.expand(2, -1)
+
+        # batch_size=2
+        # inputs = self._compile_pipelined_model_and_return_input_ids(
+        # bart_model, bart_tokenizer, article, batch_size=batch_size, return_all_inputs=True, max_length=max_length
+        # )
+        # input_ids = inputs.pop("input_ids")
+
+        model_kwargs = bart_model._prepare_encoder_decoder_kwargs_for_generation(input_ids, {})
+        input_ids, model_kwargs = bart_model._prepare_decoder_input_ids_for_generation(
+            batch_size=input_ids.shape[0],
+            model_kwargs=model_kwargs,
             decoder_start_token_id=bart_model.config.decoder_start_token_id,
             bos_token_id=bart_model.config.bos_token_id,
         )
+        import pdb
+
+        pdb.set_trace()
 
         with self.assertWarns(UserWarning):
             bart_model.greedy_search(
@@ -1725,26 +1764,26 @@ class GenerationIntegrationTests(unittest.TestCase):
                 eos_token_id=bart_model.config.eos_token_id,
                 **model_kwargs,
             )
-        bart_model.get_encoder().detachFromDevice()
-        bart_model.poptorch_model.detachFromDevice()
+        bart_model.detachFromDevice()
 
     def test_max_length_backward_compat_sample(self):
         article = """Justin Timberlake and Jessica Biel, welcome to parenthood."""
         bart_tokenizer = BartTokenizer.from_pretrained("hf-internal-testing/tiny-random-bart")
-        ipu_config = IPUConfig.from_pretrained("Graphcore/internal-testing-tiny-ipu")
+        ipu_config = IPUConfig.from_pretrained(
+            "Graphcore/internal-testing-tiny-ipu", inference_layers_per_ipu=[-1]
+        ).eval()
         bart_model = PipelinedBartForConditionalGeneration.from_pretrained_transformers(
             "hf-internal-testing/tiny-random-bart", ipu_config
         ).to(torch_device)
-        inputs = self._compile_pipelined_model_and_return_input_ids(
-            bart_model, bart_tokenizer, article, return_all_inputs=True
-        )
+
         max_length = 20
-        inputs = {k: v.expand(2, -1) for k, v in inputs.items()}
+        batch_size = 2
+        inputs = self._compile_pipelined_model_and_return_input_ids(
+            bart_model, bart_tokenizer, article, batch_size=batch_size, return_all_inputs=True, max_length=max_length
+        )
+
         input_ids = inputs.pop("input_ids")
         model_kwargs = bart_model._prepare_encoder_decoder_kwargs_for_generation(input_ids, inputs)
-        # decoder_input_ids were needed to run the encoder (if it was executed on IPUs), but cannot be specified for the
-        # rest.
-        model_kwargs.pop("decoder_input_ids")
         input_ids = bart_model._prepare_decoder_input_ids_for_generation(
             input_ids.shape[0],
             decoder_start_token_id=bart_model.config.decoder_start_token_id,
@@ -1761,30 +1800,33 @@ class GenerationIntegrationTests(unittest.TestCase):
                     **model_kwargs,
                 )
 
-        bart_model.get_encoder().detachFromDevice()
-        bart_model.poptorch_model.detachFromDevice()
+        bart_model.detachFromDevice()
 
     def test_max_length_backward_compat_beam_search(self):
         article = """Justin Timberlake and Jessica Biel, welcome to parenthood."""
         bart_tokenizer = BartTokenizer.from_pretrained("hf-internal-testing/tiny-random-bart")
-        ipu_config = IPUConfig.from_pretrained("Graphcore/internal-testing-tiny-ipu")
+        ipu_config = IPUConfig.from_pretrained(
+            "Graphcore/internal-testing-tiny-ipu", inference_layers_per_ipu=[-1]
+        ).eval()
         bart_model = PipelinedBartForConditionalGeneration.from_pretrained_transformers(
             "hf-internal-testing/tiny-random-bart", ipu_config
         ).to(torch_device)
 
-        batch_size = 1
+        batch_size = 2
         num_beams = 2
         max_length = 20
-
         inputs = self._compile_pipelined_model_and_return_input_ids(
-            bart_model, bart_tokenizer, article, batch_size=batch_size, num_beams=num_beams, return_all_inputs=True
+            bart_model,
+            bart_tokenizer,
+            article,
+            batch_size=batch_size,
+            num_beams=num_beams,
+            return_all_inputs=True,
+            max_length=max_length,
         )
-        inputs = {k: v.expand(2, -1) for k, v in inputs.items()}
+
         input_ids = inputs.pop("input_ids")
         model_kwargs = bart_model._prepare_encoder_decoder_kwargs_for_generation(input_ids, inputs)
-        # decoder_input_ids were needed to run the encoder (if it was executed on IPUs), but cannot be specified for the
-        # rest.
-        model_kwargs.pop("decoder_input_ids")
         input_ids = bart_model._prepare_decoder_input_ids_for_generation(
             input_ids.shape[0],
             decoder_start_token_id=bart_model.config.decoder_start_token_id,
@@ -1801,8 +1843,7 @@ class GenerationIntegrationTests(unittest.TestCase):
                 input_ids, num_beams=num_beams, max_length=max_length, beam_scorer=beam_scorer, **model_kwargs
             )
 
-        bart_model.get_encoder().detachFromDevice()
-        bart_model.poptorch_model.detachFromDevice()
+        bart_model.detachFromDevice()
 
     # TODO: this test is not passing yet.
     # def test_max_length_backward_compat_group_beam_search(self):
