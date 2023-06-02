@@ -37,7 +37,7 @@ from transformers import (
     QuestionAnsweringPipeline,
     TextClassificationPipeline,
     TextGenerationPipeline,
-    WhisperForConditionalGeneration
+    WhisperForConditionalGeneration,
 )
 from transformers.feature_extraction_utils import PreTrainedFeatureExtractor
 from transformers.modeling_utils import PreTrainedModel
@@ -376,7 +376,7 @@ def pipeline(
             raise ValueError("If you pass a model as a PreTrainedModel, you must pass a tokenizer as well")
         if feature_extractor is None and load_feature_extractor:
             raise ValueError("If you pass a model as a PreTrainedModel, you must pass a feature extractor as well")
-    
+
     for_generation = targeted_task in SUPPORTED_GENERATION_TASKS
     if isinstance(model, PreTrainedModel):
         if ipu_config is None:
@@ -386,7 +386,9 @@ def pipeline(
         # Task of automatic speech recognition is a bit of an edge case where it separates into CTC (not generation) and seq2seq (generation).
         # This check will do for now.
         for_generation |= isinstance(model, WhisperForConditionalGeneration)
-        model = get_poplar_executor(targeted_task, model, ipu_config=ipu_config, fp16=fp16, for_generation=for_generation, **parallelize_kwargs)
+        model = get_poplar_executor(
+            targeted_task, model, ipu_config=ipu_config, fp16=fp16, for_generation=for_generation, **parallelize_kwargs
+        )
     elif isinstance(model, poptorch._poplar_executor.PoplarExecutor):
         if tokenizer is None and load_tokenizer:
             raise ValueError(
