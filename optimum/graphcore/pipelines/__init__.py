@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any, List, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import poptorch
 import torch
@@ -185,7 +185,13 @@ SUPPORTED_TASKS = {
         "type": "text",
     },
 }
-SUPPORTED_GENERATION_TASKS = {"summarization", "text-generation", "text2text-generation", "translation"}
+SUPPORTED_GENERATION_TASKS = {
+    "automatic-speech-recognition",
+    "summarization",
+    "text-generation",
+    "text2text-generation",
+    "translation",
+}
 SUPPORTED_SEQ2SEQ_GENERATION_TASKS = {"summarization", "text2text-generation", "translation"}
 
 NO_FEATURE_EXTRACTOR_TASKS = set()
@@ -296,6 +302,7 @@ def pipeline(
     use_auth_token: Optional[Union[str, bool]] = None,
     pipeline_class: Optional[Any] = None,
     fp16: bool = True,
+    parallelize_kwargs: Optional[Dict[str, Any]] = None,
     **kwargs,
 ) -> Pipeline:
     """Utility factory method to build a [ Pipeline ] for IPU models.
@@ -353,6 +360,7 @@ def pipeline(
     if ipu_config is None and not isinstance(model, poptorch._poplar_executor.PoplarExecutor):
         ipu_config = SUPPORTED_TASKS[targeted_task]["default"]["ipu_config"]
 
+    parallelize_kwargs = parallelize_kwargs or {}
     if model is None:
         model_id, revision = SUPPORTED_TASKS[targeted_task]["default"]["model"]
         logger.warning(
@@ -361,18 +369,18 @@ def pipeline(
             "Using a pipeline without specifying a model name and revision in production is not recommended."
         )
         model = SUPPORTED_TASKS[targeted_task]["class"][0].from_pretrained(model_id, revision=revision)
-        model = get_poplar_executor(targeted_task, model, ipu_config, fp16, **kwargs)
+        model = get_poplar_executor(targeted_task, model, ipu_config, fp16, **parallelize_kwargs)
     elif isinstance(model, str):
         model_id = model
         for cl in SUPPORTED_TASKS[targeted_task]["class"]:
             try:
                 model = cl.from_pretrained(model_id, revision=revision)
+                break
             except ValueError:
                 continue
-            break
-        model = get_poplar_executor(targeted_task, model, ipu_config, fp16, **kwargs)
+        model = get_poplar_executor(targeted_task, model, ipu_config, fp16, **parallelize_kwargs)
     elif isinstance(model, PreTrainedModel):
-        model = get_poplar_executor(targeted_task, model, ipu_config, fp16, **kwargs)
+        model = get_poplar_executor(targeted_task, model, ipu_config, fp16, **parallelize_kwargs)
         if tokenizer is None and load_tokenizer:
             raise ValueError("If you pass a model as a PreTrainedModel, you must pass a tokenizer as well")
         if feature_extractor is None and load_feature_extractor:
