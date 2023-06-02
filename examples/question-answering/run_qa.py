@@ -25,14 +25,9 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import datasets
-from datasets import load_dataset
-
 import evaluate
 import transformers
-from optimum.graphcore import IPUConfig
-from optimum.graphcore import IPUTrainingArguments as TrainingArguments
-from optimum.graphcore.data import pad_on_batch_axis
-from optimum.graphcore.utils import check_min_version
+from datasets import load_dataset
 from trainer_qa import QuestionAnsweringTrainer
 from transformers import (
     AutoConfig,
@@ -46,17 +41,20 @@ from transformers import (
     set_seed,
 )
 from transformers.trainer_utils import get_last_checkpoint
-from transformers.utils import check_min_version as tf_check_min_version
-from transformers.utils import send_example_telemetry
+from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 from utils_qa import postprocess_qa_predictions
 
+from optimum.graphcore import IPUConfig
+from optimum.graphcore import IPUTrainingArguments as TrainingArguments
+from optimum.graphcore.utils import check_min_version as gc_check_min_version
+
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-tf_check_min_version("4.25.0")
+check_min_version("4.29.0")
 
 # Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
-check_min_version("0.2.4.dev0")
+gc_check_min_version("0.6.0.dev0")
 
 require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/question-answering/requirements.txt")
 
@@ -244,6 +242,10 @@ def main():
         datefmt="%m/%d/%Y %H:%M:%S",
         handlers=[logging.StreamHandler(sys.stdout)],
     )
+
+    if training_args.should_log:
+        # The default of training_args.log_level is passive, so we set log level at info here to have that default.
+        transformers.utils.logging.set_verbosity_info()
 
     log_level = training_args.get_process_log_level()
     logger.setLevel(log_level)
@@ -595,12 +597,12 @@ def main():
         # Format the result to the format the metric expects.
         if data_args.version_2_with_negative:
             formatted_predictions = [
-                {"id": k, "prediction_text": v, "no_answer_probability": 0.0} for k, v in predictions.items()
+                {"id": str(k), "prediction_text": v, "no_answer_probability": 0.0} for k, v in predictions.items()
             ]
         else:
-            formatted_predictions = [{"id": k, "prediction_text": v} for k, v in predictions.items()]
+            formatted_predictions = [{"id": str(k), "prediction_text": v} for k, v in predictions.items()]
 
-        references = [{"id": ex["id"], "answers": ex[answer_column_name]} for ex in examples]
+        references = [{"id": str(ex["id"]), "answers": ex[answer_column_name]} for ex in examples]
         return EvalPrediction(predictions=formatted_predictions, label_ids=references)
 
     metric = evaluate.load("squad_v2" if data_args.version_2_with_negative else "squad")

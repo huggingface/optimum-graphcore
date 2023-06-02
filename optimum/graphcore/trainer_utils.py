@@ -15,6 +15,7 @@
 import functools
 
 import numpy as np
+import poptorch
 import torch
 
 from optimum.utils import logging

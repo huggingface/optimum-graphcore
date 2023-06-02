@@ -24,7 +24,6 @@ from typing import Callable, Dict, List, Optional, Tuple, Union
 from unittest import TestCase
 
 from filelock import FileLock
-from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
 from transformers import (
     CONFIG_MAPPING,
     MODEL_FOR_AUDIO_CLASSIFICATION_MAPPING,
@@ -39,6 +38,8 @@ from transformers import (
     MODEL_FOR_TOKEN_CLASSIFICATION_MAPPING,
 )
 from transformers.testing_utils import slow
+
+from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
 
 from .utils import MODELS_TO_TEST_MAPPING
 

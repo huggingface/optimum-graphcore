@@ -14,13 +14,13 @@
 
 from typing import Optional, Tuple, Union
 
+import poptorch
 import torch
 import torch.nn.functional as F
-
-import poptorch
-from optimum.utils import logging
 from transformers import LxmertForQuestionAnswering
 from transformers.models.lxmert.modeling_lxmert import LxmertForQuestionAnsweringOutput
+
+from optimum.utils import logging
 
 from ...modeling_utils import PipelineMixin, recomputation_checkpoint, register
 
@@ -72,10 +72,10 @@ class PipelinedLxmertForQuestionAnswering(LxmertForQuestionAnswering, PipelineMi
             self.lxmert.encoder.x_layers[index] = poptorch.BeginBlock(layer, f"Cross modality layer{index}", ipu_id=3)
             logger.info(f"Cross modality layer {index:<2} --> IPU 3")
 
-        logger.info(f"Pooler                  --> IPU 3")
+        logger.info("Pooler                  --> IPU 3")
         self.lxmert.pooler = poptorch.BeginBlock(self.lxmert.pooler, "Pooler", ipu_id=3)
 
-        logger.info(f"Head                    --> IPU 3")
+        logger.info("Head                    --> IPU 3")
         self.answer_head = poptorch.BeginBlock(self.answer_head, "Head", ipu_id=3)
         logger.info("-----------------------------------------------------------")
         return self

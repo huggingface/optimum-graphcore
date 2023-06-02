@@ -1,12 +1,11 @@
 import unittest
 from abc import abstractmethod
 
-import pytest
-import torch
-
 import poptorch
-from optimum.graphcore.modeling_utils import SerializedEmbedding, SerializedLinear, SplitProjection
+import torch
 from parameterized import parameterized
+
+from optimum.graphcore.modeling_utils import SerializedEmbedding, SerializedLinear, SplitProjection
 
 
 DATALOADER_BATCH_SIZE = 8

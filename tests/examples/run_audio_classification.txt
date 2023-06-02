@@ -1,4 +1,7 @@
-31,39c31,33
+28,29d27
+< from datasets import DatasetDict, load_dataset
+< 
+31,39c29,30
 < from transformers import (
 <     AutoConfig,
 <     AutoFeatureExtractor,
@@ -9,38 +12,44 @@
 <     set_seed,
 < )
 ---
+> from datasets import DatasetDict, load_dataset
+> from transformers import AutoConfig, AutoFeatureExtractor, AutoModelForAudioClassification, HfArgumentParser, set_seed
+43a35,37
 > from optimum.graphcore import IPUConfig, IPUTrainer
 > from optimum.graphcore import IPUTrainingArguments as TrainingArguments
-> from transformers import AutoConfig, AutoFeatureExtractor, AutoModelForAudioClassification, HfArgumentParser, set_seed
-219,222d212
+> 
+223,226d216
 <     logger.warning(
 <         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu} "
 <         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
 <     )
-288,309d277
+292,316d281
+<     model_input_name = feature_extractor.model_input_names[0]
+< 
 <     def train_transforms(batch):
 <         """Apply train_transforms across a batch."""
-<         output_batch = {"input_values": []}
+<         subsampled_wavs = []
 <         for audio in batch[data_args.audio_column_name]:
 <             wav = random_subsample(
 <                 audio["array"], max_length=data_args.max_length_seconds, sample_rate=feature_extractor.sampling_rate
 <             )
-<             output_batch["input_values"].append(wav)
-<         output_batch["labels"] = [label for label in batch[data_args.label_column_name]]
+<             subsampled_wavs.append(wav)
+<         inputs = feature_extractor(subsampled_wavs, sampling_rate=feature_extractor.sampling_rate)
+<         output_batch = {model_input_name: inputs.get(model_input_name)}
+<         output_batch["labels"] = list(batch[data_args.label_column_name])
 < 
 <         return output_batch
 < 
 <     def val_transforms(batch):
 <         """Apply val_transforms across a batch."""
-<         output_batch = {"input_values": []}
-<         for audio in batch[data_args.audio_column_name]:
-<             wav = audio["array"]
-<             output_batch["input_values"].append(wav)
-<         output_batch["labels"] = [label for label in batch[data_args.label_column_name]]
+<         wavs = [audio["array"] for audio in batch[data_args.audio_column_name]]
+<         inputs = feature_extractor(wavs, sampling_rate=feature_extractor.sampling_rate)
+<         output_batch = {model_input_name: inputs.get(model_input_name)}
+<         output_batch["labels"] = list(batch[data_args.label_column_name])
 < 
 <         return output_batch
 < 
-337a306,316
+344a310,320
 > 
 >     # Disable the feature that can't run on IPU yet
 >     # TODO handle this properly
@@ -52,7 +61,7 @@
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
-351a331,349
+358a335,353
 >     def preprocess_function(examples):
 >         audio = examples[data_args.audio_column_name]
 >         subsampled_audio = random_subsample(
@@ -72,21 +81,21 @@
 >         examples["labels"] = examples[data_args.label_column_name]
 >         return examples
 > 
-358c356,358
+365c360,362
 <         raw_datasets["train"].set_transform(train_transforms, output_all_columns=False)
 ---
 >         raw_datasets["train"] = raw_datasets["train"].map(
 >             preprocess_function, remove_columns=raw_datasets["train"].column_names
 >         )
-366c366,368
+373c370,372
 <         raw_datasets["eval"].set_transform(val_transforms, output_all_columns=False)
 ---
 >         raw_datasets["eval"] = raw_datasets["eval"].map(
 >             preprocess_function, remove_columns=raw_datasets["eval"].column_names
 >         )
-369c371
+376c375
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-370a373
+377a377
 >         ipu_config=ipu_config,

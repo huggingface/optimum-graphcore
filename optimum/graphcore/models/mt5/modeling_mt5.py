@@ -15,16 +15,16 @@
 import warnings
 from typing import Optional, Tuple, Union
 
+import poptorch
 import torch
 import torch.nn as nn
 from torch import Tensor
-
-import poptorch
-from optimum.utils import logging
 from transformers import MT5ForConditionalGeneration
 from transformers.activations import NewGELUActivation
 from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
-from transformers.models.t5.modeling_t5 import __HEAD_MASK_WARNING_MSG, T5Block, T5Stack
+from transformers.models.mt5.modeling_mt5 import __HEAD_MASK_WARNING_MSG, MT5Block, MT5Stack
+
+from optimum.utils import logging
 
 from ...generation import IPUGenerationMixin
 from ...modeling_utils import (
@@ -67,7 +67,7 @@ class CustomGELU(NewGELUActivation):
 
 
 # Copied from optimum.graphcore.models.t5.modeling_t5.CustomT5Block with t5->mt5 and T5->MT5
-class CustomMT5Block(T5Block):
+class CustomMT5Block(MT5Block):
     def forward(
         self,
         hidden_states,
@@ -173,7 +173,7 @@ class CustomMT5Block(T5Block):
 
 
 # Copied from optimum.graphcore.models.t5.modeling_t5.CustomT5Stack with t5->mt5 and T5->MT5
-class CustomMT5Stack(T5Stack):
+class CustomMT5Stack(MT5Stack):
     def invert_attention_mask(self, *args, **kwargs) -> Tensor:
         return super().invert_attention_mask(*args, **kwargs) * 0.75
 
@@ -424,11 +424,11 @@ class PipelinedMT5ForConditionalGeneration(MT5ForConditionalGeneration, Pipeline
         elif self.lm_head.__class__ == SplitProjection:
             self.lm_head = self.lm_head.to_model()
 
-        self.encoder.__class__ = T5Stack
-        self.decoder.__class__ = T5Stack
+        self.encoder.__class__ = MT5Stack
+        self.decoder.__class__ = MT5Stack
 
         for block in self.encoder.block:
-            block.__class__ = T5Block
+            block.__class__ = MT5Block
             block.layer[0].dropout = block.layer[0].dropout.module
             with torch.no_grad():
                 block.layer[1].DenseReluDense.wo.weight *= block.layer[1].dropout.scale
@@ -437,7 +437,7 @@ class PipelinedMT5ForConditionalGeneration(MT5ForConditionalGeneration, Pipeline
                 block.layer[1].DenseReluDense.act = NewGELUActivation()
 
         for block in self.decoder.block:
-            block.__class__ = T5Block
+            block.__class__ = MT5Block
             if self.config.dense_act_fn == "gelu_new":
                 block.layer[2].DenseReluDense.act = NewGELUActivation()
 

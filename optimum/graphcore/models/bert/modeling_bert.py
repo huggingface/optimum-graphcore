@@ -14,12 +14,10 @@
 
 from typing import Optional, Tuple, Union
 
+import poptorch
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-import poptorch
-from optimum.utils import logging
 from scipy.stats import truncnorm
 from transformers import (
     BertForMaskedLM,
@@ -31,6 +29,8 @@ from transformers import (
 )
 from transformers.modeling_outputs import MaskedLMOutput, QuestionAnsweringModelOutput
 from transformers.models.bert.modeling_bert import BertForPreTrainingOutput, BertSelfAttention
+
+from optimum.utils import logging
 
 from ...modeling_utils import (
     OnehotGather,

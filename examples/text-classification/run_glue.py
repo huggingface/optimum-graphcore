@@ -24,20 +24,15 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 import datasets
+import evaluate
 import numpy as np
 import torch
-from datasets import load_dataset
-
-import evaluate
 import transformers
-from optimum.graphcore import IPUConfig, IPUTrainer
-from optimum.graphcore import IPUTrainingArguments as TrainingArguments
-from optimum.graphcore.utils import check_min_version
+from datasets import load_dataset
 from transformers import (
     AutoConfig,
     AutoModelForSequenceClassification,
     AutoTokenizer,
-    DataCollatorWithPadding,
     EvalPrediction,
     HfArgumentParser,
     PretrainedConfig,
@@ -45,16 +40,19 @@ from transformers import (
     set_seed,
 )
 from transformers.trainer_utils import get_last_checkpoint
-from transformers.utils import check_min_version as tf_check_min_version
-from transformers.utils import send_example_telemetry
+from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
+
+from optimum.graphcore import IPUConfig, IPUTrainer
+from optimum.graphcore import IPUTrainingArguments as TrainingArguments
+from optimum.graphcore.utils import check_min_version as gc_check_min_version
 
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-tf_check_min_version("4.25.0")
+check_min_version("4.29.0")
 
 # Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
-check_min_version("0.2.4.dev0")
+gc_check_min_version("0.6.0.dev0")
 
 require_version("datasets>=1.8.0", "To fix: pip install -r examples/pytorch/text-classification/requirements.txt")
 
@@ -232,6 +230,10 @@ def main():
         datefmt="%m/%d/%Y %H:%M:%S",
         handlers=[logging.StreamHandler(sys.stdout)],
     )
+
+    if training_args.should_log:
+        # The default of training_args.log_level is passive, so we set log level at info here to have that default.
+        transformers.utils.logging.set_verbosity_info()
 
     log_level = training_args.get_process_log_level()
     logger.setLevel(log_level)
@@ -418,12 +420,12 @@ def main():
     ):
         # Some have all caps in their config, some don't.
         label_name_to_id = {k.lower(): v for k, v in model.config.label2id.items()}
-        if list(sorted(label_name_to_id.keys())) == list(sorted(label_list)):
+        if sorted(label_name_to_id.keys()) == sorted(label_list):
             label_to_id = {i: int(label_name_to_id[label_list[i]]) for i in range(num_labels)}
         else:
             logger.warning(
                 "Your model seems to have been trained with labels, but they don't match the dataset: ",
-                f"model labels: {list(sorted(label_name_to_id.keys()))}, dataset labels: {list(sorted(label_list))}."
+                f"model labels: {sorted(label_name_to_id.keys())}, dataset labels: {sorted(label_list)}."
                 "\nIgnoring the model labels as a result.",
             )
     elif data_args.task_name is None and not is_regression:
@@ -503,6 +505,8 @@ def main():
     # Get the metric function
     if data_args.task_name is not None:
         metric = evaluate.load("glue", data_args.task_name)
+    elif is_regression:
+        metric = evaluate.load("mse")
     else:
         metric = evaluate.load("accuracy")
 
@@ -511,15 +515,10 @@ def main():
     def compute_metrics(p: EvalPrediction):
         preds = p.predictions[0] if isinstance(p.predictions, tuple) else p.predictions
         preds = np.squeeze(preds) if is_regression else np.argmax(preds, axis=1)
-        if data_args.task_name is not None:
-            result = metric.compute(predictions=preds, references=p.label_ids)
-            if len(result) > 1:
-                result["combined_score"] = np.mean(list(result.values())).item()
-            return result
-        elif is_regression:
-            return {"mse": ((preds - p.label_ids) ** 2).mean().item()}
-        else:
-            return {"accuracy": (preds == p.label_ids).astype(np.float32).mean().item()}
+        result = metric.compute(predictions=preds, references=p.label_ids)
+        if len(result) > 1:
+            result["combined_score"] = np.mean(list(result.values())).item()
+        return result
 
     # Data collator will default to DataCollatorWithPadding when the tokenizer is passed to Trainer, so we change it if
     # we already did the padding.

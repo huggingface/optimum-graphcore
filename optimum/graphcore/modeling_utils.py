@@ -14,16 +14,15 @@
 from __future__ import annotations
 
 import copy
-from inspect import signature
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Union
 
+import poptorch
 import torch
 import torch.nn.functional as F
 from torch import nn
-
-import poptorch
-from optimum.utils import logging
 from transformers import PreTrainedModel
+
+from optimum.utils import logging
 
 from .ipu_configuration import IncompatibleIPUConfigError, IPUConfig
 
@@ -327,7 +326,7 @@ def split_encoder_decoder_ipu_config(
         cut = [i + 1 for i, c in enumerate(cumsum) if c == num_encoder_layers]
         # Choose the cut index that's the highest power of 2
         cut = max([num for num in cut if num & (num - 1) == 0])
-    except:
+    except Exception:
         raise IncompatibleIPUConfigError(
             f"Unable to find a valid split of ipu_config.{layers_per_ipu_mode_str}\n"
             "Arguments: \n"

@@ -28,30 +28,26 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
-from tqdm.auto import tqdm
-
-
 # Integrations must be imported before ML frameworks:
-from transformers.integrations import (  # isort: split
-    get_reporting_integration_callbacks,
-)
-
 import numpy as np
-import torch
-from packaging import version
-from torch import nn, optim
-from torch.utils.data import Dataset, RandomSampler, SequentialSampler, SubsetRandomSampler
-from torch.utils.data.distributed import DistributedSampler
-
 import poptorch
+import torch
 from huggingface_hub import Repository
-from optimum.graphcore.version import __version__
-from optimum.utils import logging
+from packaging import version
 from poptorch import DataLoaderMode, PoplarExecutor
 from poptorch.optim import LAMB, AdamW
+from torch import nn, optim
+from torch.utils.data import Dataset, RandomSampler, SequentialSampler
+from torch.utils.data.distributed import DistributedSampler
+from tqdm.auto import tqdm
 from transformers.configuration_utils import PretrainedConfig
 from transformers.data.data_collator import DataCollator, DataCollatorWithPadding, default_data_collator
 from transformers.debug_utils import DebugOption, DebugUnderflowOverflow
+
+
+from transformers.integrations import (  # isort: split
+    get_reporting_integration_callbacks,
+)
 from transformers.modeling_utils import PreTrainedModel
 from transformers.optimization import get_scheduler
 from transformers.pytorch_utils import is_torch_less_than_1_11
@@ -102,6 +98,9 @@ from transformers.utils import (
     get_full_repo_name,
     is_datasets_available,
 )
+
+from optimum.graphcore.version import __version__
+from optimum.utils import logging
 
 from .data.data_collator import pad_on_batch_axis
 from .ipu_configuration import IPU_CONFIG_NAME, IPUConfig

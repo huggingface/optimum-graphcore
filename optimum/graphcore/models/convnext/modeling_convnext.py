@@ -13,8 +13,9 @@
 # limitations under the License.
 
 import poptorch
-from optimum.utils import logging
 from transformers.models.convnext.modeling_convnext import ConvNextForImageClassification, ConvNextLayer
+
+from optimum.utils import logging
 
 from ...modeling_utils import PipelineMixin, get_layer_ipu, register
 from .optimized_convnextlayer import OptimizedConvNextLayer
@@ -34,7 +35,7 @@ class PipelinedConvNextForImageClassification(ConvNextForImageClassification, Pi
                 layer.__class__ = OptimizedConvNextLayer
 
         logger.info("---------- Device Allocation -----------")
-        logger.info(f"Embedding  --> IPU 0")
+        logger.info("Embedding  --> IPU 0")
         self.convnext.embeddings = poptorch.BeginBlock(self.convnext.embeddings, "Embedding", ipu_id=0)
 
         num_encoder_layers = sum([len(stage.layers) for stage in self.convnext.encoder.stages])

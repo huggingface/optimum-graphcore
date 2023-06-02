@@ -15,14 +15,14 @@
 import math
 from typing import Optional, Tuple, Union
 
+import poptorch
 import torch
 import torch.nn as nn
-
-import poptorch
-from optimum.utils import logging
 from transformers import GPT2ForSequenceClassification, GPT2ForTokenClassification, GPT2LMHeadModel
 from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions, SequenceClassifierOutputWithPast
 from transformers.models.gpt2.modeling_gpt2 import GPT2Attention
+
+from optimum.utils import logging
 
 from ...generation import IPUGenerationMixin
 from ...modeling_utils import (

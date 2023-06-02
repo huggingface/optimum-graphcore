@@ -23,23 +23,23 @@ from random import randint
 from typing import Optional
 
 import datasets
-import numpy as np
-from datasets import DatasetDict, load_dataset
-
 import evaluate
+import numpy as np
 import transformers
-from optimum.graphcore import IPUConfig, IPUTrainer
-from optimum.graphcore import IPUTrainingArguments as TrainingArguments
+from datasets import DatasetDict, load_dataset
 from transformers import AutoConfig, AutoFeatureExtractor, AutoModelForAudioClassification, HfArgumentParser, set_seed
 from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 
+from optimum.graphcore import IPUConfig, IPUTrainer
+from optimum.graphcore import IPUTrainingArguments as TrainingArguments
+
 
 logger = logging.getLogger(__name__)
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-check_min_version("4.25.0")
+check_min_version("4.29.0")
 
 require_version("datasets>=1.14.0", "To fix: pip install -r examples/pytorch/audio-classification/requirements.txt")
 
@@ -203,6 +203,10 @@ def main():
         handlers=[logging.StreamHandler(sys.stdout)],
     )
 
+    if training_args.should_log:
+        # The default of training_args.log_level is passive, so we set log level at info here to have that default.
+        transformers.utils.logging.set_verbosity_info()
+
     log_level = training_args.get_process_log_level()
     logger.setLevel(log_level)
     transformers.utils.logging.set_verbosity(log_level)
@@ -278,7 +282,7 @@ def main():
     # Prepare label mappings.
     # We'll include these in the model's config to get human readable labels in the Inference API.
     labels = raw_datasets["train"].features[data_args.label_column_name].names
-    label2id, id2label = dict(), dict()
+    label2id, id2label = {}, {}
     for i, label in enumerate(labels):
         label2id[label] = str(i)
         id2label[str(i)] = label

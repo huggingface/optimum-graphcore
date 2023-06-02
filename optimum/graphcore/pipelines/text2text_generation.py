@@ -1,7 +1,5 @@
-import warnings
-
 from transformers import SummarizationPipeline, Text2TextGenerationPipeline, TranslationPipeline
-from transformers.pipelines.text2text_generation import ReturnType, TruncationStrategy
+from transformers.pipelines.text2text_generation import TruncationStrategy
 
 
 class IPUText2TextGenerationPipeline(Text2TextGenerationPipeline):

@@ -15,14 +15,12 @@
 # limitations under the License.
 # RANDOM CHANGE
 
-import math
-from typing import Tuple
 
 import torch
 import torch.nn as nn
+from transformers.activations import ACT2FN
 
 from optimum.utils import logging
-from transformers.activations import ACT2FN
 
 
 logger = logging.get_logger(__name__)

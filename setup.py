@@ -13,7 +13,7 @@ except Exception as error:
 
 
 INSTALL_REQUIRES = [
-    "transformers==4.25.1",
+    "transformers==4.29.2",
     "optimum==1.6.1",
     "diffusers[torch]==0.12.1",
     "datasets",
@@ -25,9 +25,10 @@ INSTALL_REQUIRES = [
 ]
 
 QUALITY_REQUIRES = [
-    "black",
-    "isort",
+    "black~=23.1",
+    "isort>=5.5.4",
     "hf-doc-builder @ git+https://github.com/huggingface/doc-builder.git",
+    "ruff>=0.0.241,<=0.0.259",
 ]
 
 EXTRA_REQUIRE = {

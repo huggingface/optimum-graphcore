@@ -13,14 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
+import poptorch
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-import poptorch
-from optimum.utils import logging
 from scipy.stats import truncnorm
 from transformers import (
     BertConfig,
@@ -38,6 +36,8 @@ from transformers.modeling_outputs import (
 )
 from transformers.modeling_utils import apply_chunking_to_forward
 from transformers.models.bert.modeling_bert import BertForPreTrainingOutput, BertModel
+
+from optimum.utils import logging
 
 from ...modeling_utils import (
     OnehotGather,

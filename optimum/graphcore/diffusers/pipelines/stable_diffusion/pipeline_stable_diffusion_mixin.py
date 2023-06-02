@@ -15,18 +15,18 @@
 import copy
 from typing import Optional, Tuple, Union
 
-import torch
-
 import poptorch
+import torch
 from diffusers import AutoencoderKL, StableDiffusionPipeline, UNet2DConditionModel
 from diffusers.models.autoencoder_kl import AutoencoderKLOutput
 from diffusers.models.cross_attention import CrossAttention
 from diffusers.models.unet_2d_condition import UNet2DConditionOutput
 from diffusers.models.vae import DecoderOutput, DiagonalGaussianDistribution
-from optimum.utils import logging
 from transformers import CLIPTextModel
 from transformers.modeling_outputs import BaseModelOutputWithPooling
 from transformers.models.clip.modeling_clip import CLIPTextTransformer
+
+from optimum.utils import logging
 
 from ....ipu_configuration import IPUConfig
 from ....modeling_utils import PipelineMixin
@@ -63,7 +63,6 @@ class IPUSlicedAttnProcessor:
         attention_mask = attn.prepare_attention_mask(attention_mask, sequence_length)
 
         query = attn.to_q(hidden_states)
-        dim = query.shape[-1]
         query = attn.head_to_batch_dim(query)
 
         encoder_hidden_states = encoder_hidden_states if encoder_hidden_states is not None else hidden_states

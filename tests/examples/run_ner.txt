@@ -1,62 +1,60 @@
-33a34,36
-> from optimum.graphcore import IPUConfig, IPUTrainer
-> from optimum.graphcore import IPUTrainingArguments as TrainingArguments
-> from optimum.graphcore.utils import check_min_version
-42,43d44
+31,32d30
+< from datasets import ClassLabel, load_dataset
+< 
+33a32
+> from datasets import ClassLabel, load_dataset
+42,43d40
 <     Trainer,
 <     TrainingArguments,
-47c48,49
-< from transformers.utils import check_min_version, send_example_telemetry
----
-> from transformers.utils import check_min_version as tf_check_min_version
-> from transformers.utils import send_example_telemetry
-52c54,57
-< check_min_version("4.25.0")
----
-> tf_check_min_version("4.25.0")
+49a47,50
+> from optimum.graphcore import IPUConfig, IPUTrainer
+> from optimum.graphcore import IPUTrainingArguments as TrainingArguments
+> from optimum.graphcore.utils import check_min_version as gc_check_min_version
 > 
+53a55,57
 > # Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
-> check_min_version("0.2.4.dev0")
-144c149
+> gc_check_min_version("0.6.0.dev0")
+> 
+144c148
 <         default=False,
 ---
 >         default=True,
-238,242d242
+242,246d245
 <     # Log on each process the small summary:
 <     logger.warning(
 <         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
 <         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
 <     )
-348a349,354
+352a352,357
 >     ipu_config = IPUConfig.from_pretrained(
 >         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
 >         cache_dir=model_args.cache_dir,
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
-351c357
+355c360
 <     if config.model_type in {"bloom", "gpt2", "roberta"}:
 ---
 >     if config.model_type in {"gpt2", "roberta", "deberta"}:
-378a385,389
+382a388,392
 >     # Customize tokenization for GPT2. We reuse the EOS token as the PAD token.
 >     if config.model_type == "gpt2":
 >         tokenizer.pad_token = tokenizer.eos_token
 >         model.config.pad_token_id = model.config.eos_token_id
 > 
-418a430,434
+422a433,437
 >     if not data_args.pad_to_max_length:
 >         logging.warning(
 >             "Not padding to max length might lead to batches with difference sequence lengths, which might not work as"
 >             "expected on IPUs"
 >         )
-505c521
+509c524
 <     data_collator = DataCollatorForTokenClassification(tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None)
 ---
 >     data_collator = DataCollatorForTokenClassification(tokenizer, pad_to_multiple_of=None)
-544c560
+548c563
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-545a562
+549a565
 >         ipu_config=ipu_config,
