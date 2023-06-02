@@ -20,8 +20,7 @@ import sys
 
 import requests
 
-import optimum.graphcore as opt
-from optimum.graphcore import IPUConfig
+from optimum.graphcore import IPUConfig, pipeline
 
 
 description = r"""Minimal example of the Whisper pipeline on the IPU
@@ -37,7 +36,7 @@ Executable caching can be enabled by setting the POPLAR_EXECUTABLE_CACHE_DIR"""
 parser = argparse.ArgumentParser(description=description, formatter_class=argparse.RawDescriptionHelpFormatter)
 
 parser.add_argument("input_file", nargs=1)
-parser.add_argument("--model", type=str, default="openai/whisper-tiny")
+parser.add_argument("--model", type=str, default="openai/whisper-tiny.en")
 parser.add_argument("--layers-per-ipu", type=int, nargs="*", default=None)
 parser.add_argument("--use-cache", action="store_true", help="Enable self-attention KV cache")
 parser.add_argument(
@@ -66,7 +65,7 @@ parser.add_argument(
 args = parser.parse_args()
 
 default_layers_per_ipu = {
-    "openai/whisper-tiny": [-1, -1],
+    "openai/whisper-tiny.en": [-1, -1],
     "openai/whisper-large-v2": [8, 8, 8, 8, 6, 9, 9, 8],
 }
 if args.layers_per_ipu is None:
@@ -85,7 +84,8 @@ if executable_cache_dir is not None:
 
 
 ipu_config = IPUConfig(layers_per_ipu=args.layers_per_ipu, **config_kwargs)
-ipu_p = opt.pipeline(
+ipu_pipeline = pipeline(
+    task="automatic-speech-recognition",
     model=args.model,
     framework="pt",
     ipu_config=ipu_config,
@@ -97,7 +97,7 @@ ipu_p = opt.pipeline(
         "num_beams": args.num_beams,
         "batch_size": args.batch_size,
     },
-    generate_kwargs={"do_sample": args.do_sample, "num_beams": args.num_beams, "use_cache": args.use_cache},
+    batch_size=args.batch_size,
     chunk_length_s=args.chunk_length_s,
     ignore_warning=True,
     max_new_tokens=args.max_new_tokens,
@@ -117,7 +117,11 @@ if not os.path.exists(fn):
     with open(fn, "wb") as fd:
         fd.write(r.content)
 
-whisper_output = ipu_p([fn], batch_size=args.batch_size)
+whisper_output = ipu_pipeline(
+    [fn],
+    generate_kwargs={"do_sample": args.do_sample, "num_beams": args.num_beams, "use_cache": args.use_cache},
+)
+
 # whisper can emit Unicode chars such as \u2014, em-dash, which can result in
 # UnicodeEncodeErrors with some codecs (e.g. latin-1)
 text = whisper_output[0]["text"].encode("utf-8").decode("latin-1")
@@ -128,6 +132,8 @@ if args.time_it:
 
     print("\n\nNow running it again to time it...", file=sys.stderr)
     start = time.time()
-    whisper_output = ipu_p([fn], batch_size=args.batch_size)
+    whisper_output = ipu_pipeline(
+        [fn], generate_kwargs={"do_sample": args.do_sample, "num_beams": args.num_beams, "use_cache": args.use_cache}
+    )
     end = time.time()
     print(f"Transcription performed in {end-start:.2f}s\n", file=sys.stderr)
