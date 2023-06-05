@@ -17,8 +17,6 @@ from typing import Optional, Tuple
 import poptorch
 import torch
 from torch import nn
-from transformers import WhisperConfig
-from transformers.activations import ACT2FN
 from transformers.models.whisper.modeling_whisper import (
     WhisperAttention,
     WhisperDecoder,
@@ -200,22 +198,6 @@ class IPUWhisperAttention(WhisperAttention, IPUAttentionMixin):
 
 
 class _WhisperEncoderLayerClamp(nn.Module):
-    def __init__(self, config: WhisperConfig):
-        super().__init__()
-        self.embed_dim = config.d_model
-        self.self_attn = WhisperAttention(
-            embed_dim=self.embed_dim,
-            num_heads=config.encoder_attention_heads,
-            dropout=config.attention_dropout,
-        )
-        self.self_attn_layer_norm = nn.LayerNorm(self.embed_dim)
-        self.dropout = config.dropout
-        self.activation_fn = ACT2FN[config.activation_function]
-        self.activation_dropout = config.activation_dropout
-        self.fc1 = nn.Linear(self.embed_dim, config.encoder_ffn_dim)
-        self.fc2 = nn.Linear(config.encoder_ffn_dim, self.embed_dim)
-        self.final_layer_norm = nn.LayerNorm(self.embed_dim)
-
     def forward(
         self,
         hidden_states: torch.Tensor,
@@ -284,13 +266,12 @@ class IPUWhisperPositionalEmbedding(WhisperPositionalEmbedding):
         return original
 
     def forward(self, input_ids: torch.Tensor, past_key_values_length: int = 0):
-        del past_key_values_length
-
         if input_ids.shape[-1] == 1:
             # KV cache enabled.
+            del past_key_values_length
             return poptorch.dynamic_slice(self.weight, 0, self._generation_step, 1, 1)
         else:
-            return self.weight[: input_ids.shape[1]]
+            return super().forward(input_ids, past_key_values_length=past_key_values_length)
 
 
 class _WhisperDecoderWithCustomMakeCausalAndExpandMask(WhisperDecoder):
