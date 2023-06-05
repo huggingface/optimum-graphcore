@@ -47,15 +47,15 @@ class IPUAutomaticSpeechRecognitionPipeline(AutomaticSpeechRecognitionPipeline):
 
         # Change: If the last batch contains fewer than `batch_size` elements, pad it.
         def batch_padding(items, batch_size):
-            if isinstance(items["is_last"], bool):
-                return items
+            is_last = items["is_last"]
+            if not isinstance(is_last, list):
+                is_last = [is_last]
 
-            actual_batch_size = len(items["is_last"])
+            actual_batch_size = len(is_last)
             if actual_batch_size >= batch_size:
                 return items
 
             n_to_pad = batch_size - actual_batch_size
-            is_last = items["is_last"]
             stride = items["stride"]
             input_features = items["input_features"]
             is_last = is_last + [is_last[-1]] * n_to_pad
@@ -105,6 +105,9 @@ class IPUAutomaticSpeechRecognitionPipeline(AutomaticSpeechRecognitionPipeline):
         maybe_padded_ret = {"is_last": is_last, **out, **extra}
 
         # Remove inputs and outputs associated with padded inputs.
+        if not isinstance(is_last, list):
+            is_last = [is_last]
+
         first_padding_idx = tokens.shape[0]
         for idx, last in enumerate(is_last):
             if last:
