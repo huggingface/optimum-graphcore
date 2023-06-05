@@ -151,6 +151,18 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
         # output = speech_recognizer(waveform)
         # self.assertEqual(output, {"text": "(Applaudissements)"})
 
+    @slow
+    @require_torch
+    def test_whisper_fp16(self):
+        speech_recognizer = pipeline(
+            model="openai/whisper-base",
+            ipu_config={"ipus_per_replica": 2},
+            parallelize_kwargs={"use_cache": True},
+            fp16=True,
+        )
+        waveform = np.tile(np.arange(1000, dtype=np.float32), 34)
+        speech_recognizer(waveform)
+
     # enable when SpeechEncoderDecoderModel is supported
     # @require_torch
     # def test_small_model_pt_seq2seq(self):
@@ -254,6 +266,164 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
         output = speech_recognizer(filename)
         self.assertEqual(output, {"text": "A MAN SAID TO THE UNIVERSE SIR I EXIST"})
 
+    @require_torch
+    def test_return_timestamps_in_preprocess(self):
+        pipe = pipeline(
+            task="automatic-speech-recognition",
+            model="openai/whisper-tiny",
+            ipu_config="Graphcore/whisper-tiny-ipu",
+            parallelize_kwargs={"use_cache": True},
+            fp16=False,
+            chunk_length_s=8,
+            stride_length_s=1,
+        )
+
+        data = load_dataset("librispeech_asr", "clean", split="test", streaming=True)
+        sample = next(iter(data))
+        pipe.model.config.forced_decoder_ids = pipe.tokenizer.get_decoder_prompt_ids(language="en", task="transcribe")
+
+        res = pipe(sample["audio"]["array"])
+        # TODO: revert to upstream when non-approximate GELU_ERF is supported
+        # self.assertEqual(res, {"text": " Conquered returned to its place amidst the tents."})
+        self.assertEqual(res, {"text": " Conquered, returned to its place amidst the tents."})
+
+        # enable when whisper timestamps are supported
+        return
+        res = pipe(sample["audio"]["array"], return_timestamps=True)
+        self.assertEqual(
+            res,
+            {
+                "text": " Conquered returned to its place amidst the tents.",
+                "chunks": [{"text": " Conquered returned to its place amidst the tents.", "timestamp": (0.0, 3.36)}],
+            },
+        )
+
+    @require_torch
+    @slow
+    def test_torch_whisper(self):
+        speech_recognizer = pipeline(
+            task="automatic-speech-recognition",
+            model="openai/whisper-tiny",
+            ipu_config="Graphcore/whisper-tiny-ipu",
+            parallelize_kwargs={"use_cache": True},
+            fp16=False,
+        )
+        ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation").sort("id")
+        filename = ds[40]["file"]
+        output = speech_recognizer(filename)
+        self.assertEqual(output, {"text": " A man said to the universe, Sir, I exist."})
+
+        # We need to create a new pipeline for a different batch size
+        speech_recognizer = pipeline(
+            task="automatic-speech-recognition",
+            model="openai/whisper-tiny",
+            ipu_config="Graphcore/whisper-tiny-ipu",
+            parallelize_kwargs={"use_cache": True, "batch_size": 4},
+            fp16=True,
+        )
+        output = speech_recognizer([filename], chunk_length_s=5, batch_size=4)
+        self.assertEqual(output, [{"text": " A man said to the universe, Sir, I exist."}])
+
+    @slow
+    @require_torch
+    def test_whisper_timestamp_prediction(self):
+        # enable when timestamps are supported
+        return
+        ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation").sort("id")
+        array = np.concatenate(
+            [ds[40]["audio"]["array"], ds[41]["audio"]["array"], ds[42]["audio"]["array"], ds[43]["audio"]["array"]]
+        )
+        pipe = pipeline(
+            model="openai/whisper-small",
+            return_timestamps=True,
+        )
+
+        output = pipe(ds[40]["audio"])
+        self.assertDictEqual(
+            output,
+            {
+                "text": " A man said to the universe, Sir, I exist.",
+                "chunks": [{"text": " A man said to the universe, Sir, I exist.", "timestamp": (0.0, 4.26)}],
+            },
+        )
+
+        output = pipe(array, chunk_length_s=10)
+        self.assertDictEqual(
+            nested_simplify(output),
+            {
+                "chunks": [
+                    {"text": " A man said to the universe, Sir, I exist.", "timestamp": (0.0, 5.5)},
+                    {
+                        "text": (
+                            " Sweat covered Brion's body, trickling into the "
+                            "tight-loan cloth that was the only garment he wore, the "
+                            "cut"
+                        ),
+                        "timestamp": (5.5, 11.95),
+                    },
+                    {
+                        "text": (
+                            " on his chest still dripping blood, the ache of his "
+                            "overstrained eyes, even the soaring arena around him "
+                            "with"
+                        ),
+                        "timestamp": (11.95, 19.61),
+                    },
+                    {
+                        "text": " the thousands of spectators, retrievality is not worth thinking about.",
+                        "timestamp": (19.61, 25.0),
+                    },
+                    {
+                        "text": " His instant panic was followed by a small, sharp blow high on his chest.",
+                        "timestamp": (25.0, 29.4),
+                    },
+                ],
+                "text": (
+                    " A man said to the universe, Sir, I exist. Sweat covered Brion's "
+                    "body, trickling into the tight-loan cloth that was the only garment "
+                    "he wore, the cut on his chest still dripping blood, the ache of his "
+                    "overstrained eyes, even the soaring arena around him with the "
+                    "thousands of spectators, retrievality is not worth thinking about. "
+                    "His instant panic was followed by a small, sharp blow high on his "
+                    "chest."
+                ),
+            },
+        )
+
+        output = pipe(array)
+        self.assertDictEqual(
+            output,
+            {
+                "chunks": [
+                    {"text": " A man said to the universe, Sir, I exist.", "timestamp": (0.0, 5.5)},
+                    {
+                        "text": (
+                            " Sweat covered Brion's body, trickling into the "
+                            "tight-loan cloth that was the only garment"
+                        ),
+                        "timestamp": (5.5, 10.18),
+                    },
+                    {"text": " he wore.", "timestamp": (10.18, 11.68)},
+                    {"text": " The cut on his chest still dripping blood.", "timestamp": (11.68, 14.92)},
+                    {"text": " The ache of his overstrained eyes.", "timestamp": (14.92, 17.6)},
+                    {
+                        "text": (
+                            " Even the soaring arena around him with the thousands of spectators were trivialities"
+                        ),
+                        "timestamp": (17.6, 22.56),
+                    },
+                    {"text": " not worth thinking about.", "timestamp": (22.56, 24.96)},
+                ],
+                "text": (
+                    " A man said to the universe, Sir, I exist. Sweat covered Brion's "
+                    "body, trickling into the tight-loan cloth that was the only garment "
+                    "he wore. The cut on his chest still dripping blood. The ache of his "
+                    "overstrained eyes. Even the soaring arena around him with the "
+                    "thousands of spectators were trivialities not worth thinking about."
+                ),
+            },
+        )
+
     # enable when SpeechEncoderDecoderModel is supported
     # @require_torch
     # @slow
@@ -331,51 +501,79 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
     #     output = asr(data)
     #     self.assertEqual(output, {"text": "Un uomo disse all'universo: \"Signore, io esisto."})
 
-    # @slow
-    # @require_torch
-    # @require_torchaudio
-    # def test_simple_whisper_asr(self):
-    #     speech_recognizer = pipeline(
-    #         task="automatic-speech-recognition",
-    #         model="openai/whisper-tiny.en",
-    #         framework="pt",
-    #     )
-    #     ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation")
-    #     filename = ds[0]["file"]
-    #     output = speech_recognizer(filename)
-    #     self.assertEqual(output, {"text": " Mr. Quilter is the apostle of the middle classes, and we are glad to"})
+    @slow
+    @require_torch
+    @require_torchaudio
+    def test_simple_whisper_asr(self):
+        speech_recognizer = pipeline(
+            task="automatic-speech-recognition",
+            model="openai/whisper-tiny.en",
+            ipu_config="Graphcore/whisper-tiny-ipu",
+            parallelize_kwargs={"use_cache": True},
+            fp16=False,
+        )
+        ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation")
+        filename = ds[0]["file"]
+        output = speech_recognizer(filename)
+        self.assertEqual(
+            output,
+            {"text": " Mr. Quilter is the apostle of the middle classes, and we are glad to welcome his gospel."},
+        )
+        # Enable when timestamps supported
+        return
+        output = speech_recognizer(filename, return_timestamps=True)
+        self.assertEqual(
+            output,
+            {
+                "text": " Mr. Quilter is the apostle of the middle classes, and we are glad to welcome his gospel.",
+                "chunks": [
+                    {
+                        "text": (
+                            " Mr. Quilter is the apostle of the middle classes, and we are glad to welcome his gospel."
+                        ),
+                        "timestamp": (0.0, 5.44),
+                    }
+                ],
+            },
+        )
 
-    # @slow
-    # @require_torch
-    # @require_torchaudio
-    # def test_simple_whisper_translation(self):
-    #     speech_recognizer = pipeline(
-    #         task="automatic-speech-recognition",
-    #         model="openai/whisper-large",
-    #         framework="pt",
-    #     )
-    #     ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation").sort("id")
-    #     filename = ds[40]["file"]
-    #     output = speech_recognizer(filename)
-    #     self.assertEqual(output, {"text": " A man said to the universe, Sir, I exist."})
+    @slow
+    @require_torch
+    @require_torchaudio
+    def test_simple_whisper_translation(self):
+        # TODO: can be enabled, but compilation of large takes too long
+        return
+        # speech_recognizer = pipeline(
+        #     task="automatic-speech-recognition",
+        #     model="openai/whisper-large",
+        #     framework="pt",
+        # )
+        # ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation").sort("id")
+        # filename = ds[40]["file"]
+        # output = speech_recognizer(filename)
+        # self.assertEqual(output, {"text": " A man said to the universe, Sir, I exist."})
 
-    #     model = WhisperForConditionalGeneration.from_pretrained("openai/whisper-large")
-    #     tokenizer = AutoTokenizer.from_pretrained("openai/whisper-large")
-    #     feature_extractor = AutoFeatureExtractor.from_pretrained("openai/whisper-large")
+        # model = WhisperForConditionalGeneration.from_pretrained("openai/whisper-large")
+        # tokenizer = AutoTokenizer.from_pretrained("openai/whisper-large")
+        # feature_extractor = AutoFeatureExtractor.from_pretrained("openai/whisper-large")
 
-    #     speech_recognizer_2 = AutomaticSpeechRecognitionPipeline(
-    #         model=model, tokenizer=tokenizer, feature_extractor=feature_extractor
-    #     )
-    #     output_2 = speech_recognizer_2(filename)
-    #     self.assertEqual(output, output_2)
+        # speech_recognizer_2 = AutomaticSpeechRecognitionPipeline(
+        #     model=model, tokenizer=tokenizer, feature_extractor=feature_extractor
+        # )
+        # output_2 = speech_recognizer_2(filename)
+        # self.assertEqual(output, output_2)
 
-    #     processor = WhisperProcessor(feature_extractor, tokenizer)
-    #     model.config.forced_decoder_ids = processor.get_decoder_prompt_ids(task="transcribe", language="it")
-    #     speech_translator = AutomaticSpeechRecognitionPipeline(
-    #         model=model, tokenizer=tokenizer, feature_extractor=feature_extractor
-    #     )
-    #     output_3 = speech_translator(filename)
-    #     self.assertEqual(output_3, {"text": " Un uomo ha detto allo universo, Sir, esiste."})
+        # # either use generate_kwargs or set the model's generation_config
+        # # model.generation_config.task = "transcribe"
+        # # model.generation_config.lang = "<|it|>"
+        # speech_translator = AutomaticSpeechRecognitionPipeline(
+        #     model=model,
+        #     tokenizer=tokenizer,
+        #     feature_extractor=feature_extractor,
+        #     generate_kwargs={"task": "transcribe", "language": "<|it|>"},
+        # )
+        # output_3 = speech_translator(filename)
+        # self.assertEqual(output_3, {"text": " Un uomo ha detto all'universo, Sir, esiste."})
 
     @slow
     @require_torch
@@ -811,6 +1009,39 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
         # 2nd arange
         output = speech_recognizer({"raw": waveform, "stride": (1000, 8000), "sampling_rate": 16_000})
         self.assertEqual(output, {"text": "XB"})
+
+    @slow
+    @require_torch
+    def test_slow_unfinished_sequence(self):
+        # Enable when timestamps supported
+        return
+
+        # from transformers import GenerationConfig
+
+        # pipe = pipeline(
+        #     "automatic-speech-recognition",
+        #     model="vasista22/whisper-hindi-large-v2",
+        #     device="cuda:0",
+        # )
+        # # Original model wasn't trained with timestamps and has incorrect generation config
+        # pipe.model.generation_config = GenerationConfig.from_pretrained("openai/whisper-large-v2")
+
+        # audio = hf_hub_download("Narsil/asr_dummy", filename="hindi.ogg", repo_type="dataset")
+
+        # out = pipe(
+        #     audio,
+        #     return_timestamps=True,
+        # )
+        # self.assertEqual(
+        #     out,
+        #     {
+        #         "chunks": [
+        #             {"text": "", "timestamp": (18.94, 0.0)},
+        #             {"text": "मिर्ची में कितने विभिन्न प्रजातियां हैं", "timestamp": (None, None)},
+        #         ],
+        #         "text": "मिर्ची में कितने विभिन्न प्रजातियां हैं",
+        #     },
+        # )
 
 
 def require_ffmpeg(test_case):
