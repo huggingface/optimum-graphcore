@@ -49,24 +49,29 @@ class IPUAutomaticSpeechRecognitionPipeline(AutomaticSpeechRecognitionPipeline):
         # Change: If the last batch contains fewer than `batch_size` elements, pad it.
         def batch_padding(items, batch_size):
             is_last = items["is_last"]
-            if not isinstance(is_last, list):
-                is_last = [is_last]
 
-            actual_batch_size = len(is_last)
+            actual_batch_size = 1 if isinstance(is_last, bool) else len(is_last)
             if actual_batch_size >= batch_size:
                 return items
 
             n_to_pad = batch_size - actual_batch_size
-            stride = items["stride"]
+            is_last = is_last + [None] * n_to_pad
+
+            # Pad input features by duplicating with genuine feature values as opposed to
+            # e.g. zeros. This makes it significantly more likely beam search will terminate.
             input_features = items["input_features"]
-            is_last = is_last + [is_last[-1]] * n_to_pad
-            stride = stride + [stride[-1]] * n_to_pad
             new_input_features = input_features.repeat(
                 n_to_pad // actual_batch_size + 1, *([1] * (input_features.ndim - 1))
             )
             new_input_features = new_input_features[:batch_size]
-            items = {"is_last": is_last, "stride": stride, "input_features": new_input_features}
-            return items
+
+            padded_items = {"is_last": is_last, "input_features": new_input_features}
+
+            stride = items.get("stride", None)
+            if stride is not None:
+                stride = stride + [stride[-1]] * n_to_pad
+                padded_items["stride"] = stride
+            return padded_items
 
         if self.type == "seq2seq_whisper":
             dataloader = PipelineIterator(dataloader, batch_padding, {"batch_size": batch_size})
@@ -111,13 +116,16 @@ class IPUAutomaticSpeechRecognitionPipeline(AutomaticSpeechRecognitionPipeline):
 
         first_padding_idx = tokens.shape[0]
         for idx, last in enumerate(is_last):
-            if last:
-                first_padding_idx = idx + 1
+            if last is None:
+                first_padding_idx = idx
                 break
 
         if first_padding_idx == tokens.shape[0]:
             return maybe_padded_ret
 
-        for padded_key in ["is_last", "stride", "tokens"]:
+        padded_keys = ["is_last", "tokens"]
+        if stride is not None:
+            padded_keys.append("stride")
+        for padded_key in padded_keys:
             maybe_padded_ret[padded_key] = maybe_padded_ret[padded_key][:first_padding_idx]
         return maybe_padded_ret
