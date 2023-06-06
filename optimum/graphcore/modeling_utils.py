@@ -89,7 +89,9 @@ class PipelineMixin:
             The pipelined version of the model.
         """
         config = copy.deepcopy(model.config)
+        generation_config = copy.deepcopy(model.generation_config)
         pipelined_model = cls(config)
+        pipelined_model.generation_config = generation_config
         pipelined_model.load_state_dict(model.state_dict())
         pipelined_model.ipu_config = copy.deepcopy(ipu_config)
         pipelined_model.training = model.training
