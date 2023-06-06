@@ -25,6 +25,7 @@ from functools import lru_cache
 from pathlib import Path
 from unittest import skipIf
 
+import poptorch
 from transformers import (
     CONFIG_MAPPING,
     FEATURE_EXTRACTOR_MAPPING,
@@ -270,7 +271,15 @@ class PipelineTestCaseMeta(type):
                         out.append(item)
                     self.assertEqual(len(out), 10)
 
-                run_batch_test(pipeline, examples)
+                try:
+                    run_batch_test(pipeline, examples)
+                except poptorch.poptorch_core.Error:
+                    # Pipelines like ASR+Whisper do not support re-batching, so we need to
+                    # create a new one.
+                    pipeline, examples = self.get_test_pipeline(
+                        model, ipu_config, tokenizer, feature_extractor, parallelize_kwargs={"batch_size": 4}
+                    )
+                    run_batch_test(pipeline, examples)
 
             return test
 

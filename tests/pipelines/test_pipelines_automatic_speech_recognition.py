@@ -20,6 +20,7 @@ from datasets import load_dataset
 from huggingface_hub import snapshot_download
 from transformers import (
     MODEL_FOR_CTC_MAPPING,
+    MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING,
     AutoFeatureExtractor,
     AutoTokenizer,
     Wav2Vec2ForCTC,
@@ -58,15 +59,17 @@ TINY_IPU_CONFIG_DICT = {
 
 
 class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=PipelineTestCaseMeta):
-    # TODO: seq2seq disabled for now. Will be supported in the future.
-    MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING = None
+    # TODO: enable seq2seq for other models.
+    MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING_SUBSET = {
+        k: v for k, v in MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING.items() if k.model_type == "whisper"
+    }
     model_mapping = dict(
-        (list(MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING.items()) if MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING else [])
+        (list(MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING_SUBSET.items()) if MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING_SUBSET else [])
         + (MODEL_FOR_CTC_MAPPING.items() if MODEL_FOR_CTC_MAPPING else [])
     )
     task = "ctc"
 
-    def get_test_pipeline(self, model, ipu_config, tokenizer, feature_extractor):
+    def get_test_pipeline(self, model, ipu_config, tokenizer, feature_extractor, parallelize_kwargs=None):
         if tokenizer is None:
             # Side effect of no Fast Tokenizer class for these model, so skipping
             # But the slow tokenizer test should still run as they're quite small
@@ -78,6 +81,7 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
             task="automatic-speech-recognition",
             model=model,
             ipu_config=ipu_config,
+            parallelize_kwargs=parallelize_kwargs,
             tokenizer=tokenizer,
             feature_extractor=feature_extractor,
         )
@@ -97,7 +101,9 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
         if speech_recognizer.type == "ctc":
             outputs = speech_recognizer(audio)
             self.assertEqual(outputs, {"text": ANY(str)})
-
+        elif "Whisper" in speech_recognizer.model.__class__.__name__:
+            outputs = speech_recognizer(audio)
+            self.assertEqual(outputs, {"text": ANY(str)})
         else:
             # Non CTC models cannot use striding.
             with self.assertRaises(ValueError):
@@ -127,9 +133,25 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
                     "chunks": [{"text": ANY(str), "timestamp": (ANY(float), ANY(float))} for i in range(n)],
                 },
             )
+        elif "Whisper" in speech_recognizer.model.__class__.__name__:
+            # Run below when timestamps are supported
+            return
+            outputs = speech_recognizer(audio, return_timestamps=True)
+            self.assertIsInstance(outputs["chunks"], list)
+            nb_chunks = len(outputs["chunks"])
+            self.assertGreater(nb_chunks, 0)
+            self.assertEqual(
+                outputs,
+                {
+                    "text": ANY(str),
+                    "chunks": [{"text": ANY(str), "timestamp": (ANY(float), ANY(float))} for i in range(nb_chunks)],
+                },
+            )
         else:
             # Non CTC models cannot use return_timestamps
-            with self.assertRaises(ValueError):
+            with self.assertRaisesRegex(
+                ValueError, "^We cannot return_timestamps yet on non-ctc models apart from Whisper !$"
+            ):
                 outputs = speech_recognizer(audio, return_timestamps="char")
 
     @require_torch
