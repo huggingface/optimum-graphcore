@@ -394,12 +394,12 @@ class IPUConfig(BaseConfig):
         self.serialized_projection_splits_per_ipu = serialized_projection_splits_per_ipu
         self.inference_serialized_projection_splits_per_ipu = inference_serialized_projection_splits_per_ipu
 
-        if "sharded_execution_for_inference" in kwargs:
+        if kwargs.pop("sharded_execution_for_inference", None):
             warnings.warn(
                 'The "sharded_execution_for_inference" parameter is deprecated, sharded execution is always used during inference'
             )
 
-        if "enable_half_first_order_momentum" in kwargs:
+        if kwargs.pop("enable_half_first_order_momentum", None):
             warnings.warn('The "enable_half_first_order_momentum" parameter is deprecated')
 
         self.gradient_accumulation_steps = gradient_accumulation_steps
