@@ -16,7 +16,7 @@
 
 import inspect
 import unittest
-from typing import TYPE_CHECKING, List, Optional, Union
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -28,11 +28,13 @@ from transformers.testing_utils import require_torch, slow, torch_device
 from ..test_modeling_common import floats_tensor, ids_tensor
 from .test_framework_agnostic import GenerationIntegrationTestsMixin
 
+
 if TYPE_CHECKING:
-    from transformers import PreTrainedModel, PreTrainedTokenizer
+    pass
 
 if is_torch_available():
     import torch
+
     from transformers import (
         AutoModelForCausalLM,
         AutoModelForSeq2SeqLM,
@@ -45,7 +47,6 @@ if is_torch_available():
         GPT2Tokenizer,
         ImageGPTForCausalImageModeling,
         SpeechEncoderDecoderModel,
-        top_k_top_p_filtering,
     )
     from transformers.generation.beam_constraints import DisjunctiveConstraint, PhrasalConstraint
     from transformers.generation.beam_search import BeamSearchScorer, ConstrainedBeamSearchScorer
@@ -75,7 +76,6 @@ if is_torch_available():
         SampleEncoderDecoderOutput,
     )
 
-from optimum.graphcore import PipelinedBartForConditionalGeneration
 
 from ..utils import skip_unsupported
 
@@ -1865,8 +1865,7 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
 
         max_length = 20
         num_beams = 6
-        num_beam_groups = 3
-        num_return_sequences = num_beams * batch_size
+        num_beams * batch_size
         stopping_criteria_max_length = 18
         stopping_criteria = StoppingCriteriaList([MaxLengthCriteria(max_length=stopping_criteria_max_length)])
 

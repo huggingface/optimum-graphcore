@@ -7,7 +7,6 @@ from typing import Callable
 import numpy as np
 
 from optimum.graphcore import IPUConfig
-from optimum.graphcore.modeling_utils import to_pipelined
 from transformers import AutoTokenizer
 from transformers.testing_utils import slow, torch_device
 
@@ -773,7 +772,7 @@ class GenerationIntegrationTestsMixin:
         generated_tokens = model.generate(**tokens, eos_token_id=eos_token_id, **generation_kwargs)
         unpadded_correct_condition = expectation == len(generated_tokens[0])
         padded_correct_condition = expectation < len(generated_tokens[0]) and all(
-            [token == model.config.pad_token_id for token in generated_tokens[0][expectation:]]
+            token == model.config.pad_token_id for token in generated_tokens[0][expectation:]
         )
         self.assertTrue(unpadded_correct_condition or padded_correct_condition)
         # reset generation step
@@ -785,7 +784,7 @@ class GenerationIntegrationTestsMixin:
 
         unpadded_correct_condition = expectation == len(generated_tokens[0])
         padded_correct_condition = expectation < len(generated_tokens[0]) and all(
-            [token == model.config.pad_token_id for token in generated_tokens[0][expectation:]]
+            token == model.config.pad_token_id for token in generated_tokens[0][expectation:]
         )
         self.assertTrue(unpadded_correct_condition or padded_correct_condition)
 
