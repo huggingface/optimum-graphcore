@@ -361,7 +361,7 @@ class IPUStableDiffusionPipelineMixin:
         if unet_ipu_config is not None:
             logger.info("Running UNet on IPU.")
 
-            attn_matrix_target_mem_mb = unet_ipu_config["attn_matrix_target_mem_mb"]
+            attn_matrix_target_mem_mb = unet_ipu_config.pop("attn_matrix_target_mem_mb")
 
             unet_ipu_config = {**common_ipu_config, **unet_ipu_config}
             unet_ipu_config = IPUConfig.from_dict(unet_ipu_config)
