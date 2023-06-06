@@ -30,6 +30,7 @@ from optimum.utils import logging
 from ...generation import IPUAttentionMixin, IPUGenerationMixin, supports_kv_cache
 from ...modeling_utils import (
     PipelineMixin,
+    SerializedLinear,
     get_layer_ipu,
     recomputation_checkpoint,
     register,
@@ -385,6 +386,22 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
                 dtype=decoder_layer.encoder_attn.k_proj.weight.dtype,
             )
 
+    def change_lm_head(self, restore: bool, use_cache: bool = None):
+        # Maybe use _IndexedInputLinear
+        self.change_lm_head_to_indexed_input_linear(restore or use_cache)
+        # Maybe use SerializedLinear
+        if restore:
+            lm_head = self.get_output_embeddings()
+            if isinstance(lm_head, SerializedLinear):
+                self.set_output_embeddings(lm_head.to_model())
+                self.tie_weights()
+        else:
+            if (projection_serialization_factor := self.ipu_config._projection_serialization_factor) > 1:
+                self.set_output_embeddings(
+                    SerializedLinear.from_model(self.get_output_embeddings(), projection_serialization_factor)
+                )
+                self.tie_weights()
+
     def parallelize(self, for_generation=False, use_cache=False, use_cross_cache=False, **kwargs):
         super().parallelize()
 
@@ -397,7 +414,7 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
             use_cross_cache=use_cross_cache and for_generation,
             **kwargs,
         )
-        self.change_lm_head_to_indexed_input_linear(restore=use_cache or not for_generation)
+        self.change_lm_head(restore=False, use_cache=use_cache or not for_generation)
         self.use_encoder_output_buffer = kwargs.get("use_encoder_output_buffer", False)
         self.set_on_device_generation_steps(kwargs.get("on_device_generation_steps", 0))
 
@@ -435,7 +452,12 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         self.model.encoder.layer_norm = poptorch.BeginBlock(
             self.model.encoder.layer_norm, "Encoder Layer Norm", ipu_id=ipu
         )
-        logger.info(f"Encoder LN {index:<2} --> IPU {ipu}")
+        logger.info(f"Encoder LN --> IPU {ipu}")
+
+        self.model.decoder.embed_tokens = poptorch.BeginBlock(
+            self.model.decoder.embed_tokens, "Decoder Embedding", ipu_id=decoder_layer_ipu[0]
+        )
+        logger.info(f"Decoder Embedding  --> IPU {decoder_layer_ipu[0]}")
 
         for index, (layer, ipu) in enumerate(zip(self.model.decoder.layers, decoder_layer_ipu)):
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
@@ -447,9 +469,9 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
             self.model.decoder.layer_norm, "Decoder Layer Norm", ipu_id=ipu
         )
 
-        logger.info("Head       --> IPU 0")
+        logger.info(f"Head       --> IPU {decoder_layer_ipu[0]}")
         logger.info("---------------------------------------")
-        self.proj_out = poptorch.BeginBlock(self.proj_out, "Output Projection", ipu_id=0)
+        self.proj_out = poptorch.BeginBlock(self.proj_out, "Output Projection", ipu_id=decoder_layer_ipu[0])
         return self
 
     def deparallelize(self):
@@ -459,8 +481,10 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         self.change_decoder_class(restore=True)
         self.change_decoder_positional_embedding(restore=True)
         self.change_attention_class(restore=True)
-        self.change_lm_head_to_indexed_input_linear(restore=True)
+        self.change_lm_head(restore=True)
         self.set_on_device_generation_steps(0)
+
+        return self
 
     def prepare_inputs_for_generation(
         self,
