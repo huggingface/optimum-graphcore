@@ -32,7 +32,6 @@ from optimum.utils import logging
 from ...generation import IPUAttentionMixin, IPUGenerationMixin, supports_kv_cache
 from ...modeling_utils import (
     PipelineMixin,
-    SerializedEmbedding,
     SerializedLinear,
     get_layer_ipu,
     recomputation_checkpoint,
@@ -458,11 +457,6 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         )
         logger.info(f"Encoder LN --> IPU {ipu}")
 
-        if (embedding_serialization_factor := self.ipu_config._embedding_serialization_factor) > 1:
-            self.model.decoder.embed_tokens = SerializedEmbedding.from_model(
-                self.model.decoder.embed_tokens, embedding_serialization_factor
-            )
-
         self.model.decoder.embed_tokens = poptorch.BeginBlock(
             self.model.decoder.embed_tokens, "Decoder Embedding", ipu_id=decoder_layer_ipu[0]
         )
@@ -497,10 +491,9 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         self.change_lm_head_to_indexed_input_linear(restore=True)
         self.set_on_device_generation_steps(0)
 
-        if isinstance(self.model.decoder.embed_tokens, SerializedEmbedding):
-            self.model.decoder.embed_tokens = self.model.decoder.embed_tokens.to_model()
         if isinstance(self.proj_out, SerializedLinear):
             self.proj_out = self.proj_out.to_model()
+            self.tie_weights()
 
         return self
 
