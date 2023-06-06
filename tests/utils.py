@@ -14,6 +14,7 @@
 # limitations under the License.
 import pytest
 
+
 MODELS_TO_TEST_MAPPING = {
     "bart": ("facebook/bart-base", "Graphcore/bart-base-ipu"),
     "bert": ("bert-base-uncased", "Graphcore/bert-base-ipu"),
