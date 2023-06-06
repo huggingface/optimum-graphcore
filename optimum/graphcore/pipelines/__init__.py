@@ -44,7 +44,7 @@ from transformers.modeling_utils import PreTrainedModel
 from transformers.pipelines import get_task
 from transformers.utils import HUGGINGFACE_CO_RESOLVE_ENDPOINT, logging
 
-from optimum.graphcore.generation.utils import IPUGenerationMixin
+from optimum.graphcore.generation.utils import MODELS_SUPPORTING_KV_CACHE, IPUGenerationMixin
 from optimum.graphcore.ipu_configuration import IncompatibleIPUConfigError, IPUConfig
 from optimum.graphcore.modeling_utils import to_pipelined
 
@@ -239,6 +239,8 @@ def get_poplar_executor(
     try:
         model = to_pipelined(model, ipu_config, force=False)
         if model.config.is_encoder_decoder and isinstance(model, IPUGenerationMixin):
+            if "use_cache" not in parallelize_kwargs and model.__class__ in MODELS_SUPPORTING_KV_CACHE:
+                parallelize_kwargs["use_cache"] = True
             model.parallelize(for_generation=for_generation, **parallelize_kwargs)
         else:
             model.parallelize()

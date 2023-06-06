@@ -179,7 +179,6 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
         speech_recognizer = pipeline(
             model="openai/whisper-base",
             ipu_config={"ipus_per_replica": 2},
-            parallelize_kwargs={"use_cache": True},
             fp16=True,
         )
         waveform = np.tile(np.arange(1000, dtype=np.float32), 34)
@@ -294,7 +293,6 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
             task="automatic-speech-recognition",
             model="openai/whisper-tiny",
             ipu_config="Graphcore/whisper-tiny-ipu",
-            parallelize_kwargs={"use_cache": True},
             fp16=False,
             chunk_length_s=8,
             stride_length_s=1,
@@ -327,7 +325,6 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
             task="automatic-speech-recognition",
             model="openai/whisper-tiny",
             ipu_config="Graphcore/whisper-tiny-ipu",
-            parallelize_kwargs={"use_cache": True},
             fp16=False,
         )
         ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation").sort("id")
@@ -340,7 +337,7 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
             task="automatic-speech-recognition",
             model="openai/whisper-tiny",
             ipu_config="Graphcore/whisper-tiny-ipu",
-            parallelize_kwargs={"use_cache": True, "batch_size": 4},
+            parallelize_kwargs={"batch_size": 4},
             fp16=True,
         )
         output = speech_recognizer([filename], chunk_length_s=5, batch_size=4)
@@ -531,7 +528,6 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
             task="automatic-speech-recognition",
             model="openai/whisper-tiny.en",
             ipu_config="Graphcore/whisper-tiny-ipu",
-            parallelize_kwargs={"use_cache": True},
             fp16=False,
         )
         ds = load_dataset("hf-internal-testing/librispeech_asr_dummy", "clean", split="validation")
