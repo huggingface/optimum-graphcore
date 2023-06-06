@@ -58,7 +58,6 @@ class GenerationIntegrationTestsMixin:
         # however, valid model_kwargs are accepted
         valid_model_kwargs = {"attention_mask": create_tensor_fn(np.zeros_like(input_ids))}
         model.generate(input_ids, **valid_model_kwargs)
-        model.destroy()
 
     def test_custom_logits_processor(self):
         model_cls = self.framework_dependent_parameters["AutoModelForSeq2SeqLM"]
@@ -82,7 +81,6 @@ class GenerationIntegrationTestsMixin:
 
         bart_model.config.min_length = None
         bart_model.generate(input_ids, logits_processor=logits_processor)
-        bart_model.destroy()
 
     def test_max_new_tokens_encoder_decoder(self):
         model_cls = self.framework_dependent_parameters["AutoModelForSeq2SeqLM"]
@@ -118,7 +116,6 @@ class GenerationIntegrationTestsMixin:
         self.assertEqual(list(outputs.shape), [1, 33])
 
         # Encoder decoder call > 20
-        bart_model.destroy()
         outputs = bart_model.generate(max_new_tokens=max_new_tokens + 20)
 
         # 1 BOS + 20 + 3 new tokens
@@ -174,7 +171,6 @@ class GenerationIntegrationTestsMixin:
         inputs_embeds = model.get_input_embeddings()(input_ids)
 
         output_sequences = model.generate(inputs_embeds=inputs_embeds)
-        model.destroy()
         # make sure model generated correctly until `max_length`
         self.assertEqual(output_sequences.shape, (1, 5))
 
@@ -206,7 +202,6 @@ class GenerationIntegrationTestsMixin:
             return_dict_in_generate=True,
             output_scores=True,
         )
-        model.destroy()
 
         transition_scores = model.compute_transition_scores(outputs.sequences, outputs.scores)
         if is_pt:
@@ -249,7 +244,6 @@ class GenerationIntegrationTestsMixin:
             return_dict_in_generate=True,
             output_scores=True,
         )
-        model.destroy()
 
         transition_scores = model.compute_transition_scores(outputs.sequences, outputs.scores, normalize_logits=True)
         if is_pt:
@@ -293,7 +287,6 @@ class GenerationIntegrationTestsMixin:
             input_ids = input_ids.to(torch_device)
 
         outputs = model.generate(input_ids=input_ids)
-        model.destroy()
 
         transition_scores = model.compute_transition_scores(outputs.sequences, outputs.scores, outputs.beam_indices)
         if is_pt:
@@ -331,7 +324,6 @@ class GenerationIntegrationTestsMixin:
             input_ids = input_ids.to(torch_device)
 
         outputs = model.generate(input_ids=input_ids)
-        model.destroy()
 
         transition_scores = model.compute_transition_scores(outputs.sequences, outputs.scores, outputs.beam_indices)
         if is_pt:
@@ -374,7 +366,6 @@ class GenerationIntegrationTestsMixin:
             input_ids = input_ids.to(torch_device)
 
         outputs = model.generate(input_ids=input_ids)
-        model.destroy()
 
         transition_scores = model.compute_transition_scores(outputs.sequences, outputs.scores, outputs.beam_indices)
         if is_pt:
@@ -414,7 +405,6 @@ class GenerationIntegrationTestsMixin:
             input_ids = input_ids.to(torch_device)
 
         outputs = model.generate(input_ids=input_ids)
-        model.destroy()
 
         transition_scores = model.compute_transition_scores(outputs.sequences, outputs.scores, outputs.beam_indices)
         if is_pt:
@@ -454,8 +444,6 @@ class GenerationIntegrationTestsMixin:
             num_return_sequences=3,
             length_penalty=0.0,
         )
-        model.destroy()
-
         transition_scores = model.compute_transition_scores(
             sequences=outputs.sequences, scores=outputs.scores, beam_indices=outputs.beam_indices
         )
@@ -492,7 +480,6 @@ class GenerationIntegrationTestsMixin:
             input_ids=input_ids_batched, return_dict_in_generate=True, output_scores=True
         )
         output_sequences = model.generate(input_ids=input_ids, return_dict_in_generate=True, output_scores=True)
-        model.destroy()
 
         batched_out = output_sequences_batched.sequences_scores
         out = output_sequences.sequences_scores
@@ -526,7 +513,6 @@ class GenerationIntegrationTestsMixin:
         delattr(model, "_previous_generation_step")
 
         output_sequences = model.generate(input_ids)
-        model.destroy()
 
         if is_pt:
             output_sequences_kwargs = output_sequences_kwargs.cpu().numpy()
@@ -553,7 +539,6 @@ class GenerationIntegrationTestsMixin:
         # reset generation step
         delattr(model, "_previous_generation_step")
         output_sequences = model.generate(input_ids)
-        model.destroy()
 
         if is_pt:
             output_sequences_kwargs = output_sequences_kwargs.cpu().numpy()
@@ -590,7 +575,6 @@ class GenerationIntegrationTestsMixin:
         input_ids = tokenizer(article, return_tensors=return_tensors).input_ids
         with self.assertRaises(ValueError):
             model.generate(input_ids=input_ids, inputs_embeds=input_ids)
-            model.destroy()
 
     def test_generate_input_features_as_encoder_kwarg(self):
         model_cls = self.framework_dependent_parameters["AutoModelForSpeechSeq2Seq"]
@@ -608,7 +592,6 @@ class GenerationIntegrationTestsMixin:
 
         output_sequences_kwargs = model.generate(input_features=input_features, max_length=5)
         output_sequences = model.generate(input_features, max_length=5)
-        model.destroy()
 
         if is_pt:
             output_sequences_kwargs = output_sequences_kwargs.cpu().numpy()
@@ -634,7 +617,6 @@ class GenerationIntegrationTestsMixin:
 
         output_sequences_kwargs = model.generate(pixel_values=pixel_values, max_length=5)
         output_sequences = model.generate(pixel_values, max_length=5)
-        model.destroy()
 
         if is_pt:
             output_sequences_kwargs = output_sequences_kwargs.cpu().numpy()
@@ -666,7 +648,6 @@ class GenerationIntegrationTestsMixin:
         output_sequences_no_mask = model.generate(encoder_outputs=encoder_outputs)
 
         output_sequences_with_mask = model.generate(encoder_outputs=encoder_outputs, attention_mask=attention_mask)
-        model.destroy()
         if is_pt:
             output_sequences_no_mask = output_sequences_no_mask.cpu().numpy()
             output_sequences_with_mask = output_sequences_with_mask.cpu().numpy()
@@ -705,7 +686,6 @@ class GenerationIntegrationTestsMixin:
 
         eos_token_id = [873, 198]
         generated_tokens = model.generate(**tokens, eos_token_id=eos_token_id, **generation_kwargs)
-        model.destroy()
         self.assertTrue(expectation == len(generated_tokens[0]))
 
     @skip_unsupported("Contrastive search")
@@ -741,7 +721,6 @@ class GenerationIntegrationTestsMixin:
 
         eos_token_id = [225, 198]
         generated_tokens = model.generate(**tokens, eos_token_id=eos_token_id, **generation_kwargs)
-        model.destroy()
         self.assertTrue(expectation == len(generated_tokens[0]))
 
     def test_eos_token_id_int_and_list_beam_search(self):
@@ -780,7 +759,6 @@ class GenerationIntegrationTestsMixin:
 
         eos_token_id = [873, 198]
         generated_tokens = model.generate(**tokens, eos_token_id=eos_token_id, **generation_kwargs)
-        model.destroy()
 
         unpadded_correct_condition = expectation == len(generated_tokens[0])
         padded_correct_condition = expectation < len(generated_tokens[0]) and all(
@@ -811,7 +789,6 @@ class GenerationIntegrationTestsMixin:
             pixel_values, max_length=5, decoder_input_ids=conditioning_input
         )
         output_sequences_input_ids = model.generate(pixel_values, max_length=5, input_ids=conditioning_input)
-        model.destroy()
         if is_pt:
             output_sequences_decoder_input_ids = output_sequences_decoder_input_ids.cpu().numpy()
             output_sequences_input_ids = output_sequences_input_ids.cpu().numpy()

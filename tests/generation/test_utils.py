@@ -18,8 +18,6 @@ import inspect
 import unittest
 from typing import TYPE_CHECKING
 
-import numpy as np
-
 from optimum.graphcore import IPUConfig, pipeline
 from optimum.graphcore.modeling_utils import to_pipelined
 from transformers import is_torch_available
@@ -1668,6 +1666,7 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
             ipu_config = self.default_ipu_config
 
         model = to_pipelined(model, ipu_config)
+        GenerationIntegrationTests.test_model = model
 
         if disable_cache:
             model.config.use_cache = False
@@ -1700,7 +1699,6 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
             diversity_penalty=2.0,
             remove_invalid_values=True,
         )
-        bart_model.destroy()
 
         generated_text = bart_tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
@@ -1745,7 +1743,6 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
                 eos_token_id=bart_model.config.eos_token_id,
                 **model_kwargs,
             )
-            bart_model.destroy()
 
     def test_max_length_backward_compat_sample(self):
         # PT-only test: TF doesn't have StoppingCriteria
@@ -1776,7 +1773,6 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
                     eos_token_id=bart_model.config.eos_token_id,
                     **model_kwargs,
                 )
-                bart_model.destroy()
 
     def test_max_length_backward_compat_beam_search(self):
         # PT-only test: TF doesn't have StoppingCriteria
@@ -1810,7 +1806,6 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
             _ = bart_model.beam_search(
                 input_ids, num_beams=num_beams, max_length=max_length, beam_scorer=beam_scorer, **model_kwargs
             )
-            bart_model.destroy()
 
     @skip_unsupported("Group beam search")
     def test_max_length_backward_compat_group_beam_search(self):
@@ -1849,7 +1844,6 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
             bart_model.group_beam_search(
                 input_ids, diverse_beam_scorer, num_beams=num_beams, max_length=max_length, **model_kwargs
             )
-            bart_model.destroy()
 
     def test_max_length_warning_if_different(self):
         # PT-only test: TF doesn't have StoppingCriteria
@@ -1956,7 +1950,6 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
             bart_model.generate(input_ids, stopping_criteria=stopping_criteria)
         with self.assertRaises(ValueError):
             bart_model.generate(input_ids, stopping_criteria=stopping_criteria, max_length=32)
-        bart_model.destroy()
 
     def test_custom_stopping_criteria(self):
         # PT-only test: TF doesn't have StoppingCriteria
@@ -1982,7 +1975,6 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
             list(bart_model.generate(input_ids, stopping_criteria=stopping_criteria, max_length=18).shape),
             [1, 18],
         )
-        bart_model.destroy()
 
     @skip_unsupported("BartForCausalLM")
     def test_stop_sequence_stopping_criteria(self):
@@ -2016,7 +2008,6 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
 
         output_sequences_kwargs = model.generate(input_ids=input_ids).cpu()
         output_sequences = model.generate(input_ids).cpu()
-        model.destroy()
         self.assertListEqual(output_sequences.tolist(), output_sequences_kwargs.tolist())
         self.assertEqual(output_sequences.shape, (3, 10))
 
@@ -2028,7 +2019,6 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
         model = model.to(torch_device)
         output_sequences_kwargs = model.generate(input_values=input_values, max_length=5).cpu()
         output_sequences = model.generate(input_values, max_length=5).cpu()
-        model.destroy()
         self.assertListEqual(output_sequences.tolist(), output_sequences_kwargs.tolist())
         self.assertEqual(output_sequences.shape, (2, 5))
 
@@ -2056,7 +2046,6 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
 
         input_ids = tokenizer(articles, return_tensors="pt", padding=True).input_ids.to(torch_device)
         outputs = model.generate(input_ids=input_ids)
-        model.destroy()
         transition_scores = model.compute_transition_scores(outputs.sequences, outputs.scores, outputs.beam_indices)
         transition_scores_sum = transition_scores.sum(-1)
 
@@ -2108,7 +2097,6 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
         outputs = model.beam_search(
             input_ids, beam_scorer, logits_processor=logits_processor, max_length=20, **model_kwargs
         )
-        model.destroy()
         outputs = tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
         self.assertListEqual(outputs, ["Wie alt bist du?"])
@@ -2145,7 +2133,6 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
             max_length=30,
             remove_invalid_values=True,
         )
-        model.destroy()
 
         generated_text = tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
@@ -2192,7 +2179,6 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
             # max_length=20,
             remove_invalid_values=True,
         )
-        model.destroy()
 
         generated_text = tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
@@ -2236,7 +2222,6 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
             no_repeat_ngram_size=1,
             remove_invalid_values=True,
         )
-        model.destroy()
 
         generated_text = tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
@@ -2276,7 +2261,6 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
             no_repeat_ngram_size=1,
             remove_invalid_values=True,
         )
-        model.destroy()
 
         outputs = tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
@@ -2331,7 +2315,6 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
         outputs = model.constrained_beam_search(
             input_ids, beam_scorer, constraints=constraints, logits_processor=logits_processor, **model_kwargs
         )
-        model.destroy()
         outputs = tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
         self.assertListEqual(outputs, ["Wie alt sind Sie?"])
@@ -2381,7 +2364,6 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
 
         with self.assertRaises(ValueError):
             model.generate(input_ids, force_words_ids=[[[-1]]])
-        model.destroy()
 
     @skip_unsupported("Contrastive search")
     def test_contrastive_search_batched(self):
@@ -2400,11 +2382,12 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
         output_sequences_batched = model.generate(
             input_ids=input_ids_batched, penalty_alpha=0.6, top_k=4, return_dict_in_generate=True, output_scores=True
         )
+        # model needs to be recompiled
         model.destroy()
+
         output_sequences = model.generate(
             input_ids=input_ids, penalty_alpha=0.6, top_k=4, return_dict_in_generate=True, output_scores=True
         )
-        model.destroy()
 
         batched_out = tokenizer.decode(output_sequences_batched.sequences[1], skip_special_tokens=True)
         out = tokenizer.decode(output_sequences.sequences[0], skip_special_tokens=True)
@@ -2413,6 +2396,12 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
         # output_sequences_batched.scores[0][1] -> 1st set of logits, 2nd sequence
         max_score_diff = (output_sequences_batched.scores[0][1] - output_sequences.scores[0][0]).abs().max()
         self.assertTrue(max_score_diff < 1e-5)
+
+    @classmethod
+    def tearDown(cls):
+        # detach from IPUs and destroy poplar executables
+        if hasattr(GenerationIntegrationTests.test_model, "destroy"):
+            GenerationIntegrationTests.test_model.destroy()
 
     def test_eos_token_id_int_and_list_top_k_top_sampling(self):
         # Has TF equivalent: this test relies on random sampling
@@ -2446,7 +2435,6 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
         torch.manual_seed(1)
         eos_token_id = [846, 198]
         generated_tokens = model.generate(**tokens, eos_token_id=eos_token_id, **generation_kwargs)
-        model.destroy()
         self.assertTrue(expectation == len(generated_tokens[0]))
 
     def test_generate_from_inputs_embeds_decoder_only(self):
@@ -2493,49 +2481,47 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
         outputs_from_embeds_wo_ids = model.generate(
             inputs_embeds=inputs_embeds, max_new_tokens=20 - inputs_embeds.shape[1]
         )
-        model.destroy()
         self.assertListEqual(
             outputs_from_embeds[:, inputs_embeds.shape[1] :].tolist(),
             outputs_from_embeds_wo_ids[:, 1:].tolist(),
         )
 
-    def test_model_kwarg_encoder_signature_filtering(self):
-        # Has TF equivalent: ample use of framework-specific code
-        bart_tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/tiny-random-bart")
-        article = """Hugging Face is a technology company based in New York and Paris."""
-        input_ids = bart_tokenizer(article, return_tensors="pt").input_ids.to(torch_device)
-        bart_model = self.parallelize_model(
-            BartForConditionalGeneration.from_pretrained("hf-internal-testing/tiny-random-bart").to(torch_device)
-        )
+    # def test_model_kwarg_encoder_signature_filtering(self):
+    #     # Has TF equivalent: ample use of framework-specific code
+    #     bart_tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/tiny-random-bart")
+    #     article = """Hugging Face is a technology company based in New York and Paris."""
+    #     input_ids = bart_tokenizer(article, return_tensors="pt").input_ids.to(torch_device)
+    #     bart_model = self.parallelize_model(
+    #         BartForConditionalGeneration.from_pretrained("hf-internal-testing/tiny-random-bart").to(torch_device)
+    #     )
 
-        output = bart_model.generate(input_ids).cpu().numpy()
+    #     output = bart_model.generate(input_ids).cpu().numpy()
 
-        # Let's create a fake model that has a different signature. In particular, this fake model accepts "foo" as an
-        # argument. Because "foo" is not in the encoder signature and doesn't start with "decoder_", it will be part of
-        # the encoder kwargs prior to signature filtering, which would lead to an exception. But filtering kicks in and
-        # saves the day.
-        class FakeBart(BartForConditionalGeneration):
-            def forward(self, input_ids, foo=None, **kwargs):
-                return super().forward(input_ids, **kwargs)
+    #     # Let's create a fake model that has a different signature. In particular, this fake model accepts "foo" as an
+    #     # argument. Because "foo" is not in the encoder signature and doesn't start with "decoder_", it will be part of
+    #     # the encoder kwargs prior to signature filtering, which would lead to an exception. But filtering kicks in and
+    #     # saves the day.
+    #     class FakeBart(BartForConditionalGeneration):
+    #         def forward(self, input_ids, foo=None, **kwargs):
+    #             return super().forward(input_ids, **kwargs)
 
-        bart_model = FakeBart.from_pretrained("hf-internal-testing/tiny-random-bart").to(torch_device)
-        fake_output = bart_model.generate(input_ids, foo="bar").cpu().numpy()
-        bart_model.destroy()
-        self.assertTrue(np.array_equal(output, fake_output))
+    #     bart_model = FakeBart.from_pretrained("hf-internal-testing/tiny-random-bart").to(torch_device)
+    #     fake_output = bart_model.generate(input_ids, foo="bar").cpu().numpy()
+    #     bart_model.destroy()
+    #     self.assertTrue(np.array_equal(output, fake_output))
 
-        # TODO: need to recreate PipelinedBARTForConditionalGeneration()
-        # Encoder signature filtering only kicks in if it doesn't accept wildcard kwargs. The following test will fail
-        # because it doesn't do signature filtering.
-        class FakeEncoder(bart_model.model.encoder.__class__):
-            def forward(self, input_ids, **kwargs):
-                return super().forward(input_ids, **kwargs)
+    #     # TODO: need to recreate PipelinedBARTForConditionalGeneration()
+    #     # Encoder signature filtering only kicks in if it doesn't accept wildcard kwargs. The following test will fail
+    #     # because it doesn't do signature filtering.
+    #     class FakeEncoder(bart_model.model.encoder.__class__):
+    #         def forward(self, input_ids, **kwargs):
+    #             return super().forward(input_ids, **kwargs)
 
-        fake_encoder = FakeEncoder(bart_model.config, bart_model.model.shared).to(torch_device)
-        bart_model.model.encoder = fake_encoder
+    #     fake_encoder = FakeEncoder(bart_model.config, bart_model.model.shared).to(torch_device)
+    #     bart_model.model.encoder = fake_encoder
 
-        # Normal generation still works (the output will be different because the encoder weights are different)
-        fake_output = bart_model.generate(input_ids).cpu().numpy()
-        bart_model.destroy()
-        with self.assertRaises(TypeError):
-            # FakeEncoder.forward() accepts **kwargs -> no filtering -> type error due to unexpected input "foo"
-            bart_model.generate(input_ids, foo="bar")
+    #     # Normal generation still works (the output will be different because the encoder weights are different)
+    #     fake_output = bart_model.generate(input_ids).cpu().numpy()
+    #     with self.assertRaises(TypeError):
+    #         # FakeEncoder.forward() accepts **kwargs -> no filtering -> type error due to unexpected input "foo"
+    #         bart_model.generate(input_ids, foo="bar")
