@@ -503,10 +503,6 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         self.change_lm_head(restore=True)
         self.set_on_device_generation_steps(0)
 
-        if isinstance(self.proj_out, SerializedLinear):
-            self.proj_out = self.proj_out.to_model()
-            self.tie_weights()
-
         return self
 
     def prepare_inputs_for_generation(
