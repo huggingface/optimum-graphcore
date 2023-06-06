@@ -417,10 +417,10 @@ class IPUConfig(BaseConfig):
         # TODO: remove this if unnecessary.
         self.execute_encoder_on_cpu_for_generation = kwargs.pop("execute_encoder_on_cpu_for_generation", False)
 
-        # TODO: remove once kwargs is no longer in use
-        if kwargs:
+        # Raise error if user has provided unknown & unused kwarg
+        if unknown_kwargs := (set(kwargs) - set(BaseConfig().to_dict())):
             raise IncompatibleIPUConfigError(
-                "IPUConfig received unknown arguments:\n" + "\n".join([f"  {k}={v}" for k, v in kwargs.items()])
+                "IPUConfig received unknown arguments:\n" + "\n".join([f"  {k}={kwargs[k]}" for k in unknown_kwargs])
             )
 
         self._validate_ipu_config()
