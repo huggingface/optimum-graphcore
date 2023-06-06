@@ -706,6 +706,9 @@ class IPUConfig(BaseConfig):
         # Remove type hints as they are not serializable
         output.pop("_attribute_type_hints", None)
 
+        # Remove mode as it's not relevant for a dict
+        output.pop("_mode", None)
+
         return output
 
     def batch_size_factor(self, for_inference: bool = False) -> int:
