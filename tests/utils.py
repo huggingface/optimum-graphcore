@@ -12,6 +12,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import pytest
 
 MODELS_TO_TEST_MAPPING = {
     "bart": ("facebook/bart-base", "Graphcore/bart-base-ipu"),
@@ -36,3 +37,7 @@ MODELS_TO_TEST_MAPPING = {
     },
     "whisper": ("openai/whisper-tiny", "Graphcore/whisper-tiny-ipu"),
 }
+
+
+def skip_unsupported(feature):
+    return pytest.mark.skip(f"Skipping since {feature} is not yet supported in Optimum Graphcore")

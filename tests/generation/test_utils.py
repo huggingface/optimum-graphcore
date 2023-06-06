@@ -18,14 +18,12 @@ import inspect
 import unittest
 from typing import TYPE_CHECKING, List, Optional, Union
 
-import pytest
+import numpy as np
 
-from optimum.graphcore import IPUConfig
+from optimum.graphcore import IPUConfig, pipeline
 from optimum.graphcore.modeling_utils import to_pipelined
 from transformers import is_torch_available
 from transformers.testing_utils import require_torch, slow, torch_device
-
-from optimum.graphcore import IPUConfig, pipeline
 
 from ..test_modeling_common import floats_tensor, ids_tensor
 from .test_framework_agnostic import GenerationIntegrationTestsMixin
@@ -79,8 +77,8 @@ if is_torch_available():
 
 from optimum.graphcore import PipelinedBartForConditionalGeneration
 
-def skip_unsupported(feature):
-    return pytest.mark.skip(f"Skipping since {feature} is not yet supported in Optimum Graphcore")
+from ..utils import skip_unsupported
+
 
 class GenerationTesterMixin:
     model_tester = None
@@ -1657,13 +1655,26 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
             "floats_tensor": floats_tensor,
             "return_tensors": "pt",
         }
-        
-        default_ipu_config = IPUConfig.from_pretrained(
-            "Graphcore/internal-testing-tiny-ipu",
-            inference_layers_per_ipu=[-1],
-            embedding_serialization_factor=1
-        ).eval()
-        
+
+    default_ipu_config = IPUConfig.from_pretrained(
+        "Graphcore/internal-testing-tiny-ipu",
+        inference_layers_per_ipu=[-1],
+        embedding_serialization_factor=1,
+        inference_embedding_serialization_factor=1,
+    ).eval()
+
+    def parallelize_model(self, model: torch.nn.Module, ipu_config: IPUConfig = None, disable_cache=False):
+        if ipu_config is None:
+            ipu_config = self.default_ipu_config
+
+        model = to_pipelined(model, ipu_config)
+
+        if disable_cache:
+            model.config.use_cache = False
+            model.parallelize(for_generation=True)
+        else:
+            model.parallelize(for_generation=True, use_cache=model.config.use_cache)
+        return model
 
     @skip_unsupported("Group beam search")
     @slow
@@ -1675,15 +1686,10 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
         The couple announced the pregnancy in January, with an Instagram post. It is the first baby for both."""
 
         bart_tokenizer = BartTokenizer.from_pretrained("facebook/bart-large-cnn")
-        ipu_config = IPUConfig(
-            inference_layers_per_ipu=[-1],
-            inference_ipus_per_replica=2
-        ).eval()
-        bart_model = to_pipelined(
-            BartForConditionalGeneration.from_pretrained("facebook/bart-large-cnn"),
-            ipu_config=ipu_config
+        ipu_config = IPUConfig(inference_layers_per_ipu=[-1], inference_ipus_per_replica=4).eval()
+        bart_model = self.parallelize_model(
+            BartForConditionalGeneration.from_pretrained("facebook/bart-large-cnn"), ipu_config=ipu_config
         )
-        bart_model.parallelize(for_generation=True, use_cache=bart_model.config.use_cache)
         input_ids = bart_tokenizer(article, return_tensors="pt").input_ids.to(torch_device)
 
         outputs = bart_model.generate(
@@ -1694,6 +1700,7 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
             diversity_penalty=2.0,
             remove_invalid_values=True,
         )
+        bart_model.destroy()
 
         generated_text = bart_tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
@@ -1708,19 +1715,15 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
                 " name of Timberlake's maternal grandfather. It's also his own middle name.",
             ],
         )
-        
-        bart_model.detachFromDevice()
 
     def test_max_length_backward_compat_greedy(self):
         # PT-only test: TF doesn't have StoppingCriteria
         article = """Justin Timberlake and Jessica Biel, welcome to parenthood."""
         bart_tokenizer = BartTokenizer.from_pretrained("hf-internal-testing/tiny-random-bart")
-        bart_model = to_pipelined(
+        bart_model = self.parallelize_model(
             BartForConditionalGeneration.from_pretrained("hf-internal-testing/tiny-random-bart"),
-            ipu_config=self.default_ipu_config
-            
-        ).parallelize(for_generation=True)
-        
+        )
+
         input_ids = bart_tokenizer(article, return_tensors="pt").input_ids.to(torch_device)
 
         max_length = 20
@@ -1742,17 +1745,15 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
                 eos_token_id=bart_model.config.eos_token_id,
                 **model_kwargs,
             )
-        bart_model.detachFromDevice()
+            bart_model.destroy()
 
     def test_max_length_backward_compat_sample(self):
         # PT-only test: TF doesn't have StoppingCriteria
         article = """Justin Timberlake and Jessica Biel, welcome to parenthood."""
         bart_tokenizer = BartTokenizer.from_pretrained("hf-internal-testing/tiny-random-bart")
-        bart_model = to_pipelined(
+        bart_model = self.parallelize_model(
             BartForConditionalGeneration.from_pretrained("hf-internal-testing/tiny-random-bart"),
-            ipu_config=self.default_ipu_config
-            
-        ).parallelize(for_generation=True)
+        )
         input_ids = bart_tokenizer(article, return_tensors="pt").input_ids.to(torch_device)
 
         max_length = 20
@@ -1765,6 +1766,7 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
             decoder_start_token_id=bart_model.config.decoder_start_token_id,
             bos_token_id=bart_model.config.bos_token_id,
         )
+
         with torch.no_grad():
             with self.assertWarns(UserWarning):
                 bart_model.sample(
@@ -1774,17 +1776,15 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
                     eos_token_id=bart_model.config.eos_token_id,
                     **model_kwargs,
                 )
-        bart_model.detachFromDevice()
+                bart_model.destroy()
 
     def test_max_length_backward_compat_beam_search(self):
         # PT-only test: TF doesn't have StoppingCriteria
         article = """Justin Timberlake and Jessica Biel, welcome to parenthood."""
         bart_tokenizer = BartTokenizer.from_pretrained("hf-internal-testing/tiny-random-bart")
-        bart_model = to_pipelined(
+        bart_model = self.parallelize_model(
             BartForConditionalGeneration.from_pretrained("hf-internal-testing/tiny-random-bart"),
-            ipu_config=self.default_ipu_config
-            
-        ).parallelize(for_generation=True)
+        )
         input_ids = bart_tokenizer(article, return_tensors="pt").input_ids.to(torch_device)
 
         batch_size = 1
@@ -1810,18 +1810,16 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
             _ = bart_model.beam_search(
                 input_ids, num_beams=num_beams, max_length=max_length, beam_scorer=beam_scorer, **model_kwargs
             )
-        bart_model.detachFromDevice()
+            bart_model.destroy()
 
     @skip_unsupported("Group beam search")
     def test_max_length_backward_compat_group_beam_search(self):
         # PT-only test: TF doesn't have StoppingCriteria & group beam search
         article = """Justin Timberlake and Jessica Biel, welcome to parenthood."""
         bart_tokenizer = BartTokenizer.from_pretrained("hf-internal-testing/tiny-random-bart")
-        bart_model = to_pipelined(
+        bart_model = self.parallelize_model(
             BartForConditionalGeneration.from_pretrained("hf-internal-testing/tiny-random-bart"),
-            ipu_config=self.default_ipu_config
-            
-        ).parallelize(for_generation=True)
+        )
         input_ids = bart_tokenizer(article, return_tensors="pt").input_ids.to(torch_device)
 
         batch_size = 1
@@ -1851,19 +1849,16 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
             bart_model.group_beam_search(
                 input_ids, diverse_beam_scorer, num_beams=num_beams, max_length=max_length, **model_kwargs
             )
-        bart_model.detachFromDevice()
+            bart_model.destroy()
 
-    
     def test_max_length_warning_if_different(self):
         # PT-only test: TF doesn't have StoppingCriteria
         article = """Justin Timberlake and Jessica Biel, welcome to parenthood."""
         bart_tokenizer = BartTokenizer.from_pretrained("hf-internal-testing/tiny-random-bart")
-        bart_model = to_pipelined(
+        bart_model = self.parallelize_model(
             BartForConditionalGeneration.from_pretrained("hf-internal-testing/tiny-random-bart"),
-            ipu_config=self.default_ipu_config
-            
-        ).parallelize(for_generation=True)
-        
+        )
+
         input_ids = bart_tokenizer(article, return_tensors="pt").input_ids.to(torch_device)
 
         batch_size = 1
@@ -1895,6 +1890,7 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
                 eos_token_id=bart_model.config.eos_token_id,
                 **model_kwargs,
             )
+            bart_model.destroy()
 
         # Sample
         with self.assertWarns(UserWarning):
@@ -1907,6 +1903,7 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
                     eos_token_id=bart_model.config.eos_token_id,
                     **model_kwargs,
                 )
+                bart_model.destroy()
 
         # Beam
         beam_scorer = BeamSearchScorer(
@@ -1924,8 +1921,7 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
                     beam_scorer=beam_scorer,
                     **model_kwargs,
                 )
-                
-        bart_model.detachFromDevice()
+                bart_model.destroy()
 
         # Not yet supported
         # Grouped beam search
@@ -1950,11 +1946,9 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
         # PT-only test: TF doesn't have StoppingCriteria
         article = """Justin Timberlake and Jessica Biel, welcome to parenthood."""
         bart_tokenizer = BartTokenizer.from_pretrained("sshleifer/bart-tiny-random")
-        bart_model = to_pipelined(
+        bart_model = self.parallelize_model(
             BartForConditionalGeneration.from_pretrained("sshleifer/bart-tiny-random"),
-            ipu_config=self.default_ipu_config
-            
-        ).parallelize(for_generation=True)
+        )
 
         input_ids = bart_tokenizer(article, return_tensors="pt").input_ids.to(torch_device)
         stopping_criteria = StoppingCriteriaList()
@@ -1963,17 +1957,15 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
             bart_model.generate(input_ids, stopping_criteria=stopping_criteria)
         with self.assertRaises(ValueError):
             bart_model.generate(input_ids, stopping_criteria=stopping_criteria, max_length=32)
-        bart_model.detachFromDevice()
-        
+        bart_model.destroy()
+
     def test_custom_stopping_criteria(self):
         # PT-only test: TF doesn't have StoppingCriteria
         article = """Justin Timberlake and Jessica Biel, welcome to parenthood."""
         bart_tokenizer = BartTokenizer.from_pretrained("sshleifer/bart-tiny-random")
-        bart_model = to_pipelined(
+        bart_model = self.parallelize_model(
             BartForConditionalGeneration.from_pretrained("sshleifer/bart-tiny-random"),
-            ipu_config=self.default_ipu_config
-            
-        ).parallelize(for_generation=True)
+        )
         input_ids = bart_tokenizer(article, return_tensors="pt").input_ids.to(torch_device)
 
         class DummyCriteria(StoppingCriteria):
@@ -1991,13 +1983,15 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
             list(bart_model.generate(input_ids, stopping_criteria=stopping_criteria, max_length=18).shape),
             [1, 18],
         )
-        bart_model.detachFromDevice()
+        bart_model.destroy()
 
     @skip_unsupported("BartForCausalLM")
     def test_stop_sequence_stopping_criteria(self):
         # PT-only test: TF doesn't have StoppingCriteria
         prompt = """Hello I believe in"""
-        generator = pipeline("text-generation", model="hf-internal-testing/tiny-random-bart", ipu_config=self.default_ipu_config)
+        generator = pipeline(
+            "text-generation", model="hf-internal-testing/tiny-random-bart", ipu_config=self.default_ipu_config
+        )
         output = generator(prompt)
         self.assertEqual(
             output,
@@ -2023,7 +2017,7 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
 
         output_sequences_kwargs = model.generate(input_ids=input_ids).cpu()
         output_sequences = model.generate(input_ids).cpu()
-
+        model.destroy()
         self.assertListEqual(output_sequences.tolist(), output_sequences_kwargs.tolist())
         self.assertEqual(output_sequences.shape, (3, 10))
 
@@ -2035,7 +2029,7 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
         model = model.to(torch_device)
         output_sequences_kwargs = model.generate(input_values=input_values, max_length=5).cpu()
         output_sequences = model.generate(input_values, max_length=5).cpu()
-
+        model.destroy()
         self.assertListEqual(output_sequences.tolist(), output_sequences_kwargs.tolist())
         self.assertEqual(output_sequences.shape, (2, 5))
 
@@ -2047,29 +2041,27 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
             "Michael Phelps is arguably the most decorated Olympian of all time.",
         ]
         tokenizer = BartTokenizer.from_pretrained("hf-internal-testing/tiny-random-bart")
-        bart_model = to_pipelined(
+        model = self.parallelize_model(
             BartForConditionalGeneration.from_pretrained(
-            "hf-internal-testing/tiny-random-bart",
-            max_length=10,
-            num_beams=2,
-            num_beam_groups=2,
-            num_return_sequences=2,
-            eos_token_id=None,
-            return_dict_in_generate=True,
-            output_scores=True,
-            length_penalty=0.0,
-            ),
-            ipu_config=self.default_ipu_config
-        ).parallelize(for_generation=True)
+                "hf-internal-testing/tiny-random-bart",
+                max_length=10,
+                num_beams=2,
+                num_beam_groups=2,
+                num_return_sequences=2,
+                eos_token_id=None,
+                return_dict_in_generate=True,
+                output_scores=True,
+                length_penalty=0.0,
+            )
+        )
 
         input_ids = tokenizer(articles, return_tensors="pt", padding=True).input_ids.to(torch_device)
         outputs = model.generate(input_ids=input_ids)
-
+        model.destroy()
         transition_scores = model.compute_transition_scores(outputs.sequences, outputs.scores, outputs.beam_indices)
         transition_scores_sum = transition_scores.sum(-1)
 
         self.assertTrue(torch.allclose(transition_scores_sum, outputs.sequences_scores, atol=1e-3))
-        model.detachFromDevice()
 
     @slow
     def test_beam_search_example_integration(self):
@@ -2077,15 +2069,14 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
         # exactly the example provided in the docstrings of beam search, which previously
         # failed after directly copying from it. Refer to PR #15555
         tokenizer = AutoTokenizer.from_pretrained("t5-base")
-        ipu_config = IPUConfig(
-            inference_layers_per_ipu=[-1],
-            inference_ipus_per_replica=2
-        ).eval()
-        model = to_pipelined(
+        ipu_config = IPUConfig(inference_layers_per_ipu=[-1], inference_ipus_per_replica=4).eval()
+        model = self.parallelize_model(
             AutoModelForSeq2SeqLM.from_pretrained("t5-base"),
-            ipu_config=ipu_config
-        ).parallelize(for_generation=True)
-        
+            ipu_config=ipu_config,
+            # disable KV cache until supported
+            disable_cache=True,
+        )
+
         encoder_input_str = "translate English to German: How old are you?"
         encoder_input_ids = tokenizer(encoder_input_str, return_tensors="pt").input_ids
 
@@ -2115,18 +2106,23 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
                 MinLengthLogitsProcessor(5, eos_token_id=model.config.eos_token_id),
             ]
         )
-        outputs = model.beam_search(input_ids, beam_scorer, logits_processor=logits_processor, max_length=20, **model_kwargs)
+        outputs = model.beam_search(
+            input_ids, beam_scorer, logits_processor=logits_processor, max_length=20, **model_kwargs
+        )
+        model.destroy()
         outputs = tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
         self.assertListEqual(outputs, ["Wie alt bist du?"])
-        model.detachFromDevice()
 
+    @skip_unsupported("Constrained beam search")
     @slow
     def test_constrained_beam_search(self):
         # PT-only test: TF doesn't have constrained beam search
-        model = to_pipelined(
+        model = self.parallelize_model(
             GPT2LMHeadModel.from_pretrained("gpt2").to(torch_device),
-            ipu_config=self.default_ipu_config).parallelize(for_generation=True)
+            # disable KV cache until supported
+            disable_cache=True,
+        )
         tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 
         force_tokens = tokenizer("scared", add_prefix_space=True, add_special_tokens=False).input_ids
@@ -2150,6 +2146,7 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
             max_length=30,
             remove_invalid_values=True,
         )
+        model.destroy()
 
         generated_text = tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
@@ -2160,15 +2157,17 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
                 " the enemy attacked them, big weapons scared"
             ],
         )
-        model.detachFromDevice()
 
+    @skip_unsupported("Constrained beam search")
     @slow
     def test_constrained_beam_search_mixed(self):
         # PT-only test: TF doesn't have constrained beam search
-        model = to_pipelined(
+        model = self.parallelize_model(
             GPT2LMHeadModel.from_pretrained("gpt2").to(torch_device),
-            ipu_config=self.default_ipu_config).parallelize(for_generation=True)
-        
+            # disable KV cache until supported
+            disable_cache=True,
+        )
+
         tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 
         force_phrase = tokenizer("scared", add_prefix_space=True, add_special_tokens=False).input_ids
@@ -2194,6 +2193,7 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
             # max_length=20,
             remove_invalid_values=True,
         )
+        model.destroy()
 
         generated_text = tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
@@ -2205,14 +2205,16 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
                 "The child was taken to a local hospital where he died.\n 'I don't think screaming scared",
             ],
         )
-        model.detachFromDevice()
 
+    @skip_unsupported("Constrained beam search")
     @slow
     def test_constrained_beam_search_mixed_mixin(self):
         # PT-only test: TF doesn't have constrained beam search
-        model = to_pipelined(
-            GPT2LMHeadModel.from_pretrained("gpt2").to(torch_device),
-            ipu_config=self.default_ipu_config).parallelize(for_generation=True)
+        model = self.parallelize_model(
+            GPT2LMHeadModel.from_pretrained("gpt2"),
+            # disable KV cache until supported
+            disable_cache=True,
+        )
         tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
 
         force_word = "scared"
@@ -2235,6 +2237,7 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
             no_repeat_ngram_size=1,
             remove_invalid_values=True,
         )
+        model.destroy()
 
         generated_text = tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
@@ -2246,20 +2249,19 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
                 "The child was taken to a local hospital where he died.\n 'I don't think screaming scared",
             ],
         )
-        model.detachFromDevice()
 
+    @skip_unsupported("Constrained beam search")
     @slow
     def test_constrained_beam_search_example_translation_mixin(self):
         # PT-only test: TF doesn't have constrained beam search
         tokenizer = AutoTokenizer.from_pretrained("t5-base")
-        ipu_config = IPUConfig(
-            inference_layers_per_ipu=[-1],
-            inference_ipus_per_replica=2            
-        ).eval()
-        model = to_pipelined(
+        ipu_config = IPUConfig(inference_layers_per_ipu=[-1], inference_ipus_per_replica=4).eval()
+        model = self.parallelize_model(
             AutoModelForSeq2SeqLM.from_pretrained("t5-base"),
-            ipu_config=ipu_config).parallelize(for_generation=True)
-            
+            ipu_config=ipu_config,
+            # disable KV cache until supported
+            disable_cache=True,
+        )
 
         encoder_input_str = "translate English to German: How old are you?"
         force_words = ["sind"]
@@ -2275,23 +2277,25 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
             no_repeat_ngram_size=1,
             remove_invalid_values=True,
         )
+        model.destroy()
 
         outputs = tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
         self.assertListEqual(outputs, ["Wie alt sind Sie?"])
-        model.detachFromDevice()
 
+    @skip_unsupported("Constrained beam search")
     @slow
     def test_constrained_beam_search_example_integration(self):
         # PT-only test: TF doesn't have constrained beam search
         tokenizer = AutoTokenizer.from_pretrained("t5-base")
-        ipu_config = IPUConfig(
-            inference_layers_per_ipu=[-1],
-            inference_ipus_per_replica=2
-        ).eval()
-        model = to_pipelined(
+
+        ipu_config = IPUConfig(inference_layers_per_ipu=[-1], inference_ipus_per_replica=4).eval()
+        model = self.parallelize_model(
             AutoModelForSeq2SeqLM.from_pretrained("t5-base"),
-            ipu_config=ipu_config).parallelize(for_generation=True)
+            ipu_config=ipu_config,
+            # disable KV cache until supported
+            disable_cache=True,
+        )
 
         encoder_input_str = "translate English to German: How old are you?"
         encoder_input_ids = tokenizer(encoder_input_str, return_tensors="pt").input_ids
@@ -2328,17 +2332,20 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
         outputs = model.constrained_beam_search(
             input_ids, beam_scorer, constraints=constraints, logits_processor=logits_processor, **model_kwargs
         )
+        model.destroy()
         outputs = tokenizer.batch_decode(outputs, skip_special_tokens=True)
 
         self.assertListEqual(outputs, ["Wie alt sind Sie?"])
-        model.detachFromDevice()
 
+    @skip_unsupported("Constrained beam search")
     def test_constrained_beam_search_mixin_type_checks(self):
         # PT-only test: TF doesn't have constrained beam search
         tokenizer = AutoTokenizer.from_pretrained("patrickvonplaten/t5-tiny-random")
-        model = to_pipelined(
+        model = self.parallelize_model(
             AutoModelForSeq2SeqLM.from_pretrained("patrickvonplaten/t5-tiny-random"),
-            ipu_config=self.default_ipu_config).parallelize(for_generation=True)
+            # disable KV cache until supported
+            disable_cache=True,
+        )
 
         encoder_input_str = "translate English to German: How old are you?"
         input_ids = tokenizer(encoder_input_str, return_tensors="pt").input_ids
@@ -2375,7 +2382,7 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
 
         with self.assertRaises(ValueError):
             model.generate(input_ids, force_words_ids=[[[-1]]])
-        model.detachFromDevice()
+        model.destroy()
 
     @skip_unsupported("Contrastive search")
     def test_contrastive_search_batched(self):
@@ -2383,10 +2390,9 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
         # Tests that contrastive search works with batched inputs (i.e. has the same output as for non-batched inputs)
         articles = ["Foo", "Bar Baz"]
         tokenizer = BartTokenizer.from_pretrained("hf-internal-testing/tiny-random-bart")
-        model = to_pipelined(
+        model = self.parallelize_model(
             BartForConditionalGeneration.from_pretrained("hf-internal-testing/tiny-random-bart"),
-            ipu_config=self.default_ipu_config).parallelize(for_generation=True)
-            
+        )
 
         model.config.eos_token_id = None
         input_ids_batched = tokenizer(articles, padding=True, return_tensors="pt").input_ids.to(torch_device)
@@ -2395,9 +2401,11 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
         output_sequences_batched = model.generate(
             input_ids=input_ids_batched, penalty_alpha=0.6, top_k=4, return_dict_in_generate=True, output_scores=True
         )
+        model.destroy()
         output_sequences = model.generate(
             input_ids=input_ids, penalty_alpha=0.6, top_k=4, return_dict_in_generate=True, output_scores=True
         )
+        model.destroy()
 
         batched_out = tokenizer.decode(output_sequences_batched.sequences[1], skip_special_tokens=True)
         out = tokenizer.decode(output_sequences.sequences[0], skip_special_tokens=True)
@@ -2406,7 +2414,6 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
         # output_sequences_batched.scores[0][1] -> 1st set of logits, 2nd sequence
         max_score_diff = (output_sequences_batched.scores[0][1] - output_sequences.scores[0][0]).abs().max()
         self.assertTrue(max_score_diff < 1e-5)
-        model.detachFromDevice()
 
     def test_eos_token_id_int_and_list_top_k_top_sampling(self):
         # Has TF equivalent: this test relies on random sampling
@@ -2422,12 +2429,12 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
         tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/tiny-random-gpt2")
         text = """Hello, my dog is cute and"""
         tokens = tokenizer(text, return_tensors="pt").to(torch_device)
-        model = to_pipelined(
-            AutoModelForCausalLM.from_pretrained("hf-internal-testing/tiny-random-gpt2").to(torch_device),
-            ipu_config=self.default_ipu_config).parallelize(for_generation=True)
-        # turn off KV cache until supported
-        model.config.use_cache=False
-        
+        model = self.parallelize_model(
+            AutoModelForCausalLM.from_pretrained("hf-internal-testing/tiny-random-gpt2"),
+            # disable KV cache until supported
+            disable_cache=True,
+        )
+
         # Only some seeds will work both on CPU/GPU for a fixed `expectation` value.
         # The selected seed is not guaranteed to work on all torch versions.
         torch.manual_seed(1)
@@ -2436,23 +2443,22 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
         self.assertTrue(expectation == len(generated_tokens[0]))
         # reset generation step
         delattr(model, "_previous_generation_step")
-        
+
         torch.manual_seed(1)
         eos_token_id = [846, 198]
         generated_tokens = model.generate(**tokens, eos_token_id=eos_token_id, **generation_kwargs)
+        model.destroy()
         self.assertTrue(expectation == len(generated_tokens[0]))
-        model.detachFromDevice()
 
     def test_generate_from_inputs_embeds_decoder_only(self):
         # PT-only test: TF doesn't have a model with support to generate from input embeds (yet ;))
         # Note: the model must support generation from input embeddings
-        model = to_pipelined(
+        model = self.parallelize_model(
             AutoModelForCausalLM.from_pretrained("hf-internal-testing/tiny-random-gpt2").to(torch_device),
-            ipu_config=self.default_ipu_config
-        ).parallelize(for_generation=True)
-        # turn off KV cache until supported
-        model.config.use_cache=False
-        
+            # disable KV cache until supported
+            disable_cache=True,
+        )
+
         tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/tiny-random-gpt2")
         model.config.pad_token_id = tokenizer.eos_token_id
 
@@ -2465,16 +2471,16 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
         self.assertEqual(outputs_from_ids.shape, (2, 20))
         # reset generation step
         delattr(model, "_previous_generation_step")
-        model.detachFromDevice()
-        delattr(model, "poptorch_decoder")
-        
+        # model needs to be recompiled
+        model.destroy()
+
         # Same thing, but from input embeddings
         inputs_embeds = model.transformer.wte(input_ids)
         outputs_from_embeds = model.generate(input_ids, inputs_embeds=inputs_embeds)
         self.assertListEqual(outputs_from_ids.tolist(), outputs_from_embeds.tolist())
         # reset generation step
         delattr(model, "_previous_generation_step")
-        
+
         # But if we pass different inputs_embeds, we should get different outputs
         torch.manual_seed(0)
         random_embeds = torch.rand_like(inputs_embeds)
@@ -2483,27 +2489,26 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
             self.assertListEqual(outputs_from_rand_embeds.tolist(), outputs_from_embeds.tolist())
         # reset generation step
         delattr(model, "_previous_generation_step")
-        
+
         # input_ids is not a required input -- if we don't pass it, the newly generated tokens will be the same
         outputs_from_embeds_wo_ids = model.generate(
             inputs_embeds=inputs_embeds, max_new_tokens=20 - inputs_embeds.shape[1]
         )
+        model.destroy()
         self.assertListEqual(
             outputs_from_embeds[:, inputs_embeds.shape[1] :].tolist(),
             outputs_from_embeds_wo_ids[:, 1:].tolist(),
         )
-        model.detachFromDevice()
 
     def test_model_kwarg_encoder_signature_filtering(self):
         # Has TF equivalent: ample use of framework-specific code
         bart_tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/tiny-random-bart")
         article = """Hugging Face is a technology company based in New York and Paris."""
         input_ids = bart_tokenizer(article, return_tensors="pt").input_ids.to(torch_device)
-        bart_model = to_pipelined(
-            BartForConditionalGeneration.from_pretrained("hf-internal-testing/tiny-random-bart").to(torch_device),
-            ipu_config=self.default_ipu_config
-        ).parallelize(for_generation=True)
-        
+        bart_model = self.parallelize_model(
+            BartForConditionalGeneration.from_pretrained("hf-internal-testing/tiny-random-bart").to(torch_device)
+        )
+
         output = bart_model.generate(input_ids).cpu().numpy()
 
         # Let's create a fake model that has a different signature. In particular, this fake model accepts "foo" as an
@@ -2516,8 +2521,8 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
 
         bart_model = FakeBart.from_pretrained("hf-internal-testing/tiny-random-bart").to(torch_device)
         fake_output = bart_model.generate(input_ids, foo="bar").cpu().numpy()
+        bart_model.destroy()
         self.assertTrue(np.array_equal(output, fake_output))
-        bart_model.detachFromDevice()
 
         # TODO: need to recreate PipelinedBARTForConditionalGeneration()
         # Encoder signature filtering only kicks in if it doesn't accept wildcard kwargs. The following test will fail
@@ -2531,6 +2536,7 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
 
         # Normal generation still works (the output will be different because the encoder weights are different)
         fake_output = bart_model.generate(input_ids).cpu().numpy()
+        bart_model.destroy()
         with self.assertRaises(TypeError):
             # FakeEncoder.forward() accepts **kwargs -> no filtering -> type error due to unexpected input "foo"
             bart_model.generate(input_ids, foo="bar")
