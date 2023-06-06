@@ -42,6 +42,9 @@ class Seq2SeqTrainerTester(TestCasePlus):
 
         model_checkpoint = "t5-small"
         t5_small = T5ForConditionalGeneration.from_pretrained(model_checkpoint)
+        # disable KV cache until supported
+        t5_small.config.use_cache = False
+
         tokenizer = T5Tokenizer.from_pretrained(model_checkpoint)
         t5_small.config.max_length = 128
 
@@ -117,7 +120,8 @@ class Seq2SeqTrainerTester(TestCasePlus):
             columns=["input_ids", "attention_mask", "decoder_input_ids", "decoder_attention_mask", "labels"],
         )
 
-        output_dir = self.get_auto_remove_tmp_dir()
+        # output_dir = self.get_auto_remove_tmp_dir()
+        output_dir = "test_run"
 
         training_args = IPUSeq2SeqTrainingArguments(
             output_dir=output_dir,
