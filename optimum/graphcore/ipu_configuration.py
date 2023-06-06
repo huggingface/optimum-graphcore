@@ -394,12 +394,12 @@ class IPUConfig(BaseConfig):
         self.serialized_projection_splits_per_ipu = serialized_projection_splits_per_ipu
         self.inference_serialized_projection_splits_per_ipu = inference_serialized_projection_splits_per_ipu
 
-        if "sharded_execution_for_inference" in kwargs:
+        if kwargs.pop("sharded_execution_for_inference", None):
             warnings.warn(
                 'The "sharded_execution_for_inference" parameter is deprecated, sharded execution is always used during inference'
             )
 
-        if "enable_half_first_order_momentum" in kwargs:
+        if kwargs.pop("enable_half_first_order_momentum", None):
             warnings.warn('The "enable_half_first_order_momentum" parameter is deprecated')
 
         self.gradient_accumulation_steps = gradient_accumulation_steps
@@ -416,6 +416,12 @@ class IPUConfig(BaseConfig):
 
         # TODO: remove this if unnecessary.
         self.execute_encoder_on_cpu_for_generation = kwargs.pop("execute_encoder_on_cpu_for_generation", False)
+
+        # Raise error if user has provided unknown & unused kwarg
+        if unknown_kwargs := (set(kwargs) - set(BaseConfig().to_dict())):
+            raise IncompatibleIPUConfigError(
+                "IPUConfig received unknown arguments:\n" + "\n".join([f"  {k}={kwargs[k]}" for k in unknown_kwargs])
+            )
 
         self._validate_ipu_config()
 
@@ -699,6 +705,9 @@ class IPUConfig(BaseConfig):
 
         # Remove type hints as they are not serializable
         output.pop("_attribute_type_hints", None)
+
+        # Remove mode as it's not relevant for a dict
+        output.pop("_mode", None)
 
         return output
 
