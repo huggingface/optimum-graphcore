@@ -15,16 +15,15 @@
 import unittest
 
 import numpy as np
-
-from optimum.graphcore import pipeline
 from transformers import (
     MODEL_FOR_TOKEN_CLASSIFICATION_MAPPING,
     AutoModelForTokenClassification,
     AutoTokenizer,
-    TokenClassificationPipeline,
 )
 from transformers.pipelines import AggregationStrategy, TokenClassificationArgumentHandler
 from transformers.testing_utils import nested_simplify, require_torch, slow
+
+from optimum.graphcore import pipeline
 
 from .test_pipelines_common import ANY, PipelineTestCaseMeta
 
@@ -47,6 +46,8 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
     def run_pipeline_test(self, token_classifier, _):
         model = token_classifier.model
         tokenizer = token_classifier.tokenizer
+        if not tokenizer.is_fast:
+            return  # Slow tokenizers do not return offsets mappings, so this test will fail
 
         outputs = token_classifier("A simple string")
         self.assertIsInstance(outputs, list)
@@ -215,6 +216,189 @@ class TokenClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
                 ignore_subwords=True,
             )
         self.assertEqual(token_classifier._postprocess_params["aggregation_strategy"], AggregationStrategy.FIRST)
+
+    @slow
+    @require_torch
+    def test_chunking(self):
+        NER_MODEL = "elastic/distilbert-base-uncased-finetuned-conll03-english"
+        model = AutoModelForTokenClassification.from_pretrained(NER_MODEL)
+        ipu_config = "Graphcore/distilbert-base-ipu"
+        tokenizer = AutoTokenizer.from_pretrained(NER_MODEL, use_fast=True)
+        tokenizer.model_max_length = 10
+        stride = 5
+        sentence = (
+            "Hugging Face, Inc. is a French company that develops tools for building applications using machine learning. "
+            "The company, based in New York City was founded in 2016 by French entrepreneurs Clément Delangue, Julien Chaumond, and Thomas Wolf."
+        )
+
+        token_classifier = pipeline(
+            task="token-classification",
+            model=model,
+            ipu_config=ipu_config,
+            tokenizer=tokenizer,
+            aggregation_strategy="simple",
+            stride=stride,
+            max_length=10,  # TODO: instead of specifying explicitly, consider additionally trying to infer from tokenizer.model_max_length
+            fp16=False,
+        )
+
+        output = token_classifier(sentence)
+        self.assertEqual(
+            nested_simplify(output),
+            [
+                {
+                    "entity_group": "ORG",
+                    "score": 0.979,  # upstream has 0.978
+                    "word": "hugging face, inc.",
+                    "start": 0,
+                    "end": 18,
+                },
+                {"entity_group": "MISC", "score": 0.999, "word": "french", "start": 24, "end": 30},
+                {"entity_group": "LOC", "score": 0.997, "word": "new york city", "start": 131, "end": 144},
+                {"entity_group": "MISC", "score": 0.999, "word": "french", "start": 168, "end": 174},
+                {"entity_group": "PER", "score": 0.999, "word": "clement delangue", "start": 189, "end": 205},
+                {"entity_group": "PER", "score": 0.999, "word": "julien chaumond", "start": 207, "end": 222},
+                {"entity_group": "PER", "score": 0.999, "word": "thomas wolf", "start": 228, "end": 239},
+            ],
+        )
+
+        token_classifier = pipeline(
+            task="token-classification",
+            model=model,
+            ipu_config=ipu_config,
+            tokenizer=tokenizer,
+            aggregation_strategy="first",
+            stride=stride,
+            max_length=10,
+            fp16=False,
+        )
+        output = token_classifier(sentence)
+        self.assertEqual(
+            nested_simplify(output),
+            [
+                {
+                    "entity_group": "ORG",
+                    "score": 0.979,  # upstream has 0.978
+                    "word": "hugging face, inc.",
+                    "start": 0,
+                    "end": 18,
+                },
+                {"entity_group": "MISC", "score": 0.999, "word": "french", "start": 24, "end": 30},
+                {"entity_group": "LOC", "score": 0.997, "word": "new york city", "start": 131, "end": 144},
+                {"entity_group": "MISC", "score": 0.999, "word": "french", "start": 168, "end": 174},
+                {"entity_group": "PER", "score": 0.999, "word": "clement delangue", "start": 189, "end": 205},
+                {"entity_group": "PER", "score": 0.999, "word": "julien chaumond", "start": 207, "end": 222},
+                {"entity_group": "PER", "score": 0.999, "word": "thomas wolf", "start": 228, "end": 239},
+            ],
+        )
+
+        token_classifier = pipeline(
+            task="token-classification",
+            model=model,
+            ipu_config=ipu_config,
+            tokenizer=tokenizer,
+            aggregation_strategy="max",
+            stride=stride,
+            max_length=10,
+            fp16=False,
+        )
+
+        output = token_classifier(sentence)
+        self.assertEqual(
+            nested_simplify(output),
+            [
+                {
+                    "entity_group": "ORG",
+                    "score": 0.979,  # upstream has 0.978
+                    "word": "hugging face, inc.",
+                    "start": 0,
+                    "end": 18,
+                },
+                {"entity_group": "MISC", "score": 0.999, "word": "french", "start": 24, "end": 30},
+                {"entity_group": "LOC", "score": 0.997, "word": "new york city", "start": 131, "end": 144},
+                {"entity_group": "MISC", "score": 0.999, "word": "french", "start": 168, "end": 174},
+                {"entity_group": "PER", "score": 0.999, "word": "clement delangue", "start": 189, "end": 205},
+                {"entity_group": "PER", "score": 0.999, "word": "julien chaumond", "start": 207, "end": 222},
+                {"entity_group": "PER", "score": 0.999, "word": "thomas wolf", "start": 228, "end": 239},
+            ],
+        )
+
+        token_classifier = pipeline(
+            task="token-classification",
+            model=model,
+            ipu_config=ipu_config,
+            tokenizer=tokenizer,
+            aggregation_strategy="average",
+            stride=stride,
+            max_length=10,
+            fp16=False,
+        )
+
+        output = token_classifier(sentence)
+        self.assertEqual(
+            nested_simplify(output),
+            [
+                {
+                    "entity_group": "ORG",
+                    "score": 0.979,  # upstream has 0.978
+                    "word": "hugging face, inc.",
+                    "start": 0,
+                    "end": 18,
+                },
+                {"entity_group": "MISC", "score": 0.999, "word": "french", "start": 24, "end": 30},
+                {"entity_group": "LOC", "score": 0.997, "word": "new york city", "start": 131, "end": 144},
+                {"entity_group": "MISC", "score": 0.999, "word": "french", "start": 168, "end": 174},
+                {"entity_group": "PER", "score": 0.999, "word": "clement delangue", "start": 189, "end": 205},
+                {"entity_group": "PER", "score": 0.999, "word": "julien chaumond", "start": 207, "end": 222},
+                {"entity_group": "PER", "score": 0.999, "word": "thomas wolf", "start": 228, "end": 239},
+            ],
+        )
+
+    @require_torch
+    def test_chunking_fast(self):
+        # Note: We cannot run the test on "conflicts" on the chunking.
+        # The problem is that the model is random, and thus the results do heavily
+        # depend on the chunking, so we cannot expect "abcd" and "bcd" to find
+        # the same entities. We defer to slow tests for this.
+        ipu_config = {"layers_per_ipu": [2], "ipus_per_replica": 1}
+        pipe = pipeline(
+            task="token-classification",
+            model="hf-internal-testing/tiny-bert-for-token-classification",
+            ipu_config=ipu_config,
+        )
+        sentence = "The company, based in New York City was founded in 2016 by French entrepreneurs"
+
+        results = pipe(sentence, aggregation_strategy="first")
+        # This is what this random model gives on the full sentence
+        self.assertEqual(
+            nested_simplify(results),
+            [
+                # This is 2 actual tokens
+                {"end": 39, "entity_group": "MISC", "score": 0.115, "start": 31, "word": "city was"},
+                {"end": 79, "entity_group": "MISC", "score": 0.115, "start": 66, "word": "entrepreneurs"},
+            ],
+        )
+
+        # Below is commented out because it's basically an on-the-fly modification of max length which we aren't compatible with.
+        # This will force the tokenizer to split after "city was".
+        # pipe.tokenizer.model_max_length = 12
+        # self.assertEqual(
+        #     pipe.tokenizer.decode(pipe.tokenizer.encode(sentence, truncation=True)),
+        #     "[CLS] the company, based in new york city was [SEP]",
+        # )
+
+        # stride = 4
+        # results = pipe(sentence, aggregation_strategy="first", stride=stride)
+        # self.assertEqual(
+        #     nested_simplify(results),
+        #     [
+        #         {"end": 39, "entity_group": "MISC", "score": 0.115, "start": 31, "word": "city was"},
+        #         # This is an extra entity found by this random model, but at least both original
+        #         # entities are there
+        #         {"end": 58, "entity_group": "MISC", "score": 0.115, "start": 56, "word": "by"},
+        #         {"end": 79, "entity_group": "MISC", "score": 0.115, "start": 66, "word": "entrepreneurs"},
+        #     ],
+        # )
 
     @require_torch
     @slow

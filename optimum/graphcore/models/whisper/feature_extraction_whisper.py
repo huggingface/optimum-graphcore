@@ -13,7 +13,6 @@
 # limitations under the License.
 import numpy as np
 import torch
-
 from transformers import WhisperFeatureExtractor
 
 
@@ -36,7 +35,7 @@ class WhisperFeatureExtractorTorch(WhisperFeatureExtractor):
         with np replaced by torch.
         """
         if not torch.is_tensor(self.mel_filters):
-            self.mel_filters = torch.from_numpy(self.mel_filters)
+            self.mel_filters = torch.from_numpy(self.mel_filters).to(torch.float32).T
 
         waveform = torch.from_numpy(waveform)
 

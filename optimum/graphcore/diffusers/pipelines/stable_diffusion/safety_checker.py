@@ -1,5 +1,4 @@
 import torch
-
 from diffusers.pipelines.stable_diffusion.safety_checker import StableDiffusionSafetyChecker, cosine_distance
 
 from ....modeling_utils import PipelineMixin

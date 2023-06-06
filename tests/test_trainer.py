@@ -14,7 +14,6 @@
 # limitations under the License.
 
 import dataclasses
-import gc
 import math
 import os
 import random
@@ -26,12 +25,9 @@ from pathlib import Path
 from typing import Optional, Union
 
 import numpy as np
-
 from huggingface_hub import HfFolder, Repository, delete_repo
-from optimum.graphcore import IPUConfig, IPUTrainingArguments
-from optimum.utils import logging
 from requests.exceptions import HTTPError
-from transformers import AutoTokenizer, IntervalStrategy, PretrainedConfig, is_torch_available
+from transformers import IntervalStrategy, PretrainedConfig, is_torch_available
 from transformers.file_utils import WEIGHTS_NAME
 from transformers.testing_utils import (
     ENDPOINT_STAGING,
@@ -42,40 +38,29 @@ from transformers.testing_utils import (
     get_gpu_count,
     get_tests_dir,
     is_staging_test,
-    require_optuna,
-    require_ray,
     require_sentencepiece,
-    require_sigopt,
     require_tokenizers,
     require_torch,
-    require_torch_gpu,
-    require_torch_multi_gpu,
-    require_torch_non_multi_gpu,
-    require_torch_up_to_2_gpus,
-    slow,
 )
 from transformers.trainer_utils import PREFIX_CHECKPOINT_DIR
-from transformers.utils.hp_naming import TrialShortNamer
+
+from optimum.graphcore import IPUConfig, IPUTrainingArguments
+from optimum.utils import logging
 
 
 if is_torch_available():
+    import poptorch
     import torch
     from torch import nn
     from torch.utils.data import IterableDataset
-
-    import poptorch
-    from optimum.graphcore import IPUTrainer, IPUTrainerState
     from transformers import (
-        AutoModelForSequenceClassification,
         EarlyStoppingCallback,
-        GlueDataset,
-        GlueDataTrainingArguments,
         GPT2Config,
         GPT2LMHeadModel,
-        LineByLineTextDataset,
         PreTrainedModel,
     )
-    from transformers.modeling_utils import unwrap_model
+
+    from optimum.graphcore import IPUTrainer, IPUTrainerState
 
 
 PATH_SAMPLE_TEXT = f"{get_tests_dir()}/fixtures/sample_text.txt"
@@ -788,7 +773,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
 
         with tempfile.TemporaryDirectory() as tmpdir:
             # Make sure there are enough samples to end up with at least a checkpoint-15
-            kwargs = dict(output_dir=tmpdir, train_len=TRAIN_LEN, save_steps=5, learning_rate=0.1)
+            kwargs = {"output_dir": tmpdir, "train_len": TRAIN_LEN, "save_steps": 5, "learning_rate": 0.1}
             trainer = get_regression_trainer(**kwargs)
             trainer.train()
             (a, b) = trainer.model.a.item(), trainer.model.b.item()
@@ -822,7 +807,13 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         # With a regular model that is not a PreTrainedModel
         with tempfile.TemporaryDirectory() as tmpdir:
             # Make sure there are enough samples to end up with at least a checkpoint-15
-            kwargs = dict(output_dir=tmpdir, train_len=TRAIN_LEN, save_steps=5, learning_rate=0.1, pretrained=False)
+            kwargs = {
+                "output_dir": tmpdir,
+                "train_len": TRAIN_LEN,
+                "save_steps": 5,
+                "learning_rate": 0.1,
+                "pretrained": False,
+            }
 
             trainer = get_regression_trainer(**kwargs)
             trainer.train()

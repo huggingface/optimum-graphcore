@@ -15,9 +15,8 @@
 import copy
 from typing import Callable, Optional, Tuple
 
-import torch
-
 import poptorch
+import torch
 from transformers.utils.versions import require_version
 
 

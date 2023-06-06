@@ -19,12 +19,10 @@ import unittest
 from typing import TYPE_CHECKING, List, Optional, Union
 
 import pytest
-
-from optimum.graphcore import IPUConfig
 from transformers import is_torch_available
 from transformers.testing_utils import require_torch, slow, torch_device
 
-from ..test_modeling_common import floats_tensor, ids_tensor
+from optimum.graphcore import IPUConfig
 
 
 if TYPE_CHECKING:
@@ -32,7 +30,6 @@ if TYPE_CHECKING:
 
 if is_torch_available():
     import torch
-
     from transformers import (
         AutoModelForSeq2SeqLM,
         AutoTokenizer,
@@ -40,10 +37,6 @@ if is_torch_available():
         BartTokenizer,
         GPT2LMHeadModel,
         GPT2Tokenizer,
-        ImageGPTForCausalImageModeling,
-        Speech2TextForConditionalGeneration,
-        SpeechEncoderDecoderModel,
-        VisionEncoderDecoderModel,
         top_k_top_p_filtering,
     )
     from transformers.generation.beam_constraints import DisjunctiveConstraint, PhrasalConstraint
@@ -1360,7 +1353,7 @@ class GenerationTesterMixin:
 
             signature = inspect.signature(model.forward)
             # We want to test only models where encoder/decoder head masking is implemented
-            if not set(head_masking.keys()) < set([*signature.parameters.keys()]):
+            if not set(head_masking.keys()) < {*signature.parameters.keys()}:
                 continue
 
             for attn_name, (name, mask) in zip(attention_names, head_masking.items()):
@@ -1865,8 +1858,6 @@ class GenerationIntegrationTests(unittest.TestCase):
 
         max_length = 20
         num_beams = 6
-        num_beam_groups = 3
-        num_return_sequences = num_beams * batch_size
         stopping_criteria_max_length = 18
         stopping_criteria = StoppingCriteriaList([MaxLengthCriteria(max_length=stopping_criteria_max_length)])
 

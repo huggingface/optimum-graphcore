@@ -14,12 +14,11 @@
 import copy
 from typing import Optional, Tuple
 
+import poptorch
 import torch
 from torch import nn
-
-import poptorch
-from optimum.utils import logging
 from transformers import WhisperConfig
+from transformers.activations import ACT2FN
 from transformers.models.whisper.modeling_whisper import (
     WhisperAttention,
     WhisperDecoder,
@@ -27,6 +26,8 @@ from transformers.models.whisper.modeling_whisper import (
     WhisperForConditionalGeneration,
     WhisperPositionalEmbedding,
 )
+
+from optimum.utils import logging
 
 from ...generation import IPUAttentionMixin, IPUGenerationMixin, supports_kv_cache
 from ...modeling_utils import (
@@ -41,8 +42,6 @@ from ...modeling_utils import (
 
 
 logger = logging.get_logger(__name__)
-
-from transformers.activations import ACT2FN
 
 
 FLOAT16_LIMIT = 1e4
@@ -126,8 +125,8 @@ class IPUWhisperAttention(WhisperAttention, IPUAttentionMixin):
 
         proj_shape = (bsz * self.num_heads, -1, self.head_dim)
         query_states = self._shape(query_states, tgt_len, bsz).view(*proj_shape)
-        key_states = key_states.view(*proj_shape)
-        value_states = value_states.view(*proj_shape)
+        key_states = key_states.reshape(*proj_shape)
+        value_states = value_states.reshape(*proj_shape)
 
         src_len = key_states.size(1)
 
@@ -228,7 +227,7 @@ class _WhisperEncoderLayerClamp(nn.Module):
     ):
         """
         Args:
-            hidden_states (`torch.FloatTensor`): input to the layer of shape `(seq_len, batch, embed_dim)`
+            hidden_states (`torch.FloatTensor`): input to the layer of shape `(batch, seq_len, embed_dim)`
             attention_mask (`torch.FloatTensor`): attention mask of size
                 `(batch, 1, tgt_len, src_len)` where padding elements are indicated by very large negative values.
             layer_head_mask (`torch.FloatTensor`): mask for attention heads in a given layer of size
@@ -293,7 +292,7 @@ class IPUWhisperPositionalEmbedding(WhisperPositionalEmbedding):
             # KV cache enabled.
             return poptorch.dynamic_slice(self.weight, 0, self._generation_step, 1, 1)
         else:
-            return self.weight[: input_ids.shape[-1]]
+            return self.weight[: input_ids.shape[1]]
 
 
 class _WhisperDecoderWithCustomMakeCausalAndExpandMask(WhisperDecoder):
@@ -506,9 +505,15 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         return self
 
     def prepare_inputs_for_generation(
-        self, decoder_input_ids, past=None, use_cache=None, encoder_outputs=None, attention_mask=None, **kwargs
+        self,
+        decoder_input_ids,
+        past_key_values=None,
+        use_cache=None,
+        encoder_outputs=None,
+        attention_mask=None,
+        **kwargs,
     ):
-        # We don't use `past` for KV caching, and rely on `use_cache` instead.
+        # We don't use `past_key_values` for KV caching, and rely on `use_cache` instead.
         beam_idx = None
         if use_cache:
             decoder_input_ids = decoder_input_ids[:, -1:]

@@ -1,23 +1,21 @@
-37a38,40
-> from optimum.graphcore import IPUConfig, IPUTrainer
-> from optimum.graphcore import IPUTrainingArguments as TrainingArguments
-> from optimum.graphcore.utils import check_min_version
-44,45d46
+24a25
+> import transformers
+36,37d36
+< 
+< import transformers
+44,45d42
 <     Trainer,
 <     TrainingArguments,
-49c50,51
-< from transformers.utils import check_min_version, send_example_telemetry
----
-> from transformers.utils import check_min_version as tf_check_min_version
-> from transformers.utils import send_example_telemetry
-58c60,63
-< check_min_version("4.25.0")
----
-> tf_check_min_version("4.25.0")
+51a49,52
+> from optimum.graphcore import IPUConfig, IPUTrainer
+> from optimum.graphcore import IPUTrainingArguments as TrainingArguments
+> from optimum.graphcore.utils import check_min_version as gc_check_min_version
 > 
+59a61,63
 > # Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
-> check_min_version("0.2.4.dev0")
-165a171,190
+> gc_check_min_version("0.6.0.dev0")
+> 
+165a170,189
 > class ToHalf(torch.nn.Module):
 >     def forward(self, tensor):
 >         return tensor.half()
@@ -38,20 +36,20 @@
 >         return example_batch
 > 
 > 
-196,200d220
+200,204d223
 <     # Log on each process the small summary:
 <     logger.warning(
 <         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
 <         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
 <     )
-276a297,302
+280a300,305
 >     ipu_config = IPUConfig.from_pretrained(
 >         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
 >         cache_dir=model_args.cache_dir,
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
-299,321c325,340
+303,325c328,343
 <     _train_transforms = Compose(
 <         [
 <             RandomResizedCrop(size),
@@ -92,7 +90,7 @@
 >     if not training_args.fp32:
 >         _train_transforms.append(ToHalf())
 >         _val_transforms.append(ToHalf())
-323,326c342,343
+327,330c345,346
 <     def val_transforms(example_batch):
 <         """Apply _val_transforms across a batch."""
 <         example_batch["pixel_values"] = [_val_transforms(pil_img.convert("RGB")) for pil_img in example_batch["image"]]
@@ -100,17 +98,17 @@
 ---
 >     _train_transforms = Compose(_train_transforms)
 >     _val_transforms = Compose(_val_transforms)
-336c353
+340c356
 <         dataset["train"].set_transform(train_transforms)
 ---
 >         dataset["train"].set_transform(ApplyTransforms(_train_transforms))
-346c363
+350c366
 <         dataset["validation"].set_transform(val_transforms)
 ---
 >         dataset["validation"].set_transform(ApplyTransforms(_val_transforms))
-349c366
+353c369
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-350a368
+354a371
 >         ipu_config=ipu_config,

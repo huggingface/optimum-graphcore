@@ -15,48 +15,34 @@
 import copy
 import importlib
 import logging
-import os
 import random
 import re
 import string
 import sys
-import tempfile
 import unittest
 from abc import abstractmethod
 from functools import lru_cache
 from pathlib import Path
 from unittest import skipIf
 
-import numpy as np
-
-from huggingface_hub import HfFolder, Repository, delete_repo
-from optimum.graphcore import pipeline
-from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
-from requests.exceptions import HTTPError
 from transformers import (
     CONFIG_MAPPING,
     FEATURE_EXTRACTOR_MAPPING,
     TOKENIZER_MAPPING,
     AutoConfig,
     AutoFeatureExtractor,
-    AutoModelForSequenceClassification,
     AutoTokenizer,
     DistilBertForSequenceClassification,
     TextClassificationPipeline,
 )
-from transformers.pipelines import PIPELINE_REGISTRY, get_task
-from transformers.pipelines.base import Pipeline, _pad
 from transformers.testing_utils import (
-    TOKEN,
-    USER,
-    CaptureLogger,
-    is_staging_test,
     nested_simplify,
     require_torch,
     slow,
 )
-from transformers.utils import is_torch_available
-from transformers.utils import logging as transformers_logging
+
+from optimum.graphcore import pipeline
+from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
 
 from ..utils import MODELS_TO_TEST_MAPPING
 
@@ -789,7 +775,10 @@ class PipelineUtilsTest(unittest.TestCase):
         ipu_params = ipu_model.named_parameters()
         cpu_params = cpu_model.named_parameters()
         for (ipu_name, ipu_param), (cpu_name, cpu_param) in zip(ipu_params, cpu_params):
-            msg = lambda msg: f"ipu_model.{ipu_name} != cpu_model.{cpu_name}\n{msg}"
+
+            def msg(msg):
+                return f"ipu_model.{ipu_name} != cpu_model.{cpu_name}\n{msg}"
+
             # cast default model's parameters to fp16 since pipeline model's parameters are by default in fp16
             ipu_data, cpu_data = ipu_param.data, cpu_param.data.to(ipu_param.dtype)
 

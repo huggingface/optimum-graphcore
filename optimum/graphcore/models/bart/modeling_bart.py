@@ -16,11 +16,9 @@ import copy
 import random
 from typing import List, Optional, Tuple, Union
 
+import poptorch
 import torch
 import torch.nn as nn
-
-import poptorch
-from optimum.utils import logging
 from transformers import BartForConditionalGeneration, BartForSequenceClassification, BartModel
 from transformers.modeling_outputs import (
     BaseModelOutput,
@@ -37,6 +35,8 @@ from transformers.models.bart.modeling_bart import (
     BartLearnedPositionalEmbedding,
     shift_tokens_right,
 )
+
+from optimum.utils import logging
 
 from ...generation import IPUAttentionMixin, IPUGenerationMixin, supports_kv_cache
 from ...modeling_utils import (
@@ -106,7 +106,6 @@ class IPUBartAttention(BartAttention, IPUAttentionMixin):
 
         # if key_value_states are provided this layer is used as a cross-attention layer
         # for the decoder
-        is_cross_attention = key_value_states is not None
 
         bsz, tgt_len, _ = hidden_states.size()
 
@@ -143,8 +142,8 @@ class IPUBartAttention(BartAttention, IPUAttentionMixin):
 
         proj_shape = (bsz * self.num_heads, -1, self.head_dim)
         query_states = self._shape(query_states, tgt_len, bsz).view(*proj_shape)
-        key_states = key_states.view(*proj_shape)
-        value_states = value_states.view(*proj_shape)
+        key_states = key_states.reshape(*proj_shape)
+        value_states = value_states.reshape(*proj_shape)
 
         src_len = key_states.size(1)
         attn_weights = torch.bmm(query_states, key_states.transpose(1, 2))
@@ -184,7 +183,7 @@ class IPUBartAttention(BartAttention, IPUAttentionMixin):
 
         if attn_output.size() != (bsz * self.num_heads, tgt_len, self.head_dim):
             raise ValueError(
-                f"`attn_output` should be of size {(bsz, self.num_heads, tgt_len, self.head_dim)}, but is {attn_output.size()}"
+                f"`attn_output` should be of size {(bsz * self.num_heads, tgt_len, self.head_dim)}, but is {attn_output.size()}"
             )
 
         attn_output = attn_output.view(bsz, self.num_heads, tgt_len, self.head_dim)
@@ -859,9 +858,16 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
         return self
 
     def prepare_inputs_for_generation(
-        self, decoder_input_ids, past=None, use_cache=None, encoder_outputs=None, attention_mask=None, **kwargs
+        self,
+        decoder_input_ids,
+        past_key_values=None,
+        use_cache=None,
+        encoder_outputs=None,
+        attention_mask=None,
+        decoder_attention_mask=None,
+        **kwargs,
     ):
-        # We don't use `past` for KV caching, and rely on `use_cache` instead.
+        # We don't use `past_key_values` for KV caching, and rely on `use_cache` instead.
         beam_idx = None
         if use_cache:
             decoder_input_ids = decoder_input_ids[:, -1:]
@@ -872,7 +878,7 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
             "past_key_values": None,
             "attention_mask": attention_mask,
             "decoder_input_ids": decoder_input_ids,
-            "decoder_attention_mask": None,
+            "decoder_attention_mask": decoder_attention_mask,
             "beam_idx": beam_idx,
         }
 

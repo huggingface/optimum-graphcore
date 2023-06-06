@@ -12,6 +12,7 @@
 # distributed under the License is distributed on an "AS IS" BASIS,
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
+# limitations under the License.
 
 """ Fine-tuning a 🤗 Transformers CTC model for automatic speech recognition"""
 
@@ -21,19 +22,15 @@ import logging
 import os
 import re
 import sys
-import warnings
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Union
 
 import datasets
+import evaluate
 import numpy as np
 import torch
-from datasets import DatasetDict, load_dataset
-
-import evaluate
 import transformers
-from optimum.graphcore import IPUConfig, IPUTrainer
-from optimum.graphcore import IPUTrainingArguments as TrainingArguments
+from datasets import DatasetDict, load_dataset
 from transformers import (
     AutoConfig,
     AutoFeatureExtractor,
@@ -44,13 +41,16 @@ from transformers import (
     Wav2Vec2Processor,
     set_seed,
 )
-from transformers.trainer_utils import get_last_checkpoint, is_main_process
+from transformers.trainer_utils import get_last_checkpoint
 from transformers.utils import check_min_version, send_example_telemetry
 from transformers.utils.versions import require_version
 
+from optimum.graphcore import IPUConfig, IPUTrainer
+from optimum.graphcore import IPUTrainingArguments as TrainingArguments
+
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-check_min_version("4.25.0")
+check_min_version("4.29.0")
 
 require_version("datasets>=1.18.0", "To fix: pip install -r examples/pytorch/speech-recognition/requirements.txt")
 
@@ -349,7 +349,7 @@ def create_vocabulary_from_data(
         vocabs.values(),
     )
 
-    vocab_dict = {v: k for k, v in enumerate(sorted(list(vocab_set)))}
+    vocab_dict = {v: k for k, v in enumerate(sorted(vocab_set))}
 
     # replace white space with delimiter token
     if word_delimiter_token is not None:
@@ -380,7 +380,7 @@ def main():
         model_args, data_args, training_args = parser.parse_args_into_dataclasses()
 
     if training_args.gradient_checkpointing:
-        raise ValueError(f"Gradient checkpointing not supported.")
+        raise ValueError("Gradient checkpointing not supported.")
 
     # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
     # information sent is the one passed as arguments along with your Python/PyTorch versions.

@@ -14,12 +14,9 @@
 
 from typing import Optional, Tuple, Union
 
-import torch
-import torch.nn as nn
-from torch.nn import CrossEntropyLoss
-
 import poptorch
-from optimum.utils import logging
+import torch
+from torch.nn import CrossEntropyLoss
 from transformers import (
     RobertaForMaskedLM,
     RobertaForMultipleChoice,
@@ -28,6 +25,8 @@ from transformers import (
     RobertaForTokenClassification,
 )
 from transformers.modeling_outputs import MaskedLMOutput, QuestionAnsweringModelOutput
+
+from optimum.utils import logging
 
 from ...modeling_utils import (
     OnehotGather,

@@ -1,29 +1,28 @@
-31a32,35
+28a29
+> import transformers
+31,33d31
+< from utils_qa import postprocess_qa_predictions
+< 
+< import transformers
+42d39
+<     TrainingArguments,
+48a46,50
+> from utils_qa import postprocess_qa_predictions
+> 
 > from optimum.graphcore import IPUConfig
 > from optimum.graphcore import IPUTrainingArguments as TrainingArguments
-> from optimum.graphcore.data import pad_on_batch_axis
-> from optimum.graphcore.utils import check_min_version
-41d44
-<     TrainingArguments,
-46c49,50
-< from transformers.utils import check_min_version, send_example_telemetry
----
-> from transformers.utils import check_min_version as tf_check_min_version
-> from transformers.utils import send_example_telemetry
-52c56,59
-< check_min_version("4.25.0")
----
-> tf_check_min_version("4.25.0")
-> 
+> from optimum.graphcore.utils import check_min_version as gc_check_min_version
+53a56,58
 > # Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
-> check_min_version("0.2.4.dev0")
-248,252d254
+> gc_check_min_version("0.6.0.dev0")
+> 
+252,256d256
 <     # Log on each process the small summary:
 <     logger.warning(
 <         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
 <         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
 <     )
-322a325,331
+326a327,333
 >     ipu_config = IPUConfig.from_pretrained(
 >         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
 >         cache_dir=model_args.cache_dir,
@@ -31,5 +30,5 @@
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
 > 
-604a614
+608a616
 >         ipu_config=ipu_config,

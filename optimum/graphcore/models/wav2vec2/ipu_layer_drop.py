@@ -19,8 +19,6 @@ but with a traceable implementation of LayerDrop.
 """
 
 import torch
-from torch.nn import functional as F
-
 from transformers.modeling_outputs import BaseModelOutput
 from transformers.models.wav2vec2.modeling_wav2vec2 import (
     Wav2Vec2Adapter,
@@ -66,7 +64,7 @@ class IPUWav2Vec2Encoder(Wav2Vec2Encoder):
             # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
             # Modify LayerDrop so it can be statically compiled without eager mode
             if self.config.layerdrop > 0.0:
-                dropout_probability = torch.rand(tuple(), device=hidden_states.device)
+                dropout_probability = torch.rand((), device=hidden_states.device)
                 skip_the_layer = (
                     torch.tensor(self.training, device=hidden_states.device)
                     & (dropout_probability < self.config.layerdrop)
@@ -129,7 +127,7 @@ class IPUWav2Vec2EncoderStableLayerNorm(Wav2Vec2EncoderStableLayerNorm):
             # add LayerDrop (see https://arxiv.org/abs/1909.11556 for description)
             # Modify LayerDrop so it can be statically compiled without eager mode
             if self.config.layerdrop > 0.0:
-                dropout_probability = torch.rand(tuple(), device=hidden_states.device)
+                dropout_probability = torch.rand((), device=hidden_states.device)
                 skip_the_layer = (
                     torch.tensor(self.training, device=hidden_states.device)
                     & (dropout_probability < self.config.layerdrop)
@@ -169,7 +167,7 @@ class IPUWav2Vec2Adapter(Wav2Vec2Adapter):
 
         for layer in self.layers:
             layer_output = layer(hidden_states)
-            layerdrop_prob = torch.rand(tuple(), device=hidden_states.device)
+            layerdrop_prob = torch.rand((), device=hidden_states.device)
             use_the_layer = ~(
                 torch.tensor(self.training, device=hidden_states.device) | (layerdrop_prob > self.layerdrop)
             )

@@ -1,9 +1,5 @@
-from typing import List, Union
-
-import numpy as np
-
 from transformers import ZeroShotClassificationPipeline
-from transformers.pipelines.base import PIPELINE_INIT_ARGS, ArgumentHandler, ChunkPipeline
+from transformers.pipelines.base import PIPELINE_INIT_ARGS
 from transformers.tokenization_utils import TruncationStrategy
 from transformers.utils import add_end_docstrings, logging
 
