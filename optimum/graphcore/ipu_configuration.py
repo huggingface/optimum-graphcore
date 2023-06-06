@@ -417,6 +417,9 @@ class IPUConfig(BaseConfig):
         # TODO: remove this if unnecessary.
         self.execute_encoder_on_cpu_for_generation = kwargs.pop("execute_encoder_on_cpu_for_generation", False)
 
+        # TODO: remove once kwargs is no longer in use
+        assert not kwargs, "IPUConfig received unknown arguments:\n" + "\n".join([f"  {k}={v}" for k, v in kwargs.items()])
+
         self._validate_ipu_config()
 
     @property
