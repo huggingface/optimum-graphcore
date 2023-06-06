@@ -405,6 +405,22 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
                 dtype=decoder_layer.encoder_attn.k_proj.weight.dtype,
             )
 
+    def change_lm_head(self, restore: bool, use_cache: bool = None):
+        # Maybe use _IndexedInputLinear
+        self.change_lm_head_to_indexed_input_linear(restore or use_cache)
+        # Maybe use SerializedLinear
+        if restore:
+            lm_head = self.get_output_embeddings()
+            if isinstance(lm_head, SerializedLinear):
+                self.set_output_embeddings(lm_head.to_model())
+                self.tie_weights()
+        else:
+            if (projection_serialization_factor := self.ipu_config._projection_serialization_factor) > 1:
+                self.set_output_embeddings(
+                    SerializedLinear.from_model(self.get_output_embeddings(), projection_serialization_factor)
+                )
+                self.tie_weights()
+
     def parallelize(self, for_generation=False, use_cache=False, use_cross_cache=False, **kwargs):
         super().parallelize()
 
@@ -417,7 +433,7 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
             use_cross_cache=use_cross_cache and for_generation,
             **kwargs,
         )
-        self.change_lm_head_to_indexed_input_linear(restore=use_cache or not for_generation)
+        self.change_lm_head(restore=False, use_cache=use_cache or not for_generation)
         self.use_encoder_output_buffer = kwargs.get("use_encoder_output_buffer", False)
         self.set_on_device_generation_steps(kwargs.get("on_device_generation_steps", 0))
 
@@ -472,10 +488,6 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
             self.model.decoder.layer_norm, "Decoder Layer Norm", ipu_id=ipu
         )
 
-        if (projection_serialization_factor := self.ipu_config._projection_serialization_factor) > 1:
-            self.proj_out = SerializedLinear.from_model(self.proj_out, projection_serialization_factor)
-            self.tie_weights()
-
         logger.info(f"Head       --> IPU {decoder_layer_ipu[0]}")
         logger.info("---------------------------------------")
         self.proj_out = poptorch.BeginBlock(self.proj_out, "Output Projection", ipu_id=decoder_layer_ipu[0])
@@ -488,7 +500,7 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         self.change_decoder_class(restore=True)
         self.change_decoder_positional_embedding(restore=True)
         self.change_attention_class(restore=True)
-        self.change_lm_head_to_indexed_input_linear(restore=True)
+        self.change_lm_head(restore=True)
         self.set_on_device_generation_steps(0)
 
         if isinstance(self.proj_out, SerializedLinear):
