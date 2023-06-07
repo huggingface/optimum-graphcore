@@ -307,13 +307,13 @@ class IPUGenerationMixin(GenerationMixin):
         return per_replica.repeat(decoder_ipu_config.inference_replication_factor)
 
     def _populate_parallelize_kwargs_with_generation_config(self, **kwargs):
-        if not kwargs.get("use_cache", False) or self.generation_config is None:
+        if self.generation_config is None:
             return kwargs
 
-        for kwarg in ["num_beams, max_length"]:
+        for kwarg in ["num_beams", "max_length"]:
             if kwarg not in kwargs:
-                kwarg_value = self.generation_config.kwarg
-                kwargs["kwarg"] = kwarg_value
+                kwarg_value = getattr(self.generation_config, kwarg)
+                kwargs[kwarg] = kwarg_value
                 logger.info(f"Setting parallelize kwarg `{kwarg}` to value in generation_config ({kwarg_value}).")
 
         return kwargs
