@@ -306,15 +306,20 @@ class IPUGenerationMixin(GenerationMixin):
         )
         return per_replica.repeat(decoder_ipu_config.inference_replication_factor)
 
-    def _maybe_ensure_kv_cache_supported(self, use_cache):
-        if not use_cache or hasattr(self, "_poptorch_decoder"):
-            return
+    def _validate_kv_cache(self, use_cache):
+        first_call = not hasattr(self, "_poptorch_decoder")
 
         if use_cache and self.__class__ not in MODELS_SUPPORTING_KV_CACHE:
-            raise ValueError(
-                f"{self.__class__} does not support KV caching. Pipelined models can be "
-                "decorated using `supports_kv_cache` once they support static KV caching."
-            )
+            if first_call:
+                logger.warn(
+                    f"{self.__class__} does not support KV caching, but `use_cache=True`. "
+                    "Overriding to `use_cache=False`. If your believe your pipelined model "
+                    "supports static KV caching, please decorate it using `supports_kv_cache`."
+                )
+            use_cache = False
+
+        if not use_cache or not first_call:
+            return use_cache
 
         model_has_kv_cache_initialized = any(getattr(m, "kv_cache_initialized", False) for m in self.modules())
         if use_cache and not model_has_kv_cache_initialized:
@@ -323,6 +328,8 @@ class IPUGenerationMixin(GenerationMixin):
                 f"Please pass `use_cache=True` to the `parallelize` method of {self.__class__.__name__}."
             )
         self.kv_cache_enabled = use_cache and model_has_kv_cache_initialized
+
+        return use_cache
 
     def change_lm_head_to_indexed_input_linear(self, restore: bool):
         """Changes the LM head with the faster _IndexedInputLinear layer.
@@ -475,7 +482,7 @@ class IPUGenerationMixin(GenerationMixin):
             )
 
         use_cache = model_kwargs.get("use_cache", False)
-        self._maybe_ensure_kv_cache_supported(use_cache)
+        use_cache = self._validate_kv_cache(use_cache)
 
         # Change: intercept to optionally run the entire generation loop on device
         if self.on_device_generation_steps > 0:
@@ -766,7 +773,7 @@ class IPUGenerationMixin(GenerationMixin):
             )
 
         use_cache = model_kwargs.get("use_cache", False)
-        self._maybe_ensure_kv_cache_supported(use_cache)
+        use_cache = self._validate_kv_cache(use_cache)
 
         # Change: intercept to optionally run the entire generation loop on device
         if self.on_device_generation_steps > 0:
@@ -1085,7 +1092,7 @@ class IPUGenerationMixin(GenerationMixin):
             )
 
         use_cache = model_kwargs.get("use_cache", False)
-        self._maybe_ensure_kv_cache_supported(use_cache)
+        use_cache = self._validate_kv_cache(use_cache)
 
         # Change: intercept to optionally run the entire generation loop on device
         if self.on_device_generation_steps > 0:
@@ -1373,7 +1380,7 @@ class IPUGenerationMixin(GenerationMixin):
             )
 
         use_cache = model_kwargs.get("use_cache", False)
-        self._maybe_ensure_kv_cache_supported(use_cache)
+        use_cache = self._validate_kv_cache(use_cache)
 
         # Change: intercept to optionally run the entire generation loop on device
         if self.on_device_generation_steps > 0:
