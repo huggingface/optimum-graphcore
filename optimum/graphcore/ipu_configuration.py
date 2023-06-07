@@ -331,7 +331,7 @@ class IPUConfig(BaseConfig):
         self.layers_per_ipu = layers_per_ipu
         self.inference_layers_per_ipu = inference_layers_per_ipu if inference_layers_per_ipu else self.layers_per_ipu
 
-        self.ipus_per_replica = ipus_per_replica if ipus_per_replica else len(self.layers_per_ipu)
+        self.ipus_per_replica = ipus_per_replica if ipus_per_replica and layers_per_ipu == [-1] else len(self.layers_per_ipu)
         # If ipus_per_replica is default, recalculate ipus_per_replica from inference_layers_per_ipu instead
         fallback_ipus_per_replica = self.ipus_per_replica
         if fallback_ipus_per_replica == len(self.layers_per_ipu) or self.inference_layers_per_ipu != [-1]:
