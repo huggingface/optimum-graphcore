@@ -176,6 +176,7 @@ class IPUGenerationMixin(GenerationMixin):
     """
 
     use_encoder_output_buffer = False
+    kv_cache_enabled = False
 
     @property
     def encoder_output_buffer_enabled(self) -> bool:
@@ -185,6 +186,8 @@ class IPUGenerationMixin(GenerationMixin):
         return nn.functional.pad(tensor, (0, max_length - tensor.shape[1]), "constant", pad_token_id)
 
     def _ensure_generation_step_progression(self, generation_step):
+        if not self.kv_cache_enabled:
+            return
         if not hasattr(self, "_previous_generation_step"):
             self._previous_generation_step = generation_step
             return
@@ -319,6 +322,7 @@ class IPUGenerationMixin(GenerationMixin):
                 f"{self.__class__.__name__} supports KV caching and `use_cache=True`, but no KV caches have been initialized. "
                 f"Please pass `use_cache=True` to the `parallelize` method of {self.__class__.__name__}."
             )
+        self.kv_cache_enabled = use_cache and model_has_kv_cache_initialized
 
     def change_lm_head_to_indexed_input_linear(self, restore: bool):
         """Changes the LM head with the faster _IndexedInputLinear layer.
