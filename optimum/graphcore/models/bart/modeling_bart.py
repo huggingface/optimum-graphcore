@@ -771,6 +771,8 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
         """
         super().parallelize()
 
+        kwargs = self._populate_parallelize_kwargs_with_generation_config(**kwargs)
+
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding  --> IPU 0")
 

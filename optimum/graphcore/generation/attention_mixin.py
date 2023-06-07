@@ -49,6 +49,7 @@ class IPUAttentionMixin:
 
     _kv_cache_initialized: bool = False
     _cross_kv_cache_initialized: bool = False
+    _num_beams: int = 1
     _batch_serialization_factor: int = 1
     _sequence_serialization_factor: int = 1
 
@@ -60,12 +61,13 @@ class IPUAttentionMixin:
     def cross_kv_cache_initialized(self) -> bool:
         return self._cross_kv_cache_initialized
 
-    def _create_kv_cache(self, cache_shape: Tuple[int], dtype: torch.dtype, uses_beams=False):
+    def _create_kv_cache(self, cache_shape: Tuple[int], dtype: torch.dtype, num_beams=1):
         self.register_buffer("_generation_step", torch.tensor([0], dtype=torch.int32), persistent=False)
         self.register_buffer("_k_cache", torch.zeros(cache_shape, dtype=dtype), persistent=False)
         self.register_buffer("_v_cache", torch.zeros(cache_shape, dtype=dtype), persistent=False)
-        if uses_beams:
+        if num_beams > 1:
             self.register_buffer("_beam_idx", torch.arange(cache_shape[0], dtype=torch.int32), persistent=False)
+        self._num_beams = num_beams
         self._kv_cache_initialized = True
 
     def _delete_kv_cache(self):
@@ -77,14 +79,15 @@ class IPUAttentionMixin:
         del self._v_cache
         if hasattr(self, "_beam_idx"):
             del self._beam_idx
+        del self._num_beams
         del self._kv_cache_initialized
 
-    def _create_cross_kv_cache(self, cache_shape: Tuple[int], dtype: torch.dtype, uses_beams=False):
+    def _create_cross_kv_cache(self, cache_shape: Tuple[int], dtype: torch.dtype, num_beams=1):
         if not hasattr(self, "_generation_step"):
             self.register_buffer("_generation_step", torch.tensor([0], dtype=torch.int32), persistent=False)
         self.register_buffer("_cross_k_cache", torch.zeros(cache_shape, dtype=dtype), persistent=False)
         self.register_buffer("_cross_v_cache", torch.zeros(cache_shape, dtype=dtype), persistent=False)
-        if uses_beams and not hasattr(self, "_beam_idx"):
+        if num_beams > 1 and not hasattr(self, "_beam_idx"):
             self.register_buffer("_beam_idx", torch.arange(cache_shape[0], dtype=torch.int32), persistent=False)
         self._cross_kv_cache_initialized = True
 
@@ -130,7 +133,7 @@ class IPUAttentionMixin:
             clone._create_kv_cache(
                 (batch_size * num_beams, clone.num_heads, max_length, clone.head_dim),
                 dtype=dtype,
-                uses_beams=num_beams > 1,
+                num_beams=num_beams,
             )
 
         if use_cross_cache:
@@ -140,7 +143,7 @@ class IPUAttentionMixin:
             clone._create_cross_kv_cache(
                 (batch_size * num_beams, clone.num_heads, encoder_max_length, clone.head_dim),
                 dtype=dtype,
-                uses_beams=num_beams > 1,
+                num_beams=num_beams,
             )
 
         if batch_serialization_factor < 1 or sequence_serialization_factor < 1:
