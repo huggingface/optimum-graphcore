@@ -75,7 +75,6 @@ if is_torch_available():
         SampleEncoderDecoderOutput,
     )
 
-
 from ..utils import skip_unsupported
 
 
