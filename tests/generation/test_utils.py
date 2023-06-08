@@ -2473,8 +2473,6 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
         eos_token_id = 846
         generated_tokens = model.generate(**tokens, eos_token_id=eos_token_id, **generation_kwargs)
         self.assertTrue(expectation == len(generated_tokens[0]))
-        # reset generation step
-        delattr(model, "_previous_generation_step")
 
         torch.manual_seed(1)
         eos_token_id = [846, 198]
@@ -2500,8 +2498,7 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
         # Traditional way of generating text
         outputs_from_ids = model.generate(input_ids)
         self.assertEqual(outputs_from_ids.shape, (2, 20))
-        # reset generation step
-        delattr(model, "_previous_generation_step")
+
         # model needs to be recompiled
         model.destroy()
 
@@ -2512,8 +2509,6 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
         inputs_embeds = model.transformer.wte(input_ids)
         outputs_from_embeds = model.generate(input_ids, inputs_embeds=inputs_embeds)
         self.assertListEqual(outputs_from_ids.tolist(), outputs_from_embeds.tolist())
-        # reset generation step
-        delattr(model, "_previous_generation_step")
 
         # But if we pass different inputs_embeds, we should get different outputs
         torch.manual_seed(0)
@@ -2521,8 +2516,7 @@ class GenerationIntegrationTests(unittest.TestCase, GenerationIntegrationTestsMi
         outputs_from_rand_embeds = model.generate(input_ids, inputs_embeds=random_embeds)
         with self.assertRaises(AssertionError):
             self.assertListEqual(outputs_from_rand_embeds.tolist(), outputs_from_embeds.tolist())
-        # reset generation step
-        delattr(model, "_previous_generation_step")
+        model.destroy()
 
         # input_ids is not a required input -- if we don't pass it, the newly generated tokens will be the same
         outputs_from_embeds_wo_ids = model.generate(

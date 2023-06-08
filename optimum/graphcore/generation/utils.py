@@ -176,6 +176,7 @@ class IPUGenerationMixin(GenerationMixin):
     """
 
     use_encoder_output_buffer = False
+    kv_cache_enabled = False
 
     @property
     def encoder_output_buffer_enabled(self) -> bool:
@@ -185,6 +186,8 @@ class IPUGenerationMixin(GenerationMixin):
         return nn.functional.pad(tensor, (0, max_length - tensor.shape[1]), "constant", pad_token_id)
 
     def _ensure_generation_step_progression(self, generation_step):
+        if not self.kv_cache_enabled:
+            return
         if not hasattr(self, "_previous_generation_step"):
             self._previous_generation_step = generation_step
             return
@@ -303,15 +306,32 @@ class IPUGenerationMixin(GenerationMixin):
         )
         return per_replica.repeat(decoder_ipu_config.inference_replication_factor)
 
-    def _maybe_ensure_kv_cache_supported(self, use_cache):
-        if not use_cache or hasattr(self, "_poptorch_decoder"):
-            return
+    def _populate_parallelize_kwargs_with_generation_config(self, **kwargs):
+        if self.generation_config is None:
+            return kwargs
+
+        for kwarg in ["num_beams", "max_length"]:
+            if kwarg not in kwargs:
+                kwarg_value = getattr(self.generation_config, kwarg)
+                kwargs[kwarg] = kwarg_value
+                logger.info(f"Setting parallelize kwarg `{kwarg}` to value in generation_config ({kwarg_value}).")
+
+        return kwargs
+
+    def _validate_kv_cache(self, use_cache, num_beams=1, max_length=128):
+        first_call = not hasattr(self, "_poptorch_decoder")
 
         if use_cache and self.__class__ not in MODELS_SUPPORTING_KV_CACHE:
-            raise ValueError(
-                f"{self.__class__} does not support KV caching. Pipelined models can be "
-                "decorated using `supports_kv_cache` once they support static KV caching."
-            )
+            if first_call:
+                logger.warn(
+                    f"{self.__class__} does not support KV caching, but `use_cache=True`. "
+                    "Overriding to `use_cache=False`. If your believe your pipelined model "
+                    "supports static KV caching, please decorate it using `supports_kv_cache`."
+                )
+            use_cache = False
+
+        if not use_cache or not first_call:
+            return use_cache
 
         model_has_kv_cache_initialized = any(getattr(m, "kv_cache_initialized", False) for m in self.modules())
         if use_cache and not model_has_kv_cache_initialized:
@@ -319,6 +339,38 @@ class IPUGenerationMixin(GenerationMixin):
                 f"{self.__class__.__name__} supports KV caching and `use_cache=True`, but no KV caches have been initialized. "
                 f"Please pass `use_cache=True` to the `parallelize` method of {self.__class__.__name__}."
             )
+        self.kv_cache_enabled = use_cache and model_has_kv_cache_initialized
+
+        if not self.kv_cache_enabled:
+            return use_cache
+
+        module_with_cache = next(m for m in self.modules() if getattr(m, "kv_cache_initialized", False))
+        cache_shape = module_with_cache._k_cache.shape
+        cache_num_beams = module_with_cache._num_beams
+        cache_max_length = cache_shape[2]
+
+        generic_kwarg_msg = (
+            "KV caches are created with `kwargs` that are directly provided to `parallelize`, or where such "
+            "kwargs are missing, we optionally retrieve values from the `model.generation_config`. "
+            "On the other hand, `model.generate()` will determine generation kwargs in the priority of "
+            "`kwargs` > `kwargs['generation_config']` > `model.generation_config`. "
+            "Mismatches between the two flows can be reconciled by ensuring that the kwargs provided to `parallelize` "
+            "match the `kwargs` and / or `kwargs['generation_config']` passed to `model.generate()`."
+        )
+        if cache_num_beams != num_beams:
+            raise ValueError(
+                f"KV caches were created with num_beams={cache_num_beams}, but `model.generate()` is being called "
+                f"with {num_beams=}."
+                f"\n{generic_kwarg_msg}"
+            )
+        if cache_max_length != max_length:
+            raise ValueError(
+                f"KV caches were created with max_length={cache_max_length}, but `model.generate()` is being called "
+                f"with {max_length=}."
+                f"\n{generic_kwarg_msg}"
+            )
+
+        return use_cache
 
     def change_lm_head_to_indexed_input_linear(self, restore: bool):
         """Changes the LM head with the faster _IndexedInputLinear layer.
@@ -439,18 +491,22 @@ class IPUGenerationMixin(GenerationMixin):
             stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
         else:
             max_length = stopping_criteria.max_length
-        pad_token_id = pad_token_id if pad_token_id is not None else self.config.pad_token_id
-        eos_token_id = eos_token_id if eos_token_id is not None else self.config.eos_token_id
+        pad_token_id = pad_token_id if pad_token_id is not None else self.generation_config.pad_token_id
+        eos_token_id = eos_token_id if eos_token_id is not None else self.generation_config.eos_token_id
         if isinstance(eos_token_id, int):
             eos_token_id = [eos_token_id]
         eos_token_id_tensor = torch.tensor(eos_token_id).to(input_ids.device) if eos_token_id is not None else None
-        output_scores = output_scores if output_scores is not None else self.config.output_scores
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_scores = output_scores if output_scores is not None else self.generation_config.output_scores
+        output_attentions = (
+            output_attentions if output_attentions is not None else self.generation_config.output_attentions
+        )
         output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+            output_hidden_states if output_hidden_states is not None else self.generation_config.output_hidden_states
         )
         return_dict_in_generate = (
-            return_dict_in_generate if return_dict_in_generate is not None else self.config.return_dict_in_generate
+            return_dict_in_generate
+            if return_dict_in_generate is not None
+            else self.generation_config.return_dict_in_generate
         )
 
         # init attention / hidden states / scores tuples
@@ -467,7 +523,7 @@ class IPUGenerationMixin(GenerationMixin):
             )
 
         use_cache = model_kwargs.get("use_cache", False)
-        self._maybe_ensure_kv_cache_supported(use_cache)
+        use_cache = self._validate_kv_cache(use_cache, num_beams=1, max_length=max_length)
 
         # Change: intercept to optionally run the entire generation loop on device
         if self.on_device_generation_steps > 0:
@@ -716,15 +772,19 @@ class IPUGenerationMixin(GenerationMixin):
             max_length = stopping_criteria.max_length
         if len(stopping_criteria) == 0:
             warnings.warn("You don't have defined any stopping_criteria, this will likely loop forever", UserWarning)
-        pad_token_id = pad_token_id if pad_token_id is not None else self.config.pad_token_id
-        eos_token_id = eos_token_id if eos_token_id is not None else self.config.eos_token_id
-        output_scores = output_scores if output_scores is not None else self.config.output_scores
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        pad_token_id = pad_token_id if pad_token_id is not None else self.generation_config.pad_token_id
+        eos_token_id = eos_token_id if eos_token_id is not None else self.generation_config.eos_token_id
+        output_scores = output_scores if output_scores is not None else self.generation_config.output_scores
+        output_attentions = (
+            output_attentions if output_attentions is not None else self.generation_config.output_attentions
+        )
         output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+            output_hidden_states if output_hidden_states is not None else self.generation_config.output_hidden_states
         )
         return_dict_in_generate = (
-            return_dict_in_generate if return_dict_in_generate is not None else self.config.return_dict_in_generate
+            return_dict_in_generate
+            if return_dict_in_generate is not None
+            else self.generation_config.return_dict_in_generate
         )
 
         batch_size = len(beam_scorer._beam_hyps)
@@ -754,7 +814,7 @@ class IPUGenerationMixin(GenerationMixin):
             )
 
         use_cache = model_kwargs.get("use_cache", False)
-        self._maybe_ensure_kv_cache_supported(use_cache)
+        use_cache = self._validate_kv_cache(use_cache, num_beams=num_beams, max_length=max_length)
 
         # Change: intercept to optionally run the entire generation loop on device
         if self.on_device_generation_steps > 0:
@@ -1040,19 +1100,25 @@ class IPUGenerationMixin(GenerationMixin):
                 UserWarning,
             )
             stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
+        else:
+            max_length = stopping_criteria.max_length
         logits_warper = logits_warper if logits_warper is not None else LogitsProcessorList()
-        pad_token_id = pad_token_id if pad_token_id is not None else self.config.pad_token_id
-        eos_token_id = eos_token_id if eos_token_id is not None else self.config.eos_token_id
+        pad_token_id = pad_token_id if pad_token_id is not None else self.generation_config.pad_token_id
+        eos_token_id = eos_token_id if eos_token_id is not None else self.generation_config.eos_token_id
         if isinstance(eos_token_id, int):
             eos_token_id = [eos_token_id]
         eos_token_id_tensor = torch.tensor(eos_token_id).to(input_ids.device) if eos_token_id is not None else None
-        output_scores = output_scores if output_scores is not None else self.config.output_scores
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_scores = output_scores if output_scores is not None else self.generation_config.output_scores
+        output_attentions = (
+            output_attentions if output_attentions is not None else self.generation_config.output_attentions
+        )
         output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+            output_hidden_states if output_hidden_states is not None else self.generation_config.output_hidden_states
         )
         return_dict_in_generate = (
-            return_dict_in_generate if return_dict_in_generate is not None else self.config.return_dict_in_generate
+            return_dict_in_generate
+            if return_dict_in_generate is not None
+            else self.generation_config.return_dict_in_generate
         )
 
         # init attention / hidden states / scores tuples
@@ -1069,7 +1135,7 @@ class IPUGenerationMixin(GenerationMixin):
             )
 
         use_cache = model_kwargs.get("use_cache", False)
-        self._maybe_ensure_kv_cache_supported(use_cache)
+        use_cache = self._validate_kv_cache(use_cache, num_beams=1, max_length=max_length)
 
         # Change: intercept to optionally run the entire generation loop on device
         if self.on_device_generation_steps > 0:
@@ -1320,15 +1386,21 @@ class IPUGenerationMixin(GenerationMixin):
                 UserWarning,
             )
             stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
-        pad_token_id = pad_token_id if pad_token_id is not None else self.config.pad_token_id
-        eos_token_id = eos_token_id if eos_token_id is not None else self.config.eos_token_id
-        output_scores = output_scores if output_scores is not None else self.config.output_scores
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        else:
+            max_length = stopping_criteria.max_length
+        pad_token_id = pad_token_id if pad_token_id is not None else self.generation_config.pad_token_id
+        eos_token_id = eos_token_id if eos_token_id is not None else self.generation_config.eos_token_id
+        output_scores = output_scores if output_scores is not None else self.generation_config.output_scores
+        output_attentions = (
+            output_attentions if output_attentions is not None else self.generation_config.output_attentions
+        )
         output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+            output_hidden_states if output_hidden_states is not None else self.generation_config.output_hidden_states
         )
         return_dict_in_generate = (
-            return_dict_in_generate if return_dict_in_generate is not None else self.config.return_dict_in_generate
+            return_dict_in_generate
+            if return_dict_in_generate is not None
+            else self.generation_config.return_dict_in_generate
         )
 
         batch_size = len(beam_scorer._beam_hyps)
@@ -1353,7 +1425,7 @@ class IPUGenerationMixin(GenerationMixin):
             )
 
         use_cache = model_kwargs.get("use_cache", False)
-        self._maybe_ensure_kv_cache_supported(use_cache)
+        use_cache = self._validate_kv_cache(use_cache, num_beams=num_beams, max_length=max_length)
 
         # Change: intercept to optionally run the entire generation loop on device
         if self.on_device_generation_steps > 0:

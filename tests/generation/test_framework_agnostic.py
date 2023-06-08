@@ -89,7 +89,7 @@ class GenerationIntegrationTestsMixin:
         bart_tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/tiny-random-bart")
 
         bart_model = self.parallelize_model(
-            model_cls.from_pretrained("hf-internal-testing/tiny-random-bart"), max_length=20
+            model_cls.from_pretrained("hf-internal-testing/tiny-random-bart"), max_length=4
         )
 
         input_ids = bart_tokenizer(article, return_tensors=return_tensors).input_ids
@@ -110,12 +110,14 @@ class GenerationIntegrationTestsMixin:
         self.assertEqual(list(outputs.shape), [1, 4])
 
         # Decoder only call
+        bart_model.reparallelize(max_length=input_ids.shape[-1] + max_new_tokens + 1)
         outputs = bart_model.generate(decoder_input_ids=input_ids, max_new_tokens=max_new_tokens)
         # 1 BOS + 29 (input length) + 3 new tokens
         bart_model.destroy()
         self.assertEqual(list(outputs.shape), [1, 33])
 
         # Encoder decoder call > 20
+        bart_model.reparallelize(max_length=max_new_tokens + 20 + 1)
         outputs = bart_model.generate(max_new_tokens=max_new_tokens + 20)
 
         # 1 BOS + 20 + 3 new tokens
@@ -130,7 +132,7 @@ class GenerationIntegrationTestsMixin:
         gpt2_tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/tiny-random-gpt2")
 
         gpt2_model = self.parallelize_model(
-            model_cls.from_pretrained("hf-internal-testing/tiny-random-gpt2"), max_length=23
+            model_cls.from_pretrained("hf-internal-testing/tiny-random-gpt2"), max_length=4
         )
 
         input_ids = gpt2_tokenizer(article, return_tensors=return_tensors).input_ids
@@ -184,7 +186,7 @@ class GenerationIntegrationTestsMixin:
         tokenizer = AutoTokenizer.from_pretrained("distilgpt2", padding_side="left")
         tokenizer.pad_token = tokenizer.eos_token
 
-        model = self.parallelize_model(model_cls.from_pretrained("distilgpt2"), max_length=20)
+        model = self.parallelize_model(model_cls.from_pretrained("distilgpt2"), max_length=6)
 
         input_ids = tokenizer(articles, return_tensors=return_tensors, padding=True).input_ids
         if is_pt:
@@ -221,7 +223,7 @@ class GenerationIntegrationTestsMixin:
         tokenizer = AutoTokenizer.from_pretrained("distilgpt2", padding_side="left")
         tokenizer.pad_token = tokenizer.eos_token
 
-        model = self.parallelize_model(model_cls.from_pretrained("distilgpt2"), max_length=20)
+        model = self.parallelize_model(model_cls.from_pretrained("distilgpt2"), max_length=6)
 
         input_ids = tokenizer(articles, return_tensors=return_tensors, padding=True).input_ids
 
@@ -514,8 +516,6 @@ class GenerationIntegrationTestsMixin:
             input_ids = input_ids.to(torch_device)
 
         output_sequences_kwargs = model.generate(input_ids=input_ids)
-        # reset generation step
-        delattr(model, "_previous_generation_step")
 
         output_sequences = model.generate(input_ids)
 
@@ -543,8 +543,7 @@ class GenerationIntegrationTestsMixin:
             input_ids = input_ids.to(torch_device)
 
         output_sequences_kwargs = model.generate(input_ids=input_ids)
-        # reset generation step
-        delattr(model, "_previous_generation_step")
+
         output_sequences = model.generate(input_ids)
 
         if is_pt:
@@ -687,8 +686,6 @@ class GenerationIntegrationTestsMixin:
         eos_token_id = 873
         generated_tokens = model.generate(**tokens, eos_token_id=eos_token_id, **generation_kwargs)
         self.assertTrue(expectation == len(generated_tokens[0]))
-        # reset generation step
-        delattr(model, "_previous_generation_step")
 
         eos_token_id = [873, 198]
         generated_tokens = model.generate(**tokens, eos_token_id=eos_token_id, **generation_kwargs)
@@ -757,8 +754,6 @@ class GenerationIntegrationTestsMixin:
             token == model.config.pad_token_id for token in generated_tokens[0][expectation:]
         )
         self.assertTrue(unpadded_correct_condition or padded_correct_condition)
-        # reset generation step
-        delattr(model, "_previous_generation_step")
 
         eos_token_id = [873, 198]
         generated_tokens = model.generate(**tokens, eos_token_id=eos_token_id, **generation_kwargs)
