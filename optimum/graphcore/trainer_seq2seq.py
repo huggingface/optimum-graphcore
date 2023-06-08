@@ -20,9 +20,9 @@ import torch
 from poptorch._impl import rewrapModelIfNecessary, unwrapModelIfNecessary
 from torch import nn
 from torch.utils.data import Dataset
+from transformers.generation.configuration_utils import GenerationConfig
 
 from optimum.utils import logging
-from transformers.generation.configuration_utils import GenerationConfig
 
 from .trainer import IPUConfig, IPUTrainer, IPUTrainingArguments
 

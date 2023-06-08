@@ -16,9 +16,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional, Union
 
-from optimum.utils import logging
 from transformers.file_utils import add_start_docstrings
 from transformers.generation.configuration_utils import GenerationConfig
+
+from optimum.utils import logging
 
 from .training_args import IPUTrainingArguments
 

@@ -24,13 +24,13 @@ from typing import Any, Dict, List, Optional
 
 import torch
 from poptorch import DataLoaderMode
-
-from optimum.utils import logging
 from transformers.debug_utils import DebugOption
 from transformers.file_utils import cached_property, get_full_repo_name, is_torch_available, requires_backends
 from transformers.trainer_utils import EvaluationStrategy, HubStrategy, IntervalStrategy, SchedulerType
 from transformers.training_args import default_logdir
 from transformers.utils import ExplicitEnum
+
+from optimum.utils import logging
 
 
 logger = logging.get_logger(__name__)

@@ -14,11 +14,11 @@
 # limitations under the License.
 
 import numpy as np
-
-from optimum.graphcore import IPUConfig, IPUSeq2SeqTrainer, IPUSeq2SeqTrainingArguments
 from transformers import T5ForConditionalGeneration, T5Tokenizer
 from transformers.testing_utils import TestCasePlus, require_torch, slow
 from transformers.utils import is_datasets_available
+
+from optimum.graphcore import IPUConfig, IPUSeq2SeqTrainer, IPUSeq2SeqTrainingArguments
 
 
 if is_datasets_available():
