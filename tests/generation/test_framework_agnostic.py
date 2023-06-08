@@ -39,8 +39,6 @@ class GenerationIntegrationTestsMixin:
 
         model = self.parallelize_model(
             model_cls.from_pretrained("hf-internal-testing/tiny-random-t5"),
-            # turn off caching until supported
-            disable_cache=True,
         )
 
         encoder_input_str = "Hello world"
@@ -90,7 +88,9 @@ class GenerationIntegrationTestsMixin:
         article = """Justin Timberlake and Jessica Biel, welcome to parenthood."""
         bart_tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/tiny-random-bart")
 
-        bart_model = self.parallelize_model(model_cls.from_pretrained("hf-internal-testing/tiny-random-bart"))
+        bart_model = self.parallelize_model(
+            model_cls.from_pretrained("hf-internal-testing/tiny-random-bart"), max_length=20
+        )
 
         input_ids = bart_tokenizer(article, return_tensors=return_tensors).input_ids
         if is_pt:
@@ -130,9 +130,7 @@ class GenerationIntegrationTestsMixin:
         gpt2_tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/tiny-random-gpt2")
 
         gpt2_model = self.parallelize_model(
-            model_cls.from_pretrained("hf-internal-testing/tiny-random-gpt2"),
-            # disable KV catch until supported
-            disable_cache=True,
+            model_cls.from_pretrained("hf-internal-testing/tiny-random-gpt2"), max_length=23
         )
 
         input_ids = gpt2_tokenizer(article, return_tensors=return_tensors).input_ids
@@ -158,13 +156,16 @@ class GenerationIntegrationTestsMixin:
         # 1 BOS token + 23 new tokens
         self.assertEqual(list(outputs.shape), [1, 24])
 
+    @skip_unsupported("Dynamic input shapes")
     def test_encoder_decoder_generate_with_inputs_embeds(self):
         model_cls = self.framework_dependent_parameters["AutoModelForSeq2SeqLM"]
         return_tensors = self.framework_dependent_parameters["return_tensors"]
 
         article = """Justin Timberlake and Jessica Biel, welcome to parenthood."""
         tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/tiny-random-bart")
-        model = self.parallelize_model(model_cls.from_pretrained("hf-internal-testing/tiny-random-bart", max_length=5))
+        model = self.parallelize_model(
+            model_cls.from_pretrained("hf-internal-testing/tiny-random-bart", max_length=5), max_length=5
+        )
         model.config.eos_token_id = None
         input_ids = tokenizer(article, return_tensors=return_tensors).input_ids
 
@@ -183,11 +184,7 @@ class GenerationIntegrationTestsMixin:
         tokenizer = AutoTokenizer.from_pretrained("distilgpt2", padding_side="left")
         tokenizer.pad_token = tokenizer.eos_token
 
-        model = self.parallelize_model(
-            model_cls.from_pretrained("distilgpt2"),
-            # disable KV cache until supported
-            disable_cache=True,
-        )
+        model = self.parallelize_model(model_cls.from_pretrained("distilgpt2"), max_length=20)
 
         input_ids = tokenizer(articles, return_tensors=return_tensors, padding=True).input_ids
         if is_pt:
@@ -224,11 +221,7 @@ class GenerationIntegrationTestsMixin:
         tokenizer = AutoTokenizer.from_pretrained("distilgpt2", padding_side="left")
         tokenizer.pad_token = tokenizer.eos_token
 
-        model = self.parallelize_model(
-            model_cls.from_pretrained("distilgpt2"),
-            # disable KV cache until supported
-            disable_cache=True,
-        )
+        model = self.parallelize_model(model_cls.from_pretrained("distilgpt2"), max_length=20)
 
         input_ids = tokenizer(articles, return_tensors=return_tensors, padding=True).input_ids
 
@@ -278,7 +271,10 @@ class GenerationIntegrationTestsMixin:
                 return_dict_in_generate=True,
                 output_scores=True,
                 length_penalty=0.0,
-            )
+            ),
+            max_length=10,
+            num_beams=4,
+            batch_size=len(articles),
         )
 
         input_ids = tokenizer(articles, return_tensors=return_tensors, padding=True).input_ids
@@ -315,7 +311,10 @@ class GenerationIntegrationTestsMixin:
                 return_dict_in_generate=True,
                 output_scores=True,
                 length_penalty=0.0,
-            )
+            ),
+            max_length=10,
+            num_beams=4,
+            batch_size=len(articles),
         )
 
         input_ids = tokenizer(articles, return_tensors=return_tensors, padding=True).input_ids
@@ -356,8 +355,9 @@ class GenerationIntegrationTestsMixin:
                 output_scores=True,
                 length_penalty=0.0,
             ),
-            # disable KV cache until supported
-            disable_cache=True,
+            max_length=10,
+            num_beams=4,
+            batch_size=len(articles),
         )
 
         input_ids = tokenizer(articles, return_tensors=return_tensors, padding=True).input_ids
@@ -396,7 +396,11 @@ class GenerationIntegrationTestsMixin:
                 return_dict_in_generate=True,
                 output_scores=True,
                 length_penalty=0.0,
-            )
+            ),
+            max_length=10,
+            num_beams=4,
+            # batch_size * num_return_sequences
+            batch_size=len(articles) * 2,
         )
 
         input_ids = tokenizer(articles, return_tensors=return_tensors, padding=True).input_ids
@@ -423,11 +427,7 @@ class GenerationIntegrationTestsMixin:
         is_pt = not model_cls.__name__.startswith("TF")
 
         input_ids = create_tensor_fn(2 * [[822, 10, 571, 33, 25, 58, 2625, 10, 27, 141, 3, 9, 307, 239, 6, 1]])
-        model = self.parallelize_model(
-            model_cls.from_pretrained("t5-small"),
-            # disable KV cache until supported
-            disable_cache=True,
-        )
+        model = self.parallelize_model(model_cls.from_pretrained("t5-small"), max_length=10, num_beams=4, batch_size=2)
 
         if is_pt:
             model = model.to(torch_device)
@@ -465,7 +465,10 @@ class GenerationIntegrationTestsMixin:
         model = self.parallelize_model(
             model_cls.from_pretrained(
                 "hf-internal-testing/tiny-random-bart", max_length=50, num_beams=5, num_return_sequences=5
-            )
+            ),
+            max_length=50,
+            num_beams=5,
+            batch_size=2,
         )
 
         model.config.eos_token_id = None
@@ -479,6 +482,10 @@ class GenerationIntegrationTestsMixin:
         output_sequences_batched = model.generate(
             input_ids=input_ids_batched, return_dict_in_generate=True, output_scores=True
         )
+
+        # batch size is now 1
+        model.destroy()
+        model.reparallelize(batch_size=1, num_beams=5)
         output_sequences = model.generate(input_ids=input_ids, return_dict_in_generate=True, output_scores=True)
 
         batched_out = output_sequences_batched.sequences_scores
@@ -498,9 +505,7 @@ class GenerationIntegrationTestsMixin:
         article = """I need input_ids to generate"""
         tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/tiny-random-gpt2")
         model = self.parallelize_model(
-            model_cls.from_pretrained("hf-internal-testing/tiny-random-gpt2", max_length=15),
-            # disable KV cache until supported
-            disable_cache=True,
+            model_cls.from_pretrained("hf-internal-testing/tiny-random-gpt2", max_length=15), max_length=15
         )
 
         input_ids = tokenizer(article, return_tensors=return_tensors).input_ids
@@ -528,7 +533,9 @@ class GenerationIntegrationTestsMixin:
 
         article = """Justin Timberlake and Jessica Biel, welcome to parenthood."""
         tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/tiny-random-bart")
-        model = self.parallelize_model(model_cls.from_pretrained("hf-internal-testing/tiny-random-bart", max_length=5))
+        model = self.parallelize_model(
+            model_cls.from_pretrained("hf-internal-testing/tiny-random-bart", max_length=5), max_length=5
+        )
         model.config.eos_token_id = None
         input_ids = tokenizer(article, return_tensors=return_tensors).input_ids
         if is_pt:
@@ -554,9 +561,7 @@ class GenerationIntegrationTestsMixin:
         article = """I need input_ids to generate"""
         tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/tiny-random-gpt2")
         model = self.parallelize_model(
-            model_cls.from_pretrained("hf-internal-testing/tiny-random-gpt2", max_length=10),
-            # disable KV cache until supported
-            disable_cache=True,
+            model_cls.from_pretrained("hf-internal-testing/tiny-random-gpt2", max_length=10), max_length=10
         )
         input_ids = tokenizer(article, return_tensors=return_tensors).input_ids
         with self.assertRaises(ValueError):
@@ -569,7 +574,7 @@ class GenerationIntegrationTestsMixin:
         article = """I need input_ids to generate"""
         tokenizer = AutoTokenizer.from_pretrained("hf-internal-testing/tiny-random-bart")
         model = self.parallelize_model(
-            model_cls.from_pretrained("hf-internal-testing/tiny-random-bart", max_length=10)
+            model_cls.from_pretrained("hf-internal-testing/tiny-random-bart", max_length=10), max_length=10
         )
 
         input_ids = tokenizer(article, return_tensors=return_tensors).input_ids
@@ -584,7 +589,9 @@ class GenerationIntegrationTestsMixin:
         input_features = floats_tensor((3, 80, 60))
         model = self.parallelize_model(
             model_cls.from_pretrained("hf-internal-testing/tiny-random-WhisperForConditionalGeneration"),
-            ipu_config=IPUConfig.from_pretrained("Graphcore/whisper-tiny-ipu").eval(),
+            ipu_config=IPUConfig.from_pretrained("Graphcore/whisper-tiny-ipu", inference_layers_per_ipu=[-1]).eval(),
+            max_length=5,
+            batch_size=3,
         )
         if is_pt:
             input_features.to(torch_device)
@@ -635,7 +642,8 @@ class GenerationIntegrationTestsMixin:
         attention_mask = create_tensor_fn(np.ones(input_features.shape))
         model = self.parallelize_model(
             model_cls.from_pretrained("hf-internal-testing/tiny-random-WhisperForConditionalGeneration"),
-            ipu_config=IPUConfig.from_pretrained("Graphcore/whisper-tiny-ipu").eval(),
+            ipu_config=IPUConfig.from_pretrained("Graphcore/whisper-tiny-ipu", inference_layers_per_ipu=[-1]).eval(),
+            batch_size=3,
         )
         if is_pt:
             input_features = input_features.to(torch_device)
@@ -669,9 +677,7 @@ class GenerationIntegrationTestsMixin:
         text = """Hello, my dog is cute and"""
         tokens = tokenizer(text, return_tensors=return_tensors)
         model = self.parallelize_model(
-            model_cls.from_pretrained("hf-internal-testing/tiny-random-gpt2"),
-            # disable KV cache until supported
-            disable_cache=True,
+            model_cls.from_pretrained("hf-internal-testing/tiny-random-gpt2"), batch_size=1, **generation_kwargs
         )
 
         if is_pt:
@@ -707,8 +713,7 @@ class GenerationIntegrationTestsMixin:
         tokens = tokenizer(text, return_tensors=return_tensors)
         model = self.parallelize_model(
             model_cls.from_pretrained("hf-internal-testing/tiny-random-gpt2"),
-            # disable KV cache until supported
-            disable_cache=True,
+            batch_size=1**generation_kwargs,
         )
 
         if is_pt:
@@ -738,9 +743,7 @@ class GenerationIntegrationTestsMixin:
         text = """Hello, my dog is cute and"""
         tokens = tokenizer(text, return_tensors=return_tensors)
         model = self.parallelize_model(
-            model_cls.from_pretrained("hf-internal-testing/tiny-random-gpt2"),
-            # disable KV cache until supported
-            disable_cache=True,
+            model_cls.from_pretrained("hf-internal-testing/tiny-random-gpt2"), batch_size=1, **generation_kwargs
         )
 
         if is_pt:
