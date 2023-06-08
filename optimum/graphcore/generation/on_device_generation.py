@@ -369,6 +369,11 @@ class OnDeviceGenerationModel(torch.nn.Module):
         if not use_cache:
             raise NotImplementedError("On device generation assumes `use_cache=True`.")
 
+        if isinstance(eos_token_id, list):
+            if len(eos_token_id) > 1:
+                raise ValueError("Multiple EOS tokens are not yet supported for on-device generation.")
+            eos_token_id = eos_token_id[0]
+
         self.max_length = max_length
         self.context_length = 1
 
