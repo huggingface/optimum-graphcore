@@ -5,10 +5,10 @@ Framework agnostic tests for generate()-related methods.
 from typing import Callable
 
 import numpy as np
-
-from optimum.graphcore import IPUConfig
 from transformers import AutoTokenizer
 from transformers.testing_utils import slow, torch_device
+
+from optimum.graphcore import IPUConfig
 
 from ..utils import skip_unsupported
 

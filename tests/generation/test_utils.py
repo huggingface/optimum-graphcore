@@ -18,11 +18,12 @@ import inspect
 import unittest
 from typing import TYPE_CHECKING
 
+from transformers import is_torch_available
+from transformers.testing_utils import require_torch, slow, torch_device
+
 from optimum.graphcore import IPUConfig, pipeline
 from optimum.graphcore.generation.utils import MODELS_SUPPORTING_KV_CACHE
 from optimum.graphcore.modeling_utils import to_pipelined
-from transformers import is_torch_available
-from transformers.testing_utils import require_torch, slow, torch_device
 
 from ..test_modeling_common import floats_tensor, ids_tensor
 from .test_framework_agnostic import GenerationIntegrationTestsMixin
@@ -33,7 +34,6 @@ if TYPE_CHECKING:
 
 if is_torch_available():
     import torch
-
     from transformers import (
         AutoModelForCausalLM,
         AutoModelForSeq2SeqLM,
