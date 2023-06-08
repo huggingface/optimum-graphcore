@@ -14,7 +14,7 @@
 
 import poptorch
 import torch
-from transformers.generation.utils import (
+from transformers.generation.logits_process import (
     ForcedBOSTokenLogitsProcessor,
     ForcedEOSTokenLogitsProcessor,
     ForceTokensLogitsProcessor,
@@ -22,6 +22,7 @@ from transformers.generation.utils import (
     NoRepeatNGramLogitsProcessor,
     SuppressTokensAtBeginLogitsProcessor,
     SuppressTokensLogitsProcessor,
+    WhisperTimeStampLogitsProcessor,
 )
 
 
@@ -163,6 +164,81 @@ class IPUForceTokensLogitsProcessor(ForceTokensLogitsProcessor):
         return scores
 
 
+class IPUWhisperTimeStampLogitsProcessor(WhisperTimeStampLogitsProcessor):
+    @classmethod
+    def from_model(cls, inst, vocab_size: int):
+        self = inst
+        self.__class__ = cls
+
+        self.no_timestamps_mask = torch.ones((1, vocab_size), dtype=torch.int32)
+        self.no_timestamps_mask[:, self.no_timestamps_token_id] = 0
+
+        self.after_timestamp_begin_mask = torch.ones((1, vocab_size), dtype=torch.int32)
+        self.after_timestamp_begin_mask[:, self.timestamp_begin :] = 0
+
+        self.before_eos_mask = torch.ones((1, vocab_size), dtype=torch.int32)
+        self.before_eos_mask[:, : self.eos_token_id] = 0
+
+        self.last_allowed_mask = torch.ones((1, vocab_size), dtype=torch.int32)
+        if self.max_initial_timestamp_index is not None:
+            self.last_allowed_mask[:, self.timestamp_begin + self.max_initial_timestamp_index + 1 :] = 0
+
+        self.timestamp_begin_scores = VERY_LARGE_NEGATIVE_CONST * torch.ones((1, vocab_size), dtype=torch.int32)
+        self.timestamp_begin_scores[:, self.timestamp_begin] = 0
+
+        self.pre_timestamp_begin_mask = torch.ones((1, vocab_size), dtype=torch.int32)
+        self.pre_timestamp_begin_mask[:, : self.timestamp_begin] = 0
+
+        return self
+
+    def __call__(
+        self, input_ids: torch.LongTensor, scores: torch.FloatTensor, absolute_step: torch.IntTensor
+    ) -> torch.FloatTensor:
+        no_timestamps_mask = self.no_timestamps_mask.to(scores.device)
+        scores = no_timestamps_mask * scores + (1 - no_timestamps_mask) * VERY_LARGE_NEGATIVE_CONST
+
+        cur_len = absolute_step
+
+        cond = cur_len == self.begin_index - 1
+        scores = ~cond * scores + cond * self.timestamp_begin_scores.to(device=scores.device)
+        timestamp_begin_not_forced = ~cond
+
+        last_was_timestamp = torch.index_select(input_ids, 1, cur_len - 1) >= self.timestamp_begin
+        last_was_timestamp &= (cur_len - self.begin_index) >= 1
+        penultimate_was_timestamp = (
+            torch.index_select(input_ids, 1, torch.where(cur_len > 1, cur_len - 2, cur_len - 1))
+            >= self.timestamp_begin
+        )
+        penultimate_was_timestamp |= (cur_len - self.begin_index) < 2
+
+        after_timestamp_begin_mask = self.after_timestamp_begin_mask.to(scores.device)
+        before_eos_mask = self.before_eos_mask.to(scores.device)
+        after_timestamp_begin_mask = after_timestamp_begin_mask | ~(
+            timestamp_begin_not_forced & last_was_timestamp & penultimate_was_timestamp
+        )
+        before_eos_mask = before_eos_mask | ~(
+            timestamp_begin_not_forced & last_was_timestamp & ~penultimate_was_timestamp
+        )
+        scores = after_timestamp_begin_mask * scores + (1 - after_timestamp_begin_mask) * VERY_LARGE_NEGATIVE_CONST
+        scores = before_eos_mask * scores + (1 - before_eos_mask) * VERY_LARGE_NEGATIVE_CONST
+
+        last_allowed_mask = self.last_allowed_mask.to(scores.device)
+        apply_max_initial_timestamp = cur_len == self.begin_index
+        last_allowed_mask = last_allowed_mask | ~(timestamp_begin_not_forced & apply_max_initial_timestamp)
+        scores = last_allowed_mask * scores + (1 - last_allowed_mask) * VERY_LARGE_NEGATIVE_CONST
+
+        log_probs = torch.nn.functional.log_softmax(scores, dim=-1)
+        timestamp_logprob = torch.logsumexp(log_probs[:, self.timestamp_begin :], dim=-1, keepdim=True)
+        max_text_token_logprob = torch.amax(log_probs[:, : self.timestamp_begin], dim=-1, keepdim=True)
+        pre_timestamp_begin_mask = self.pre_timestamp_begin_mask.to(scores.device)
+        pre_timestamp_begin_mask = pre_timestamp_begin_mask | ~(
+            timestamp_begin_not_forced & (timestamp_logprob > max_text_token_logprob)
+        )
+        scores = pre_timestamp_begin_mask * scores + (1 - pre_timestamp_begin_mask) * VERY_LARGE_NEGATIVE_CONST
+
+        return scores
+
+
 IPULogitsProcessors = {
     ForcedBOSTokenLogitsProcessor: IPUForcedBOSTokenLogitsProcessor,
     ForcedEOSTokenLogitsProcessor: IPUForcedEOSTokenLogitsProcessor,
@@ -171,4 +247,5 @@ IPULogitsProcessors = {
     NoRepeatNGramLogitsProcessor: IPUNoRepeatNGramLogitsProcessor,
     SuppressTokensLogitsProcessor: IPUSuppressTokensLogitsProcessor,
     SuppressTokensAtBeginLogitsProcessor: IPUSuppressTokensAtBeginLogitsProcessor,
+    WhisperTimeStampLogitsProcessor: IPUWhisperTimeStampLogitsProcessor,
 }
