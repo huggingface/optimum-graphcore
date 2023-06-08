@@ -283,6 +283,14 @@ class IPUGenerationMixin(GenerationMixin):
         if hasattr(self, "poptorch_decoder"):
             self.poptorch_decoder.detachFromDevice()
 
+    def destroy(self):
+        if hasattr(self, "poptorch_encoder"):
+            self.poptorch_encoder.destroy()
+            delattr(self, "poptorch_encoder")
+        if hasattr(self, "poptorch_decoder"):
+            self.poptorch_decoder.destroy()
+            delattr(self, "poptorch_decoder")
+
     def _get_generation_step_tensor(self, generation_step, ascending=False):
         # Returns a 1 dimensional tensor of the form [device_iterations * replication factor]
         # with all elements equal to generation_step.
@@ -433,6 +441,9 @@ class IPUGenerationMixin(GenerationMixin):
             max_length = stopping_criteria.max_length
         pad_token_id = pad_token_id if pad_token_id is not None else self.config.pad_token_id
         eos_token_id = eos_token_id if eos_token_id is not None else self.config.eos_token_id
+        if isinstance(eos_token_id, int):
+            eos_token_id = [eos_token_id]
+        eos_token_id_tensor = torch.tensor(eos_token_id).to(input_ids.device) if eos_token_id is not None else None
         output_scores = output_scores if output_scores is not None else self.config.output_scores
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -547,8 +558,10 @@ class IPUGenerationMixin(GenerationMixin):
             cur_len = cur_len + 1
 
             # if eos_token was found in one sentence, set sentence to finished
-            if eos_token_id is not None:
-                unfinished_sequences = unfinished_sequences.mul((next_tokens != eos_token_id).long())
+            if eos_token_id_tensor is not None:
+                unfinished_sequences = unfinished_sequences.mul(
+                    next_tokens.tile(eos_token_id_tensor.shape[0], 1).ne(eos_token_id_tensor.unsqueeze(1)).prod(dim=0)
+                )
 
             # stop when each sentence is finished, or if we exceed the maximum length
             if unfinished_sequences.max() == 0 or stopping_criteria(input_ids, scores):
@@ -1030,6 +1043,9 @@ class IPUGenerationMixin(GenerationMixin):
         logits_warper = logits_warper if logits_warper is not None else LogitsProcessorList()
         pad_token_id = pad_token_id if pad_token_id is not None else self.config.pad_token_id
         eos_token_id = eos_token_id if eos_token_id is not None else self.config.eos_token_id
+        if isinstance(eos_token_id, int):
+            eos_token_id = [eos_token_id]
+        eos_token_id_tensor = torch.tensor(eos_token_id).to(input_ids.device) if eos_token_id is not None else None
         output_scores = output_scores if output_scores is not None else self.config.output_scores
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
         output_hidden_states = (
@@ -1139,8 +1155,10 @@ class IPUGenerationMixin(GenerationMixin):
             cur_len = cur_len + 1
 
             # if eos_token was found in one sentence, set sentence to finished
-            if eos_token_id is not None:
-                unfinished_sequences = unfinished_sequences.mul((next_tokens != eos_token_id).long())
+            if eos_token_id_tensor is not None:
+                unfinished_sequences = unfinished_sequences.mul(
+                    next_tokens.tile(eos_token_id_tensor.shape[0], 1).ne(eos_token_id_tensor.unsqueeze(1)).prod(dim=0)
+                )
 
             # stop when each sentence is finished, or if we exceed the maximum length
             if unfinished_sequences.max() == 0 or stopping_criteria(input_ids, scores):
