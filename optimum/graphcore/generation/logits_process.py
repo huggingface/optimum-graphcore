@@ -194,6 +194,8 @@ class IPUWhisperTimeStampLogitsProcessor(WhisperTimeStampLogitsProcessor):
     def __call__(
         self, input_ids: torch.LongTensor, scores: torch.FloatTensor, absolute_step: torch.IntTensor
     ) -> torch.FloatTensor:
+        input_ids = input_ids.view(-1, input_ids.shape[-1])
+
         no_timestamps_mask = self.no_timestamps_mask.to(scores.device)
         scores = no_timestamps_mask * scores + (1 - no_timestamps_mask) * VERY_LARGE_NEGATIVE_CONST
 
