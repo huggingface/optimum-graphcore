@@ -628,13 +628,10 @@ class IPUConfig(BaseConfig):
         if compile_only:
             opts.useOfflineIpuTarget()
 
-        matmul_proportion = copy.deepcopy(
-            self.inference_matmul_proportion if for_inference else self.matmul_proportion
-        )
-        ipus_per_replica = self.inference_ipus_per_replica if for_inference else self.ipus_per_replica
-        if isinstance(self.matmul_proportion, float):
-            matmul_proportion = [self.matmul_proportion] * ipus_per_replica
-        mem_prop = {f"IPU{i}": matmul_proportion[i] for i in range(ipus_per_replica)}
+        matmul_proportion = copy.deepcopy(self._matmul_proportion)
+        if isinstance(matmul_proportion, float):
+            matmul_proportion = [matmul_proportion] * self._ipus_per_replica
+        mem_prop = {f"IPU{i}": matmul_proportion[i] for i in range(self._ipus_per_replica)}
         opts.setAvailableMemoryProportion(mem_prop)
 
         # Enable caching the compiled executable to disk
