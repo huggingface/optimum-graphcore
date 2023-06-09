@@ -200,4 +200,4 @@ python run_pretraining.py \
 	--n_ipu 16
 ```
 
-Similarly to the `"base-sized"` model above, be sure to select optimal `learning_rate` given the effective batch size of your configuration. The effective batch size is defined as `gradient_accumulation_steps * per_device_train_batch_size * replication_factor`. The `replication_factor` is calculated as number of IPUs (`pod_type`) divided by `ipus_per_replica`. See [Graphcore/wav2vec2-large](https://huggingface.co/Graphcore/wav2vec2-large-ipu) for configuration parameters in addition to the command line arguments.
+Similarly to the `"base-sized"` model above, be sure to select optimal `learning_rate` given the effective batch size of your configuration. The effective batch size is defined as `gradient_accumulation_steps * per_device_train_batch_size * replication_factor`. The `replication_factor` is calculated as number of IPUs (`n_ipu`) divided by `ipus_per_replica`. See [Graphcore/wav2vec2-large](https://huggingface.co/Graphcore/wav2vec2-large-ipu) for configuration parameters in addition to the command line arguments.
