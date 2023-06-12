@@ -17,9 +17,11 @@ from typing import Optional, Tuple
 import poptorch
 import torch
 from torch import nn
+from transformers.modeling_outputs import BaseModelOutput
 from transformers.models.whisper.modeling_whisper import (
     WhisperAttention,
     WhisperDecoder,
+    WhisperEncoder,
     WhisperEncoderLayer,
     WhisperForConditionalGeneration,
     WhisperPositionalEmbedding,
@@ -303,6 +305,63 @@ class _WhisperDecoderWithCustomMakeCausalAndExpandMask(WhisperDecoder):
         return combined_attention_mask
 
 
+class IPUWhisperConditionalEncoder(WhisperEncoder):
+    @classmethod
+    def from_model(cls, model: WhisperEncoder, batch_size: int, num_beams: int):
+        clone = model
+        clone.__class__ = cls
+        clone.register_buffer(
+            "_encoder_last_hidden_state",
+            torch.zeros((batch_size, model.config.max_source_positions, model.config.d_model), dtype=model.dtype),
+            persistent=False,
+        )
+        clone.register_buffer("_generation_step", torch.tensor([0], dtype=torch.int32), persistent=False)
+        clone._batch_size = batch_size
+        clone._num_beams = num_beams
+        return clone
+
+    def to_model(self) -> WhisperEncoder:
+        del self._encoder_last_hidden_state
+        del self._generation_step
+        del self._batch_size
+        del self._num_beams
+
+        original = self
+        original.__class__ = WhisperEncoder
+        return original
+
+    def forward(
+        self,
+        input_features,
+        attention_mask=None,
+        head_mask=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=None,
+    ):
+        if attention_mask is not None or head_mask is not None or output_attentions or output_hidden_states:
+            raise ValueError(f"{self.__class__.__name__} only accepts `input_features`.")
+
+        def run_encoder(input_features):
+            encoder_output = WhisperEncoder.forward(self, input_features, return_dict=True)
+            return encoder_output.last_hidden_state
+
+        def skip_encoder(input_features):
+            return self._encoder_last_hidden_state
+
+        self._encoder_last_hidden_state.copy_(
+            poptorch.cond(self._generation_step == 0, run_encoder, [input_features], skip_encoder, [input_features])[0]
+        )
+        last_hidden_state = self._encoder_last_hidden_state
+        if self._num_beams > 1:
+            # Before being passed to the decoder, we must expand the encoder outputs when beam search is enabled
+            # as this would be done on host.
+            last_hidden_state = last_hidden_state.repeat_interleave(
+                self._num_beams, dim=0, output_size=self._batch_size * self._num_beams
+            )
+        return BaseModelOutput(last_hidden_state=last_hidden_state)
+
+
 @supports_kv_cache
 @register(WhisperForConditionalGeneration)
 class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, PipelineMixin, IPUGenerationMixin):
@@ -314,6 +373,25 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         """
         for layer in self.model.encoder.layers:
             layer.__class__ = WhisperEncoderLayer if restore else _WhisperEncoderLayerClamp
+
+    def change_encoder_class(self, restore: bool, **kwargs):
+        """Changes the encoder class to run the encoder under a `poptorch.cond` op.
+
+        Args:
+            restore: whether to restore the encoder to its original version or not.
+        """
+        batch_size = kwargs.get("batch_size", 1)
+        num_beams = kwargs.get("num_beams", 1)
+        encoder = self.model.get_encoder()
+        if restore:
+            if isinstance(encoder, IPUWhisperConditionalEncoder):
+                self.model.encoder = encoder.to_model()
+        else:
+            if self.ipu_config.ipus_per_replica > 1:
+                raise ValueError(
+                    f"`{self.ipu_config.ipus_per_replica=}` should be 1 when placing encoder and decoder on the same IPU."
+                )
+            self.model.encoder = IPUWhisperConditionalEncoder.from_model(encoder, batch_size, num_beams)
 
     def change_decoder_class(self, restore: bool):
         """Changes the decoder class to update the _prepare_decoder_attention_mask method.
@@ -408,6 +486,13 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         if use_cache:
             kwargs = self._populate_parallelize_kwargs_with_generation_config(**kwargs)
 
+        self._use_cond_encoder = kwargs.get("use_cond_encoder", False)
+        self._use_encoder_output_buffer = kwargs.get("use_encoder_output_buffer", False)
+        if self._use_cond_encoder and self._use_encoder_output_buffer:
+            raise ValueError(
+                "`use_cond_encoder=True` is incompatible with `use_encoder_output_buffer=True`, only set one to True."
+            )
+
         self.change_encoder_layer_class(restore=False)
         self.change_decoder_class(restore=False)
         self.change_decoder_positional_embedding(restore=False)
@@ -418,7 +503,7 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
             **kwargs,
         )
         self.change_lm_head(restore=False, use_cache=use_cache or not for_generation)
-        self.use_encoder_output_buffer = kwargs.get("use_encoder_output_buffer", False)
+        self.change_encoder_class(restore=not self._use_cond_encoder, **kwargs)
         self.set_on_device_generation_steps(kwargs.get("on_device_generation_steps", 0))
 
         logger.info("---------- Device Allocation -----------")
@@ -432,9 +517,9 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         num_encoder_layers = len(self.model.encoder.layers)
         num_decoder_layers = len(self.model.decoder.layers)
 
-        if for_generation:
-            # If running for text generation we split the IPU config into two configs
-            # because we run the encoder and decoder as separate Poplar executors.
+        if for_generation and not self._use_cond_encoder:
+            # If running for text generation (and the encoder and decoder are run as separate Poplar executors)
+            # we split the IPU config into two configs.
             ipu_configs = split_encoder_decoder_ipu_config(self.ipu_config, num_encoder_layers, num_decoder_layers)
             self.encoder_ipu_config, self.decoder_ipu_config = ipu_configs
             encoder_layer_ipu = get_layer_ipu(self.encoder_ipu_config, num_encoder_layers)
@@ -485,6 +570,7 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         self.change_decoder_positional_embedding(restore=True)
         self.change_attention_class(restore=True)
         self.change_lm_head(restore=True)
+        self.change_encoder_class(restore=True)
         self.set_on_device_generation_steps(0)
 
         return self
@@ -504,10 +590,17 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
             decoder_input_ids = decoder_input_ids[:, -1:]
             beam_idx = kwargs.get("beam_idx", torch.arange(decoder_input_ids.shape[0], dtype=torch.long))
 
-        return {
-            "encoder_outputs": encoder_outputs,
+        ret = {
             "past_key_values": None,
             "decoder_input_ids": decoder_input_ids,
             "decoder_attention_mask": None,
             "beam_idx": beam_idx,
         }
+        if self.cond_encoder_enabled:
+            input_features = kwargs.get("input_features", None)
+            if input_features is None:
+                raise ValueError("Missing `input_features` with `use_cond_encoder=True`.")
+            ret["input_features"] = input_features
+        else:
+            ret["encoder_outputs"] = encoder_outputs
+        return ret

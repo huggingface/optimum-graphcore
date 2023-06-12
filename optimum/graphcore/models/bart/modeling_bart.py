@@ -787,7 +787,7 @@ class PipelinedBartForConditionalGeneration(BartForConditionalGeneration, Pipeli
         self.model.change_bart_attention_class(restore=False, use_cache=use_cache and for_generation, **kwargs)
         self.model.change_decoder_positional_embedding(restore=False)
         self.change_lm_head_to_indexed_input_linear(restore=not (for_generation and not use_cache))
-        self.use_encoder_output_buffer = kwargs.get("use_encoder_output_buffer", False)
+        self._use_encoder_output_buffer = kwargs.get("use_encoder_output_buffer", False)
         self.set_on_device_generation_steps(kwargs.get("on_device_generation_steps", 0))
 
         self.model.shared = poptorch.BeginBlock(self.model.shared, "Embedding", ipu_id=0)

@@ -17,7 +17,7 @@ import copy
 import json
 import os
 import warnings
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import poptorch
 import torch
@@ -175,12 +175,17 @@ class IPUGenerationMixin(GenerationMixin):
     are cached on the Decoder device using buffers.
     """
 
-    use_encoder_output_buffer = False
+    _use_cond_encoder = False
+    _use_encoder_output_buffer = False
     kv_cache_enabled = False
 
     @property
     def encoder_output_buffer_enabled(self) -> bool:
-        return self.config.is_encoder_decoder and self.use_encoder_output_buffer
+        return self.config.is_encoder_decoder and self._use_encoder_output_buffer and not self._use_cond_encoder
+
+    @property
+    def cond_encoder_enabled(self) -> bool:
+        return self.config.is_encoder_decoder and self._use_cond_encoder
 
     def _pad_tensors_to_max_len(self, tensor: torch.Tensor, max_length: int, pad_token_id: int) -> torch.Tensor:
         return nn.functional.pad(tensor, (0, max_length - tensor.shape[1]), "constant", pad_token_id)
@@ -267,6 +272,17 @@ class IPUGenerationMixin(GenerationMixin):
         encoder_kwargs["return_dict"] = True
         encoder_kwargs[model_input_name] = inputs_tensor
 
+        if self.cond_encoder_enabled:
+            # The encoder and decoder are being run on the same IPU.
+            # We make a simplifying assumption and only provide the inputs to the encoder.
+            model_kwargs[model_input_name] = inputs_tensor
+            # For minimal changes to the generation path, we put dummy encoder outputs here
+            # and drop them before calling the model.
+            model_kwargs["encoder_outputs"] = BaseModelOutput(
+                last_hidden_state=torch.zeros(inputs_tensor.shape[0], 1, dtype=encoder.dtype)
+            )
+            return model_kwargs
+
         if not hasattr(self, "poptorch_encoder"):
             # Use split encoder ipu_config for encoder/decoder models
             if os.getenv("DEBUG_RUN_ENCODER_ON_CPU", False):
@@ -279,6 +295,23 @@ class IPUGenerationMixin(GenerationMixin):
             model_kwargs["encoder_outputs"]: ModelOutput = self.poptorch_encoder(**encoder_kwargs)
 
         return model_kwargs
+
+    @staticmethod
+    def _expand_inputs_for_generation(
+        expand_size: int = 1,
+        is_encoder_decoder: bool = False,
+        input_ids: Optional[torch.LongTensor] = None,
+        **model_kwargs,
+    ) -> Tuple[torch.LongTensor, Dict[str, Any]]:
+        # Change: if we are running the encoder and decoder on the same IPU, `model_kwargs`
+        # will contain `input_features`. We do not want these to be expanded by e.g. num_beams.
+        input_features = model_kwargs.pop("input_features", None)
+        input_ids, model_kwargs = GenerationMixin._expand_inputs_for_generation(
+            expand_size=expand_size, is_encoder_decoder=is_encoder_decoder, input_ids=input_ids, **model_kwargs
+        )
+        if input_features is not None:
+            model_kwargs["input_features"] = input_features
+        return input_ids, model_kwargs
 
     def detachFromDevice(self):
         if hasattr(self, "poptorch_encoder"):
@@ -1639,7 +1672,9 @@ class IPUGenerationMixin(GenerationMixin):
                 # With on-device generation, beam_idx at each step is handled through buffers.
                 continue
 
-            if torch.is_tensor(v):
+            if k == "input_features" and self.cond_encoder_enabled:
+                v = v.repeat(on_device_generation_steps, *(1 for _ in range(v.ndim - 1)))
+            elif torch.is_tensor(v):
                 if v.shape[0] != batch_size:
                     raise ValueError(f"Unexpected size in dim 0 for {k}, expected {batch_size}.")
                 v = v.repeat(on_device_generation_steps, *(1 for _ in range(v.ndim - 1)))
@@ -1694,9 +1729,11 @@ class IPUGenerationMixin(GenerationMixin):
                 f"{self.on_device_generation_steps} tokens at a time and stop short of `max_length` so as not to exceed it."
             )
 
-        if self.ipu_config.inference_device_iterations != 1:
+        decoder_ipu_config = getattr(self, "decoder_ipu_config", self.ipu_config)
+        if decoder_ipu_config.inference_device_iterations not in (1, self.on_device_generation_steps):
             raise ValueError(
-                "On device generation expects `inference_device_iterations=1`, "
+                "On device generation expects `inference_device_iterations=1` or "
+                "`inference_device_iterations=on_device_generation_steps`, "
                 f"received {self.ipu_config.inference_device_iterations}. "
                 "For on device generation, `inference_device_iterations` will be set to "
                 f"`on_device_generation_steps={self.on_device_generation_steps}`."
@@ -1788,9 +1825,11 @@ class IPUGenerationMixin(GenerationMixin):
                 f"{self.on_device_generation_steps} tokens at a time and stop short of `max_length` so as not to exceed it."
             )
 
-        if self.ipu_config.inference_device_iterations != 1:
+        decoder_ipu_config = getattr(self, "decoder_ipu_config", self.ipu_config)
+        if decoder_ipu_config.inference_device_iterations not in (1, self.on_device_generation_steps):
             raise ValueError(
-                "On device generation expects `inference_device_iterations=1`, "
+                "On device generation expects `inference_device_iterations=1` or "
+                "`inference_device_iterations=on_device_generation_steps`, "
                 f"received {self.ipu_config.inference_device_iterations}. "
                 "For on device generation, `inference_device_iterations` will be set to "
                 f"`on_device_generation_steps={self.on_device_generation_steps}`."
