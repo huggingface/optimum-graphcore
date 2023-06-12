@@ -1729,9 +1729,11 @@ class IPUGenerationMixin(GenerationMixin):
                 f"{self.on_device_generation_steps} tokens at a time and stop short of `max_length` so as not to exceed it."
             )
 
-        if self.ipu_config.inference_device_iterations != 1:
+        decoder_ipu_config = getattr(self, "decoder_ipu_config", self.ipu_config)
+        if decoder_ipu_config.inference_device_iterations not in (1, self.on_device_generation_steps):
             raise ValueError(
-                "On device generation expects `inference_device_iterations=1`, "
+                "On device generation expects `inference_device_iterations=1` or "
+                "`inference_device_iterations=on_device_generation_steps`, "
                 f"received {self.ipu_config.inference_device_iterations}. "
                 "For on device generation, `inference_device_iterations` will be set to "
                 f"`on_device_generation_steps={self.on_device_generation_steps}`."
@@ -1823,9 +1825,11 @@ class IPUGenerationMixin(GenerationMixin):
                 f"{self.on_device_generation_steps} tokens at a time and stop short of `max_length` so as not to exceed it."
             )
 
-        if self.ipu_config.inference_device_iterations != 1:
+        decoder_ipu_config = getattr(self, "decoder_ipu_config", self.ipu_config)
+        if decoder_ipu_config.inference_device_iterations not in (1, self.on_device_generation_steps):
             raise ValueError(
-                "On device generation expects `inference_device_iterations=1`, "
+                "On device generation expects `inference_device_iterations=1` or "
+                "`inference_device_iterations=on_device_generation_steps`, "
                 f"received {self.ipu_config.inference_device_iterations}. "
                 "For on device generation, `inference_device_iterations` will be set to "
                 f"`on_device_generation_steps={self.on_device_generation_steps}`."
