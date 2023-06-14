@@ -63,6 +63,16 @@ def supports_kv_cache(pipelined_cls):
     return pipelined_cls
 
 
+def assert_poptorch_supports_cond(context: Optional[str] = None):
+    context = context or ""
+    require_version("poptorch>=3.3", "Require poptorch>=3.3 for `poptorch.cond`. " + context)
+    if not hasattr(poptorch, "cond"):
+        raise AttributeError(
+            "`poptorch.cond` appears to be missing, perhaps you are using a candidate release "
+            "which does not support it yet? " + context
+        )
+
+
 @contextlib.contextmanager
 def graph_profile_dir_append(append: str):
     if poplar_engine_options_original := os.getenv("POPLAR_ENGINE_OPTIONS"):

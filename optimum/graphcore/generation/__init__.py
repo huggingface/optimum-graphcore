@@ -13,4 +13,4 @@
 # limitations under the License.
 
 from .attention_mixin import IPUAttentionMixin
-from .utils import IPUGenerationMixin, supports_kv_cache
+from .utils import IPUGenerationMixin, assert_poptorch_supports_cond, supports_kv_cache
