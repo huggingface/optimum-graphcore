@@ -220,7 +220,7 @@ class IPUConfig(BaseConfig):
         if value is None:
             return
         elif isinstance(value, Sequence):
-            if not all([elem >= floor_value for elem in value]):
+            if not all(elem >= floor_value for elem in value):
                 raise ValueError(
                     f"`IPUConfig` attribute `{name}` must have all elements >= {floor_value}. You provided {value=}"
                 )
@@ -641,6 +641,7 @@ class IPUConfig(BaseConfig):
         opts._Popart.setPatterns(
             {"TiedGather": True, "TiedGatherAccumulate": True, "UpdateInplacePrioritiesForIpu": True}
         )
+        opts._popart.set("enableExplicitIR", True)
 
         # Options for profiling with Popvision
         engine_options = {

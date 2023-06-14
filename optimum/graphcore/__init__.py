@@ -17,6 +17,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+import ctypes
+import os
 import poptorch
 
 from .ipu_configuration import IPUConfig
@@ -68,3 +70,15 @@ from .version import __version__
 
 # Disable poptorch compiler warnings by default
 poptorch.setLogLevel("ERR")
+
+# Load the custom ops
+def load_custom_ops():
+    dir = os.path.dirname(os.path.realpath(__file__))
+    CUSTOM_OP_PATH = os.path.join(dir, "./custom_ops/custom_ops.so")
+    print(CUSTOM_OP_PATH)
+    if os.path.exists(CUSTOM_OP_PATH):
+        ctypes.cdll.LoadLibrary(CUSTOM_OP_PATH)
+    else:
+        raise ImportError("Could not find custom_ops.so. Execute `make` before running this script.")
+
+load_custom_ops()
