@@ -235,6 +235,9 @@ class IPUGenerationMixin(GenerationMixin):
                     require_version(
                         "poptorch>=3.3", "Updatable encoder output buffer optimization only available in poptorch>=3.3"
                     )
+                    if decoder_ipu_config.inference_replication_factor > 1:
+                        raise ValueError("Replication is not supported when `use_encoder_output_buffer=True`.")
+
                     named_buffers = {}
                     encoder_last_hidden_state = kwargs.pop("encoder_outputs")["last_hidden_state"]
                     if encoder_last_hidden_state is not None:
