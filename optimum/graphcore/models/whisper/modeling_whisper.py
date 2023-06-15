@@ -29,7 +29,7 @@ from transformers.models.whisper.modeling_whisper import (
 
 from optimum.utils import logging
 
-from ...generation import IPUAttentionMixin, IPUGenerationMixin, supports_kv_cache
+from ...generation import IPUAttentionMixin, IPUGenerationMixin, assert_poptorch_supports_cond, supports_kv_cache
 from ...modeling_utils import (
     PipelineMixin,
     SerializedLinear,
@@ -391,6 +391,9 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
                 raise ValueError(
                     f"`{self.ipu_config.ipus_per_replica=}` should be 1 when placing encoder and decoder on the same IPU."
                 )
+            assert_poptorch_supports_cond(
+                context="Whisper encoder is being conditionally run on the same IPU as the decoder since `use_cond_encoder=True`."
+            )
             self.model.encoder = IPUWhisperConditionalEncoder.from_model(encoder, batch_size, num_beams)
 
     def change_decoder_class(self, restore: bool):

@@ -63,6 +63,16 @@ def supports_kv_cache(pipelined_cls):
     return pipelined_cls
 
 
+def assert_poptorch_supports_cond(context: Optional[str] = None):
+    context = context or ""
+    require_version("poptorch>=3.3", "Require poptorch>=3.3 for `poptorch.cond`. " + context)
+    if not hasattr(poptorch, "cond"):
+        raise AttributeError(
+            "`poptorch.cond` appears to be missing, perhaps you are using a candidate release "
+            "which does not support it yet? " + context
+        )
+
+
 @contextlib.contextmanager
 def graph_profile_dir_append(append: str):
     if poplar_engine_options_original := os.getenv("POPLAR_ENGINE_OPTIONS"):
@@ -225,6 +235,9 @@ class IPUGenerationMixin(GenerationMixin):
                     require_version(
                         "poptorch>=3.3", "Updatable encoder output buffer optimization only available in poptorch>=3.3"
                     )
+                    if decoder_ipu_config.inference_replication_factor > 1:
+                        raise ValueError("Replication is not supported when `use_encoder_output_buffer=True`.")
+
                     named_buffers = {}
                     encoder_last_hidden_state = kwargs.pop("encoder_outputs")["last_hidden_state"]
                     if encoder_last_hidden_state is not None:
@@ -238,6 +251,8 @@ class IPUGenerationMixin(GenerationMixin):
                         )
                     decoder_wrapper.register_encoder_output_buffers(named_buffers)
                     decoder_options.updatableNamedBuffers(list(named_buffers.keys()))
+                if self.cond_encoder_enabled and decoder_ipu_config.inference_replication_factor > 1:
+                    decoder_options.broadcastBuffers(False)
 
                 self.poptorch_decoder = poptorch.inferenceModel(decoder_wrapper, decoder_options)
         elif self.encoder_output_buffer_enabled:
@@ -337,7 +352,7 @@ class IPUGenerationMixin(GenerationMixin):
             if ascending
             else torch.ones(decoder_ipu_config.inference_device_iterations) * generation_step
         )
-        return per_replica.repeat(decoder_ipu_config.inference_replication_factor)
+        return per_replica.repeat_interleave(decoder_ipu_config.inference_replication_factor)
 
     def _populate_parallelize_kwargs_with_generation_config(self, **kwargs):
         if self.generation_config is None:
@@ -1757,10 +1772,12 @@ class IPUGenerationMixin(GenerationMixin):
             model_inputs, self.on_device_generation_steps, batch_size
         )
 
+        per_replica_batch_size = batch_size // decoder_ipu_config.inference_replication_factor
+
         def on_device_generation_model_ctr(inst):
             return OnDeviceGenerationModel(
                 inst,
-                batch_size=batch_size,
+                batch_size=per_replica_batch_size,
                 max_length=max_length,
                 pad_token_id=pad_token_id,
                 eos_token_id=eos_token_id,
@@ -1780,6 +1797,10 @@ class IPUGenerationMixin(GenerationMixin):
                 output_hidden_states=False,
             )
             next_tokens = output.generated_tokens.view(self.on_device_generation_steps, batch_size).T
+            done = torch.all(
+                output.done.view(self.on_device_generation_steps, decoder_ipu_config.inference_replication_factor),
+                dim=-1,
+            )
 
             # update generated ids, model inputs, and length for next step
             input_ids = torch.cat([input_ids, next_tokens], dim=-1)
@@ -1787,7 +1808,7 @@ class IPUGenerationMixin(GenerationMixin):
             generation_step += self.on_device_generation_steps
 
             # stop when each sentence is finished, or if we exceed the maximum length
-            if torch.any(output.done) or stopping_criteria(input_ids, ()):
+            if torch.any(done) or stopping_criteria(input_ids, ()):
                 break
 
         return input_ids
@@ -1853,10 +1874,12 @@ class IPUGenerationMixin(GenerationMixin):
             model_inputs, self.on_device_generation_steps, batch_beam_size
         )
 
+        per_replica_batch_size = batch_size // decoder_ipu_config.inference_replication_factor
+
         def on_device_generation_model_ctr(inst):
             return OnDeviceGenerationModel(
                 inst,
-                batch_size=batch_size,
+                batch_size=per_replica_batch_size,
                 max_length=max_length,
                 pad_token_id=pad_token_id,
                 eos_token_id=eos_token_id,
@@ -1877,16 +1900,20 @@ class IPUGenerationMixin(GenerationMixin):
                 output_attentions=False,
                 output_hidden_states=False,
             )
+            done = torch.all(
+                output.done.view(self.on_device_generation_steps, decoder_ipu_config.inference_replication_factor),
+                dim=-1,
+            )
 
             generation_step += self.on_device_generation_steps
 
-            first_done = torch.argmax(output.done.int())
+            first_done = torch.argmax(done.int())
 
             input_ids = output.generated_tokens[
                 first_done * batch_size : (first_done + 1) * batch_size, : context_length + generation_step
             ].to(input_ids.dtype)
 
-            if torch.any(output.done) or stopping_criteria(input_ids, ()):
+            if torch.any(done) or stopping_criteria(input_ids, ()):
                 break
 
         return input_ids

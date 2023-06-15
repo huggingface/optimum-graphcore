@@ -61,7 +61,7 @@ class IPUAutomaticSpeechRecognitionPipeline(AutomaticSpeechRecognitionPipeline):
             # e.g. zeros. This makes it significantly more likely beam search will terminate.
             input_features = items["input_features"]
             new_input_features = input_features.repeat(
-                n_to_pad // actual_batch_size + 1, *([1] * (input_features.ndim - 1))
+                batch_size // actual_batch_size + 1, *([1] * (input_features.ndim - 1))
             )
             new_input_features = new_input_features[:batch_size]
 

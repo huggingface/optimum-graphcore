@@ -17,20 +17,11 @@ from typing import Callable, Optional, Tuple
 
 import poptorch
 import torch
-from transformers.utils.versions import require_version
+
+from .utils import assert_poptorch_supports_cond
 
 
 FLOAT16_LIMIT = 1e4
-
-
-def assert_poptorch_supports_cond(context: Optional[str] = None):
-    context = context or ""
-    require_version("poptorch>=3.3", "Require poptorch>=3.3 for `poptorch.cond`. " + context)
-    if not hasattr(poptorch, "cond"):
-        raise AttributeError(
-            "`poptorch.cond` appears to be missing, perhaps you are using a candidate release "
-            "which does not support it yet? " + context
-        )
 
 
 class IPUAttentionMixin:
@@ -262,9 +253,6 @@ class IPUAttentionMixin:
 
         if self.training:
             raise RuntimeError("Cross KV caching is currently only supported for inference.")
-
-        if not hasattr(poptorch, "cond"):
-            raise AttributeError("Cross KV caching requires `poptorch.cond` which appears to be missing.")
 
         assert_poptorch_supports_cond(
             context="Cross-attention KV caching has been enabled with `use_cross_cache=True`."
