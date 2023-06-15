@@ -19,9 +19,12 @@ import os.path
 import sys
 
 import requests
+import torch
 
 from optimum.graphcore import IPUConfig, pipeline
 
+
+torch.set_num_threads(4)
 
 description = r"""Minimal example of the Whisper pipeline on the IPU
 Try, for instance:
@@ -45,6 +48,11 @@ parser.add_argument(
     help="Enable optimisation that transfers the encoder output to device only once per chunk",
 )
 parser.add_argument(
+    "--use-cond-encoder",
+    action="store_true",
+    help="Place encoder and decoder on 1 IPU by conditionally running the encoder at the beginning of generation",
+)
+parser.add_argument(
     "--on-device-generation-steps",
     type=int,
     default=1,
@@ -53,6 +61,7 @@ parser.add_argument(
 parser.add_argument("--do-sample", action="store_true")
 parser.add_argument("--batch-size", type=int, default=1)
 parser.add_argument("--num-beams", type=int, default=1)
+parser.add_argument("--replication-factor", type=int, default=1)
 parser.add_argument("--chunk-length-s", type=int, default=30)
 parser.add_argument("--max-new-tokens", type=int, default=448)
 parser.add_argument("--fp32", action="store_true")
@@ -68,6 +77,8 @@ default_layers_per_ipu = {
     "openai/whisper-tiny.en": [-1, -1],
     "openai/whisper-large-v2": [8, 8, 8, 8, 6, 9, 9, 8],
 }
+if args.use_cond_encoder:
+    args.layers_per_ipu = [-1]
 if args.layers_per_ipu is None:
     try:
         args.layers_per_ipu = default_layers_per_ipu[args.model]
@@ -83,7 +94,9 @@ if executable_cache_dir is not None:
     config_kwargs.update(executable_cache_dir=executable_cache_dir)
 
 
-ipu_config = IPUConfig(layers_per_ipu=args.layers_per_ipu, **config_kwargs)
+ipu_config = IPUConfig(
+    layers_per_ipu=args.layers_per_ipu, inference_replication_factor=args.replication_factor, **config_kwargs
+)
 ipu_pipeline = pipeline(
     task="automatic-speech-recognition",
     model=args.model,
@@ -93,11 +106,12 @@ ipu_pipeline = pipeline(
     parallelize_kwargs={
         "use_cache": args.use_cache,
         "use_encoder_output_buffer": args.use_encoder_output_buffer,
+        "use_cond_encoder": args.use_cond_encoder,
         "on_device_generation_steps": args.on_device_generation_steps,
         "num_beams": args.num_beams,
         "batch_size": args.batch_size,
     },
-    batch_size=args.batch_size,
+    batch_size=args.batch_size * args.replication_factor,
     chunk_length_s=args.chunk_length_s,
     ignore_warning=True,
     max_new_tokens=args.max_new_tokens,
