@@ -438,9 +438,9 @@ class IPUStableDiffusionPipelineMixin:
     ):
         return super().from_pretrained(
             pretrained_model_name_or_path,
-            n_ipu=4,
-            num_prompts=1,
-            num_images_per_prompt=1,
+            n_ipu=n_ipu,
+            num_prompts=num_prompts,
+            num_images_per_prompt=num_images_per_prompt,
             unet_ipu_config=unet_ipu_config,
             text_encoder_ipu_config=text_encoder_ipu_config,
             vae_ipu_config=vae_ipu_config,
