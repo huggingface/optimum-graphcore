@@ -77,9 +77,11 @@ def get_default_ipu_configs(
         elif sample_size == 96:
             model_ipu_configs = STABLE_DIFFUSION_V2_768_IPU_CONFIG
     if model_ipu_configs is None:
-        logger.warn(f"UNet config has a combination of `{cross_attention_dim=}` and `{sample_size=}` which we do not "
-                    "have known configs for (SD1 = (768, 64), SD2 512x512 = (1024, 64), SD2 768 x 768 = (1024, 96). "
-                    "Defaulting to the SD1 config.")
+        logger.warn(
+            f"UNet config has a combination of `{cross_attention_dim=}` and `{sample_size=}` which we do not "
+            "have known configs for (SD1 = (768, 64), SD2 512x512 = (1024, 64), SD2 768 x 768 = (1024, 96). "
+            "Defaulting to the SD1 config."
+        )
 
     unet_ipu_config = model_ipu_configs["unet"]
     text_encoder_ipu_config = model_ipu_configs["text_encoder"] if n_ipu > 4 else None
