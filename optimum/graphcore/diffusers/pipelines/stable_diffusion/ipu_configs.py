@@ -1,21 +1,11 @@
+from typing import Any, Dict
+
 from optimum.utils import logging
 
 from ....training_args import ALLOWED_N_IPU
 
 
 logger = logging.get_logger(__name__)
-
-
-INFERENCE_ENGINES_TO_MODEL_NAMES = {
-    "stable-diffusion-v1": "CompVis/stable-diffusion-v1-4",  # this is a guess
-    "stable-diffusion-v1-5": "runwayml/stable-diffusion-v1-5",
-    "stable-diffusion-512-v2-0": "stabilityai/stable-diffusion-2-base",
-    "stable-diffusion-768-v2-0": "stabilityai/stable-diffusion-2",
-    "stable-diffusion-512-v2-1": "stabilityai/stable-diffusion-2-1-base",
-    "stable-diffusion-768-v2-1": "stabilityai/stable-diffusion-2-1",
-    "stable-inpainting-v1-0": "runwayml/stable-diffusion-inpainting",
-    "stable-inpainting-512-v2-0": "stabilityai/stable-diffusion-2-inpainting",
-}
 
 
 STABLE_DIFFUSION_V1_512_IPU_CONFIG = {
@@ -63,42 +53,33 @@ STABLE_DIFFUSION_V2_768_IPU_CONFIG = {
 }
 
 
-INFERENCE_ENGINES_TO_IPU_CONFIGS = {
-    "stable-diffusion-v1": STABLE_DIFFUSION_V1_512_IPU_CONFIG,  # this is a guess
-    "stable-diffusion-v1-5": STABLE_DIFFUSION_V1_512_IPU_CONFIG,
-    "stable-diffusion-512-v2-0": STABLE_DIFFUSION_V2_512_IPU_CONFIG,
-    "stable-diffusion-768-v2-0": STABLE_DIFFUSION_V2_768_IPU_CONFIG,
-    "stable-diffusion-512-v2-1": STABLE_DIFFUSION_V2_512_IPU_CONFIG,
-    "stable-diffusion-768-v2-1": STABLE_DIFFUSION_V2_768_IPU_CONFIG,
-    "stable-inpainting-v1-0": STABLE_DIFFUSION_V1_512_IPU_CONFIG,
-    "stable-inpainting-512-v2-0": STABLE_DIFFUSION_V2_512_IPU_CONFIG,
-}
-
-
 def get_default_ipu_configs(
-    engine: str = "stable-diffusion-512-v2-0",
-    height: int = 512,
-    width: int = 512,
+    unet_config: Dict[str, Any],
+    n_ipu: int = 4,
     num_prompts: int = 1,
     num_images_per_prompt: int = 1,
-    n_ipu: int = 4,
     **common_kwargs,
 ):
-    if engine not in INFERENCE_ENGINES_TO_MODEL_NAMES:
-        raise ValueError(f"{engine} should be one of {', '.join(INFERENCE_ENGINES_TO_MODEL_NAMES)}")
     if n_ipu not in ALLOWED_N_IPU:
         raise ValueError(
             f"{n_ipu=} is not a valid value for a Pod type, supported Pod types: {', '.join(ALLOWED_N_IPU)}"
         )
 
-    default_image_dim = 768 if "768" in engine else 512
-    if default_image_dim == 768 and height < default_image_dim and width < default_image_dim:
-        logger.warn(
-            "Generating an image smaller than 768x768 with a checkpoint fine-tuned for 768x768 "
-            "can lead to images of poor quality."
-        )
-
-    model_ipu_configs = INFERENCE_ENGINES_TO_IPU_CONFIGS[engine]
+    # Infer base checkpoint model size for instantiating default IPU configs.
+    cross_attention_dim = unet_config.cross_attention_dim
+    sample_size = unet_config.sample_size
+    model_ipu_configs = None
+    if cross_attention_dim == 768:
+        model_ipu_configs = STABLE_DIFFUSION_V1_512_IPU_CONFIG
+    elif cross_attention_dim == 1024:
+        if sample_size == 64:
+            model_ipu_configs = STABLE_DIFFUSION_V2_512_IPU_CONFIG
+        elif sample_size == 96:
+            model_ipu_configs = STABLE_DIFFUSION_V2_768_IPU_CONFIG
+    if model_ipu_configs is None:
+        logger.warn(f"UNet config has a combination of `{cross_attention_dim=}` and `{sample_size=}` which we do not "
+                    "have known configs for (SD1 = (768, 64), SD2 512x512 = (1024, 64), SD2 768 x 768 = (1024, 96). "
+                    "Defaulting to the SD1 config.")
 
     unet_ipu_config = model_ipu_configs["unet"]
     text_encoder_ipu_config = model_ipu_configs["text_encoder"] if n_ipu > 4 else None

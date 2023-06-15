@@ -30,6 +30,7 @@ from optimum.utils import logging
 
 from ....ipu_configuration import IPUConfig
 from ....modeling_utils import PipelineMixin
+from .ipu_configs import get_default_ipu_configs
 from .safety_checker import IPUStableDiffusionSafetyChecker
 
 
@@ -260,21 +261,51 @@ class IPUStableDiffusionPipelineMixin:
         safety_checker,
         feature_extractor,
         requires_safety_checker=True,
+        n_ipu=4,
+        num_prompts=1,
+        num_images_per_prompt=1,
         unet_ipu_config=None,
         text_encoder_ipu_config=None,
         vae_ipu_config=None,
         safety_checker_ipu_config=None,
+        common_ipu_config_kwargs=None,
     ):
-        common_ipu_config = {
+        default_common_ipu_config_kwargs = {
             "enable_half_partials": True,
             "executable_cache_dir": "./exe_cache",
             "inference_device_iterations": 1,
             "inference_replication_factor": 1,
         }
 
+        if common_ipu_config_kwargs is not None:
+            if not isinstance(common_ipu_config_kwargs, dict):
+                raise TypeError(
+                    f"`common_ipu_config_kwargs` must be a dict, received {type(common_ipu_config_kwargs)}."
+                )
+            common_ipu_config_kwargs = {**default_common_ipu_config_kwargs, **common_ipu_config_kwargs}
+        else:
+            common_ipu_config_kwargs = default_common_ipu_config_kwargs
+
+        (
+            default_unet_ipu_config,
+            default_text_encoder_ipu_config,
+            default_vae_ipu_config,
+            default_safety_checker_ipu_config,
+        ) = get_default_ipu_configs(
+            unet.config,
+            n_ipu=n_ipu,
+            num_prompts=num_prompts,
+            num_images_per_prompt=num_images_per_prompt,
+            **common_ipu_config_kwargs,
+        )
+        unet_ipu_config = unet_ipu_config or default_unet_ipu_config
+        if n_ipu > 4:
+            text_encoder_ipu_config = text_encoder_ipu_config or default_text_encoder_ipu_config
+            vae_ipu_config = vae_ipu_config or default_vae_ipu_config
+            safety_checker_ipu_config = safety_checker_ipu_config or default_safety_checker_ipu_config
+
         def _get_poplar_executor(model, ipu_model_class, ipu_config):
-            model_ipu_config = {**common_ipu_config, **ipu_config}
-            model_ipu_config = IPUConfig.from_dict(model_ipu_config)
+            model_ipu_config = IPUConfig.from_dict(ipu_config)
 
             model_ipu = copy.deepcopy(model).half()
             model_ipu.__class__ = ipu_model_class
@@ -363,7 +394,6 @@ class IPUStableDiffusionPipelineMixin:
 
             attn_matrix_target_mem_mb = unet_ipu_config.pop("attn_matrix_target_mem_mb")
 
-            unet_ipu_config = {**common_ipu_config, **unet_ipu_config}
             unet_ipu_config = IPUConfig.from_dict(unet_ipu_config)
 
             unet_ipu = copy.deepcopy(unet)
@@ -396,18 +426,26 @@ class IPUStableDiffusionPipelineMixin:
     def from_pretrained(
         cls,
         pretrained_model_name_or_path,
+        n_ipu=4,
+        num_prompts=1,
+        num_images_per_prompt=1,
         unet_ipu_config=None,
         text_encoder_ipu_config=None,
         vae_ipu_config=None,
         safety_checker_ipu_config=None,
+        common_ipu_config_kwargs=None,
         **kwargs,
     ):
         return super().from_pretrained(
             pretrained_model_name_or_path,
+            n_ipu=4,
+            num_prompts=1,
+            num_images_per_prompt=1,
             unet_ipu_config=unet_ipu_config,
             text_encoder_ipu_config=text_encoder_ipu_config,
             vae_ipu_config=vae_ipu_config,
             safety_checker_ipu_config=safety_checker_ipu_config,
+            common_ipu_config_kwargs=common_ipu_config_kwargs,
             **kwargs,
         )
 
