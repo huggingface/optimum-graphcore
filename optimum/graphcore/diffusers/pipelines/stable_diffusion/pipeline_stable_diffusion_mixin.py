@@ -110,7 +110,7 @@ class IPUCLIPTextModel(CLIPTextModel, PipelineMixin):
     def parallelize(self):
         super().parallelize()
 
-        def _build_causal_attention_mask(self, bsz, seq_len, dtype):
+        def _build_causal_attention_mask(self, bsz, seq_len, dtype, device=None):
             # lazily create causal attention mask, with full attention between the vision tokens
             # pytorch uses additive attention mask; fill with -inf
             # IPU MOD
