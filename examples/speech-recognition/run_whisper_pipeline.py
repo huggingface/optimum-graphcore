@@ -22,6 +22,7 @@ import requests
 import torch
 
 from optimum.graphcore import IPUConfig, pipeline
+from optimum.graphcore.models.whisper import WhisperFeatureExtractorTorch
 
 
 torch.set_num_threads(4)
@@ -100,6 +101,7 @@ ipu_config = IPUConfig(
 ipu_pipeline = pipeline(
     task="automatic-speech-recognition",
     model=args.model,
+    feature_extractor=WhisperFeatureExtractorTorch.from_pretrained(args.model),
     framework="pt",
     ipu_config=ipu_config,
     fp16=not args.fp32,
