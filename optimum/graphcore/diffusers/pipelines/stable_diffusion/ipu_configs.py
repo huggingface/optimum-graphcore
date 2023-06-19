@@ -8,6 +8,19 @@ from ....training_args import ALLOWED_N_IPU
 logger = logging.get_logger(__name__)
 
 
+# Deprecated.
+INFERENCE_ENGINES_TO_MODEL_NAMES = {
+    "stable-diffusion-v1": "CompVis/stable-diffusion-v1-4",  # this is a guess
+    "stable-diffusion-v1-5": "runwayml/stable-diffusion-v1-5",
+    "stable-diffusion-512-v2-0": "stabilityai/stable-diffusion-2-base",
+    "stable-diffusion-768-v2-0": "stabilityai/stable-diffusion-2",
+    "stable-diffusion-512-v2-1": "stabilityai/stable-diffusion-2-1-base",
+    "stable-diffusion-768-v2-1": "stabilityai/stable-diffusion-2-1",
+    "stable-inpainting-v1-0": "runwayml/stable-diffusion-inpainting",
+    "stable-inpainting-512-v2-0": "stabilityai/stable-diffusion-2-inpainting",
+}
+
+
 STABLE_DIFFUSION_V1_512_IPU_CONFIG = {
     "text_encoder": {
         "ipus_per_replica": 1,
@@ -50,6 +63,19 @@ STABLE_DIFFUSION_V2_768_IPU_CONFIG = {
     },
     "vae": None,  # not supported yet
     "safety_checker": {"ipus_per_replica": 1, "matmul_proportion": 0.6},
+}
+
+
+# Deprecated.
+INFERENCE_ENGINES_TO_IPU_CONFIGS = {
+    "stable-diffusion-v1": STABLE_DIFFUSION_V1_512_IPU_CONFIG,  # this is a guess
+    "stable-diffusion-v1-5": STABLE_DIFFUSION_V1_512_IPU_CONFIG,
+    "stable-diffusion-512-v2-0": STABLE_DIFFUSION_V2_512_IPU_CONFIG,
+    "stable-diffusion-768-v2-0": STABLE_DIFFUSION_V2_768_IPU_CONFIG,
+    "stable-diffusion-512-v2-1": STABLE_DIFFUSION_V2_512_IPU_CONFIG,
+    "stable-diffusion-768-v2-1": STABLE_DIFFUSION_V2_768_IPU_CONFIG,
+    "stable-inpainting-v1-0": STABLE_DIFFUSION_V1_512_IPU_CONFIG,
+    "stable-inpainting-512-v2-0": STABLE_DIFFUSION_V2_512_IPU_CONFIG,
 }
 
 
