@@ -59,6 +59,7 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (None, None),
         preprocess_logits_for_metrics: Optional[Callable[[torch.Tensor, torch.Tensor], torch.Tensor]] = None,
         force_to_pipelined: bool = False,
+        eval_parallelize_kwargs: Optional[Dict[str, Any]] = None,
     ):
         super().__init__(
             model=model,
@@ -82,6 +83,12 @@ class IPUSeq2SeqTrainer(IPUTrainer):
         if self.args.generation_config is not None:
             gen_config = self.load_generation_config(self.args.generation_config)
             self.model.generation_config = gen_config
+
+        self.eval_parallelize_kwargs = eval_parallelize_kwargs or {}
+        if not isinstance(self.eval_parallelize_kwargs, dict):
+            raise TypeError(
+                f"`eval_parallelize_kwargs` must be a dict, received {type(self.eval_parallelize_kwargs)}."
+            )
 
     @staticmethod
     def load_generation_config(gen_config_arg: Union[str, GenerationConfig]) -> GenerationConfig:
@@ -130,7 +137,7 @@ class IPUSeq2SeqTrainer(IPUTrainer):
 
         # reparallelize for generation
         self.model.deparallelize().ipu_config.eval()
-        self.model.parallelize(for_generation=True)
+        self.model.parallelize(for_generation=True, **self.eval_parallelize_kwargs)
 
         # let IPUGenerationMixin::_call_generate handle compilation of the model
         # note though that self.model.poptorch_decoder and self.model.poptorch_encoder
