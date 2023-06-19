@@ -477,7 +477,11 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
                 self.set_output_embeddings(lm_head.to_model())
                 self.tie_weights()
         else:
-            if (projection_serialization_factor := self.ipu_config._projection_serialization_factor) > 1:
+            projection_serialization_factor = max(
+                self.ipu_config._projection_serialization_factor,
+                sum(self.ipu_config._serialized_projection_splits_per_ipu or [1]),
+            )
+            if projection_serialization_factor > 1:
                 self.set_output_embeddings(
                     SerializedLinear.from_model(self.get_output_embeddings(), projection_serialization_factor)
                 )
@@ -545,10 +549,13 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         )
         logger.info(f"Encoder LN --> IPU {ipu}")
 
+        decoder_embedding_ipu = decoder_layer_ipu[0]
+        if (serialized_projection_splits_per_ipu := self.ipu_config._serialized_projection_splits_per_ipu) is not None:
+            decoder_embedding_ipu = [i for i, x in enumerate(serialized_projection_splits_per_ipu) if x][0]
         self.model.decoder.embed_tokens = poptorch.BeginBlock(
-            self.model.decoder.embed_tokens, "Decoder Embedding", ipu_id=decoder_layer_ipu[0]
+            self.model.decoder.embed_tokens, "Decoder Embedding", ipu_id=decoder_embedding_ipu
         )
-        logger.info(f"Decoder Embedding  --> IPU {decoder_layer_ipu[0]}")
+        logger.info(f"Decoder Embedding  --> IPU {decoder_embedding_ipu}")
 
         for index, (layer, ipu) in enumerate(zip(self.model.decoder.layers, decoder_layer_ipu)):
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
@@ -560,9 +567,9 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
             self.model.decoder.layer_norm, "Decoder Layer Norm", ipu_id=ipu
         )
 
-        logger.info(f"Head       --> IPU {decoder_layer_ipu[0]}")
+        logger.info(f"Head       --> IPU {decoder_embedding_ipu}")
         logger.info("---------------------------------------")
-        self.proj_out = poptorch.BeginBlock(self.proj_out, "Output Projection", ipu_id=decoder_layer_ipu[0])
+        self.proj_out = poptorch.BeginBlock(self.proj_out, "Output Projection", ipu_id=decoder_embedding_ipu)
         return self
 
     def deparallelize(self):
