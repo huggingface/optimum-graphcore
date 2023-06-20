@@ -551,7 +551,12 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
 
         decoder_embedding_ipu = decoder_layer_ipu[0]
         if (serialized_projection_splits_per_ipu := self.ipu_config._serialized_projection_splits_per_ipu) is not None:
-            decoder_embedding_ipu = [i for i, x in enumerate(serialized_projection_splits_per_ipu) if x][0]
+            serialized_projection_ipus = [i for i, x in enumerate(serialized_projection_splits_per_ipu) if x]
+            if len(serialized_projection_ipus) > 1:
+                raise ValueError(
+                    "`serialized_projection_splits_per_ipu` must only have 1 non-zero element for Whisper."
+                )
+            decoder_embedding_ipu = serialized_projection_ipus[0]
         self.model.decoder.embed_tokens = poptorch.BeginBlock(
             self.model.decoder.embed_tokens, "Decoder Embedding", ipu_id=decoder_embedding_ipu
         )
