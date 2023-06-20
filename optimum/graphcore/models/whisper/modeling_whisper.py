@@ -553,6 +553,9 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         if (serialized_projection_splits_per_ipu := self.ipu_config._serialized_projection_splits_per_ipu) is not None:
             serialized_projection_ipus = [i for i, x in enumerate(serialized_projection_splits_per_ipu) if x]
             if len(serialized_projection_ipus) > 1:
+                # This is because we are using SerializedLinear. All splits of a SerializedLinear layer must be on the
+                # same IPU. We are using SerializedLinear instead of SplitLinear because we must tie the weights, which
+                # cannot be done when using SplitLinear.
                 raise ValueError(
                     "`serialized_projection_splits_per_ipu` must only have 1 non-zero element for Whisper."
                 )
