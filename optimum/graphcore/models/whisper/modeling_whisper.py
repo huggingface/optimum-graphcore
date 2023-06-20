@@ -478,7 +478,7 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
                 self.tie_weights()
         else:
             projection_serialization_factor = max(
-                self.ipu_config._projection_serialization_factor,
+                self.ipu_config._projection_serialization_factor or 1,
                 sum(self.ipu_config._serialized_projection_splits_per_ipu or [1]),
             )
             if projection_serialization_factor > 1:
