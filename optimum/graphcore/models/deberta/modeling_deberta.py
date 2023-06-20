@@ -14,12 +14,10 @@
 
 from typing import Optional, Tuple, Union
 
+import poptorch
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-import poptorch
-from optimum.utils import logging
 from transformers import (
     DebertaForMaskedLM,
     DebertaForQuestionAnswering,
@@ -33,6 +31,8 @@ from transformers.models.deberta.modeling_deberta import (
     StableDropout,
     build_relative_position,
 )
+
+from optimum.utils import logging
 
 from ...modeling_utils import (
     OnehotGather,
@@ -305,18 +305,12 @@ class DebertaPipelineMixin(PipelineMixin):
         logger.info("Embedding  --> IPU 0")
         if self.ipu_config.embedding_serialization_factor > 1:
             if isinstance(self, PipelinedDebertaForMaskedLM):
-                serialized_decoder = SerializedLinear(
-                    self.config.hidden_size,
-                    self.config.vocab_size,
-                    self.ipu_config.embedding_serialization_factor,
-                    bias=True,
-                    mode=poptorch.MatMulSerializationMode.OutputChannels,
+                self.cls.predictions.decoder = SerializedLinear.from_model(
+                    self.cls.predictions.decoder, self.ipu_config.embedding_serialization_factor
                 )
-                serialized_decoder.load_state_dict(self.cls.predictions.decoder.state_dict())
-                self.cls.predictions.decoder = serialized_decoder
                 self.tie_weights()
             else:
-                self.deberta.embeddings.word_embeddings = SerializedEmbedding(
+                self.deberta.embeddings.word_embeddings = SerializedEmbedding.from_model(
                     self.deberta.embeddings.word_embeddings, self.ipu_config.embedding_serialization_factor
                 )
 
@@ -330,7 +324,7 @@ class DebertaPipelineMixin(PipelineMixin):
         if self.deberta.encoder.relative_attention:
             self.deberta.encoder.rel_embeddings = poptorch.BeginBlock(self.deberta.encoder.rel_embeddings, ipu_id=0)
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, self.deberta.encoder.layer)
+        layer_ipu = get_layer_ipu(self.ipu_config, self.deberta.encoder.layer)
         for index, layer in enumerate(self.deberta.encoder.layer):
             ipu = layer_ipu[index]
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
@@ -353,18 +347,12 @@ class DebertaPipelineMixin(PipelineMixin):
         super().deparallelize()
         self.change_modules_for_ipu(True)
         if self.ipu_config.embedding_serialization_factor > 1:
-            if isinstance(self, PipelinedDebertaForMaskedLM):
-                decoder = nn.Linear(
-                    self.config.hidden_size,
-                    self.config.vocab_size,
-                    bias=True,
-                )
-                decoder.load_state_dict(self.cls.predictions.decoder.state_dict())
-                self.cls.predictions.decoder = decoder
+            if isinstance(self.cls.predictions.decoder, SerializedLinear):
+                self.cls.predictions.decoder = self.cls.predictions.decoder.to_model()
                 self.tie_weights()
             else:
                 # Deserialize the serialized word embedding
-                self.deberta.embeddings.word_embeddings = self.deberta.embeddings.word_embeddings.deserialize()
+                self.deberta.embeddings.word_embeddings = self.deberta.embeddings.word_embeddings.to_model()
         return self
 
 
@@ -458,7 +446,7 @@ class PipelinedDebertaForSequenceClassification(DebertaForSequenceClassification
 
     def parallelize(self):
         super().parallelize()
-        last_ipu = self.ipu_config.ipus_per_replica - 1
+        last_ipu = self.ipu_config._ipus_per_replica - 1
         logger.info(f"Classifier Output --> IPU {last_ipu}")
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
@@ -478,7 +466,7 @@ class PipelinedDebertaForTokenClassification(DebertaForTokenClassification, Debe
 
     def parallelize(self):
         super().parallelize()
-        last_ipu = self.ipu_config.ipus_per_replica - 1
+        last_ipu = self.ipu_config._ipus_per_replica - 1
         logger.info(f"Classifier Output --> IPU {last_ipu}")
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
@@ -508,7 +496,7 @@ class PipelinedDebertaForQuestionAnswering(DebertaForQuestionAnswering, DebertaP
 
     def parallelize(self):
         super().parallelize()
-        last_ipu = self.ipu_config.ipus_per_replica - 1
+        last_ipu = self.ipu_config._ipus_per_replica - 1
         logger.info(f"QA Outputs --> IPU {last_ipu}")
         self.qa_outputs = poptorch.BeginBlock(self.qa_outputs, "QA Outputs", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")

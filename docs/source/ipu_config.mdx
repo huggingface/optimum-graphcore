@@ -16,8 +16,36 @@ limitations under the License.
 
 # Configuration
 
-The [`IPUConfig`] class enables PopArt and PopTorch configuration, allowing to control the behavior of the IPUs. It is JSON-serializable, and can be loaded and saved from / to a local directory / file, as well as from / to the 🤗 Hub.
+The [`IPUConfig`](https://huggingface.co/docs/optimum/graphcore/ipu_config#optimum.graphcore.IPUConfig) class enables defining configuration for PopArt and for PyTorch for the IPU, allowing to control the behavior of the IPUs. It is JSON-serializable, and can be loaded from and saved to a local directory or file, as well as from and to the 🤗 Hub.
 
-## IPUConfig
+## Examples of use
+
+Each example script in [`/examples`](https://github.com/huggingface/optimum-graphcore/tree/main/examples) and Jupyter notebook in [`/notebooks`](https://github.com/huggingface/optimum-graphcore/tree/main/notebooks) uses `IPUConfig`.
+
+
+## Note about `layers_per_ipu` and `inference_layers_per_ipu` for encoder/decoder models
+
+The configuration parameter `layers_per_ipu` specifies the number of layers that will be put on each IPU for pipelined execution during training. There is an equivalent parameter for inference, `inference_layers_per_ipu`.
+
+Ordinarily, you can specify the number of layers that you want on each IPU, but the situation is slightly different for the encoder/decoder models that are used in, for example, text generation.
+
+In these cases, the number of encoder and decoder layers must be split evenly across all IPUs and so you can use the wildcard value (-1) for `layers_per_ipu` and `inference_layers_per_ipu`.
+
+For example, in the [Summarization on IPUs - Fine-tuning](https://github.com/huggingface/optimum-graphcore/blob/main/notebooks/summarization.ipynb) notebook, we have the IPU configuration for inference defined as:
+```
+ipu_config_name = 'Graphcore/t5-small-ipu'
+ipu_config = IPUConfig.from_pretrained(
+    ipu_config_name,
+    executable_cache_dir=executable_cache_dir,
+    # -1 wildcard,
+    # split encoder and decoder layers evenly across IPUs
+    # for inference
+    inference_layers_per_ipu=[-1]
+)
+```
+
+## API reference
+
+### IPUConfig class
 
 [[autodoc]] IPUConfig

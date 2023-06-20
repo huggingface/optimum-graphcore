@@ -103,7 +103,6 @@ class IPUStableDiffusionPipeline(StableDiffusionPipeline):
     def __init__(
         self, vae, text_encoder, tokenizer, unet, scheduler, safety_checker, feature_extractor, ipu_config=None
     ):
-
         text_encoder = maybe_cast_module_to_float(text_encoder)
         vae = maybe_cast_module_to_float(vae)
         safety_checker = maybe_cast_module_to_float(safety_checker)

@@ -14,10 +14,10 @@
 
 import unittest
 
-from optimum.graphcore import pipeline
 from transformers import MODEL_FOR_IMAGE_CLASSIFICATION_MAPPING, PreTrainedTokenizer, is_vision_available
-from transformers.pipelines import ImageClassificationPipeline
-from transformers.testing_utils import nested_simplify, require_torch, require_vision, slow
+from transformers.testing_utils import nested_simplify, require_torch, require_vision
+
+from optimum.graphcore import pipeline
 
 from .test_pipelines_common import ANY, PipelineTestCaseMeta
 
@@ -111,7 +111,7 @@ class ImageClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
         image_classifier = pipeline(
             "image-classification",
             model=small_model,
-            ipu_config="Graphcore/vit-base-ipu",
+            ipu_config={"layers_per_ipu": [5], "ipus_per_replica": 1},
         )
 
         outputs = image_classifier("http://images.cocodataset.org/val2017/000000039769.jpg")
@@ -142,7 +142,7 @@ class ImageClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTest
         image_classifier = pipeline(
             "image-classification",
             model="hf-internal-testing/tiny-random-vit",
-            ipu_config="Graphcore/vit-base-ipu",
+            ipu_config={"layers_per_ipu": [5], "ipus_per_replica": 1},
             tokenizer=tokenizer,
         )
 

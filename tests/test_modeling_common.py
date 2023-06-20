@@ -16,7 +16,6 @@
 import random
 
 import torch
-
 from transformers.testing_utils import torch_device
 
 

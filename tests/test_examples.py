@@ -23,7 +23,7 @@ from tempfile import TemporaryDirectory
 from typing import Callable, Dict, List, Optional, Tuple, Union
 from unittest import TestCase
 
-from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
+from filelock import FileLock
 from transformers import (
     CONFIG_MAPPING,
     MODEL_FOR_AUDIO_CLASSIFICATION_MAPPING,
@@ -38,6 +38,8 @@ from transformers import (
     MODEL_FOR_TOKEN_CLASSIFICATION_MAPPING,
 )
 from transformers.testing_utils import slow
+
+from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
 
 from .utils import MODELS_TO_TEST_MAPPING
 
@@ -158,6 +160,7 @@ class ExampleTestMeta(type):
                     task=self.TASK_NAME,
                     dataset_config_name=self.DATASET_CONFIG_NAME,
                     do_eval=self.EVAL_IS_SUPPORTED,
+                    lr=self.LEARNING_RATE,
                     train_batch_size=self.TRAIN_BATCH_SIZE,
                     eval_batch_size=self.EVAL_BATCH_SIZE,
                     num_epochs=self.NUM_EPOCHS,
@@ -170,9 +173,8 @@ class ExampleTestMeta(type):
                 joined_cmd_line = " ".join(cmd_line)
                 print(joined_cmd_line)
                 print()
-                p = subprocess.Popen(joined_cmd_line, shell=True)
-                return_code = p.wait()
-                self.assertEqual(return_code, 0)
+                p = subprocess.run(joined_cmd_line, shell=True)
+                self.assertEqual(p.returncode, 0)
 
                 if self.EVAL_IS_SUPPORTED:
                     with open(Path(tmp_dir) / "all_results.json") as fp:
@@ -222,13 +224,13 @@ class ExampleTesterBase(TestCase):
     SCORE_NAME = "eval_accuracy"
     DATASET_PARAMETER_NAME = "dataset_name"
     NUM_EPOCHS = 1
+    LEARNING_RATE = 1e-4
     TRAIN_BATCH_SIZE = 2
     EVAL_BATCH_SIZE = 2
     INFERENCE_DEVICE_ITERATIONS = 4
     GRADIENT_ACCUMULATION_STEPS = 64
-    TRAIN_REPLICATION_FACTOR = 2
-    INFERENCE_REPLICATION_FACTOR = 2
     EXTRA_COMMAND_LINE_ARGUMENTS = None
+    N_IPU = 8
 
     def setUp(self):
         self._create_venv()
@@ -245,7 +247,7 @@ class ExampleTesterBase(TestCase):
         task: Optional[str] = None,
         dataset_config_name: Optional[str] = None,
         do_eval: bool = True,
-        lr: float = 1e-5,
+        lr: float = 1e-4,
         train_batch_size: int = 2,
         eval_batch_size: int = 2,
         num_epochs: int = 2,
@@ -258,8 +260,6 @@ class ExampleTesterBase(TestCase):
         ipu_config_overrides = ",".join(
             [
                 "executable_cache_dir=disabled",
-                f"replication_factor={self.TRAIN_REPLICATION_FACTOR}",
-                f"inference_replication_factor={self.INFERENCE_REPLICATION_FACTOR}",
                 "device_iterations=1",
                 f"inference_device_iterations={inference_device_iterations}",
                 f"gradient_accumulation_steps={gradient_accumulation_steps}",
@@ -267,7 +267,7 @@ class ExampleTesterBase(TestCase):
         )
 
         cmd_line = [
-            "venv/bin/python" if self.venv_was_created else "python",
+            f"{self.VENV_DIR.name}/bin/python" if self.venv_was_created else "python",
             f"{script}",
             f"--model_name_or_path {model_name}",
             f"--ipu_config_name {ipu_config_name}",
@@ -287,6 +287,7 @@ class ExampleTesterBase(TestCase):
             "--save_steps -1",
             "--save_total_limit 1",
             "--report_to none",
+            f"--n_ipu {self.N_IPU}",
         ]
         if dataset_config_name is not None:
             cmd_line.append(f"--dataset_config_name {dataset_config_name}")
@@ -299,26 +300,23 @@ class ExampleTesterBase(TestCase):
 
     @property
     def venv_was_created(self):
-        return os.path.isdir("venv")
+        return os.path.isdir(self.VENV_DIR.name)
 
     def _create_venv(self):
         """
         Creates the virtual environment for the example.
         """
-        cmd_line = "python -m venv venv".split()
-        p = subprocess.Popen(cmd_line)
-        return_code = p.wait()
-        self.assertEqual(return_code, 0)
+        self.VENV_DIR = TemporaryDirectory(prefix="venv_")
+        cmd_line = f"python -m venv {self.VENV_DIR.name}".split()
+        p = subprocess.run(cmd_line)
+        self.assertEqual(p.returncode, 0)
 
     def _remove_venv(self):
         """
         Creates the virtual environment for the example.
         """
         if self.venv_was_created:
-            cmd_line = "rm -rf venv".split()
-            p = subprocess.Popen(cmd_line)
-            return_code = p.wait()
-            self.assertEqual(return_code, 0)
+            self.VENV_DIR.cleanup()
 
     def _get_poptorch_wheel_path(self, sdk_path: Optional[str] = None) -> str:
         """
@@ -360,36 +358,33 @@ class ExampleTesterBase(TestCase):
         """
         Installs the necessary requirements to run the example if the provided file exists, otherwise does nothing.
         """
-        pip_name = "venv/bin/pip" if self.venv_was_created else "pip"
+        pip_name = f"{self.VENV_DIR.name}/bin/pip" if self.venv_was_created else "pip"
 
         # Update pip
         cmd_line = f"{pip_name} install --upgrade pip".split()
-        p = subprocess.Popen(cmd_line)
-        return_code = p.wait()
-        self.assertEqual(return_code, 0)
+        p = subprocess.run(cmd_line)
+        self.assertEqual(p.returncode, 0)
 
         # Install SDK
         cmd_line = f"{pip_name} install .[testing] {self._get_poptorch_wheel_path()}".split()
-        p = subprocess.Popen(cmd_line)
-        return_code = p.wait()
-        self.assertEqual(return_code, 0)
+        with FileLock("install_optimum_graphcore.lock"):
+            p = subprocess.run(cmd_line)
+            self.assertEqual(p.returncode, 0)
 
         # Install requirements
         if not Path(requirements_filename).exists():
             return
         cmd_line = f"{pip_name} install -r {requirements_filename}".split()
-        p = subprocess.Popen(cmd_line)
-        return_code = p.wait()
-        self.assertEqual(return_code, 0)
+        p = subprocess.run(cmd_line)
+        self.assertEqual(p.returncode, 0)
 
     def _cleanup_dataset_cache(self):
         """
         Cleans up the dataset cache to free up space for other tests.
         """
         cmd_line = ["rm" "-r", "/nethome/michaelb/.cache/huggingface/datasets"]
-        p = subprocess.Popen(cmd_line)
-        return_code = p.wait()
-        self.assertEqual(return_code, 0)
+        p = subprocess.run(cmd_line)
+        self.assertEqual(p.returncode, 0)
 
 
 class TextClassificationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_glue"):
@@ -408,7 +403,7 @@ class MultipleChoiceExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, 
     # Using a small gradient accumulation steps value because input data is repated for the multiple choice task.
     TRAIN_BATCH_SIZE = 1
     EVAL_BATCH_SIZE = 1
-    EVAL_SCORE_THRESHOLD_OVERRIDES = {"distilbert-base-uncased": 0.645}
+    EVAL_SCORE_THRESHOLD_OVERRIDES = {"distilbert-base-uncased": 0.645, "Graphcore/groupbert-base-uncased": 0.66}
 
 
 class QuestionAnsweringExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_qa"):
@@ -442,7 +437,7 @@ class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, e
         task: Optional[str] = None,
         dataset_config_name: Optional[str] = None,
         do_eval: bool = True,
-        lr: float = 1e-5,
+        lr: float = 1e-4,
         train_batch_size: int = 1,
         eval_batch_size: int = 1,
         num_epochs: int = 2,
@@ -499,7 +494,7 @@ class TranslationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, exa
         task: Optional[str] = None,
         dataset_config_name: Optional[str] = None,
         do_eval: bool = True,
-        lr: float = 1e-5,
+        lr: float = 1e-4,
         train_batch_size: int = 1,
         eval_batch_size: int = 1,
         num_epochs: int = 2,
@@ -549,6 +544,7 @@ class AudioClassificationExampleTester(
     GRADIENT_ACCUMULATION_STEPS = 16
     NUM_EPOCHS = 3
     EXTRA_COMMAND_LINE_ARGUMENTS = ["--max_length_seconds 1", "--attention_mask False"]
+    LEARNING_RATE = 3e-5
 
 
 class SpeechRecognitionExampleTester(
@@ -557,18 +553,19 @@ class SpeechRecognitionExampleTester(
     TASK_NAME = "common_voice"
     DATASET_CONFIG_NAME = "tr"
     TRAIN_BATCH_SIZE = 1
-    GRADIENT_ACCUMULATION_STEPS = 8
+    GRADIENT_ACCUMULATION_STEPS = 32
     EVAL_BATCH_SIZE = 1
-    NUM_EPOCHS = 15
+    NUM_EPOCHS = 20
     # Here we are evaluating against the loss because it can take a long time to have wer < 1.0
     SCORE_NAME = "eval_loss"
-    EVAL_SCORE_THRESHOLD = 4
+    EVAL_SCORE_THRESHOLD = 6
     EVAL_SCORE_GREATER_IS_BETTER = False
     EXTRA_COMMAND_LINE_ARGUMENTS = [
-        "--learning_rate 3e-4",
+        "--learning_rate 1e-4",
         "--warmup_steps 400",
         "--mask_time_prob 0.0",
         "--layerdrop 0.0",
+        "--weight_decay 0.005",
         "--freeze_feature_encoder",
         "--text_column_name sentence",
         "--length_column_name input_length",

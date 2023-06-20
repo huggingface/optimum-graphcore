@@ -1,54 +1,51 @@
-33a34,36
-> from optimum.graphcore import IPUConfig, IPUTrainer
-> from optimum.graphcore import IPUTrainingArguments as TrainingArguments
-> from optimum.graphcore.utils import check_min_version
-39,40d41
+31,32d30
+< from datasets import load_dataset
+< 
+33a32
+> from datasets import load_dataset
+39,40d37
 <     Trainer,
 <     TrainingArguments,
-46c47,49
-< from transformers.utils import PaddingStrategy, check_min_version, send_example_telemetry
----
-> from transformers.utils import PaddingStrategy
-> from transformers.utils import check_min_version as tf_check_min_version
-> from transformers.utils import send_example_telemetry
-50c53,56
-< check_min_version("4.25.0")
----
-> tf_check_min_version("4.25.0")
+47a45,48
+> from optimum.graphcore import IPUConfig, IPUTrainer
+> from optimum.graphcore import IPUTrainingArguments as TrainingArguments
+> from optimum.graphcore.utils import check_min_version as gc_check_min_version
 > 
+51a53,55
 > # Will error if the minimal version of Optimum Graphcore is not installed. Remove at your own risks.
-> check_min_version("0.2.4.dev0")
-121c127
+> gc_check_min_version("0.6.0.dev0")
+> 
+121c125
 <         default=False,
 ---
 >         default=True,
-245,249d250
+250,254d253
 <     # Log on each process the small summary:
 <     logger.warning(
 <         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
 <         + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
 <     )
-313a315,320
+318a318,323
 >     ipu_config = IPUConfig.from_pretrained(
 >         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
 >         cache_dir=model_args.cache_dir,
 >         revision=model_args.model_revision,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
-408c415
+414c419
 <         else DataCollatorForMultipleChoice(tokenizer=tokenizer, pad_to_multiple_of=8 if training_args.fp16 else None)
 ---
 >         else DataCollatorForMultipleChoice(tokenizer=tokenizer, pad_to_multiple_of=None)
-410a418,423
+416a422,427
 >     if not data_args.pad_to_max_length:
 >         logging.warning(
 >             "Not padding to max length might lead to batches with difference sequence lengths, which might not work as"
 >             "expected on IPUs"
 >         )
 > 
-418c431
+424c435
 <     trainer = Trainer(
 ---
 >     trainer = IPUTrainer(
-419a433
+425a437
 >         ipu_config=ipu_config,

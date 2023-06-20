@@ -32,7 +32,7 @@ python run_ner.py \
   --model_name_or_path bert-base-uncased \
   --ipu_config_name Graphcore/bert-base-ipu \
   --dataset_name conll2003 \
-  --pod_type pod16 \
+  --n_ipu 16 \
   --output_dir ./output/test-ner \
   --do_train \
   --do_eval
@@ -48,7 +48,7 @@ python run_ner.py \
   --ipu_config_name Graphcore/bert-base-ipu \
   --train_file path_to_train_file \
   --validation_file path_to_validation_file \
-  --pod_type pod16 \
+  --n_ipu 16 \
   --output_dir ./output/test-ner \
   --do_train \
   --do_eval

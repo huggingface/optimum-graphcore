@@ -14,6 +14,7 @@
 
 import poptorch
 import transformers
+
 from optimum.utils import logging
 
 from ...modeling_utils import PipelineMixin, get_layer_ipu, recomputation_checkpoint, register
@@ -30,7 +31,7 @@ class PipelinedViTForImageClassification(transformers.ViTForImageClassification,
         logger.info("Embedding  --> IPU 0")
         self.vit.embeddings = poptorch.BeginBlock(self.vit.embeddings, "Embedding", ipu_id=0)
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, self.vit.encoder.layer)
+        layer_ipu = get_layer_ipu(self.ipu_config, self.vit.encoder.layer)
         for index, layer in enumerate(self.vit.encoder.layer):
             if self.ipu_config.recompute_checkpoint_every_layer:
                 # Put checkpoints on every encoder layer
@@ -40,7 +41,7 @@ class PipelinedViTForImageClassification(transformers.ViTForImageClassification,
             logger.info(f"Encoder {index:<2} --> IPU {ipu}")
             self.vit.encoder.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
 
-        last_ipu = self.ipu_config.ipus_per_replica - 1
+        last_ipu = self.ipu_config._ipus_per_replica - 1
         logger.info(f"Head       --> IPU {last_ipu}")
         logger.info("---------------------------------------")
         self.vit.layernorm = poptorch.BeginBlock(self.vit.layernorm, "LayerNorm", ipu_id=last_ipu)

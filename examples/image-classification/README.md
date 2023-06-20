@@ -29,7 +29,7 @@ python examples/image-classification/run_image_classification.py \
     --overwrite_output_dir \
     --model_name_or_path google/vit-base-patch16-224-in21k \
     --ipu_config_name Graphcore/vit-base-ipu \
-    --pod_type pod16 \
+    --n_ipu 16 \
     --remove_unused_columns False \
     --do_train \
     --do_eval \
@@ -69,7 +69,7 @@ python examples/image-classification/run_image_classification.py \
     --per_device_train_batch_size 1 \
     --per_device_eval_batch_size 1 \
     --gradient_accumulation_steps 16 \
-    --pod_type pod16 \
+    --n_ipu 16 \
     --logging_strategy steps \
     --logging_steps 10 \
     --save_total_limit 3 \
@@ -97,7 +97,7 @@ python examples/image-classification/run_image_classification.py \
     --num_train_epochs 5 \
     --per_device_train_batch_size 15 \
     --per_device_eval_batch_size 15 \
-    --pod_type pod16 \
+    --n_ipu 16 \
     --logging_strategy steps \
     --logging_steps 10 \
     --evaluation_strategy epoch \
@@ -135,7 +135,7 @@ python examples/image-classification/run_image_classification.py \
     --learning_rate 3e-4 \
     --per_device_train_batch_size 1 \
     --per_device_eval_batch_size 1 \
-    --pod_type pod16 \
+    --n_ipu 16 \
     --dataloader_num_workers 8 \
     --dataloader_drop_last \
     --seed 1337 \

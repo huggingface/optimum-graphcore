@@ -16,6 +16,8 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
+import poptorch
+
 from .ipu_configuration import IPUConfig
 from .models.bart import PipelinedBartForConditionalGeneration, PipelinedBartForSequenceClassification
 from .models.bert import (
@@ -41,6 +43,7 @@ from .models.gpt2 import (
 )
 from .models.hubert import PipelinedHubertForSequenceClassification
 from .models.lxmert import PipelinedLxmertForQuestionAnswering
+from .models.mt5 import PipelinedMT5ForConditionalGeneration
 from .models.roberta import (
     PipelinedRobertaForMaskedLM,
     PipelinedRobertaForMultipleChoice,
@@ -57,3 +60,7 @@ from .trainer_seq2seq import IPUSeq2SeqTrainer
 from .training_args import IPUTrainingArguments
 from .training_args_seq2seq import IPUSeq2SeqTrainingArguments
 from .version import __version__
+
+
+# Disable poptorch compiler warnings by default
+poptorch.setLogLevel("ERR")

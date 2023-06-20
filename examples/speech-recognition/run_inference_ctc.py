@@ -18,20 +18,20 @@
 import logging
 from dataclasses import dataclass, field
 
+import poptorch
 import torch
 from datasets import load_dataset
 from tqdm import tqdm
-
-import poptorch
-from optimum.graphcore import IPUConfig
-from optimum.graphcore.modeling_utils import to_pipelined
 from transformers import AutoModelForCTC, HfArgumentParser, Wav2Vec2Processor
 from transformers.utils import check_min_version
 from transformers.utils.versions import require_version
 
+from optimum.graphcore import IPUConfig
+from optimum.graphcore.modeling_utils import to_pipelined
+
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
-check_min_version("4.18.0")
+check_min_version("4.29.0")
 
 require_version(
     "datasets>=1.18.0",
@@ -94,7 +94,6 @@ def main():
             matmul_proportion=0.1,
             inference_device_iterations=num_device_iterations,
             layers_per_ipu=[17, 16],
-            ipus_per_replica=2,
         )
     else:
         processor = Wav2Vec2Processor.from_pretrained("facebook/wav2vec2-base-960h")

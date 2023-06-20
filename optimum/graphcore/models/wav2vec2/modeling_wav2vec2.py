@@ -15,11 +15,9 @@
 from typing import Optional, Tuple, Union
 
 import numpy as np
+import poptorch
 import torch
 import torch.nn.functional as F
-
-import poptorch
-from optimum.utils import logging
 from transformers import Wav2Vec2ForPreTraining, Wav2Vec2Model
 from transformers.modeling_outputs import CausalLMOutput
 from transformers.models.wav2vec2.modeling_wav2vec2 import (
@@ -30,6 +28,8 @@ from transformers.models.wav2vec2.modeling_wav2vec2 import (
     Wav2Vec2ForPreTrainingOutput,
     Wav2Vec2GumbelVectorQuantizer,
 )
+
+from optimum.utils import logging
 
 from ...modeling_utils import PipelineMixin, get_layer_ipu, recomputation_checkpoint, register
 from .ipu_gumbel_vector_quantizer import IPUWav2Vec2GumbelVectorQuantizer
@@ -157,7 +157,7 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
         layers.append(("Positional Embedding", self.wav2vec2.encoder.pos_conv_embed))
         # Encoder layers
         for index, layer in enumerate(self.wav2vec2.encoder.layers):
-            recomputation_checkpoint(layer)
+            self._hooks.append(recomputation_checkpoint(layer))
             layers.append((f"Encoder {index:<2}", layer))
         # Project Hidden
         layers.append(("Project Hidden", self.project_hid))
@@ -166,7 +166,7 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
         # Project Quantizer
         layers.append(("Project Quantizer", self.project_q))
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, layers)
+        layer_ipu = get_layer_ipu(self.ipu_config, layers)
 
         for i, (name, layer) in enumerate(layers):
             logger.info(f"{name} --> IPU {layer_ipu[i]}")
@@ -192,15 +192,16 @@ class PipelinedWav2Vec2ForPreTraining(Wav2Vec2ForPreTraining, PipelineMixin):
         self,
         input_values: Optional[torch.Tensor],
         gumbel_temperature: Optional[torch.Tensor] = None,
+        labels: Optional[torch.Tensor] = None,
         attention_mask: Optional[torch.Tensor] = None,
         mask_time_indices: Optional[torch.BoolTensor] = None,
         sampled_negative_indices: Optional[torch.BoolTensor] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
+        mask_reduced: Optional[torch.Tensor] = None,
         reduce_selector: Optional[torch.Tensor] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple, Wav2Vec2ForPreTrainingOutput]:
-
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         if mask_time_indices is not None:
@@ -403,8 +404,8 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
                 conv_layer.layer_norm.eps = self.original_eps[i]
         else:
             self.original_eps = []
-            eps = 1e-4
             for conv_layer in self.wav2vec2.feature_extractor.conv_layers:
+                eps = 1e-4 if conv_layer.layer_norm.weight.dtype == torch.float16 else conv_layer.layer_norm.eps
                 # Save the original values, to restore later
                 self.original_eps.append(conv_layer.layer_norm.eps)
                 conv_layer.layer_norm.eps = eps
@@ -432,7 +433,7 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
         self.change_wav2vec2_adapter_class(False)
         self.change_conv_eps(False)
 
-        if self.ipu_config.ipus_per_replica != 1:
+        if self.ipu_config._ipus_per_replica != 1:
             logger.info("---------- Device Allocation -----------")
             layers = []
             # Conv layers
@@ -442,12 +443,12 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
             layers.append(("Positional Embedding", self.wav2vec2.encoder.pos_conv_embed))
             # Encoder layers
             for index, layer in enumerate(self.wav2vec2.encoder.layers):
-                recomputation_checkpoint(layer)
+                self._hooks.append(recomputation_checkpoint(layer))
                 layers.append((f"Encoder {index:<2}", layer))
             # Project Hidden
             layers.append(("Project Hidden", self.lm_head))
 
-            layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, layers)
+            layer_ipu = get_layer_ipu(self.ipu_config, layers)
 
             for i, (name, layer) in enumerate(layers):
                 logger.info(f"{name} --> IPU {layer_ipu[i]}")
@@ -516,9 +517,13 @@ class PipelinedWav2Vec2ForCTC(Wav2Vec2ForCTC, PipelineMixin):
             # ctc_loss doesn't support fp16
             log_probs = torch.nn.functional.log_softmax(logits.float(), dim=-1).transpose(0, 1)
 
-            loss_fn = torch.nn.CTCLoss(blank=self.config.pad_token_id, reduction=self.config.ctc_loss_reduction)
-            loss = loss_fn(log_probs.float(), labels, input_lengths, target_lengths)
-            loss = poptorch.identity_loss(loss, "sum")
+            loss_fn = torch.nn.CTCLoss(
+                blank=self.config.pad_token_id,
+                reduction=self.config.ctc_loss_reduction,
+                zero_infinity=self.config.ctc_zero_infinity,
+            )
+            loss = loss_fn(log_probs, labels, input_lengths, target_lengths)
+            loss = poptorch.identity_loss(loss, "none")
 
         if not return_dict:
             if loss is not None:

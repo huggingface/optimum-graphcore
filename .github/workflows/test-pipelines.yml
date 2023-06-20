@@ -1,0 +1,60 @@
+name: pipelines
+
+on:
+  schedule:
+    # At the end of everyday
+    - cron: 0 6 * * *
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: [3.8]
+        os: [ubuntu-20.04]
+
+    runs-on: self-hosted
+    timeout-minutes: 720
+    steps:
+    - uses: actions/checkout@v3
+    - name: Setup Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v3
+      with:
+        python-version: ${{ matrix.python-version }}
+    - name: Create and start a virtual environment
+      run: |
+        python -m venv base
+    - name: Install dependencies
+      run: |
+        source base/bin/activate
+        pip install --upgrade pip
+        export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_20_04-3.2*
+        pip install ${SDK_PATH}/poptorch-*.whl
+        pip install .[testing]
+        pip install memory-profiler matplotlib
+    - name: Test with Pytest
+      env:
+        POPTORCH_WAIT_FOR_IPU: 1
+        RUN_SLOW: true
+      run: |
+        source base/bin/activate
+        export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_20_04-3.2*
+        . ${SDK_PATH}/poplar-ubuntu_20_04*/enable.sh
+        . ${SDK_PATH}/popart-ubuntu_20_04*/enable.sh
+        mprof run --exit-code --interval 1 --include-children --multiprocess \
+          pytest tests/pipelines/ -v -n 4
+        mprof plot -o memory_profile.png
+    - name: Upload memory profile
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: memory_profile
+        path: memory_profile.png
+    - name: Upload PopTorch error log if present
+      if: always()
+      uses: actions/upload-artifact@v3
+      with:
+        name: poptorch_error
+        path: poptorch_error.log
+        if-no-files-found: ignore
+

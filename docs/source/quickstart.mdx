@@ -17,14 +17,40 @@ limitations under the License.
 
 # Quickstart
 
-🤗 Optimum Graphcore was designed with one goal in mind: **making training and evaluation straightforward for any 🤗 Transformers user while leveraging the complete power of IPUs.**
+🤗 Optimum Graphcore was designed with one goal in mind: **to make training and evaluation straightforward for any 🤗 Transformers user while leveraging the complete power of IPUs**.
 
-There are two main classes one needs to know:
+## Installation
 
-- [`IPUTrainer`]: the trainer class that takes care of compiling the model to run on IPUs, and of performing training and evaluation, check [here](trainer) for more information..
-- [`IPUConfig`]: the class that specifies attributes and configuration parameters to compile and put the model on the device, check [here](ipu_config) for more information.
+To install the latest release of 🤗 Optimum Graphcore:
 
-The [`IPUTrainer`] is very similar to the [🤗 Transformers Trainer](https://huggingface.co/docs/transformers/main_classes/trainer), and adapting a script using the `Trainer` to make it work with IPUs will mostly consists of simply swapping the `Trainer` class for the [`IPUTrainer`] one. That's how most of the [example scripts](https://github.com/huggingface/optimum-graphcore/tree/main/examples) were adapted from their [original counterparts](https://github.com/huggingface/transformers/tree/master/examples/pytorch).
+```
+pip install optimum-graphcore
+```
+
+Optimum Graphcore is a fast-moving project, and you may want to install from source.
+
+```
+pip install git+https://github.com/huggingface/optimum-graphcore.git
+```
+
+## Environment setup
+
+You need to have the Poplar SDK enabled to use 🤗 Optimum Graphcore. Refer to the [Getting Started guide](https://docs.graphcore.ai/en/latest/getting-started.html#getting-started) for your system for details on how to enable the Poplar SDK. Also refer to the [Jupyter Quick Start guide](https://docs.graphcore.ai/projects/jupyter-notebook-quick-start/en/latest/index.html) for how to set up Jupyter to be able to run notebooks on a remote IPU machine.
+
+## Example scripts and Jupyter notebooks
+
+We have a range of example scripts in [`/examples`](https://github.com/huggingface/optimum-graphcore/tree/main/examples) and Jupyter notebooks in [`/notebooks`](https://github.com/huggingface/optimum-graphcore/tree/main/notebooks) which you can refer to to see how specific elements of the Optimum Graphcore library are used.
+
+
+## Using Optimum Graphcore
+
+The main Optimum Graphcore classes are:
+
+- [`IPUTrainer`](https://huggingface.co/docs/optimum/graphcore/trainer#optimum.graphcore.IPUTrainer): This class handles compiling the model to run on IPUs, as well as performing the training and evaluation. Refer to the section on [training](trainer) for more information.
+- [`IPUConfig`](https://huggingface.co/docs/optimum/graphcore/ipu_config#optimum.graphcore.IPUConfig): This class specifies attributes and configuration parameters to compile and put the model on the IPU. Refer to the section on [configuration](ipu_config) section for more information.
+
+
+[`IPUTrainer`](https://huggingface.co/docs/optimum/graphcore/trainer#optimum.graphcore.IPUTrainer) is very similar to the 🤗 Transformers [Trainer](https://huggingface.co/docs/transformers/main_classes/trainer) class, and you can easily adapt a script that currently uses `Trainer` to make it work with IPUs. You will mostly swap `Trainer` for [`IPUTrainer`](https://huggingface.co/docs/optimum/graphcore/trainer#optimum.graphcore.IPUTrainer). This is how most of the [Optimum Graphcore example scripts](https://github.com/huggingface/optimum-graphcore/tree/main/examples) were adapted from the [original Hugging Face](https://github.com/huggingface/transformers/tree/master/examples/pytorch) scripts.
 
 ```diff
 -from transformers import Trainer, TrainingArguments
@@ -34,12 +60,13 @@ The [`IPUTrainer`] is very similar to the [🤗 Transformers Trainer](https://hu
 +training_args = IPUTrainingArguments(
      per_device_train_batch_size=4,
      learning_rate=1e-4,
-+    ipu_config_name="Graphcore/bert-base-ipu",  # Or any other IPUConfig on the Hub or stored locally
++    # Any IPUConfig on the Hub or stored locally
++    ipu_config_name="Graphcore/bert-base-ipu",
 +)
 +
 +# Loading the IPUConfig needed by the IPUTrainer to compile and train the model on IPUs
 +ipu_config = IPUConfig.from_pretrained(
-+    training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
++    training_args.ipu_config_name,
  )
 
  # Initialize our Trainer
@@ -50,4 +77,17 @@ The [`IPUTrainer`] is very similar to the [🤗 Transformers Trainer](https://hu
      args=training_args,
      train_dataset=train_dataset if training_args.do_train else None,
      ...  # Other arguments
+```
+
+We also support the `pipeline` API, so you can easily run a model on a given input, for example text image or audio, on IPUs:
+
+```diff
+->>> from transformers import pipeline
++>>> from optimum.graphcore import pipeline
+
+# Allocate a pipeline for sentiment-analysis
+->>> classifier = pipeline('sentiment-analysis', model="distilbert-base-uncased-finetuned-sst-2-english")
++>>> classifier = pipeline('sentiment-analysis', model="distilbert-base-uncased-finetuned-sst-2-english", ipu_config = "Graphcore/distilbert-base-ipu")
+>>> classifier('We are very happy to introduce pipeline to the transformers repository.')
+[{'label': 'POSITIVE', 'score': 0.9996947050094604}]
 ```

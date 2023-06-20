@@ -19,7 +19,6 @@ from typing import Tuple
 
 import torch
 import torch.nn as nn
-
 from transformers.models.bert.modeling_bert import BertSelfAttention
 
 
@@ -29,10 +28,10 @@ class BertFusedSelfAttention(BertSelfAttention):
         combined_weight = torch.cat(weights, dim=0)
         combined_result = hidden_state @ torch.transpose(combined_weight, -2, -1)
         biases = (self.query.bias, self.key.bias, self.value.bias)
-        if all(map(lambda b: b is not None, biases)):
+        if all((b is not None for b in biases)):
             combined_bias = torch.cat(biases, dim=0)
             combined_result += combined_bias
-        elif any(map(lambda b: b is not None, biases)):
+        elif any((b is not None for b in biases)):
             raise RuntimeError(
                 "Some attention layers had biases but not all. This is not supported. "
                 "Please enable biases on all Query, Key and Value or none. "
@@ -84,9 +83,9 @@ class BertFusedSelfAttention(BertSelfAttention):
         attention_scores = torch.matmul(query_layer, key_layer.transpose(-1, -2))
 
         if self.position_embedding_type == "relative_key" or self.position_embedding_type == "relative_key_query":
-            seq_length = hidden_states.size()[1]
-            position_ids_l = torch.arange(seq_length, dtype=torch.long, device=hidden_states.device).view(-1, 1)
-            position_ids_r = torch.arange(seq_length, dtype=torch.long, device=hidden_states.device).view(1, -1)
+            query_length, key_length = query_layer.shape[2], key_layer.shape[2]
+            position_ids_l = torch.arange(query_length, dtype=torch.long, device=hidden_states.device).view(-1, 1)
+            position_ids_r = torch.arange(key_length, dtype=torch.long, device=hidden_states.device).view(1, -1)
             distance = position_ids_l - position_ids_r
             positional_embedding = self.distance_embedding(distance + self.max_position_embeddings - 1)
             positional_embedding = positional_embedding.to(dtype=query_layer.dtype)  # fp16 compatibility

@@ -21,7 +21,6 @@ from pathlib import Path
 from typing import Optional, Sequence, Union
 
 from datasets import Dataset, DatasetDict, concatenate_datasets, load_dataset
-
 from joblib import Parallel, delayed
 
 
@@ -84,7 +83,7 @@ def main(
     if remove_intermediate_datasets_from_cache:
         print("*** Cleaning up intermediate dataset cache files ***")
         for dataset in sub_datasets:
-            for (_, cache_files) in dataset.cache_files.items():
+            for _, cache_files in dataset.cache_files.items():
                 for cache_file in cache_files:
                     filename = cache_file.get("filename")
                     if filename is None:

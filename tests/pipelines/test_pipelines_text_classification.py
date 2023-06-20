@@ -14,9 +14,10 @@
 
 import unittest
 
-from optimum.graphcore import pipeline
-from transformers import MODEL_FOR_SEQUENCE_CLASSIFICATION_MAPPING, TextClassificationPipeline
+from transformers import MODEL_FOR_SEQUENCE_CLASSIFICATION_MAPPING
 from transformers.testing_utils import nested_simplify, require_torch, slow
+
+from optimum.graphcore import pipeline
 
 from .test_pipelines_common import ANY, PipelineTestCaseMeta
 
@@ -29,7 +30,7 @@ class TextClassificationPipelineTests(unittest.TestCase, metaclass=PipelineTestC
         text_classifier = pipeline(
             task="text-classification",
             model="hf-internal-testing/tiny-random-distilbert",
-            ipu_config="Graphcore/distilbert-base-ipu",
+            ipu_config={"layers_per_ipu": [5], "ipus_per_replica": 1},
         )
 
         outputs = text_classifier("This is great !")

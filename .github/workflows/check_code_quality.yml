@@ -15,6 +15,10 @@ on:
       - "tests/**.py"
       - "examples/**.py"
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     strategy:
@@ -25,9 +29,9 @@ jobs:
 
     runs-on: ${{ matrix.os }}
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v3
     - name: Setup Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
+      uses: actions/setup-python@v3
       with:
         python-version: ${{ matrix.python-version }}
     - name: Create and start a virtual environment
@@ -38,13 +42,12 @@ jobs:
       run: |
         source venv/bin/activate
         pip install --upgrade pip
-        pip install isort
-        pip install black
+        pip install .[quality]
     - name: Check style with black
       run: |
         source venv/bin/activate
-        black --check .
-    - name: Check style with isort
+        black --check examples tests optimum
+    - name: Check style with ruff
       run: |
         source venv/bin/activate
-        isort --check .
+        ruff examples tests optimum

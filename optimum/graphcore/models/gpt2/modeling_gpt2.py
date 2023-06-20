@@ -15,15 +15,16 @@
 import math
 from typing import Optional, Tuple, Union
 
+import poptorch
 import torch
 import torch.nn as nn
-
-import poptorch
-from optimum.utils import logging
 from transformers import GPT2ForSequenceClassification, GPT2ForTokenClassification, GPT2LMHeadModel
 from transformers.modeling_outputs import CausalLMOutputWithCrossAttentions, SequenceClassifierOutputWithPast
 from transformers.models.gpt2.modeling_gpt2 import GPT2Attention
 
+from optimum.utils import logging
+
+from ...generation import IPUGenerationMixin
 from ...modeling_utils import (
     PipelineMixin,
     SerializedEmbedding,
@@ -63,7 +64,7 @@ class GPT2PipelineMixin(PipelineMixin):
             if new_vocab_size > self.actual_vocab_size:
                 self.resize_token_embeddings(new_vocab_size)
 
-            self.transformer.wte = SerializedEmbedding(
+            self.transformer.wte = SerializedEmbedding.from_model(
                 self.transformer.wte, self.ipu_config.embedding_serialization_factor
             )
 
@@ -74,7 +75,7 @@ class GPT2PipelineMixin(PipelineMixin):
         hs = outline_attribute(self.transformer.ln_f, "LayerNorm")
         self._hooks.extend(hs)
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, self.transformer.h)
+        layer_ipu = get_layer_ipu(self.ipu_config, self.transformer.h)
         for index, layer in enumerate(self.transformer.h):
             ipu = layer_ipu[index]
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
@@ -94,7 +95,7 @@ class GPT2PipelineMixin(PipelineMixin):
 
         if self.ipu_config.embedding_serialization_factor > 1:
             # Deserialize the serialized word embedding
-            self.transformer.wte = self.transformer.wte.deserialize()
+            self.transformer.wte = self.transformer.wte.to_model()
 
             # Resize token embeddings back to origianl vocab_size
             if self.config.vocab_size > self.actual_vocab_size:
@@ -107,8 +108,8 @@ class GPT2PipelineMixin(PipelineMixin):
 
 
 @register(GPT2LMHeadModel)
-class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
-    def parallelize(self):
+class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin, IPUGenerationMixin):
+    def parallelize(self, for_generation=False):
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model
@@ -136,26 +137,20 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
                 # There is a tie_weights operation in resize_token_embeddings so the lm_head's weight is also resized.
                 self.resize_token_embeddings(new_vocab_size)
 
-            serialized_lm_head = SerializedLinear(
-                self.config.n_embd,
-                self.config.vocab_size,  # Note that if padding is done, self.config.vocab_size == new_vocab_size
-                self.ipu_config.embedding_serialization_factor,
-                bias=False,
-                mode=poptorch.MatMulSerializationMode.OutputChannels,
-            )
-            serialized_lm_head.load_state_dict(self.lm_head.state_dict())
-            self.lm_head = serialized_lm_head
+            self.lm_head = SerializedLinear.from_model(self.lm_head, self.ipu_config.embedding_serialization_factor)
             self.tie_weights()
+
+        self.change_lm_head_to_indexed_input_linear(restore=not for_generation)
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Token Embedding     --> IPU 0")
         self.transformer.wte = poptorch.BeginBlock(self.transformer.wte, "Token embedding", ipu_id=0)
-        logger.info("Position Embedding  --> IPU 1")
-        self.transformer.wpe = poptorch.BeginBlock(self.transformer.wpe, "Position embedding", ipu_id=1)
+        logger.info("Position Embedding  --> IPU 0")
+        self.transformer.wpe = poptorch.BeginBlock(self.transformer.wpe, "Position embedding", ipu_id=0)
         hs = outline_attribute(self.transformer.ln_f, "LayerNorm")
         self._hooks.extend(hs)
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, self.transformer.h)
+        layer_ipu = get_layer_ipu(self.ipu_config, self.transformer.h)
         for index, layer in enumerate(self.transformer.h):
             ipu = layer_ipu[index]
             if self.ipu_config.recompute_checkpoint_every_layer:
@@ -172,15 +167,10 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
     def deparallelize(self):
         PipelineMixin.deparallelize(self)
 
-        if self.ipu_config.embedding_serialization_factor > 1:
-            # Deserialize the serialized linear layer
-            old_lm_head = nn.Linear(
-                self.config.n_embd,
-                self.config.vocab_size,  # Note that if padding is done, self.config.vocab_size == new_vocab_size
-                bias=False,
-            )
-            old_lm_head.load_state_dict(self.lm_head.state_dict())
-            self.lm_head = old_lm_head
+        self.change_lm_head_to_indexed_input_linear(restore=True)
+
+        if isinstance(self.lm_head, SerializedLinear):
+            self.lm_head = self.lm_head.to_model()
             self.tie_weights()
 
             # Resize token embeddings back to origianl vocab_size.
@@ -263,16 +253,19 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
 
         if not return_dict:
             output = (lm_logits,) + transformer_outputs[1:]
-            if loss is not None:
-                return (loss,) if self.training else (loss,) + output
+            if self.training:
+                # Only returning the loss to make the communication between the host and the device faster.
+                return (loss,)
+            else:
+                return ((loss,) + output) if loss is not None else output
 
         return CausalLMOutputWithCrossAttentions(
             loss=loss,
-            logits=lm_logits if loss is None else None,
-            past_key_values=transformer_outputs.past_key_values if loss is None else None,
-            hidden_states=transformer_outputs.hidden_states if loss is None else None,
-            attentions=transformer_outputs.attentions if loss is None else None,
-            cross_attentions=transformer_outputs.cross_attentions if loss is None else None,
+            logits=lm_logits if not self.training else None,
+            past_key_values=transformer_outputs.past_key_values if not self.training else None,
+            hidden_states=transformer_outputs.hidden_states if not self.training else None,
+            attentions=transformer_outputs.attentions if not self.training else None,
+            cross_attentions=transformer_outputs.cross_attentions if not self.training else None,
         )
 
 
@@ -280,7 +273,7 @@ class PipelinedGPT2LMHeadModel(GPT2LMHeadModel, PipelineMixin):
 class PipelinedGPT2ForSequenceClassification(GPT2ForSequenceClassification, GPT2PipelineMixin):
     def parallelize(self):
         super().parallelize()
-        last_ipu = self.ipu_config.ipus_per_replica - 1
+        last_ipu = self.ipu_config._ipus_per_replica - 1
         logger.info(f"Head       --> IPU {last_ipu}")
         self.score = poptorch.BeginBlock(self.score, "Score", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
@@ -301,7 +294,6 @@ class PipelinedGPT2ForSequenceClassification(GPT2ForSequenceClassification, GPT2
         output_hidden_states: Optional[bool] = None,
         return_dict: Optional[bool] = None,
     ) -> Union[Tuple, SequenceClassifierOutputWithPast]:
-
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
         outputs = super().forward(
@@ -337,7 +329,7 @@ class PipelinedGPT2ForSequenceClassification(GPT2ForSequenceClassification, GPT2
 class PipelinedGPT2ForTokenClassification(GPT2ForTokenClassification, GPT2PipelineMixin):
     def parallelize(self):
         super().parallelize()
-        last_ipu = self.ipu_config.ipus_per_replica - 1
+        last_ipu = self.ipu_config._ipus_per_replica - 1
         logger.info(f"Head       --> IPU {last_ipu}")
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")

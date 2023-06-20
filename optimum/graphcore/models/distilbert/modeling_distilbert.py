@@ -15,12 +15,10 @@
 import math
 from typing import Optional, Tuple, Union
 
+import poptorch
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-import poptorch
-from optimum.utils import logging
 from transformers import (
     DistilBertForMaskedLM,
     DistilBertForMultipleChoice,
@@ -30,6 +28,8 @@ from transformers import (
 )
 from transformers.modeling_outputs import MaskedLMOutput, QuestionAnsweringModelOutput
 from transformers.models.distilbert.modeling_distilbert import MultiHeadSelfAttention
+
+from optimum.utils import logging
 
 from ...modeling_utils import (
     OnehotGather,
@@ -132,16 +132,16 @@ class DistilBertPipelineMixin(PipelineMixin):
         logger.info("Embedding --> IPU 0")
         is_masked_lm = isinstance(self, DistilBertForMaskedLM)
         if self.ipu_config.embedding_serialization_factor > 1 and not is_masked_lm:
-            self.distilbert.embeddings.word_embeddings = SerializedEmbedding(
+            self.distilbert.embeddings.word_embeddings = SerializedEmbedding.from_model(
                 self.distilbert.embeddings.word_embeddings, self.ipu_config.embedding_serialization_factor
             )
         self.distilbert.embeddings = poptorch.BeginBlock(self.distilbert.embeddings, "Embedding", 0)
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu, self.distilbert.transformer.layer)
+        layer_ipu = get_layer_ipu(self.ipu_config, self.distilbert.transformer.layer)
         for index, layer in enumerate(self.distilbert.transformer.layer):
             ipu = layer_ipu[index]
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
-                recomputation_checkpoint(layer)
+                self._hooks.append(recomputation_checkpoint(layer))
             self.distilbert.transformer.layer[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
             logger.info(f"Encoder {index:<2} --> IPU {ipu}")
 
@@ -160,7 +160,7 @@ class DistilBertPipelineMixin(PipelineMixin):
 
         is_masked_lm = isinstance(self, DistilBertForMaskedLM)
         if self.ipu_config.embedding_serialization_factor > 1 and not is_masked_lm:
-            self.distilbert.embeddings.word_embeddings = self.distilbert.embeddings.word_embeddings.deserialize()
+            self.distilbert.embeddings.word_embeddings = self.distilbert.embeddings.word_embeddings.to_model()
 
         return self
 
@@ -175,15 +175,9 @@ class PipelinedDistilBertForMaskedLM(DistilBertForMaskedLM, DistilBertPipelineMi
         super().parallelize()
 
         if self.ipu_config.embedding_serialization_factor > 1:
-            serialized_vocab_projector = SerializedLinear(
-                self.config.dim,
-                self.config.vocab_size,
-                self.ipu_config.embedding_serialization_factor,
-                bias=True,
-                mode=poptorch.MatMulSerializationMode.OutputChannels,
+            self.vocab_projector = SerializedLinear.from_model(
+                self.vocab_projector, self.ipu_config.embedding_serialization_factor
             )
-            serialized_vocab_projector.load_state_dict(self.vocab_projector.state_dict())
-            self.vocab_projector = serialized_vocab_projector
             self.tie_weights()
 
         logger.info("LM Head --> IPU 0")
@@ -196,14 +190,8 @@ class PipelinedDistilBertForMaskedLM(DistilBertForMaskedLM, DistilBertPipelineMi
     def deparallelize(self):
         super().deparallelize()
 
-        if self.ipu_config.embedding_serialization_factor > 1:
-            vocab_projector = nn.Linear(
-                self.config.hidden_size,
-                self.config.vocab_size,
-                bias=True,
-            )
-            vocab_projector.load_state_dict(self.vocab_projector.state_dict())
-            self.vocab_projector = vocab_projector
+        if isinstance(self.vocab_projector, SerializedLinear):
+            self.vocab_projector = self.vocab_projector.to_model()
             self.tie_weights()
 
     def forward(
@@ -225,7 +213,7 @@ class PipelinedDistilBertForMaskedLM(DistilBertForMaskedLM, DistilBertPipelineMi
         """
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
-        if labels is not None:
+        if self.training:
             dlbrt_output = self.distilbert(
                 input_ids=input_ids,
                 attention_mask=attention_mask,
@@ -271,7 +259,7 @@ class PipelinedDistilBertForSequenceClassification(DistilBertForSequenceClassifi
     def parallelize(self):
         super().parallelize()
 
-        last_ipu = self.ipu_config.ipus_per_replica - 1
+        last_ipu = self.ipu_config._ipus_per_replica - 1
         logger.info(f"Classifier --> IPU {last_ipu}")
         self.pre_classifier = poptorch.BeginBlock(self.pre_classifier, "Classifier", ipu_id=last_ipu)
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier", ipu_id=last_ipu)
@@ -284,7 +272,7 @@ class PipelinedDistilBertForQuestionAnswering(DistilBertForQuestionAnswering, Di
     def parallelize(self):
         super().parallelize()
 
-        last_ipu = self.ipu_config.ipus_per_replica - 1
+        last_ipu = self.ipu_config._ipus_per_replica - 1
         logger.info(f"QA Outputs --> IPU {last_ipu}")
         self.qa_outputs = poptorch.BeginBlock(self.qa_outputs, "QA Outputs", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
@@ -335,7 +323,7 @@ class PipelinedDistilBertForTokenClassification(DistilBertForTokenClassification
     def parallelize(self):
         super().parallelize()
 
-        last_ipu = self.ipu_config.ipus_per_replica - 1
+        last_ipu = self.ipu_config._ipus_per_replica - 1
         logger.info(f"Classifier --> IPU {last_ipu}")
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
@@ -347,7 +335,7 @@ class PipelinedDistilBertForMultipleChoice(DistilBertForMultipleChoice, DistilBe
     def parallelize(self):
         super().parallelize()
 
-        last_ipu = self.ipu_config.ipus_per_replica - 1
+        last_ipu = self.ipu_config._ipus_per_replica - 1
         logger.info(f"Classifier --> IPU {last_ipu}")
         self.pre_classifier = poptorch.BeginBlock(self.pre_classifier, "Classifier", ipu_id=last_ipu)
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier", ipu_id=last_ipu)

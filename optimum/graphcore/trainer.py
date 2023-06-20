@@ -28,30 +28,26 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
-from tqdm.auto import tqdm
-
-
 # Integrations must be imported before ML frameworks:
-from transformers.integrations import (  # isort: split
-    get_reporting_integration_callbacks,
-)
-
 import numpy as np
-import torch
-from packaging import version
-from torch import nn, optim
-from torch.utils.data import Dataset, RandomSampler, SequentialSampler, SubsetRandomSampler
-from torch.utils.data.distributed import DistributedSampler
-
 import poptorch
+import torch
 from huggingface_hub import Repository
-from optimum.graphcore.version import __version__
-from optimum.utils import logging
+from packaging import version
 from poptorch import DataLoaderMode, PoplarExecutor
 from poptorch.optim import LAMB, AdamW
+from torch import nn, optim
+from torch.utils.data import Dataset, RandomSampler, SequentialSampler
+from torch.utils.data.distributed import DistributedSampler
+from tqdm.auto import tqdm
 from transformers.configuration_utils import PretrainedConfig
 from transformers.data.data_collator import DataCollator, DataCollatorWithPadding, default_data_collator
 from transformers.debug_utils import DebugOption, DebugUnderflowOverflow
+
+
+from transformers.integrations import (  # isort: split
+    get_reporting_integration_callbacks,
+)
 from transformers.modeling_utils import PreTrainedModel
 from transformers.optimization import get_scheduler
 from transformers.pytorch_utils import is_torch_less_than_1_11
@@ -103,10 +99,13 @@ from transformers.utils import (
     is_datasets_available,
 )
 
+from optimum.graphcore.version import __version__
+from optimum.utils import logging
+
 from .data.data_collator import pad_on_batch_axis
 from .ipu_configuration import IPU_CONFIG_NAME, IPUConfig
 from .modelcard import IPUTrainingSummary
-from .modeling_utils import TIED_WEIGHT_MODELS, to_pipelined
+from .modeling_utils import to_pipelined
 from .trainer_utils import _WorkerInit
 from .training_args import IPUTrainingArguments
 
@@ -133,56 +132,65 @@ class IPUTrainerState(TrainerState):
 
 class IPUTrainer:
     """
-    IPUTrainer is a simple but feature-complete training and eval loop  on Graphcore IPUs for PyTorch, optimized for
-    🤗 Transformers.
+    `IPUTrainer` is a simple but feature-complete training and evaluation
+      loop on Graphcore IPUs for PyTorch, optimized for 🤗 Transformers.
 
     Args:
         model ([`transformers.PreTrainedModel`] or `torch.nn.Module`, *optional*):
-            The model to train, evaluate or use for predictions. If not provided, a `model_init` must be passed.
+            The model to train, evaluate or use for predictions. If not provided, a `model_init` function must be passed.
 
             <Tip>
 
-            [`IPUTrainer`] is optimized to work with the [`transformers.PreTrainedModel`] provided by the 🤗 Transformers
-            library. You can still use your own models defined as `torch.nn.Module` as long as they work the same way as
+            [`IPUTrainer`] is optimized to work with the [`transformers.PreTrainedModel`] class provided by the 🤗 Transformers
+            library. You can still use your own models defined as `torch.nn.Module` as long as they work in the same way as
             the 🤗 Transformers models.
 
             </Tip>
 
         args ([`IPUTrainingArguments`], *optional*):
-            The arguments to tweak for training. Will default to a basic instance of [`IPUTrainingArguments`] with the
-            `output_dir` set to a directory named *tmp_trainer* in the current directory if not provided.
+            The arguments to tweak for training. Will default to a basic
+            instance of [`IPUTrainingArguments`] with `output_dir` set to a
+            directory named *tmp_trainer* in the current directory if not
+            provided.
         data_collator ([`transformers.data.data_collator.DataCollator`], *optional*):
-            The function to use to form a batch from a list of elements of `train_dataset` or `eval_dataset`. Will
-            default to [`transformers.data.default_data_collator`] if no `tokenizer` is provided, an instance of
+            The function to use to form a batch from a list of elements of
+            `train_dataset` or `eval_dataset`. Will default to
+            [`transformers.data.default_data_collator`] if no `tokenizer` is
+            provided, or an instance of
             [`~transformers.data.DataCollatorWithPadding`] otherwise.
         train_dataset (`torch.utils.data.Dataset` or `torch.utils.data.IterableDataset`, *optional*):
-            The dataset to use for training. If it is a [`~datasets.Dataset`], columns not accepted by the
+            The dataset to use for training. If it is a [`~datasets.Dataset`]
+            dataset, the columns not accepted by the
             `model.forward()` method are automatically removed.
 
-            Note that if it's a `torch.utils.data.IterableDataset` with some randomization and you are training in a
-            distributed fashion, your iterable dataset should either use a internal attribute `generator` that is a
-            `torch.Generator` for the randomization that must be identical on all processes (and the Trainer will
-            manually set the seed of this `generator` at each epoch) or have a `set_epoch()` method that internally
-            sets the seed of the RNGs used.
+            Note that if it's a `torch.utils.data.IterableDataset` dataset with
+            some randomization and you are training in a distributed fashion,
+            your iterable dataset should either use an internal attribute
+            `generator` that is a `torch.Generator` object for the randomization that
+            must be identical on all processes (and the trainer will manually
+            set the seed of this `generator` at each epoch) or have a
+            `set_epoch()` method that internally sets the seed of the RNGs used.
         eval_dataset (Union[`torch.utils.data.Dataset`, Dict[str, `torch.utils.data.Dataset`]), *optional*):
-             The dataset to use for evaluation. If it is a [`~datasets.Dataset`], columns not accepted by the
+             The dataset to use for evaluation. If it is a [`~datasets.Dataset`] dataset, the columns not accepted by the
              `model.forward()` method are automatically removed. If it is a dictionary, it will evaluate on each
              dataset prepending the dictionary key to the metric name.
         tokenizer ([`transformers.PreTrainedTokenizerBase`], *optional*):
-            The tokenizer used to preprocess the data. If provided, will be used to automatically pad the inputs the
-            maximum length when batching inputs, and it will be saved along the model to make it easier to rerun an
-            interrupted training or reuse the fine-tuned model.
+            The tokenizer used to preprocess the data. If provided, it will be
+            used to automatically pad the inputs to the maximum length when
+            batching inputs, and it will be saved along the model to make it
+            easier to rerun an interrupted training or reuse the fine-tuned
+            model.
         model_init (`Callable[[], transformers.PreTrainedModel]`, *optional*):
             A function that instantiates the model to be used. If provided, each call to [`IPUTrainer.train`] will start
             from a new instance of the model as given by this function.
 
-            The function may have zero argument, or a single one containing the optuna/Ray Tune/SigOpt trial object, to
+            The function may have no arguments, or a single argument containing the optuna/Ray Tune/SigOpt trial object, to
             be able to choose different architectures according to hyper parameters (such as layer count, sizes of
-            inner layers, dropout probabilities etc). **Note: this feature is not supported for now.**
+            inner layers and dropout probabilities). **Note: this feature is not supported for now.**
 
         compute_metrics (`Callable[[~transformers.trainer_utils.EvalPrediction], Dict]`, *optional*):
             The function that will be used to compute metrics at evaluation. Must take a
-            [`~transformers.trainer_utils.EvalPrediction`] and return a dictionary string to metric values.
+            [`~transformers.trainer_utils.EvalPrediction`] and return a dictionary of strings to metric values.
         callbacks (List of [`transformers.trainer_callback.TrainerCallback`], *optional*):
             A list of callbacks to customize the training loop. Will add those to the list of default callbacks
             detailed in [here](callback).
@@ -192,7 +200,7 @@ class IPUTrainer:
             containing the optimizer and the scheduler to use. Will default to an instance of `poptorch.AdamW` on your model
             and a scheduler given by [`get_linear_schedule_with_warmup`] controlled by `args`.
         preprocess_logits_for_metrics (`Callable[[torch.Tensor, torch.Tensor], torch.Tensor]`, *optional*):
-            A function that preprocess the logits right before caching them at each evaluation step. Must take two
+            A function that preprocesses the logits right before caching them at each evaluation step. Must take two
             tensors, the logits and the labels, and return the logits once processed as desired. The modifications made
             by this function will be reflected in the predictions received by `compute_metrics`.
 
@@ -217,7 +225,7 @@ class IPUTrainer:
         compute_metrics: Optional[Callable[[EvalPrediction], Dict]] = None,
         callbacks: Optional[List[TrainerCallback]] = None,
         optimizers: Tuple[torch.optim.Optimizer, torch.optim.lr_scheduler.LambdaLR] = (None, None),
-        preprocess_logits_for_metrics: Callable[[torch.Tensor, torch.Tensor], torch.Tensor] = None,
+        preprocess_logits_for_metrics: Optional[Callable[[torch.Tensor, torch.Tensor], torch.Tensor]] = None,
         force_to_pipelined: bool = False,
     ):
         if args is None:
@@ -242,7 +250,7 @@ class IPUTrainer:
 
         if model is None:
             if model_init is not None:
-                raise RuntimeError("`model_init` is not supported by the `IPUTrainer` yet")
+                raise RuntimeError("`model_init` is not supported by `IPUTrainer` yet")
             else:
                 raise RuntimeError("`IPUTrainer` requires either a `model` or `model_init` argument")
         else:
@@ -263,7 +271,15 @@ class IPUTrainer:
         self.eval_dataset = eval_dataset
         self.tokenizer = tokenizer
 
-        self.ipu_config = copy.deepcopy(ipu_config).for_pod_type(self.args.pod_type)
+        self.ipu_config = copy.deepcopy(ipu_config)
+        # set replication factor using n_ipu (can be overruled by ipu_config_overrides)
+        if (n_ipu := self.args.n_ipu) is not None:
+            if self.ipu_config.replication_factor > 1 or self.ipu_config.inference_replication_factor > 1:
+                warnings.warn(
+                    "IPUTrainer is overwriting the replication factors set in self.ipu_config because `--n_ipu` was provided."
+                )
+            self.ipu_config.replication_factor = n_ipu // self.ipu_config.ipus_per_replica
+            self.ipu_config.inference_replication_factor = n_ipu // self.ipu_config.inference_ipus_per_replica
         if self.ipu_config.replication_factor > 1 or self.ipu_config.inference_replication_factor > 1:
             os.environ["TOKENIZERS_PARALLELISM"] = "true"
         if args.ipu_config_overrides:
@@ -276,7 +292,7 @@ class IPUTrainer:
         # If batch axis padding enabled, wrap train/eval data collators with `pad_on_batch_axis` wrapper
         if self.args.pad_on_batch_axis:
             logger.info(
-                "Padding on batch axis enabled, each batch feeded to the compiled model during training will have the proper size"
+                "Padding on batch axis enabled. Each batch fed to the compiled model during training will have the proper size"
             )
             if self.args.do_train:
                 data_collator_wrapper = pad_on_batch_axis(
@@ -331,16 +347,16 @@ class IPUTrainer:
             os.makedirs(self.args.output_dir, exist_ok=True)
 
         if not callable(self.data_collator) and callable(getattr(self.data_collator, "collate_batch", None)):
-            raise ValueError("The `data_collator` should be a simple callable (function, class with `__call__`).")
+            raise ValueError("`data_collator` should be a simple callable (function, class with `__call__`).")
 
         if not callable(self.eval_data_collator) and callable(getattr(self.eval_data_collator, "collate_batch", None)):
-            raise ValueError("The `eval_data_collator` should be a simple callable (function, class with `__call__`).")
+            raise ValueError("`eval_data_collator` should be a simple callable (function, class with `__call__`).")
 
         if args.max_steps > 0:
-            logger.info("max_steps is given, it will override any value given in num_train_epochs")
+            logger.info("max_steps is given. It will override any value given in num_train_epochs")
 
         if train_dataset is not None and not isinstance(train_dataset, collections.abc.Sized) and args.max_steps <= 0:
-            raise ValueError("train_dataset does not implement __len__, max_steps has to be specified")
+            raise ValueError("train_dataset does not implement __len__. max_steps has to be specified")
 
         self._signature_columns = None
 
@@ -393,10 +409,10 @@ class IPUTrainer:
             model (`[transformers.PreTrainedModel]` or `torch.nn.Module`):
                 The original model the optimizer has parameter references to.
             pipelined_model (`[transformers.PreTrainedModel] or `torch.nn.Module`):
-                The pipelined version of the model, its parameters will be used by the poptorch optimizer.
+                The pipelined version of the model. Its parameters will be used by the PopTorch optimizer.
 
         Returns:
-            `poptorch.optim.Optimizer`: The converted poptorch optimizer.
+            `poptorch.optim.Optimizer`: The converted PopTorch optimizer.
         """
         first_order_type = torch.float32 if self.args.fp32 else torch.float16
         optimizer_kwargs = {
@@ -417,10 +433,10 @@ class IPUTrainer:
         self.args.max_grad_norm = max_grad_norm
         poptorch_optimizer_cls, kwargs = pytorch_to_poptorch_mapping.get(optimizer.__class__, (None, {}))
         if poptorch_optimizer_cls is None:
-            raise KeyError(f"Could not find a poptorch counterpart for optimizer {optimizer.__class__.__name__}")
+            raise KeyError(f"Could not find a PopTorch counterpart for optimizer {optimizer.__class__.__name__}")
 
-        # Some dummy value that should be overriden by the real value with .load_state_dict, using some absurd value to
-        # make clear if the value is not properly overriden.
+        # Some dummy value that should be overridden by the real value with .load_state_dict, using some absurd value to
+        # make clear if the value is not properly overridden.
         dummy_lr = 1e4
         poptorch_optimizer = poptorch_optimizer_cls(optimizer.param_groups, lr=dummy_lr, **kwargs)
         poptorch_optimizer.load_state_dict({"ipu_state": None, "ipu_param": None, **optimizer.state_dict()})
@@ -448,9 +464,9 @@ class IPUTrainer:
             model (`poptorch.PoplarExecutor`):
                 The model to compile (already wrapped).
             sample_batch (`Dict[str, torch.Tensor]` or `Tuple[torch.Tensor]`):
-                The inputs to use the compilation, this will set the input shapes that the compiled model can accept.
+                The inputs to use for the compilation. This will set the input shapes that the compiled model can accept.
             log (`bool`, *optional*, defaults to `False`):
-                Whether to log that compilation is happening or not.
+                If `True`, logs that the compilation is in progress.
         """
         # Skipping compilation if the model was already compiled.
         if model.isCompiled():
@@ -473,7 +489,7 @@ class IPUTrainer:
 
         Args:
            callback (`type` or [`~transformer.TrainerCallback`]):
-               A [`~transformer.TrainerCallback`] class or an instance of a [`~transformer.TrainerCallback`]. In the
+               A [`~transformer.TrainerCallback`] class or an instance of [`~transformer.TrainerCallback`]. In the
                first case, will instantiate a member of that class.
         """
         self.callback_handler.add_callback(callback)
@@ -486,11 +502,11 @@ class IPUTrainer:
 
         Args:
            callback (`type` or [`~transformer.TrainerCallback`]):
-               A [`~transformer.TrainerCallback`] class or an instance of a [`~transformer.TrainerCallback`]. In the
+               A [`~transformer.TrainerCallback`] class or an instance of [`~transformer.TrainerCallback`]. In the
                first case, will pop the first member of that class found in the list of callbacks.
 
         Returns:
-            [`~transformer.TrainerCallback`]: The callback removed, if found.
+            [`~transformer.TrainerCallback`]: The callback was removed, if found.
         """
         return self.callback_handler.pop_callback(callback)
 
@@ -500,7 +516,7 @@ class IPUTrainer:
 
         Args:
            callback (`type` or [`~transformer.TrainerCallback`]):
-               A [`~transformer.TrainerCallback`] class or an instance of a [`~transformer.TrainerCallback`]. In the
+               A [`~transformer.TrainerCallback`] class or an instance of [`~transformer.TrainerCallback`]. In the
                first case, will remove the first member of that class found in the list of callbacks.
         """
         self.callback_handler.remove_callback(callback)
@@ -600,7 +616,7 @@ class IPUTrainer:
         """
         Returns the training `poptorch.DataLoader`.
 
-        Will use no sampler if `train_dataset` does not implement `__len__`, a random sampler (adapted to distributed
+        Will not use a sampler if `train_dataset` does not implement `__len__` and will use a random sampler (adapted to distributed
         training if necessary) otherwise.
 
         Subclass and override this method if you want to inject some custom behavior.
@@ -664,7 +680,7 @@ class IPUTrainer:
 
         Args:
             eval_dataset (`torch.utils.data.Dataset`, *optional*):
-                If provided, will override `self.eval_dataset`. If it is a [`~datasets.Dataset`], columns not accepted
+                If provided, will override `self.eval_dataset`. If it is a [`~datasets.Dataset`] dataset, the columns not accepted
                 by the `model.forward()` method are automatically removed. It must implement `__len__`.
         """
         poptorch_specific_kwargs = {
@@ -716,7 +732,7 @@ class IPUTrainer:
 
         Args:
             test_dataset (`torch.utils.data.Dataset`, *optional*):
-                The test dataset to use. If it is a [`~datasets.Dataset`], columns not accepted by the
+                The test dataset to use. If it is a [`~datasets.Dataset`] dataset, the columns not accepted by the
                 `model.forward()` method are automatically removed. It must implement `__len__`.
         """
         poptorch_specific_kwargs = {
@@ -758,10 +774,10 @@ class IPUTrainer:
 
     def create_optimizer_and_scheduler(self, num_training_steps: int):
         """
-        Setup the optimizer and the learning rate scheduler.
+        Sets up the optimizer and the learning rate scheduler.
 
         We provide a reasonable default that works well. If you want to use something else, you can pass a tuple in the
-        Trainer's init through `optimizers`, or subclass and override this method (or `create_optimizer` and/or
+        trainer's init through `optimizers`, or subclass and override this method (or `create_optimizer` and/or
         `create_scheduler`) in a subclass.
         """
         self.create_optimizer()
@@ -769,10 +785,10 @@ class IPUTrainer:
 
     def create_optimizer(self):
         """
-        Setup the optimizer.
+        Sets up the optimizer.
 
         We provide a reasonable default that works well. If you want to use something else, you can pass a tuple in the
-        Trainer's init through `optimizers`, or subclass and override this method in a subclass.
+        trainer's init through `optimizers`, or subclass and override this method in a subclass.
         """
         if self.optimizer is None:
             decay_parameters = get_parameter_names(self.model, [nn.LayerNorm])
@@ -843,11 +859,11 @@ class IPUTrainer:
 
     def create_scheduler(self, num_training_steps: int, optimizer: torch.optim.Optimizer = None):
         """
-        Setup the scheduler. The optimizer of the trainer must have been set up either before this method is called or
+        Sets up the scheduler. The optimizer of the trainer must have been set up either before this method is called or is
         passed as an argument.
 
         Args:
-            num_training_steps (int): The number of training steps to do.
+            num_training_steps (int): The number of training steps to execute.
         """
         optimizer = self.optimizer if optimizer is None else optimizer
         if self.lr_scheduler is None:
@@ -864,8 +880,8 @@ class IPUTrainer:
 
     def num_examples(self, dataloader: poptorch.DataLoader) -> int:
         """
-        Helper to get number of samples in a `poptorch.DataLoader` by accessing its dataset. When
-        dataloader.dataset does not exist or has no length, estimates as best it can
+        Returns the number of samples in a `poptorch.DataLoader` object by accessing its dataset. When
+        `poptorch.DataLoader.dataset` does not exist or has no length, returns the best estimate best it can.
         """
         return len(dataloader.dataset)
 
@@ -877,7 +893,8 @@ class IPUTrainer:
             model ([`transformers.PreTrainedModel`] or `poptorch.PoplarExecutor`):
                 The model to wrap.
             training (`bool`, *optional*, defaults to `True`):
-                Whether to wrap the model for training or not.
+                If `True`, wraps the model for training. If `False`, does not
+                wrap the model for training.
 
         Returns:
             `poptorch.PoplarExecutor`: The wrapped model.
@@ -888,12 +905,19 @@ class IPUTrainer:
             wrapped = model
         elif training:
             if self.training_model is None:
+                model.deparallelize()
+                model.ipu_config.train()
+                model.parallelize()
+                self.create_optimizer()
                 self.training_model = poptorch.trainingModel(
                     model.train(), options=self.opts, optimizer=self.optimizer
                 )
             wrapped = self.training_model
         else:
             if self.inference_model is None:
+                model.deparallelize()
+                model.ipu_config.eval()
+                model.parallelize()
                 self.inference_model = poptorch.inferenceModel(model.eval(), options=self.eval_opts)
             wrapped = self.inference_model
 
@@ -904,47 +928,21 @@ class IPUTrainer:
 
     def _detach_training_model(self):
         """
-        Detach training model from IPUs
+        Detach the training model from IPUs.
         """
-        if type(self.original_model) in TIED_WEIGHT_MODELS:
-            # Work-around bug with models with tied-weights
-            # TODO: Remove this when bug fixed
-            self.optimizer_state = self.optimizer.state_dict()
-            self.training_model.destroy()
-            self.model = poptorch._impl.unwrapIfWrapped(self.model)
-            for obj in self.model.buffers():
-                if "PoptorchBuffer" in str(obj.__class__):
-                    obj.__class__ = obj.__class__.__bases__[0]
-            self.training_model = None
-        else:
-            self.training_model.detachFromDevice()
+        self.training_model.detachFromDevice()
 
     def _detach_inference_model(self):
         """
-        Detach inference model from IPUs
+        Detach the inference model from IPUs.
         """
-        if type(self.original_model) in TIED_WEIGHT_MODELS:
-            # Work-around bug with models with tied-weights
-            # TODO: Remove this when bug fixed
-            self.inference_model.destroy()
-            self.inference_model = None
-            self.model = poptorch._impl.unwrapIfWrapped(self.model)
-            for obj in self.model.buffers():
-                if "PoptorchBuffer" in str(obj.__class__):
-                    obj.__class__ = obj.__class__.__bases__[0]
-        else:
-            self.inference_model.detachFromDevice()
+        self.inference_model.detachFromDevice()
 
     def _reattach_training_model(self):
         """
-        Reattach training model from IPUs
+        Reattach the training model to IPUs.
         """
-        if type(self.original_model) in TIED_WEIGHT_MODELS:
-            # Work-around bug with models with tied-weights
-            # TODO: Remove this when bug fixed
-            self.training_model = self.wrap_model(self.model.train().half())
-        else:
-            self.training_model.attachToDevice()
+        self.training_model.attachToDevice()
 
     def train(
         self,
@@ -958,17 +956,20 @@ class IPUTrainer:
 
         Args:
             resume_from_checkpoint (`str` or `bool`, *optional*):
-                If a `str`, local path to a saved checkpoint as saved by a previous instance of [`IPUTrainer`]. If a
-                `bool` and equals `True`, load the last checkpoint in *args.output_dir* as saved by a previous instance
-                of [`Trainer`]. If present, training will resume from the model/optimizer/scheduler states loaded here.
+                Indicates that training will resume from the model, optimizer or
+                scheduler states loaded here. If `str`, local path to a saved
+                checkpoint as saved by a previous instance of [`IPUTrainer`]. If
+                `bool` and `True`, load the last checkpoint in *args.output_dir*
+                as saved by a previous instance of [`IPUTrainer`].
             trial (`optuna.Trial` or `Dict[str, Any]`, *optional*):
-                The trial run or the hyperparameter dictionary for hyperparameter search.
-                **Note**: Feature not supported for now.
+                The trial run or the hyperparameter dictionary for a
+                hyperparameter search. **Note**: Feature not supported.
             ignore_keys_for_eval (`List[str]`, *optional*)
-                A list of keys in the output of your model (if it is a dictionary) that should be ignored when
-                gathering predictions for evaluation during the training.
+                A list of keys in the output of your model (if it is a
+                dictionary) that should be ignored when gathering predictions
+                for evaluation during the training.
             kwargs:
-                Additional keyword arguments used to hide deprecated arguments
+                Additional keyword arguments used to hide deprecated arguments.
         """
         if resume_from_checkpoint is False:
             resume_from_checkpoint = None
@@ -1051,8 +1052,6 @@ class IPUTrainer:
         if DebugOption.UNDERFLOW_OVERFLOW in self.args.debug:
             debug_overflow = DebugUnderflowOverflow(self.model)  # noqa
 
-        self.create_optimizer_and_scheduler(num_training_steps=max_steps)
-
         self.state = IPUTrainerState()
         if trial is not None:
             raise ValueError("Hyperparameter tuning is not supported by the IPUTrainer.")
@@ -1060,6 +1059,8 @@ class IPUTrainer:
         self.state.is_hyper_param_search = trial is not None
 
         self.training_model = self.wrap_model(self.model)
+
+        self.create_scheduler(num_training_steps=max_steps)
 
         # TODO: handle optimizer and scheduler creation
         # if delay_optimizer_creation:
@@ -1078,10 +1079,12 @@ class IPUTrainer:
         )
         logger.info("***** Running training *****")
         logger.info(f"  Num examples = {num_examples}")
-        logger.info(f"  Num Epochs = {num_train_epochs}")
+        logger.info(f"  Num epochs = {num_train_epochs}")
         logger.info(f"  Instantaneous batch size per device = {batch_size}")
-        logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_train_batch_size}")
-        logger.info(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
+        logger.info(
+            f"  Total training batch size (w. parallel, distributed & accumulation) = {total_train_batch_size}"
+        )
+        logger.info(f"  Gradient accumulation steps = {self.ipu_config.gradient_accumulation_steps}")
         logger.info(f"  Total optimization steps = {max_steps}")
 
         self.state.epoch = 0
@@ -1102,7 +1105,7 @@ class IPUTrainer:
             if not args.ignore_data_skip:
                 steps_trained_in_current_epoch = self.state.global_step % (num_update_steps_per_epoch)
                 # No need to multiply by the number of gradient accumulation steps as poptorch already accounts for that.
-                # steps_trained_in_current_epoch *= args.gradient_accumulation_steps
+                # steps_trained_in_current_epoch *= self.ipu_config.gradient_accumulation_steps
             else:
                 steps_trained_in_current_epoch = 0
 
@@ -1173,7 +1176,7 @@ class IPUTrainer:
             steps_in_epoch = (
                 len(epoch_iterator)
                 if has_length(train_dataloader)
-                else args.max_steps * args.gradient_accumulation_steps
+                else args.max_steps * self.ipu_config.gradient_accumulation_steps
             )
 
             self.control = self.callback_handler.on_epoch_begin(args, self.state, self.control)
@@ -1183,7 +1186,6 @@ class IPUTrainer:
 
             step = -1
             for step, inputs in enumerate(epoch_iterator):
-
                 # Skip past any already trained steps if resuming training
                 if steps_trained_in_current_epoch > 0:
                     steps_trained_in_current_epoch -= 1
@@ -1270,7 +1272,6 @@ class IPUTrainer:
         return TrainOutput(self.state.global_step, train_loss, metrics)
 
     def _load_from_checkpoint(self, resume_from_checkpoint, model=None):
-
         if model is None:
             model = self.model
 
@@ -1288,7 +1289,7 @@ class IPUTrainer:
                 logger.warning(
                     f"You are resuming training from a checkpoint trained with {checkpoint_version} of "
                     f"Transformers but your current version is {__version__}. This is not recommended and could "
-                    "yield to errors or unwanted behaviors."
+                    "yield to errors or unwanted behavior."
                 )
 
         if os.path.isfile(os.path.join(resume_from_checkpoint, WEIGHTS_NAME)):
@@ -1310,7 +1311,7 @@ class IPUTrainer:
             self._load_state_dict_in_model(state_dict)
         else:
             logger.warning(
-                f"Could not locate the best model at {best_model_path}, if you are running a distributed training "
+                f"Could not locate the best model at {best_model_path}. If you are running a distributed training "
                 "on multiple nodes, you should activate `--save_on_each_node`."
             )
 
@@ -1330,7 +1331,6 @@ class IPUTrainer:
             logger.warn(f"There were unexpected keys in the checkpoint model loaded: {load_result.unexpected_keys}.")
 
     def _issue_warnings_after_load(self, load_result):
-
         if len(load_result.missing_keys) != 0:
             if self.model._keys_to_ignore_on_save is not None and set(load_result.missing_keys) == set(
                 self.model._keys_to_ignore_on_save
@@ -1390,7 +1390,7 @@ class IPUTrainer:
             rng_file = os.path.join(checkpoint, f"rng_state_{local_rank}.pth")
             if not os.path.isfile(os.path.join(checkpoint, rng_file)):
                 logger.info(
-                    f"Didn't find an RNG file for process {local_rank}, if you are resuming a training that "
+                    f"Didn't find an RNG file for process {local_rank}. If you are resuming a training that "
                     "wasn't launched in a distributed fashion, reproducibility is not guaranteed."
                 )
                 return
@@ -1398,7 +1398,7 @@ class IPUTrainer:
             rng_file = os.path.join(checkpoint, "rng_state.pth")
             if not os.path.isfile(rng_file):
                 logger.info(
-                    "Didn't find an RNG file, if you are resuming a training that was launched in a distributed "
+                    "Didn't find an RNG file. If you are resuming a training that was launched in a distributed "
                     "fashion, reproducibility is not guaranteed."
                 )
                 return
@@ -1483,7 +1483,7 @@ class IPUTrainer:
 
     def log(self, logs: Dict[str, float]) -> None:
         """
-        Log `logs` on the various objects watching training.
+        Log `logs` on the various objects watching the training.
 
         Subclass and override this method to inject custom behavior.
 
@@ -1500,7 +1500,9 @@ class IPUTrainer:
 
     def _prepare_input(self, data: Union[torch.Tensor, Any]) -> Union[torch.Tensor, Any]:
         """
-        Prepares one `data` before feeding it to the model, be it a tensor or a nested list/dictionary of tensors.
+        Prepares a single data sample before feeding it to the model.
+
+        The data sample can be it a tensor or a nested list or dictionary of tensors.
         """
         if isinstance(data, dict):
             return type(data)(**{k: self._prepare_input(v) for k, v in data.items()})
@@ -1512,14 +1514,15 @@ class IPUTrainer:
 
     def _prepare_inputs(self, inputs: Dict[str, Union[torch.Tensor, Any]]) -> Dict[str, Union[torch.Tensor, Any]]:
         """
-        Prepare `inputs` before feeding them to the model, converting them to tensors if they are not already and
-        handling potential state.
+        Prepares inputs before feeding them to the model.
+
+        This method converts the inputs to tensors if they are not already tensors and handles the potential state.
         """
         inputs = self._prepare_input(inputs)
         if len(inputs) == 0:
             raise ValueError(
-                "The batch received was empty, your model won't be able to train on it. Double-check that your "
-                f"training dataset contains keys expected by the model: {','.join(self._signature_columns)}."
+                "The batch received was empty. Your model won't be able to train on it. Double-check that your "
+                f"training dataset contains the keys expected by the model: {','.join(self._signature_columns)}."
             )
         if self.args.past_index >= 0 and self._past is not None:
             inputs["mems"] = self._past
@@ -1530,7 +1533,7 @@ class IPUTrainer:
         self, model: poptorch.PoplarExecutor, inputs: Dict[str, Union[torch.Tensor, Any]]
     ) -> torch.Tensor:
         """
-        Perform a training step on a batch of inputs.
+        Performs a training step on a batch of inputs.
 
         Subclass and override to inject custom behavior.
 
@@ -1544,7 +1547,7 @@ class IPUTrainer:
                 argument `labels`. Check your model's documentation for all accepted arguments.
 
         Return:
-            `torch.Tensor`: The tensor with training loss on this batch.
+            `torch.Tensor`: The tensor with the training loss on this batch.
         """
         inputs = self._prepare_inputs(inputs)
         loss = self.compute_loss(model, inputs)
@@ -1553,7 +1556,17 @@ class IPUTrainer:
 
     def compute_loss(self, model, inputs, return_outputs=False):
         """
-        How the loss is computed by `IPUTrainer`. By default, all models return the loss in the first element.
+        Computes the loss on a batch of training inputs.
+
+        Args:
+            model:
+                The model to train.
+            inputs:
+                The inputs and targets of the model.
+            return_outputs (defaults to `False`):
+                If `True`, returns the outputs with the loss. If `False`, only returns the loss.
+
+        By default, all models return the loss in the first element.
 
         Subclass and override for custom behavior.
         """
@@ -1586,9 +1599,9 @@ class IPUTrainer:
 
     def save_model(self, output_dir: Optional[str] = None, _internal_call: bool = False):
         """
-        Will save the model, so you can reload it using `from_pretrained()`.
+        Saves the model, so you can reload it using `from_pretrained()`.
 
-        Will only save from the main process.
+        Will only save the model from the main process.
         """
         if output_dir is None:
             output_dir = self.args.output_dir
@@ -1695,23 +1708,23 @@ class IPUTrainer:
         metric_key_prefix: str = "eval",
     ) -> Dict[str, float]:
         """
-        Run evaluation and returns metrics.
+        Runs an evaluation and returns metrics.
 
-        The calling script will be responsible for providing a method to compute metrics, as they are task-dependent
+        The calling script will be responsible for providing a method to compute the metrics, as they are task-dependent
         (pass it to the init `compute_metrics` argument).
 
         You can also subclass and override this method to inject custom behavior.
 
         Args:
             eval_dataset (`Dataset`, *optional*):
-                Pass a dataset if you wish to override `self.eval_dataset`. If it is a [`~datasets.Dataset`], columns
+                Pass a dataset if you wish to override `self.eval_dataset`. If it is a [`~datasets.Dataset`] dataset, the columns
                 not accepted by the `model.forward()` method are automatically removed. It must implement the `__len__`
                 method.
             ignore_keys (`Lst[str]`, *optional*):
                 A list of keys in the output of your model (if it is a dictionary) that should be ignored when
                 gathering predictions.
             metric_key_prefix (`str`, *optional*, defaults to `"eval"`):
-                An optional prefix to be used as the metrics key prefix. For example the metrics "bleu" will be named
+                An optional prefix to be used as the metrics key prefix. For example the metric "bleu" will be named
                 "eval_bleu" if the prefix is "eval" (default)
 
         Returns:
@@ -1772,25 +1785,25 @@ class IPUTrainer:
         self, test_dataset: Dataset, ignore_keys: Optional[List[str]] = None, metric_key_prefix: str = "test"
     ) -> PredictionOutput:
         """
-        Run prediction and returns predictions and potential metrics.
+        Returns predictions and potential metrics.
 
         Depending on the dataset and your use case, your test dataset may contain labels. In that case, this method
         will also return metrics, like in `evaluate()`.
 
         Args:
             test_dataset (`Dataset`):
-                Dataset to run the predictions on. If it is an `datasets.Dataset`, columns not accepted by the
+                Dataset to run the predictions on. If it is an `datasets.Dataset` dataset, the columns not accepted by the
                 `model.forward()` method are automatically removed. Has to implement the method `__len__`
             ignore_keys (`Lst[str]`, *optional*):
                 A list of keys in the output of your model (if it is a dictionary) that should be ignored when
                 gathering predictions.
             metric_key_prefix (`str`, *optional*, defaults to `"test"`):
-                An optional prefix to be used as the metrics key prefix. For example the metrics "bleu" will be named
+                An optional prefix to be used as the metrics key prefix. For example the metric "bleu" will be named
                 "test_bleu" if the prefix is "test" (default)
 
         <Tip>
 
-        If your predictions or labels have different sequence length (for instance because you're doing dynamic padding
+        If your predictions or labels have different sequence lengths (for instance because you're doing dynamic padding
         in a token classification task) the predictions will be padded (on the right) to allow for concatenation into
         one array. The padding index is -100.
 
@@ -1800,7 +1813,7 @@ class IPUTrainer:
 
             - predictions (`np.ndarray`): The predictions on `test_dataset`.
             - label_ids (`np.ndarray`, *optional*): The labels (if the dataset contained some).
-            - metrics (`Dict[str, float]`, *optional*): The potential dictionary of metrics (if the dataset contained
+            - metrics (`Dict[str, float]`, *optional*): The dictionary of potential metrics (if the dataset contained
               labels).
         """
         # memory metrics - must set up as early as possible
@@ -1847,9 +1860,25 @@ class IPUTrainer:
         metric_key_prefix: str = "eval",
     ) -> EvalLoopOutput:
         """
-        Prediction/evaluation loop, shared by `IPUTrainer.evaluate()` and `IPUTrainer.predict()`.
+        Prediction/evaluation loop, shared by [`IPUTrainer.evaluate`] and [`IPUTrainer.predict`].
 
         Works both with or without labels.
+
+        Args:
+            dataloader (`poptorch.DataLoader`):
+                The dataset to be used.
+            description (`str`):
+                The description of what is being run.
+            prediction_loss_only (`bool`):
+                If `True`, only returns the loss. If `False`, returns loss,
+                logits and labels (if present).
+            ignore_keys (`Lst[str]`, *optional*):
+                A list of keys in the output of your model (if it is a
+                dictionary) that should be ignored when gathering predictions.
+            metric_key_prefix (`str`, *optional*, defaults to `"eval"`):
+                An optional prefix to be used as the metrics key prefix. For
+                example the metric "bleu" will be named "eval_bleu" if the
+                prefix is "eval" (default).
         """
         prediction_loss_only = (
             prediction_loss_only if prediction_loss_only is not None else self.args.prediction_loss_only
@@ -1994,7 +2023,7 @@ class IPUTrainer:
         is_last_batch: bool = False,
     ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]:
         """
-        Perform an evaluation step on `model` using `inputs`.
+        Performs an evaluation step.
 
         Subclass and override to inject custom behavior.
 
@@ -2004,17 +2033,20 @@ class IPUTrainer:
             inputs (`Dict[str, Union[torch.Tensor, Any]]`):
                 The inputs and targets of the model.
 
-                The dictionary will be unpacked before being fed to the model. Most models expect the targets under the
-                argument `labels`. Check your model's documentation for all accepted arguments.
+                The dictionary will be unpacked before being fed to the model.
+                Most models expect the targets under the argument `labels`.
+                Check your model's documentation for all accepted arguments.
             prediction_loss_only (`bool`):
-                Whether or not to return the loss only.
+                If `True`, only returns the loss. If `False`, returns loss,
+                logits and labels (if present).
             ignore_keys (`Lst[str]`, *optional*):
-                A list of keys in the output of your model (if it is a dictionary) that should be ignored when
-                gathering predictions.
+                A list of keys in the output of your model (if it is a
+                dictionary) that should be ignored when gathering predictions.
 
         Return:
-            Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[torch.Tensor]]: A tuple with the loss,
-            logits and labels (each being optional).
+            Tuple[Optional[torch.Tensor], Optional[torch.Tensor],
+            Optional[torch.Tensor]]:
+                A tuple with the loss, logits and labels (each being optional).
         """
         has_labels = all(inputs.get(k) is not None for k in self.label_names)
         inputs = self._prepare_inputs(inputs)
@@ -2036,7 +2068,7 @@ class IPUTrainer:
             if has_labels:
                 loss, outputs = self.compute_loss(model, inputs, return_outputs=True)
                 # If last batch is incomplete, some losses might be NaN because nothing was computed on the
-                # corresponding POD, ignoring them is necessary to not mess up evaluation loss computation
+                # corresponding Pod, ignoring them is necessary to not mess up evaluation loss computation
                 if is_last_batch:
                     loss = loss[~loss.isnan()]
                 loss = loss.detach()
@@ -2066,8 +2098,10 @@ class IPUTrainer:
 
     def floating_point_ops(self, inputs: Dict[str, Union[torch.Tensor, Any]]):
         """
-        For models that inherit from [`transformers.PreTrainedModel`], uses that method to compute the number of
-        floating point operations for every backward + forward pass. If using another model, either implement such a
+        For models that inherit from [`transformers.PreTrainedModel`], uses that class's `floating_point_ops` method to compute the number of
+        floating point operations for every backward and every forward pass.
+
+        If using another model, either implement a `floating_point_ops`
         method in the model or subclass and override this method.
 
         Args:
@@ -2086,13 +2120,14 @@ class IPUTrainer:
 
     def init_git_repo(self, at_init: bool = False):
         """
-        Initializes a git repo in `self.args.hub_model_id`.
+        Initializes a Git repo in `self.args.hub_model_id`.
 
         Args:
             at_init (`bool`, *optional*, defaults to `False`):
-                Whether this function is called before any training or not. If `self.args.overwrite_output_dir` is
-                `True` and `at_init` is `True`, the path to the repo (which is `self.args.output_dir`) might be wiped
-                out.
+                If `True`, this function is called before any training. If
+                `self.args.overwrite_output_dir` is `True` and `at_init` is
+                `True`, the path to the repo (which is `self.args.output_dir`)
+                might be wiped out.
         """
         if not self.is_world_process_zero():
             return
@@ -2148,21 +2183,22 @@ class IPUTrainer:
         dataset_args: Union[str, List[str], None] = None,
     ):
         """
-        Creates a draft of a model card using the information available to the `Trainer`.
+        Creates a draft of a model card using the information available to
+        [`IPUTrainer`].
 
         Args:
             language (`str`, *optional*):
                 The language of the model (if applicable)
             license (`str`, *optional*):
                 The license of the model. Will default to the license of the pretrained model used, if the original
-                model given to the `Trainer` comes from a repo on the Hub.
+                model given to [`IPUTrainer`] comes from a repo on the Hub.
             tags (`str` or `List[str]`, *optional*):
                 Some tags to be included in the metadata of the model card.
             model_name (`str`, *optional*):
                 The name of the model.
             finetuned_from (`str`, *optional*):
                 The name of the model used to fine-tune this one (if applicable). Will default to the name of the repo
-                of the original model given to the `Trainer` (if it comes from the Hub).
+                of the original model given to [`IPUTrainer`] (if it comes from the Hub).
             tasks (`str` or `List[str]`, *optional*):
                 One or several task identifiers, to be included in the metadata of the model card.
             dataset_tags (`str` or `List[str]`, *optional*):
@@ -2235,19 +2271,18 @@ class IPUTrainer:
 
     def push_to_hub(self, commit_message: Optional[str] = "End of training", blocking: bool = True, **kwargs) -> str:
         """
-        Upload *self.model* and *self.tokenizer* to the 🤗 model hub on the repo *self.args.hub_model_id*.
+        Uploads *self.model* and *self.tokenizer* to the 🤗 Models Hub on the repo *self.args.hub_model_id*.
 
         Parameters:
             commit_message (`str`, *optional*, defaults to `"End of training"`):
-                Message to commit while pushing.
+                Message for the commit.
             blocking (`bool`, *optional*, defaults to `True`):
-                Whether the function should return only when the `git push` has finished.
+                If `True` (default), the function only returns when the `git push` command has completed. If `False`, returns immediately.
             kwargs:
                 Additional keyword arguments passed along to [`~Trainer.create_model_card`].
 
         Returns:
-            The url of the commit of your model in the given repository if `blocking=False`, a tuple with the url of
-            the commit and an object to track the progress of the commit if `blocking=True`
+            If `blocking=False`, returns the URL of the commit of your model in the given repository. If `blocking=True`, returns a tuple with the URL of the commit and an object to track the progress of the commit.
         """
         # If a user calls manually `push_to_hub` with `self.args.push_to_hub = False`, we try to create the repo but
         # it might fail.

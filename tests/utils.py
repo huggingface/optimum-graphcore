@@ -12,6 +12,8 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import pytest
+
 
 MODELS_TO_TEST_MAPPING = {
     "bart": ("facebook/bart-base", "Graphcore/bart-base-ipu"),
@@ -21,13 +23,22 @@ MODELS_TO_TEST_MAPPING = {
     "distilbert": ("distilbert-base-uncased", "Graphcore/distilbert-base-ipu"),
     "gpt2": ("gpt2", "Graphcore/gpt2-small-ipu"),
     "groupbert": ("Graphcore/groupbert-base-uncased", "Graphcore/groupbert-base-uncased"),
-    "hubert": ("facebook/hubert-base-ls960", "Graphcore/hubert-base-ipu"),
+    "hubert": {
+        "default": ("facebook/hubert-base-ls960", "Graphcore/hubert-base-ipu"),
+        "ctc": ("facebook/hubert-base-ls960", "Graphcore/wav2vec2-ctc-base-ipu"),
+    },
     "lxmert": ("unc-nlp/lxmert-base-uncased", "Graphcore/lxmert-base-ipu"),
     "roberta": ("roberta-base", "Graphcore/roberta-base-ipu"),
     "t5": ("t5-small", "Graphcore/t5-small-ipu"),
+    "mt5": ("google/mt5-small", "Graphcore/mt5-small-ipu"),
     "vit": ("google/vit-base-patch16-224-in21k", "Graphcore/vit-base-ipu"),
     "wav2vec2": {
         "default": ("facebook/wav2vec2-base", "Graphcore/wav2vec2-base-ipu"),
         "ctc": ("facebook/wav2vec2-base", "Graphcore/wav2vec2-ctc-base-ipu"),
     },
+    "whisper": ("openai/whisper-tiny", "Graphcore/whisper-tiny-ipu"),
 }
+
+
+def skip_unsupported(feature):
+    return pytest.mark.skip(f"Skipping since {feature} is not yet supported in Optimum Graphcore")

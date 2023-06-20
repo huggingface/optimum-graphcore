@@ -14,13 +14,35 @@ See the License for the specific language governing permissions and
 limitations under the License.
 -->
 
-# IPUTrainer
+# Training, Evaluation and Prediction
 
-The [`IPUTrainer`] class provides a similar API than the [Transformers Trainer](https://huggingface.co/docs/transformers/main_classes/trainer) to perform training, evaluation and prediction on Graphcore's IPUs. It is the class used in all the [example scripts](https://github.com/huggingface/optimum-graphcore/tree/main/examples).
+The [`IPUTrainer`](https://huggingface.co/docs/optimum/graphcore/trainer#optimum.graphcore.IPUTrainer) class provides a similar API to the 🤗 Transformers [Trainer](https://huggingface.co/docs/transformers/main_classes/trainer) class to perform training, evaluation and prediction on Graphcore's IPUs. It is the class used in all the [example scripts](https://github.com/huggingface/optimum-graphcore/tree/main/examples).
 
-Compared to the regular [Transformers Trainer](https://huggingface.co/docs/transformers/main_classes/trainer), to instantiate a [`IPUTrainer`] you need to create:
-  - An instance of [`IPUTrainingArguments`], which allows you to customize the behaviour of the trainer
-  - An instance of [`IPUConfig`], which specifies IPU specific parameters
+Compared to the 🤗 Transformers [Trainer](https://huggingface.co/docs/transformers/main_classes/trainer) class, to instantiate [`IPUTrainer`](https://huggingface.co/docs/optimum/graphcore/trainer#optimum.graphcore.IPUTrainer) you need to create:
+  - An instance of [`IPUTrainingArguments`](https://huggingface.co/docs/optimum/graphcore/trainer#optimum.graphcore.IPUTrainingArguments), which allows you to customize the behaviour of the trainer
+  - An instance of [`IPUConfig`](https://huggingface.co/docs/optimum/graphcore/ipu_config#optimum.graphcore.IPUConfig), which defines IPU-specific parameters
+
+There is an equivalent [`IPUSeq2SeqTrainer`](https://huggingface.co/docs/optimum/graphcore/trainer#optimum.graphcore.IPUSeq2SeqTrainer) class for seq2seq models which requires you to define:
+  - An instance of [`IPUSeq2SeqTrainingArguments`](https://huggingface.co/docs/optimum/graphcore/trainer#optimum.graphcore.IPUSeq2SeqTrainingArguments)
+  - An instance of [`IPUConfig`](https://huggingface.co/docs/optimum/graphcore/ipu_config#optimum.graphcore.IPUConfig)
+
+## Examples of use
+
+Most example scripts in [`/examples`](https://github.com/huggingface/optimum-graphcore/tree/main/examples) and Jupyter notebooks in [`/notebooks`](https://github.com/huggingface/optimum-graphcore/tree/main/notebooks) use `IPUTrainer` and `IPUTrainingArguments`.
+
+
+To see how to use `IPUSeq2SeqTrainer` and `IPUSeq2SeqTrainingArguments` look at:
+
+* Jupyter notebooks
+  * [Summarization on IPUs - Fine-tuning](https://github.com/huggingface/optimum-graphcore/blob/main/notebooks/summarization.ipynb)
+  * [Translation on IPUs - Fine-tuning](https://github.com/huggingface/optimum-graphcore/blob/main/notebooks/translation.ipynb)
+
+* Example scripts
+  * [Summarization](https://github.com/huggingface/optimum-graphcore/tree/main/examples/summarization)
+  * [Translation](https://github.com/huggingface/optimum-graphcore/tree/main/examples/translation)
+
+
+## API reference
 
 ### IPUTrainer
 
@@ -29,8 +51,12 @@ Compared to the regular [Transformers Trainer](https://huggingface.co/docs/trans
 
 ### IPUSeq2SeqTrainer
 
-The [`IPUSeq2SeqTrainer`] is used to train seq2seq models. It's behaviour is exactly the same as [`IPUTrainer`] except that it expects [`IPUSeq2SeqTrainingArguments`] instead of [`IPUTrainingArguments`].
-
 [[autodoc]] IPUSeq2SeqTrainer
   - evaluate
   - predict
+
+
+### IPUTrainingArguments
+
+[[autodoc]] IPUTrainingArguments
+  - all

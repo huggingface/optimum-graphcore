@@ -13,14 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import List, Optional, Tuple, Union
+from typing import Optional, Tuple, Union
 
+import poptorch
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
-import poptorch
-from optimum.utils import logging
 from scipy.stats import truncnorm
 from transformers import (
     BertConfig,
@@ -38,6 +36,8 @@ from transformers.modeling_outputs import (
 )
 from transformers.modeling_utils import apply_chunking_to_forward
 from transformers.models.bert.modeling_bert import BertForPreTrainingOutput, BertModel
+
+from optimum.utils import logging
 
 from ...modeling_utils import (
     OnehotGather,
@@ -124,7 +124,6 @@ class GroupBertLayer(nn.Module):
         past_key_value: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
         output_attentions: Optional[bool] = False,
     ) -> Tuple[torch.Tensor]:
-
         convolution_output = self.convolution(hidden_states, attention_mask)
 
         first_layer_output = apply_chunking_to_forward(
@@ -230,7 +229,6 @@ class GroupBertEncoder(nn.Module):
             past_key_value = past_key_values[i] if past_key_values is not None else None
 
             if self.gradient_checkpointing and self.training:
-
                 if use_cache:
                     logger.warning(
                         "`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`..."
@@ -427,18 +425,12 @@ class PipelinedGroupBertForPreTraining(GroupBertForPreTraining, PipelineMixin):
         super().parallelize()
 
         if self.ipu_config.embedding_serialization_factor > 1:
-            serialized_decoder = SerializedLinear(
-                self.config.hidden_size,
-                self.config.vocab_size,
-                self.ipu_config.embedding_serialization_factor,
-                bias=True,
-                mode=poptorch.MatMulSerializationMode.OutputChannels,
+            self.cls.predictions.decoder = SerializedLinear.from_model(
+                self.cls.predictions.decoder, self.ipu_config.embedding_serialization_factor
             )
-            serialized_decoder.load_state_dict(self.cls.predictions.decoder.state_dict())
-            self.cls.predictions.decoder = serialized_decoder
             self.tie_weights()
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        layer_ipu = get_layer_ipu(self.ipu_config, self.bert.encoder.layer)
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding --> IPU 0")
@@ -472,14 +464,8 @@ class PipelinedGroupBertForPreTraining(GroupBertForPreTraining, PipelineMixin):
         """
         super().deparallelize()
 
-        if self.ipu_config.embedding_serialization_factor > 1:
-            decoder = nn.Linear(
-                self.config.hidden_size,
-                self.config.vocab_size,
-                bias=True,
-            )
-            decoder.load_state_dict(self.cls.predictions.decoder.state_dict())
-            self.cls.predictions.decoder = decoder
+        if isinstance(self.cls.predictions.decoder, SerializedLinear):
+            self.cls.predictions.decoder = self.cls.predictions.decoder.to_model()
             self.tie_weights()
         return self
 
@@ -603,7 +589,7 @@ class PipelinedGroupBertForMaskedLM(GroupBertForMaskedLM, PipelineMixin):
             self.cls.predictions.decoder = serialized_decoder
             self.tie_weights()
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        layer_ipu = get_layer_ipu(self.ipu_config, self.bert.encoder.layer)
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding  --> IPU 0")
@@ -728,12 +714,12 @@ class BertPipelineMixin(PipelineMixin):
         """
         super().parallelize()
 
-        layer_ipu = get_layer_ipu(self.ipu_config.layers_per_ipu)
+        layer_ipu = get_layer_ipu(self.ipu_config, self.bert.encoder.layer)
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding --> IPU 0")
         if self.ipu_config.embedding_serialization_factor > 1:
-            self.bert.embeddings.word_embeddings = SerializedEmbedding(
+            self.bert.embeddings.word_embeddings = SerializedEmbedding.from_model(
                 self.bert.embeddings.word_embeddings, self.ipu_config.embedding_serialization_factor
             )
         self.bert.embeddings = poptorch.BeginBlock(self.bert.embeddings, "Embedding", ipu_id=0)
@@ -759,7 +745,7 @@ class BertPipelineMixin(PipelineMixin):
 
         # Deserialize the serialized word embedding
         if self.ipu_config.embedding_serialization_factor > 1:
-            self.bert.embeddings.word_embeddings = self.bert.embeddings.word_embeddings.deserialize()
+            self.bert.embeddings.word_embeddings = self.bert.embeddings.word_embeddings.to_model()
         return self
 
 
@@ -776,7 +762,7 @@ class PipelinedGroupBertForSequenceClassification(GroupBertForSequenceClassifica
 
     def parallelize(self):
         super().parallelize()
-        last_ipu = self.ipu_config.ipus_per_replica - 1
+        last_ipu = self.ipu_config._ipus_per_replica - 1
         logger.info(f"Classifier Output --> IPU {last_ipu}")
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
@@ -796,7 +782,7 @@ class PipelinedGroupBertForMultipleChoice(GroupBertForMultipleChoice, BertPipeli
 
     def parallelize(self):
         super().parallelize()
-        last_ipu = self.ipu_config.ipus_per_replica - 1
+        last_ipu = self.ipu_config._ipus_per_replica - 1
         logger.info(f"Classifier Output --> IPU {last_ipu}")
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
@@ -816,7 +802,7 @@ class PipelinedGroupBertForTokenClassification(GroupBertForTokenClassification, 
 
     def parallelize(self):
         super().parallelize()
-        last_ipu = self.ipu_config.ipus_per_replica - 1
+        last_ipu = self.ipu_config._ipus_per_replica - 1
         logger.info(f"Classifier Output --> IPU {last_ipu}")
         self.classifier = poptorch.BeginBlock(self.classifier, "Classifier Output", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")
@@ -836,7 +822,7 @@ class PipelinedGroupBertForQuestionAnswering(GroupBertForQuestionAnswering, Bert
 
     def parallelize(self):
         super().parallelize()
-        last_ipu = self.ipu_config.ipus_per_replica - 1
+        last_ipu = self.ipu_config._ipus_per_replica - 1
         logger.info(f"QA Outputs --> IPU {last_ipu}")
         self.qa_outputs = poptorch.BeginBlock(self.qa_outputs, "QA Outputs", ipu_id=last_ipu)
         logger.info("-----------------------------------------------------------")

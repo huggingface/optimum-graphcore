@@ -33,7 +33,7 @@ Here is an example on a summarization task:
 python examples/summarization/run_summarization.py \
     --model_name_or_path t5-small \
     --ipu_config_name Graphcore/t5-small-ipu \
-    --ipu_config_overrides "inference_device_iterations=1,inference_replication_factor=2,sharded_execution_for_inference=True,execute_encoder_on_cpu_for_generation=False" \
+    --ipu_config_overrides "inference_device_iterations=1,inference_replication_factor=2,execute_encoder_on_cpu_for_generation=False" \
     --do_train \
     --do_eval \
     --dataset_name cnn_dailymail \
@@ -41,7 +41,7 @@ python examples/summarization/run_summarization.py \
     --source_prefix "summarize: " \
     --per_device_train_batch_size 1 \
     --per_device_eval_batch_size 4 \
-    --pod_type pod16 \
+    --n_ipu 16 \
     --num_train_epochs 2 \
     --max_target_length 200 \
     --logging_steps 1 \
@@ -50,8 +50,6 @@ python examples/summarization/run_summarization.py \
     --max_grad_norm 0.5 \
     --pad_to_max_length \
     --dataloader_drop_last \
-    --predict_with_generate \
-    --generation_num_beams 2 \
     --output_dir /tmp/t5-summarization \
     --overwrite_output_dir
 ```
@@ -79,14 +77,12 @@ python examples/summarization/run_summarization.py \
     --per_device_eval_batch_size=4 \
     --max_target_length 200 \
     --num_train_epochs 2 \
-    --pod_type pod16 \
+    --n_ipu 16 \
     --learning_rate 1e-4 \
     --lr_scheduler_type constant \
     --max_grad_norm 0.5 \
     --pad_to_max_length \
     --dataloader_drop_last \
-    --predict_with_generate \
-    --generation_num_beams 2 \
     --output_dir /tmp/t5-summarization \
 ```
 
@@ -98,14 +94,14 @@ The same tasks can be run with BART models by using arguments `--model_name_or_p
 python examples/summarization/run_summarization.py \
     --model_name_or_path facebook/bart-base \
     --ipu_config_name Graphcore/bart-base-ipu \
-    --ipu_config_overrides "inference_device_iterations=1,inference_replication_factor=2,sharded_execution_for_inference=True,execute_encoder_on_cpu_for_generation=False,layers_per_ipu=[0 4 4 4]" \
+    --ipu_config_overrides "inference_device_iterations=1,inference_replication_factor=2,execute_encoder_on_cpu_for_generation=False,layers_per_ipu=[0 4 4 4]" \
     --do_train True \
     --do_eval True \
     --dataset_name cnn_dailymail \
     --dataset_config "3.0.0" \
     --per_device_train_batch_size 2 \
     --per_device_eval_batch_size 4 \
-    --pod_type pod16 \
+    --n_ipu 16 \
     --num_train_epochs 2 \
     --logging_steps 1 \
     --learning_rate 1e-4 \
@@ -113,8 +109,6 @@ python examples/summarization/run_summarization.py \
     --max_grad_norm 0.5 \
     --pad_to_max_length \
     --dataloader_drop_last \
-    --predict_with_generate \
-    --generation_num_beams 2 \
     --output_dir /tmp/bart-summarization \
     --overwrite_output_dir
 ```

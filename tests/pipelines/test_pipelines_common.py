@@ -15,47 +15,35 @@
 import copy
 import importlib
 import logging
-import os
 import random
+import re
 import string
 import sys
-import tempfile
 import unittest
 from abc import abstractmethod
 from functools import lru_cache
 from pathlib import Path
 from unittest import skipIf
 
-import numpy as np
-
-from huggingface_hub import HfFolder, Repository, delete_repo, set_access_token
-from optimum.graphcore import pipeline
-from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
-from requests.exceptions import HTTPError
+import poptorch
 from transformers import (
     CONFIG_MAPPING,
     FEATURE_EXTRACTOR_MAPPING,
     TOKENIZER_MAPPING,
     AutoConfig,
     AutoFeatureExtractor,
-    AutoModelForSequenceClassification,
     AutoTokenizer,
     DistilBertForSequenceClassification,
     TextClassificationPipeline,
 )
-from transformers.pipelines import PIPELINE_REGISTRY, get_task
-from transformers.pipelines.base import Pipeline, _pad
 from transformers.testing_utils import (
-    TOKEN,
-    USER,
-    CaptureLogger,
-    is_staging_test,
     nested_simplify,
     require_torch,
     slow,
 )
-from transformers.utils import is_torch_available
-from transformers.utils import logging as transformers_logging
+
+from optimum.graphcore import pipeline
+from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
 
 from ..utils import MODELS_TO_TEST_MAPPING
 
@@ -76,6 +64,8 @@ ROBERTA_EMBEDDING_ADJUSMENT_CONFIGS = [
     "RobertaConfig",
     "XLMRobertaConfig",
 ]
+
+TINY_DISTILBERT_IPU_CONFIG = {"layers_per_ipu": [5], "ipus_per_replica": 1}
 
 
 def get_supported_models(models_to_test, task_mapping, task="default"):
@@ -281,13 +271,22 @@ class PipelineTestCaseMeta(type):
                         out.append(item)
                     self.assertEqual(len(out), 10)
 
-                run_batch_test(pipeline, examples)
+                try:
+                    run_batch_test(pipeline, examples)
+                except poptorch.poptorch_core.Error:
+                    # Pipelines like ASR+Whisper do not support re-batching, so we need to
+                    # create a new one.
+                    pipeline, examples = self.get_test_pipeline(
+                        model, ipu_config, tokenizer, feature_extractor, parallelize_kwargs={"batch_size": 4}
+                    )
+                    run_batch_test(pipeline, examples)
 
             return test
 
         mapping = dct.get("model_mapping", {})
+        task = dct.get("task", "default")
         if mapping:
-            mapping_items = get_supported_models(MODELS_TO_TEST_MAPPING, mapping)
+            mapping_items = get_supported_models(MODELS_TO_TEST_MAPPING, mapping, task=task)
             for configuration, model_architectures, ipu_config, checkpoint in mapping_items:
                 if not isinstance(model_architectures, tuple):
                     model_architectures = (model_architectures,)
@@ -362,7 +361,7 @@ class CommonPipelineTest(unittest.TestCase):
         text_classifier = pipeline(
             task="text-classification",
             model="hf-internal-testing/tiny-random-distilbert",
-            ipu_config="Graphcore/distilbert-base-ipu",
+            ipu_config=TINY_DISTILBERT_IPU_CONFIG,
         )
         dataset = MyDataset()
         for output in text_classifier(dataset):
@@ -372,7 +371,7 @@ class CommonPipelineTest(unittest.TestCase):
     def test_check_task_auto_inference(self):
         pipe = pipeline(
             model="hf-internal-testing/tiny-random-distilbert",
-            ipu_config="Graphcore/distilbert-base-ipu",
+            ipu_config=TINY_DISTILBERT_IPU_CONFIG,
         )
 
         self.assertIsInstance(pipe, TextClassificationPipeline)
@@ -381,14 +380,14 @@ class CommonPipelineTest(unittest.TestCase):
     def test_pipeline_batch_size_global(self):
         pipe = pipeline(
             model="hf-internal-testing/tiny-random-distilbert",
-            ipu_config="Graphcore/distilbert-base-ipu",
+            ipu_config=TINY_DISTILBERT_IPU_CONFIG,
         )
         self.assertEqual(pipe._batch_size, None)
         self.assertEqual(pipe._num_workers, None)
 
         pipe = pipeline(
             model="hf-internal-testing/tiny-random-distilbert",
-            ipu_config="Graphcore/distilbert-base-ipu",
+            ipu_config=TINY_DISTILBERT_IPU_CONFIG,
             batch_size=2,
             num_workers=1,
         )
@@ -402,7 +401,7 @@ class CommonPipelineTest(unittest.TestCase):
 
         text_classifier = pipeline(
             model="hf-internal-testing/tiny-random-distilbert",
-            ipu_config="Graphcore/distilbert-base-ipu",
+            ipu_config=TINY_DISTILBERT_IPU_CONFIG,
             pipeline_class=MyPipeline,
         )
 
@@ -424,7 +423,7 @@ class CommonPipelineTest(unittest.TestCase):
 
         pipe = pipeline(
             model="hf-internal-testing/tiny-random-distilbert",
-            ipu_config="Graphcore/distilbert-base-ipu",
+            ipu_config=TINY_DISTILBERT_IPU_CONFIG,
         )
 
         results = []
@@ -450,7 +449,7 @@ class CommonPipelineTest(unittest.TestCase):
         text_classifier = pipeline(
             task="text-classification",
             model=model,
-            ipu_config="Graphcore/distilbert-base-ipu",
+            ipu_config=TINY_DISTILBERT_IPU_CONFIG,
             tokenizer=tokenizer,
         )
 
@@ -710,13 +709,14 @@ class PipelineUtilsTest(unittest.TestCase):
 
             self.check_default_pipeline(task, set_seed_fn, self.check_models_equal_pt)
 
+    # enable when table-question-answering task is supported
     # @slow
     # @require_torch
     # def test_load_default_pipelines_pt_table_qa(self):
     #     import torch
 
     #     set_seed_fn = lambda: torch.manual_seed(0)  # noqa: E731
-    #     self.check_default_pipeline("table-question-answering", "pt", set_seed_fn, self.check_models_equal_pt)
+    #     self.check_default_pipeline("table-question-answering", set_seed_fn, self.check_models_equal_pt)
 
     def check_default_pipeline(self, task, set_seed_fn, check_models_equal_fn):
         from optimum.graphcore.pipelines import SUPPORTED_TASKS, pipeline
@@ -735,7 +735,8 @@ class PipelineUtilsTest(unittest.TestCase):
         auto_model_cls = relevant_auto_classes[0]
 
         # retrieve correct model ids
-        if task == "translation":
+        # TODO: enable this when we support separate configs for different translation languages
+        if False and task == "translation":
             # special case for translation pipeline which has multiple languages
             model_ids = []
             revisions = []
@@ -773,19 +774,32 @@ class PipelineUtilsTest(unittest.TestCase):
             # the pipeline model is deparallelized to avoid problems caused by serialized layers
             default_pipeline.model.deparallelize()
             # compare pipeline model with default model
-            models_are_equal = check_models_equal_fn(default_pipeline.model, model)
-            self.assertTrue(models_are_equal, f"{task} model doesn't match pipeline.")
+            check_models_equal_fn(default_pipeline.model, model)
 
             logger.debug(f"{task} succeeded with {model_id}.")
 
-    def check_models_equal_pt(self, model1, model2):
-        models_are_equal = True
-        for model1_p, model2_p in zip(model1.parameters(), model2.parameters()):
-            # cast default model's parameters to fp16 since pipeline model's parameters are by default in fp16
-            if model1_p.data.ne(model2_p.data.half()).sum() > 0:
-                models_are_equal = False
+    def check_models_equal_pt(self, ipu_model, cpu_model):
+        import torch
 
-        return models_are_equal
+        ipu_params = ipu_model.named_parameters()
+        cpu_params = cpu_model.named_parameters()
+        for (ipu_name, ipu_param), (cpu_name, cpu_param) in zip(ipu_params, cpu_params):
+
+            def msg(msg):
+                return f"ipu_model.{ipu_name} != cpu_model.{cpu_name}\n{msg}"
+
+            # cast default model's parameters to fp16 since pipeline model's parameters are by default in fp16
+            ipu_data, cpu_data = ipu_param.data, cpu_param.data.to(ipu_param.dtype)
+
+            if not re.match(r"encoder\.block\.\d+\.layer\.1\.DenseReluDense\.wo\.weight", cpu_name):
+                torch.testing.assert_close(ipu_data, cpu_data, atol=0, rtol=0, msg=msg)
+
+            # For this specific layer in T5, check values that are <8 times the smallest normal number in fp16 less
+            # strictly. This is because this layer is scaled down then up again by a factor of 8, turning these masked
+            # values into denormals, for which (x/8)*8 may not equal x.
+            mask = cpu_param >= 8 * torch.finfo(torch.float16).smallest_normal
+            torch.testing.assert_close(ipu_data[mask], cpu_data[mask], rtol=0, atol=0, msg=msg)
+            torch.testing.assert_close(ipu_data[~mask], cpu_data[~mask], msg=msg)
 
 
 # class CustomPipeline(Pipeline):
@@ -915,7 +929,6 @@ class PipelineUtilsTest(unittest.TestCase):
 #     @classmethod
 #     def setUpClass(cls):
 #         cls._token = TOKEN
-#         set_access_token(TOKEN)
 #         HfFolder.save_token(TOKEN)
 
 #     @classmethod
