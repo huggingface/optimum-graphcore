@@ -216,7 +216,6 @@ def get_poplar_executor(
     ipu_config: Union[IPUConfig, str, dict] = None,
     fp16: bool = True,
     for_generation: bool = False,
-    **parallelize_kwargs,
 ) -> PreTrainedModel:
     ipu_config_arg = ipu_config
 
@@ -231,6 +230,8 @@ def get_poplar_executor(
     # that are different in training and inference
     ipu_config.eval()
 
+    parallelize_kwargs = ipu_config.inference_parallelize_kwargs
+
     ipu_config.inference_device_iterations = 1
     if not parallelize_kwargs.get("use_cond_encoder", False):
         ipu_config.inference_replication_factor = 1
@@ -243,7 +244,7 @@ def get_poplar_executor(
                 parallelize_kwargs["use_cache"] = True
             model.parallelize(for_generation=for_generation, **parallelize_kwargs)
         else:
-            model.parallelize()
+            model.parallelize(**parallelize_kwargs)
     except Exception as error:
         new_message = (
             "The model and ipu_config seem to be incompatible,"

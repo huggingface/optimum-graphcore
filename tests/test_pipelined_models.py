@@ -186,7 +186,7 @@ class PipelinedModelsTester(TestCase):
         inputs = self._generate_input_for_model_class(model_name_or_path, pretrained_class)
         pretrained_model_outputs = pretrained_model(**inputs, return_dict=True)
 
-        pipelined_model.parallelize()
+        pipelined_model.parallelize(**ipu_config.inference_parallelize_kwargs)
         pipelined_model_outputs = pipelined_model.forward(**inputs, return_dict=True)
         for idx, k in enumerate(pretrained_model_outputs.keys()):
             pretrained_output, pipelined_output = pretrained_model_outputs[k], pipelined_model_outputs[k]
@@ -251,11 +251,11 @@ class PipelinedModelsTester(TestCase):
                     delattr(module, hook.name)
 
         modules_before = copy.deepcopy(model).modules()
-        model.parallelize()
+        model.parallelize(**ipu_config.parallelize_kwargs)
         model.deparallelize()
         modules_after = copy.deepcopy(model).modules()
         # Confirm that parallelize then deparallelize won't change the model's modules
         for mod_before, mod_after in zip(modules_before, modules_after):
             self.assertEqual(type(mod_before), type(mod_after))
 
-        model.parallelize()
+        model.parallelize(**ipu_config.parallelize_kwargs)

@@ -130,7 +130,7 @@ class IPUSeq2SeqTrainer(IPUTrainer):
 
         # reparallelize for generation
         self.model.deparallelize().ipu_config.eval()
-        self.model.parallelize(for_generation=True)
+        self.model.parallelize(for_generation=True, **self.model.ipu_config.inference_parallelize_kwargs)
 
         # let IPUGenerationMixin::_call_generate handle compilation of the model
         # note though that self.model.poptorch_decoder and self.model.poptorch_encoder
@@ -140,7 +140,7 @@ class IPUSeq2SeqTrainer(IPUTrainer):
 
     def _rewrap_model_for_training(self):
         self.model.deparallelize().ipu_config.train()
-        self.model.parallelize()
+        self.model.parallelize(**self.model.ipu_config.parallelize_kwargs)
         # Restores the PoptorchParameter and PoptorchBuffer annotations in the model
         rewrapModelIfNecessary(self.model)
 
