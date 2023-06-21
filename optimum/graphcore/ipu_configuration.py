@@ -206,6 +206,7 @@ class IPUConfig(BaseConfig):
     _serialized_embedding_splits_per_ipu = ManagedAttribute("serialized_embedding_splits_per_ipu")
     _projection_serialization_factor = ManagedAttribute("projection_serialization_factor")
     _serialized_projection_splits_per_ipu = ManagedAttribute("serialized_projection_splits_per_ipu")
+    _parallelize_kwargs = ManagedAttribute("parallelize_kwargs")
 
     # Create a mapping of attributes to their list of validation functions
     attribute_validators = defaultdict(list)

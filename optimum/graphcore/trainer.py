@@ -1318,7 +1318,7 @@ class IPUTrainer:
     def _load_state_dict_in_model(self, state_dict):
         self.model.deparallelize()
         load_result = self.model.load_state_dict(state_dict, strict=False)
-        self.model.parallelize(**self.model.ipu_config.parallelize_kwargs)
+        self.model.parallelize(**self.model.ipu_config._parallelize_kwargs)
         if not self.args.fp32:
             self.model.half()
 
