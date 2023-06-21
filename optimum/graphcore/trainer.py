@@ -35,6 +35,7 @@ import poptorch
 import torch
 from huggingface_hub import Repository
 from packaging import version
+from peft import PeftModel
 from poptorch import DataLoaderMode, PoplarExecutor
 from poptorch.optim import LAMB, AdamW
 from torch import nn, optim
@@ -124,6 +125,9 @@ _is_torch_generator_available = False
 
 DEFAULT_CALLBACKS = [DefaultFlowCallback]
 DEFAULT_PROGRESS_CALLBACK = ProgressCallback
+
+# TODO: Import from transformers.utils when updating transformers version.
+ADAPTER_WEIGHTS_NAME = "adapter_model.bin"
 
 
 @dataclass
@@ -1326,15 +1330,25 @@ class IPUTrainer:
         if model is None:
             model = self.model
 
-        if not os.path.isfile(os.path.join(resume_from_checkpoint, WEIGHTS_NAME)) and not os.path.isfile(
-            os.path.join(resume_from_checkpoint, WEIGHTS_INDEX_NAME)
+        config_file = os.path.join(resume_from_checkpoint, CONFIG_NAME)
+        weights_file = os.path.join(resume_from_checkpoint, WEIGHTS_NAME)
+        weights_index_file = os.path.join(resume_from_checkpoint, WEIGHTS_INDEX_NAME)
+        adapter_weights_file = os.path.join(resume_from_checkpoint, ADAPTER_WEIGHTS_NAME)
+
+        if not any(
+            os.path.isfile(f)
+            for f in [
+                weights_file,
+                weights_index_file,
+                adapter_weights_file,
+            ]
         ):
             raise ValueError(f"Can't find a valid checkpoint at {resume_from_checkpoint}")
 
         logger.info(f"Loading model from {resume_from_checkpoint}.")
 
-        if os.path.isfile(os.path.join(resume_from_checkpoint, CONFIG_NAME)):
-            config = PretrainedConfig.from_json_file(os.path.join(resume_from_checkpoint, CONFIG_NAME))
+        if os.path.isfile(config_file):
+            config = PretrainedConfig.from_json_file(config_file)
             checkpoint_version = config.transformers_version
             if checkpoint_version is not None and checkpoint_version != __version__:
                 logger.warning(
@@ -1343,9 +1357,9 @@ class IPUTrainer:
                     "yield to errors or unwanted behavior."
                 )
 
-        if os.path.isfile(os.path.join(resume_from_checkpoint, WEIGHTS_NAME)):
+        if os.path.isfile(weights_file):
             # We load the model state dict on the CPU to avoid an OOM error.
-            state_dict = torch.load(os.path.join(resume_from_checkpoint, WEIGHTS_NAME), map_location="cpu")
+            state_dict = torch.load(weights_file, map_location="cpu")
             # workaround for FSDP bug https://github.com/pytorch/pytorch/issues/82963
             # which takes *args instead of **kwargs
             load_result = model.load_state_dict(state_dict, False)
@@ -1353,13 +1367,36 @@ class IPUTrainer:
             del state_dict
             self._issue_warnings_after_load(load_result)
 
+        # Load adapters following PR # 24096 (> 4.29.2)
+        elif isinstance(model, PeftModel):
+            # If training a model using PEFT & LoRA, assume that adapter has been saved properly.
+            if hasattr(model, "active_adapter") and hasattr(model, "load_adapter"):
+                if os.path.exists(resume_from_checkpoint):
+                    model.load_adapter(resume_from_checkpoint, model.active_adapter)
+                else:
+                    logger.warning(
+                        "The intermediate checkpoints of PEFT may not be saved correctly, "
+                        f"consider using a custom callback to save {ADAPTER_WEIGHTS_NAME} in corresponding saving folders. "
+                        "Check some examples here: https://github.com/huggingface/peft/issues/96"
+                    )
+            else:
+                logger.warning("Could not load adapter model, make sure to have `peft>=0.3.0` installed")
+
     def _load_best_model(self):
         logger.info(f"Loading best model from {self.state.best_model_checkpoint} (score: {self.state.best_metric}).")
+        model = self.model
         best_model_path = os.path.join(self.state.best_model_checkpoint, WEIGHTS_NAME)
-        if os.path.exists(best_model_path):
-            # We load the model state dict on the CPU to avoid an OOM error.
-            state_dict = torch.load(best_model_path, map_location="cpu")
-            self._load_state_dict_in_model(state_dict)
+        best_adapter_model_path = os.path.join(self.state.best_model_checkpoint, ADAPTER_WEIGHTS_NAME)
+        if os.path.exists(best_model_path) or os.path.exists(best_adapter_model_path):
+            if isinstance(model, PeftModel):
+                # If training a model using PEFT & LoRA, assume that adapter has been saved properly.
+                if hasattr(model, "active_adapter") and hasattr(model, "load_adapter"):
+                    if os.path.exists(best_adapter_model_path):
+                        model.load_adapter(self.state.best_model_checkpoint, model.active_adapter)
+            else:
+                # We load the model state dict on the CPU to avoid an OOM error.
+                state_dict = torch.load(best_model_path, map_location="cpu")
+                self._load_state_dict_in_model(state_dict)
         else:
             logger.warning(
                 f"Could not locate the best model at {best_model_path}. If you are running a distributed training "
@@ -1677,8 +1714,10 @@ class IPUTrainer:
 
         # Save a trained model and configuration using `save_pretrained()`.
         # They can then be reloaded using `from_pretrained()`
-        if not isinstance(self.model, PreTrainedModel):
-            logger.info("Trainer.model is not a `transformers.PreTrainedModel`, only saving its state dict.")
+        if not isinstance(self.model, (PreTrainedModel, PeftModel)):
+            logger.info(
+                "Trainer.model is not a `transformers.PreTrainedModel` or `peft.PeftModel`, only saving its state dict."
+            )
             if state_dict is None:
                 state_dict = self.model.state_dict()
             torch.save(state_dict, os.path.join(output_dir, WEIGHTS_NAME))
