@@ -3,24 +3,15 @@ import torch.nn.functional as F
 import logging
 from typing import Optional, List
 
-
 from optimum.graphcore.models.bert.modeling_bert import BertPipelineMixin
 from transformers.models.bert.modeling_bert import BertModel, BertPreTrainedModel
 
-
 logger = logging.getLogger("e5")
 
-#register('BertModel') 'E5Model'? - no equivalent transformers class
 class PipelinedE5Model(BertPreTrainedModel, BertPipelineMixin):
     def __init__(self, config):
         super().__init__(config)
         self.bert = BertModel(config)
-    
-    def parallelize(self):
-        return super().parallelize()
-
-    def deparallelize(self):
-        return super().deparallelize()
     
     def pool(self, last_hidden_states: torch.Tensor,
          attention_mask: torch.Tensor,
@@ -77,4 +68,6 @@ class PipelinedE5Model(BertPreTrainedModel, BertPipelineMixin):
         
 
         
+
+
 
