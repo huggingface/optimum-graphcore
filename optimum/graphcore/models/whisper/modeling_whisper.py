@@ -540,7 +540,7 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         )
         self.change_lm_head(restore=False, use_cache=use_cache or not for_generation)
         self.change_encoder_class(restore=not self._use_cond_encoder, **kwargs)
-        self.quantize_linear_layers(restore=not self._use_group_quantized_linears, num_groups=64)
+        self.quantize_linear_layers(restore=not self._use_group_quantized_linears, num_groups=16)
         self.set_on_device_generation_steps(kwargs.get("on_device_generation_steps", 0))
 
         logger.info("---------- Device Allocation -----------")
