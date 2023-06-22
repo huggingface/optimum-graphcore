@@ -71,6 +71,7 @@ from .version import __version__
 # Disable poptorch compiler warnings by default
 poptorch.setLogLevel("ERR")
 
+
 # Load the custom ops
 def load_custom_ops():
     dir = os.path.dirname(os.path.realpath(__file__))
@@ -80,5 +81,6 @@ def load_custom_ops():
         ctypes.cdll.LoadLibrary(CUSTOM_OP_PATH)
     else:
         raise ImportError("Could not find custom_ops.so. Execute `make` before running this script.")
+
 
 load_custom_ops()

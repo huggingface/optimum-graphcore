@@ -39,7 +39,6 @@ from ...modeling_utils import (
     register,
     shift_tokens_right,
     split_encoder_decoder_ipu_config,
-    outline_attribute,
 )
 from ...quantization.group_quantize import GroupQuantLinear
 
@@ -494,26 +493,26 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
     def quantize_linear_layers(self, restore: bool, num_groups: int = 16):
         if not restore:
             print("Quantizing linear layers")
-            # Brute force way 
+            # Brute force way
             for module in self.model.encoder.layers:
-                module.self_attn.q_proj = GroupQuantLinear.from_model(module.self_attn.q_proj, num_groups) 
-                module.self_attn.k_proj = GroupQuantLinear.from_model(module.self_attn.k_proj, num_groups) 
-                module.self_attn.v_proj = GroupQuantLinear.from_model(module.self_attn.v_proj, num_groups) 
-                module.self_attn.out_proj = GroupQuantLinear.from_model(module.self_attn.out_proj, num_groups) 
-                module.fc1 = GroupQuantLinear.from_model(module.fc1, num_groups) 
-                module.fc2 = GroupQuantLinear.from_model(module.fc2, num_groups) 
+                module.self_attn.q_proj = GroupQuantLinear.from_model(module.self_attn.q_proj, num_groups)
+                module.self_attn.k_proj = GroupQuantLinear.from_model(module.self_attn.k_proj, num_groups)
+                module.self_attn.v_proj = GroupQuantLinear.from_model(module.self_attn.v_proj, num_groups)
+                module.self_attn.out_proj = GroupQuantLinear.from_model(module.self_attn.out_proj, num_groups)
+                module.fc1 = GroupQuantLinear.from_model(module.fc1, num_groups)
+                module.fc2 = GroupQuantLinear.from_model(module.fc2, num_groups)
 
             for module in self.model.decoder.layers:
-                module.self_attn.q_proj = GroupQuantLinear.from_model(module.self_attn.q_proj, num_groups) 
-                module.self_attn.k_proj = GroupQuantLinear.from_model(module.self_attn.k_proj, num_groups) 
-                module.self_attn.v_proj = GroupQuantLinear.from_model(module.self_attn.v_proj, num_groups) 
-                module.self_attn.out_proj = GroupQuantLinear.from_model(module.self_attn.out_proj, num_groups) 
-                module.encoder_attn.q_proj = GroupQuantLinear.from_model(module.encoder_attn.q_proj, num_groups) 
-                module.encoder_attn.k_proj = GroupQuantLinear.from_model(module.encoder_attn.k_proj, num_groups) 
-                module.encoder_attn.v_proj = GroupQuantLinear.from_model(module.encoder_attn.v_proj, num_groups) 
-                module.encoder_attn.out_proj = GroupQuantLinear.from_model(module.encoder_attn.out_proj, num_groups) 
-                module.fc1 = GroupQuantLinear.from_model(module.fc1, num_groups) 
-                module.fc2 = GroupQuantLinear.from_model(module.fc2, num_groups) 
+                module.self_attn.q_proj = GroupQuantLinear.from_model(module.self_attn.q_proj, num_groups)
+                module.self_attn.k_proj = GroupQuantLinear.from_model(module.self_attn.k_proj, num_groups)
+                module.self_attn.v_proj = GroupQuantLinear.from_model(module.self_attn.v_proj, num_groups)
+                module.self_attn.out_proj = GroupQuantLinear.from_model(module.self_attn.out_proj, num_groups)
+                module.encoder_attn.q_proj = GroupQuantLinear.from_model(module.encoder_attn.q_proj, num_groups)
+                module.encoder_attn.k_proj = GroupQuantLinear.from_model(module.encoder_attn.k_proj, num_groups)
+                module.encoder_attn.v_proj = GroupQuantLinear.from_model(module.encoder_attn.v_proj, num_groups)
+                module.encoder_attn.out_proj = GroupQuantLinear.from_model(module.encoder_attn.out_proj, num_groups)
+                module.fc1 = GroupQuantLinear.from_model(module.fc1, num_groups)
+                module.fc2 = GroupQuantLinear.from_model(module.fc2, num_groups)
 
     def parallelize(self, for_generation=False, use_cache=False, use_cross_cache=False, **kwargs):
         super().parallelize()

@@ -4,7 +4,6 @@ from typing import Tuple
 import numpy as np
 import poptorch
 import torch
-import torch.nn.functional as F
 from torch import nn
 
 
@@ -111,7 +110,6 @@ def group_quantize_decompress(
 
 
 class GroupQuantLinear(nn.Module):
-
     def __init__(self, in_features, out_features, w_packed, w_scale, w_bias, bias=None):
         super().__init__()
         self.in_features = in_features
