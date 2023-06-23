@@ -1,0 +1,3 @@
+gradio
+sentence-transformers
+--find-links https://download.pytorch.org/whl/cpu/torch_stable.html torch==1.13.1+cpu
