@@ -594,10 +594,13 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         )
         logger.info(f"Decoder Embedding  --> IPU {decoder_embedding_ipu}")
 
+        prev_ipu = decoder_layer_ipu[0]
         for index, (layer, ipu) in enumerate(zip(self.model.decoder.layers, decoder_layer_ipu)):
             if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_hidden_layers - 1:
                 self._hooks.append(recomputation_checkpoint(layer))
-            self.model.decoder.layers[index] = poptorch.BeginBlock(layer, f"Decoder{index}", ipu_id=ipu)
+            if ipu != prev_ipu:
+                self.model.decoder.layers[index] = poptorch.BeginBlock(layer, f"Decoder{index}", ipu_id=ipu)
+                prev_ipu = ipu
             logger.info(f"Decoder {index:<2} --> IPU {ipu}")
 
         self.model.decoder.layer_norm = poptorch.BeginBlock(
