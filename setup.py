@@ -32,6 +32,7 @@ INSTALL_REQUIRES = [
     "optimum==1.6.1",
     "diffusers[torch]==0.12.1",
     "cppimport==22.8.2",
+    "peft==0.3.0",
     "datasets",
     "tokenizers",
     "typeguard",
