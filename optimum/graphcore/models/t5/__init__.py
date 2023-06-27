@@ -16,4 +16,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .modeling_t5 import PipelinedT5ForConditionalGeneration
+from .modeling_t5 import PipelinedT5ForConditionalGeneration, PipelinedT5EncoderModel
