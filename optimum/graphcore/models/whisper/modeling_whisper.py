@@ -272,7 +272,7 @@ class IPUWhisperPositionalEmbedding(WhisperPositionalEmbedding):
         if input_ids.shape[-1] == 1:
             # KV cache enabled.
             del past_key_values_length
-            return poptorch.dynamic_slice(self.weight, 0, self._generation_step, 1, 1)
+            return torch.index_select(self.weight, 0, self._generation_step)
         else:
             return super().forward(input_ids, past_key_values_length=past_key_values_length)
 
