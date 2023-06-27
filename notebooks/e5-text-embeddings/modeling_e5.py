@@ -12,20 +12,23 @@ class PipelinedE5Model(BertPreTrainedModel, BertPipelineMixin):
     def __init__(self, config):
         super().__init__(config)
         self.bert = BertModel(config)
+        self.pool_type = config.pool_type
     
-    def pool(self, last_hidden_states: torch.Tensor,
-         attention_mask: torch.Tensor,
-         pool_type: str) -> torch.Tensor:
+    def pool(
+        self, 
+        last_hidden_states: torch.Tensor,
+        attention_mask: torch.Tensor,
+        ) -> torch.Tensor:
              
         last_hidden = last_hidden_states.masked_fill(~attention_mask[..., None].bool(), 0.0)
     
-        if pool_type == "avg":
+        if self.pool_type == "avg":
             emb = last_hidden.sum(dim=1) / attention_mask.sum(dim=1)[..., None]
-        elif pool_type == "cls":
+        elif self.pool_type == "cls":
             emb = last_hidden[:, 0]
         else:
             raise ValueError(f"pool_type {pool_type} not supported")
-
+            
         return emb
     
     def forward(
@@ -42,7 +45,7 @@ class PipelinedE5Model(BertPreTrainedModel, BertPipelineMixin):
         use_cache: Optional[bool] = None,
         output_attentions: Optional[bool] = None,
         output_hidden_states: Optional[bool] = None,
-        return_dict: Optional[bool] = None,
+        return_dict: Optional[bool] = None
         ) -> torch.Tensor:
 
         outputs = self.bert(
@@ -61,7 +64,7 @@ class PipelinedE5Model(BertPreTrainedModel, BertPipelineMixin):
             return_dict
         )
 
-        embeds = self.pool(outputs.last_hidden_state, attention_mask, pool_type='avg')
+        embeds = self.pool(outputs.last_hidden_state, attention_mask)
         embeds = F.normalize(embeds, p=2, dim=-1)
 
         return embeds

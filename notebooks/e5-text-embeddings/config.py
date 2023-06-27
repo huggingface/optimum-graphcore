@@ -1,5 +1,8 @@
 from optimum.graphcore import IPUConfig
 import torch
+import logging
+
+logger = logging.getLogger("e5")
 
 def get_ipu_config(pod_type, n_ipu, device_iterations, replication_factor=None, random_seed=None):
     ipu_config = IPUConfig.from_pretrained("Graphcore/bert-large-uncased").to_dict()
@@ -29,7 +32,7 @@ def get_ipu_config(pod_type, n_ipu, device_iterations, replication_factor=None, 
         for conf_name in configs[n_ipu]:
             ipu_config[conf_name] = configs[n_ipu][conf_name]
     else:
-        logger.error("Only 1,2 or 4 IPUs (`n_ipu`) are supported for the model. Replication will be used to ensure full POD utilisation")
+        logger.error("Only 1,2 or 4 IPUs (`n_ipu`) are supported for model pipelining. Replication will be used to ensure full POD utilisation")
         raise ValueError("Invalid number of IPUs for model")
 
     if pod_type == 'pod4':
@@ -37,7 +40,7 @@ def get_ipu_config(pod_type, n_ipu, device_iterations, replication_factor=None, 
             if replication_factor * n_ipu <= 4:
                 ipu_config['inference_replication_factor'] = replication_factor
             else:
-                logger.error(f"Model cannot be replicated by custom replication factor replication_factor({replication_factor})*n_ipu({n_ipu}) not <= available_ipus(4)")
+                logger.error(f"Model cannot be replicated by custom replication factor: replication_factor ({replication_factor}) * n_ipu ({n_ipu}) not <= available_ipus(4)")
                 raise ValueError("Model cannot be replicated over number of available IPUs")
                 
     elif pod_type == 'pod16':
@@ -49,6 +52,7 @@ def get_ipu_config(pod_type, n_ipu, device_iterations, replication_factor=None, 
     ipu_config['recompute_checkpoint_every_layer'] = False
     ipu_config['replicated_tensor_sharding'] = True
     ipu_config['enable_half_partials'] = True
+
     if random_seed:
         ipu_config['random_seed'] = random_seed 
         torch.manual_seed(random_seed)
