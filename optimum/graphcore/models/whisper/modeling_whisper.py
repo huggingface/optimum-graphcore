@@ -527,6 +527,7 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
                 "`use_cond_encoder=True` is incompatible with `use_encoder_output_buffer=True`, only set one to True."
             )
         self._use_group_quantized_linears = kwargs.get("use_group_quantized_linears", False)
+        print(self._use_group_quantized_linears)
 
         self.change_encoder_layer_class(restore=False)
         self.change_decoder_class(restore=False)

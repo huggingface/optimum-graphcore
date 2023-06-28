@@ -59,6 +59,11 @@ poplar::Tensor decompressPacked4BitTensor(poplar::Graph &graph,
 
   poplar::DebugContext debugContext;
 
+  // Quantized/compressed tensor must have a tile mapping with minimum grain size.
+  // 64 bits decoding vertex.
+  const unsigned grain_size = 4;
+  poputil::mapTensorLinearly(graph, x, 0, grain_size);
+
   auto x_unpacked =
       graph.addVariable(poplar::HALF, unp_shape, {debugContext, "x_unpacked"});
   auto computeSet = graph.addComputeSet({debugContext, "unpack4bit"});
@@ -70,22 +75,26 @@ poplar::Tensor decompressPacked4BitTensor(poplar::Graph &graph,
       // Colocate unpacked tensor to input
       graph.setTileMapping(
           x_unpacked.flatten().slice(i.begin() * 4, i.end() * 4), tile);
-      // Get constants for slicing input across 6 threads
-      auto interval = (i.end() - i.begin());
-      auto numElmsPerWorkerNoRemainder = interval / numWorkers;
-      auto numElmsRemainder = interval % numWorkers;
+      // Get constants for slicing input across 6 threads.
+      // Similarly, need to satisfy the minimal grain size per thread.
+      const auto interval = (i.end() - i.begin());
+      const auto interval_blocks = interval / grain_size;
+      const auto numElmsPerWorkerNoRemainder = (interval_blocks / numWorkers) * grain_size;
+      const auto numElmsRemainder = interval - numElmsPerWorkerNoRemainder * (numWorkers - 1);
       int slice_bounds[7] = {0};
       slice_bounds[0] = i.begin();
 
       for (auto wid = 0; wid < numWorkers; ++wid) {
         // Determine slice bounds for thread worker
-        slice_bounds[wid + 1] = slice_bounds[wid] + numElmsPerWorkerNoRemainder;
-        if (wid < numElmsRemainder) {
-          ++slice_bounds[wid + 1];
+        if (wid < numWorkers - 1) {
+          slice_bounds[wid + 1] = slice_bounds[wid] + numElmsPerWorkerNoRemainder;
+        }
+        else {
+          slice_bounds[wid + 1] = slice_bounds[wid] + numElmsRemainder;
         }
         // add vertex to thread
         auto vertex = graph.addVertex(
-            computeSet, "DecompressPacked4BitTensor",
+            computeSet, "DecompressPacked4BitTensorV1",
             {{"input",
               x.flatten().slice(slice_bounds[wid], slice_bounds[wid + 1])},
              {"output",
@@ -117,7 +126,7 @@ GroupQuantizeDecompressOpx::GroupQuantizeDecompressOpx(Op *op, Devicex *devicex)
     : Opx(op, devicex) {
   verifyOp<GroupQuantizeDecompressOp>(op, {GroupQuantizeDecompressId});
   
-  graph().addCodelets(getOp<GroupQuantizeDecompressOp>().rootPath + "/group_quantize_decompress_codelet.cpp");
+  graph().addCodelets(getOp<GroupQuantizeDecompressOp>().rootPath + "/group_quantize_decompress_codelet_v1.cpp");
 }
 
 void GroupQuantizeDecompressOpx::grow(poplar::program::Sequence &prog) const {

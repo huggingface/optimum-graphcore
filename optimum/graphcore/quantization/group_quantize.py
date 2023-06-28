@@ -4,12 +4,84 @@ from typing import Tuple
 import numpy as np
 import poptorch
 import torch
+from numpy.typing import NDArray
 from torch import nn
+
+
+def _int4_npy_decoder(data: NDArray) -> NDArray:
+    """Int4 NumPy decoder.
+
+    Args:
+        data: Numpy uint16 array to decode.
+    Returns:
+        Float16 decoded array.
+    """
+    assert len(data.shape) == 1
+    assert len(data) % 4 == 0
+    assert data.dtype == np.int16
+    N = len(data)
+    # Reshape (-1, 4) as the C++ codelet is working on vectors of 4 elements.
+    data = data.view(np.uint16).reshape((-1, 4))
+    out = np.zeros((N, 4), dtype=np.float16)
+
+    mask0 = np.uint16(0x000F)
+    mask1 = np.uint16(0x00F0)
+
+    # Decoding per "block"
+    v0 = np.bitwise_and(data, mask0).view(np.float16)
+    out[0::4] = v0.astype(np.float32) * (32768 * 512)
+    v0 = np.bitwise_and(data, mask1).view(np.float16)
+    out[1::4] = v0.astype(np.float32) * (2048 * 512)
+
+    # Shift, and redo the same!
+    data = np.right_shift(data, 8)
+
+    v0 = np.bitwise_and(data, mask0).view(np.float16)
+    out[2::4] = v0.astype(np.float32) * (32768 * 512)
+    v0 = np.bitwise_and(data, mask1).view(np.float16)
+    out[3::4] = v0.astype(np.float32) * (2048 * 512)
+
+    out = np.ravel(out)
+    return out
+
+
+def _int4_npy_encoder(data: NDArray) -> NDArray:
+    """Int4 encoder.
+
+    Note: this function requires uint16 values already normalized in
+    the interval [0, 16), hence leaving to the user to define the
+    preferred normalization and rounding mode.
+
+    Args:
+        data: Numpy array uint16 in [0, 16)
+    Returns:
+        Int4 encoded array.
+    """
+    assert len(data.shape) == 1
+    # Int4 blocks + 64bits vectorized instructions!
+    assert len(data) % 16 == 0
+    assert data.dtype == np.uint16
+    assert np.max(data) <= 15
+    N = len(data) // 4
+
+    # Reshaping in blocks of 4 to account for C++ vectorization.
+    out = np.zeros((N,), dtype=np.uint16)
+    out = out.reshape((-1, 4))
+    data = data.reshape((-1, 4))
+
+    # Decoding per "block"
+    out = np.bitwise_or(out, data[0::4])
+    out = np.bitwise_or(out, np.left_shift(data[1::4], 4))
+    out = np.bitwise_or(out, np.left_shift(data[2::4], 8))
+    out = np.bitwise_or(out, np.left_shift(data[3::4], 12))
+
+    out = np.ravel(out).view(np.int16)
+    return out
 
 
 def group_quantize_compress(t: torch.Tensor, group_size: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
     """
-    PyTorch implementation of 4-bit group-quantized floating point tensors compression
+    Implementation of 4-bit group-quantized floating point tensors compression
     as described in "FlexGen: High-throughput Generative Inference of Large Language Models
     with a Single GPU" https://arxiv.org/abs/2303.06865
     Input tensors are compressed by grouping along a particular axis, scaling according to the
@@ -45,12 +117,9 @@ def group_quantize_compress(t: torch.Tensor, group_size: int) -> Tuple[torch.Ten
     t_scale = (t_max - t_min) / (2**4 - 1)
     t_bias = t_min
 
-    # import ipdb; ipdb.set_trace()
     t_quantized = np.round((t_grouped - t_bias) / t_scale).astype(np.uint16)
-    int16_scales = 2 ** (np.arange(4) * 4)[::-1].astype(np.uint16)
-
-    t_packed = t_quantized.reshape(n_rows, n_groups, group_size // 4, 4) @ int16_scales
-    t_packed = t_packed.astype(np.uint16)
+    t_packed = _int4_npy_encoder(t_quantized.flatten())
+    t_packed = t_packed.reshape(n_rows, n_groups, group_size // 4)
     return (
         torch.tensor(t_packed.view(np.int16)),
         torch.tensor(t_scale, dtype=torch_dtype),
@@ -100,11 +169,8 @@ def group_quantize_decompress(
 
     else:
         n_rows, n_groups, n_group_ids = t_packed.shape
-        t_unpacked = (
-            torch.stack([(t_packed >> s) & 15 for s in [12, 8, 4, 0]])  # mask and shift
-            .permute(1, 2, 3, 0)
-            .reshape(n_rows, n_groups, n_group_ids * 4)  # reshape
-        ).to(dtype=dtype)
+        t_packed = t_packed.numpy().flatten()
+        t_unpacked = torch.tensor(_int4_npy_decoder(t_packed).reshape(n_rows, n_groups, n_group_ids * 4))
         t_scaled = t_unpacked * group_scale + group_bias  # rescale
         return t_scaled.reshape(n_rows, n_groups * n_group_ids * 4)
 
