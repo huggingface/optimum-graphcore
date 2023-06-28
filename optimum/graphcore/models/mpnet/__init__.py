@@ -16,12 +16,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from .modeling_bert import (
-    PipelinedBertModel,
-    PipelinedBertForMaskedLM,
-    PipelinedBertForMultipleChoice,
-    PipelinedBertForPreTraining,
-    PipelinedBertForQuestionAnswering,
-    PipelinedBertForSequenceClassification,
-    PipelinedBertForTokenClassification,
+from .modeling_mpnet import (
+    PipelinedMPNetModel,
+    PipelinedMPNetForMaskedLM
 )
