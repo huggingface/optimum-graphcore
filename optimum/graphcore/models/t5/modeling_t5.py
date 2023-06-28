@@ -473,6 +473,7 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
             encoder_attentions=encoder_outputs.attentions,
         )
 
+
 @register(T5EncoderModel)
 class PipelinedT5EncoderModel(T5EncoderModel, PipelineMixin):
     def parallelize(self):
