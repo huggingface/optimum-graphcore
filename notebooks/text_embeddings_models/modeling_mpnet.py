@@ -160,11 +160,11 @@ class PipelinedMPNetForMaskedLM(MPNetForMaskedLM, PipelineMixin):
         super().parallelize()
 
         for layer in self.mpnet.encoder.layer:
-            layer.attention.attn.self.__class__ = MPNetFusedSelfAttention
+            layer.attention.attn.__class__ = MPNetFusedSelfAttention
 
         if self.ipu_config.embedding_serialization_factor > 1:
-            self.cls.predictions.decoder = SerializedLinear.from_model(
-                self.cls.predictions.decoder, self.ipu_config.embedding_serialization_factor
+            self.lm_head.decoder = SerializedLinear.from_model(
+                self.lm_head.decoder, self.ipu_config.embedding_serialization_factor
             )
             self.tie_weights()
 
@@ -201,7 +201,7 @@ class PipelinedMPNetForMaskedLM(MPNetForMaskedLM, PipelineMixin):
         super().deparallelize()
 
         for layer in self.encoder.layer:
-            layer.attention.attn.self.__class__ = MPNetSelfAttention
+            layer.attention.attn.__class__ = MPNetSelfAttention
 
         # Deserialize the serialized word embedding
         if self.ipu_config.embedding_serialization_factor > 1:

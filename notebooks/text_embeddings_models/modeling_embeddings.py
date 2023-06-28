@@ -10,6 +10,7 @@ logger = logging.getLogger("e5")
 
 class IPUEmbeddingsModel:
     def __init__(self, model_name, model_config, ipu_config, fp16=True):
+        
         self.model = AutoModel.from_pretrained(model_name, config=model_config)
         self.model = to_pipelined(self.model, ipu_config)
         self.model = self.model.parallelize()
@@ -17,11 +18,7 @@ class IPUEmbeddingsModel:
 
         self.pool_type = self.model_config.pool_type()
     
-    def pool(
-        self, 
-        last_hidden_states: torch.Tensor,
-        attention_mask: torch.Tensor
-        ) -> torch.Tensor:
+    def pool(self, last_hidden_states: torch.Tensor, attention_mask: torch.Tensor) -> torch.Tensor:
              
         last_hidden = last_hidden_states.masked_fill(~attention_mask[..., None].bool(), 0.0)
     
@@ -41,4 +38,5 @@ class IPUEmbeddingsModel:
         embeds = F.normalize(embeds, p=2, dim=-1)
 
         return embeds
+
 
