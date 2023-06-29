@@ -39,6 +39,7 @@ from transformers import (
 )
 from transformers.testing_utils import slow
 
+from optimum.graphcore import IPUConfig
 from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
 
 from .utils import MODELS_TO_TEST_MAPPING
@@ -51,13 +52,13 @@ def _get_supported_models_for_script(
     Filters models that can perform the task from models_to_test.
 
     Args:
-        models_to_test: mapping between a model type and a tuple (model_name_or_path, ipu_config_name).
+        models_to_test: mapping between a model type and a tuple (model_name_or_path, ipu_config).
         task_mapping: mapping bewteen a model config and a model class.
         task: the task to get the model names for.
 
     Returns:
         A list of models that are supported for the task.
-        Each element of the list follows the same format: (model_type, (model_name_or_path, ipu_config_name)).
+        Each element of the list follows the same format: (model_type, (model_name_or_path, ipu_config)).
     """
 
     def is_valid_model_type(model_type: str) -> bool:
@@ -81,7 +82,7 @@ _SCRIPT_TO_MODEL_MAPPING = {
     "run_swag": _get_supported_models_for_script(MODELS_TO_TEST_MAPPING, MODEL_FOR_MULTIPLE_CHOICE_MAPPING),
     "run_qa": _get_supported_models_for_script(MODELS_TO_TEST_MAPPING, MODEL_FOR_QUESTION_ANSWERING_MAPPING),
     "run_summarization": _get_supported_models_for_script(
-        MODELS_TO_TEST_MAPPING, MODEL_FOR_SEQ_TO_SEQ_CAUSAL_LM_MAPPING
+        MODELS_TO_TEST_MAPPING, MODEL_FOR_SEQ_TO_SEQ_CAUSAL_LM_MAPPING, task="summarization"
     ),
     "run_translation": _get_supported_models_for_script(
         MODELS_TO_TEST_MAPPING, MODEL_FOR_SEQ_TO_SEQ_CAUSAL_LM_MAPPING
@@ -117,19 +118,21 @@ class ExampleTestMeta(type):
             if models_to_test is None:
                 raise AttributeError(f"could not create class because no model was found for example {example_name}")
         for model_type, names in models_to_test:
-            model_name, ipu_config_name = names
-            attrs[f"test_{example_name}_{model_type}"] = cls._create_test(model_name, ipu_config_name)
+            model_name, ipu_config, example_config = names
+            attrs[f"test_{example_name}_{model_type}"] = cls._create_test(model_name, ipu_config, example_config)
         attrs["EXAMPLE_NAME"] = example_name
         return super().__new__(cls, name, bases, attrs)
 
     @classmethod
-    def _create_test(cls, model_name: str, ipu_config_name: str) -> Callable[[], None]:
+    def _create_test(
+        cls, model_name: str, ipu_config: Union[str, IPUConfig], example_config: Dict
+    ) -> Callable[[], None]:
         """
-        Creates a test function that runs an example for a specific (model_name, ipu_config_name) pair.
+        Creates a test function that runs an example for a specific (model_name, ipu_config) pair.
 
         Args:
             model_name: the model_name_or_path.
-            ipu_config_name: the ipu config name.
+            ipu_config: IPUConfig instance or the ipu config name.
 
         Returns:
             The test function that runs the example.
@@ -148,25 +151,55 @@ class ExampleTestMeta(type):
             else:
                 example_script = example_script[0]
 
+            command_line_kwargs = {
+                "task": self.TASK_NAME,
+                "dataset_config_name": self.DATASET_CONFIG_NAME,
+                "do_eval": self.EVAL_IS_SUPPORTED,
+                "lr": self.LEARNING_RATE,
+                "train_batch_size": self.TRAIN_BATCH_SIZE,
+                "eval_batch_size": self.EVAL_BATCH_SIZE,
+                "num_epochs": self.NUM_EPOCHS,
+                "max_steps": self.MAX_STEPS,
+                "inference_device_iterations": self.INFERENCE_DEVICE_ITERATIONS,
+                "gradient_accumulation_steps": self.GRADIENT_ACCUMULATION_STEPS,
+                "extra_command_line_arguments": self.EXTRA_COMMAND_LINE_ARGUMENTS,
+            }
+
+            def to_dict(input_list: list):
+                """
+                helper function to convert EXTRA_COMMAND_LINE_ARGUMENTS list
+                to a map
+                """
+                output = {}
+                for param_value in input_list:
+                    split_param_value = param_value.split(" ", 1)
+                    if len(split_param_value) > 1:
+                        param, value = split_param_value
+                        output[param] = value
+                    else:
+                        output[param_value] = ""
+                return output
+
+            for config, value in example_config.items():
+                if config in command_line_kwargs:
+                    if config == "extra_command_line_arguments":
+                        updated_defaults = to_dict(command_line_kwargs[config])
+                        override = to_dict(example_config[config])
+                        updated_defaults.update(override)
+                        command_line_kwargs[config] = [
+                            param + " " + value for param, value in updated_defaults.items()
+                        ]
+                    else:
+                        command_line_kwargs[config] = value
+                else:
+                    raise KeyError(f"{example_config=} can only override the following keys: {command_line_kwargs=}")
+
             self._install_requirements(example_script.parent / "requirements.txt")
 
             with TemporaryDirectory(dir=Path(self.EXAMPLE_DIR)) as tmp_dir:
                 os.environ["HF_HOME"] = os.path.join(tmp_dir, "hf_home")
                 cmd_line = self._create_command_line(
-                    example_script,
-                    model_name,
-                    ipu_config_name,
-                    tmp_dir,
-                    task=self.TASK_NAME,
-                    dataset_config_name=self.DATASET_CONFIG_NAME,
-                    do_eval=self.EVAL_IS_SUPPORTED,
-                    lr=self.LEARNING_RATE,
-                    train_batch_size=self.TRAIN_BATCH_SIZE,
-                    eval_batch_size=self.EVAL_BATCH_SIZE,
-                    num_epochs=self.NUM_EPOCHS,
-                    inference_device_iterations=self.INFERENCE_DEVICE_ITERATIONS,
-                    gradient_accumulation_steps=self.GRADIENT_ACCUMULATION_STEPS,
-                    extra_command_line_arguments=self.EXTRA_COMMAND_LINE_ARGUMENTS,
+                    example_script, model_name, ipu_config, tmp_dir, **command_line_kwargs
                 )
                 print()
                 print("#### Running command line... ####")
@@ -224,6 +257,7 @@ class ExampleTesterBase(TestCase):
     SCORE_NAME = "eval_accuracy"
     DATASET_PARAMETER_NAME = "dataset_name"
     NUM_EPOCHS = 1
+    MAX_STEPS = -1
     LEARNING_RATE = 1e-4
     TRAIN_BATCH_SIZE = 2
     EVAL_BATCH_SIZE = 2
@@ -233,16 +267,22 @@ class ExampleTesterBase(TestCase):
     N_IPU = 8
 
     def setUp(self):
+        self.TMP_DIR = TemporaryDirectory()
         self._create_venv()
 
     def tearDown(self):
         self._remove_venv()
+        self.TMP_DIR.cleanup()
+
+    @classmethod
+    def _convert_extra_command_line_arguments_to_dict(cls):
+        return {k: v for param_value in cls.EXTRA_COMMAND_LINE_ARGUMENTS for k, v in param_value.split(maxsplit=1)}
 
     def _create_command_line(
         self,
         script: str,
         model_name: str,
-        ipu_config_name: str,
+        ipu_config: Union[str, IPUConfig],
         output_dir: str,
         task: Optional[str] = None,
         dataset_config_name: Optional[str] = None,
@@ -251,6 +291,7 @@ class ExampleTesterBase(TestCase):
         train_batch_size: int = 2,
         eval_batch_size: int = 2,
         num_epochs: int = 2,
+        max_steps: int = -1,
         inference_device_iterations: int = 4,
         gradient_accumulation_steps: int = 64,
         extra_command_line_arguments: Optional[List[str]] = None,
@@ -266,11 +307,18 @@ class ExampleTesterBase(TestCase):
             ]
         )
 
+        # if the input is an IPUConfig instance, serialize it locally
+        # so that the subprocess can load it
+        if isinstance(ipu_config, IPUConfig):
+            local_config_path = os.path.join(self.TMP_DIR.name, "ipu_config")
+            ipu_config.save_pretrained(local_config_path)
+            ipu_config = local_config_path
+
         cmd_line = [
             f"{self.VENV_DIR.name}/bin/python" if self.venv_was_created else "python",
             f"{script}",
             f"--model_name_or_path {model_name}",
-            f"--ipu_config_name {ipu_config_name}",
+            f"--ipu_config_name {ipu_config}",
             f"{task_option}",
             "--do_train",
             f"{do_eval_option}",
@@ -281,7 +329,8 @@ class ExampleTesterBase(TestCase):
             f"--per_device_eval_batch_size {eval_batch_size}",
             "--save_strategy epoch",
             f"--ipu_config_overrides {ipu_config_overrides}",
-            f" --num_train_epochs {num_epochs}",
+            f"--num_train_epochs {num_epochs}",
+            f"--max_steps {max_steps}",
             "--dataloader_num_workers 16",
             "--pad_on_batch_axis",
             "--save_steps -1",
@@ -306,7 +355,7 @@ class ExampleTesterBase(TestCase):
         """
         Creates the virtual environment for the example.
         """
-        self.VENV_DIR = TemporaryDirectory(prefix="venv_")
+        self.VENV_DIR = TemporaryDirectory(dir=self.TMP_DIR.name, prefix="venv")
         cmd_line = f"python -m venv {self.VENV_DIR.name}".split()
         p = subprocess.run(cmd_line)
         self.assertEqual(p.returncode, 0)
@@ -445,7 +494,7 @@ class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, e
         self,
         script: str,
         model_name: str,
-        ipu_config_name: str,
+        ipu_config: Union[str, IPUConfig],
         output_dir: str,
         task: Optional[str] = None,
         dataset_config_name: Optional[str] = None,
@@ -454,6 +503,7 @@ class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, e
         train_batch_size: int = 1,
         eval_batch_size: int = 1,
         num_epochs: int = 2,
+        max_steps: int = -1,
         inference_device_iterations: int = 6,
         gradient_accumulation_steps: int = 64,
         extra_command_line_arguments: Optional[List[str]] = None,
@@ -465,7 +515,7 @@ class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, e
         return super()._create_command_line(
             script,
             model_name,
-            ipu_config_name,
+            ipu_config,
             output_dir,
             task=task,
             dataset_config_name=dataset_config_name,
@@ -474,6 +524,7 @@ class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, e
             train_batch_size=train_batch_size,
             eval_batch_size=eval_batch_size,
             num_epochs=num_epochs,
+            max_steps=max_steps,
             inference_device_iterations=inference_device_iterations,
             gradient_accumulation_steps=gradient_accumulation_steps,
             extra_command_line_arguments=extra_command_line_arguments,
@@ -503,7 +554,7 @@ class TranslationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, exa
         self,
         script: str,
         model_name: str,
-        ipu_config_name: str,
+        ipu_config: Union[str, IPUConfig],
         output_dir: str,
         task: Optional[str] = None,
         dataset_config_name: Optional[str] = None,
@@ -512,6 +563,7 @@ class TranslationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, exa
         train_batch_size: int = 1,
         eval_batch_size: int = 1,
         num_epochs: int = 2,
+        max_steps: int = -1,
         inference_device_iterations: int = 6,
         gradient_accumulation_steps: int = 64,
         extra_command_line_arguments: Optional[List[str]] = None,
@@ -523,7 +575,7 @@ class TranslationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, exa
         return super()._create_command_line(
             script,
             model_name,
-            ipu_config_name,
+            ipu_config,
             output_dir,
             task=task,
             dataset_config_name=dataset_config_name,
@@ -532,6 +584,7 @@ class TranslationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, exa
             train_batch_size=train_batch_size,
             eval_batch_size=eval_batch_size,
             num_epochs=num_epochs,
+            max_steps=max_steps,
             inference_device_iterations=inference_device_iterations,
             gradient_accumulation_steps=gradient_accumulation_steps,
             extra_command_line_arguments=extra_command_line_arguments,
