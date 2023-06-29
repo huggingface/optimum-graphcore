@@ -29,15 +29,16 @@ from ...modeling_utils import (
     outline_attribute,
     recomputation_checkpoint,
     PipelineMixin,
-    register
+    register,
 )
 
 logger = logging.getLogger(__name__)
 
+
 class MPNetFusedSelfAttention(MPNetSelfAttention):
     def __init__(self, config):
         super().__init__(config)
-    
+
     def fused_qkv(self, hidden_state: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         weights = (self.q.weight, self.k.weight, self.v.weight)
         combined_weight = torch.cat(weights, dim=0)
@@ -65,7 +66,6 @@ class MPNetFusedSelfAttention(MPNetSelfAttention):
         position_bias=None,
         output_attentions=False,
     ):
-
         # --- Change: Use fused matmul implementation ---
         q, k, v = self.fused_qkv(hidden_states)
 
@@ -82,7 +82,7 @@ class MPNetFusedSelfAttention(MPNetSelfAttention):
         # Apply relative position embedding (precomputed in MPNetEncoder) if provided.
         if position_bias is not None:
             attention_scores += position_bias
-        
+
         if attention_mask is not None:
             attention_scores = attention_scores + attention_mask
 
@@ -105,14 +105,13 @@ class MPNetFusedSelfAttention(MPNetSelfAttention):
         outputs = (o, attention_probs) if output_attentions else (o,)
 
         return outputs
-    
 
 
 @register(MPNetModel)
 class PipelinedMPNetModel(MPNetModel, PipelineMixin):
     def __init__(self, config):
         super().__init__(config)
-    
+
     def parallelize(self):
         super().parallelize()
 
@@ -160,7 +159,6 @@ class PipelinedMPNetModel(MPNetModel, PipelineMixin):
         if self.ipu_config.embedding_serialization_factor > 1:
             self.embeddings.word_embeddings = self.embeddings.word_embeddings.to_model()
         return self
-
 
 
 @register(MPNetForMaskedLM)
