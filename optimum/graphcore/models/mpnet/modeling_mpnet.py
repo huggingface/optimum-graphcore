@@ -1,14 +1,28 @@
+# Copyright (c) 2021 Graphcore Ltd. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import torch
 import torch.nn as nn
 import poptorch
-import logging
+from optimum.utils import logging
 import math
 
 from typing import Tuple
 
 from transformers.models.mpnet.modeling_mpnet import MPNetForMaskedLM, MPNetSelfAttention, MPNetModel
 
-from optimum.graphcore.modeling_utils import (
+from ...modeling_utils import (
     SerializedLinear,
     SerializedEmbedding,
     get_layer_ipu,
@@ -18,7 +32,7 @@ from optimum.graphcore.modeling_utils import (
     register
 )
 
-logger = logging.getLogger("")
+logger = logging.getLogger(__name__)
 
 class MPNetFusedSelfAttention(MPNetSelfAttention):
     def __init__(self, config):

@@ -1,4 +1,5 @@
 from optimum.graphcore import IPUConfig
+import optimum.graphcore
 import torch
 import logging
 import os
@@ -12,65 +13,6 @@ default_config = {
     'inference_replication_factor': 4
    }
 architectures = ['BertModel', 'MPNetModel', 'MPNetForMaskedLM', 'T5EncoderModel']
-
-#TEMPORARY - Handle pretrained IPU config compatibility`
-bert_large_uncased = {
-  "device_iterations": 1,
-  "embedding_serialization_factor": 2,
-  "enable_half_first_order_momentum": True,
-  "enable_half_partials": True,
-  "executable_cache_dir": "./exe_cache",
-  "gradient_accumulation_steps": 512,
-  "inference_device_iterations": 4,
-  "inference_replication_factor": 16,
-  "ipus_per_replica": 4,
-  "layers_per_ipu": [
-    3,
-    7,
-    7,
-    7
-  ],
-  "matmul_proportion": [
-    0.1,
-    0.15,
-    0.15,
-    0.15
-  ],
-  "optimizer_state_offchip": True,
-  "optimum_version": "1.0.0",
-  "output_mode": "final",
-  "recompute_checkpoint_every_layer": True,
-  "replicated_tensor_sharding": True,
-  "replication_factor": 16,
-  "seed": 42
-}
-
-#TEMPORARY - Handle pretrained IPU config compatibility`
-bert_base_uncased = {
-  "device_iterations": 1,
-  "embedding_serialization_factor": 2,
-  "enable_half_first_order_momentum": True,
-  "enable_half_partials": True,
-  "executable_cache_dir": "./exe_cache",
-  "gradient_accumulation_steps": 512,
-  "inference_device_iterations": 4,
-  "inference_replication_factor": 4,
-  "ipus_per_replica": 4,
-  "layers_per_ipu": [
-    0,
-    4,
-    4,
-    4
-  ],
-  "matmul_proportion": 0.22,
-  "optimizer_state_offchip": False,
-  "optimum_version": "0.1.2",
-  "output_mode": "final",
-  "recompute_checkpoint_every_layer": True,
-  "replicated_tensor_sharding": True,
-  "replication_factor": 4,
-  "seed": 42
-}
 
 def get_ipu_config(model_config, n_ipu, model_ipu, device_iterations, replication_factor=None, random_seed=None):
     base_architecture = model_config.architectures[0]
@@ -87,19 +29,17 @@ def get_ipu_config(model_config, n_ipu, model_ipu, device_iterations, replicatio
     # Set up number of layers for pipeline stages for E5 (Bert encoder) or MPNet (MPNet encoder) models
     if base_architecture == 'BertModel' or base_architecture == 'MPNetModel' or base_architecture == 'MPNetForMaskedLM':        
         if model_config.num_hidden_layers == 12:
-            # ipu_config = IPUConfig.from_pretrained("Graphcore/bert-base-uncased").to_dict()
-            ipu_config = bert_base_uncased
+            ipu_config = IPUConfig.from_pretrained("Graphcore/bert-base-uncased").to_dict()
             if model_ipu == 1:
                 ipu_config['inference_ipus_per_replica'] = 1
-                ipu_config['inference_matmul_proportion'] = [0.1]
+                ipu_config['inference_matmul_proportion'] = [0.2]
                 ipu_config['inference_layers_per_ipu'] = [12]
                 ipu_config['inference_replication_factor'] = 4
             elif model_ipu == 4:
                 ipu_config['inference_replication_factor'] = 1
             
         elif model_config.num_hidden_layers == 24:
-            # ipu_config = IPUConfig.from_pretrained("Graphcore/bert-large-uncased").to_dict()
-            ipu_config = bert_large_uncased
+            ipu_config = IPUConfig.from_pretrained("Graphcore/bert-large-uncased").to_dict()
             if model_ipu == 1:
                 ipu_config['inference_ipus_per_replica'] = 1
                 ipu_config['inference_matmul_proportion'] = [0.1]
@@ -158,6 +98,5 @@ def get_ipu_config(model_config, n_ipu, model_ipu, device_iterations, replicatio
         ipu_config['seed'] = random_seed 
         torch.manual_seed(random_seed)
 
-    print(ipu_config)
     return IPUConfig.from_dict(ipu_config).eval()
     

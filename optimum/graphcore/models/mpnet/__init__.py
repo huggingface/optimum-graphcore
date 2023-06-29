@@ -18,5 +18,5 @@
 
 from .modeling_mpnet import (
     PipelinedMPNetModel,
-    PipelinedMPNetForMaskedLM
+    PipelinedMPNetForMaskedLM,
 )
