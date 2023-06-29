@@ -41,6 +41,8 @@ from transformers import (
     AutoFeatureExtractor,
     AutoProcessor,
     AutoTokenizer,
+    T5Config,
+    T5EncoderModel,
 )
 
 from optimum.graphcore import IPUConfig
@@ -50,6 +52,9 @@ from .utils import MODELS_TO_TEST_MAPPING
 
 
 REVERSE_CONFIG_MAPPING = {v: k for k, v in CONFIG_MAPPING.items()}
+
+# Registered models that don't have a mapping in upstream transformers
+MODEL_MAPPING_EXTRA = {T5Config: T5EncoderModel}
 
 
 def _get_models_to_test(model_to_test_names):
@@ -69,6 +74,7 @@ def _get_models_to_test(model_to_test_names):
             MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING,
             MODEL_FOR_TOKEN_CLASSIFICATION_MAPPING,
             MODEL_MAPPING,
+            MODEL_MAPPING_EXTRA,
         ]
         config_class = None
         for mapping in mappings:
@@ -100,6 +106,8 @@ def _get_models_to_test(model_to_test_names):
 
 
 MODELS_TO_TEST = _get_models_to_test(MODELS_TO_TEST_MAPPING)
+
+print(MODELS_TO_TEST)
 
 
 class PipelinedModelsTester(TestCase):
