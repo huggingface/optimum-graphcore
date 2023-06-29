@@ -12,25 +12,26 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import torch
-import torch.nn as nn
-import poptorch
-from optimum.utils import logging
 import math
-
 from typing import Tuple
 
-from transformers.models.mpnet.modeling_mpnet import MPNetForMaskedLM, MPNetSelfAttention, MPNetModel
+import poptorch
+import torch
+import torch.nn as nn
+from transformers.models.mpnet.modeling_mpnet import MPNetForMaskedLM, MPNetModel, MPNetSelfAttention
+
+from optimum.utils import logging
 
 from ...modeling_utils import (
-    SerializedLinear,
+    PipelineMixin,
     SerializedEmbedding,
+    SerializedLinear,
     get_layer_ipu,
     outline_attribute,
     recomputation_checkpoint,
-    PipelineMixin,
     register,
 )
+
 
 logger = logging.getLogger(__name__)
 

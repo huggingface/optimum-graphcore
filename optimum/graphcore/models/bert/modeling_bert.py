@@ -28,7 +28,7 @@ from transformers import (
     BertForTokenClassification,
 )
 from transformers.modeling_outputs import MaskedLMOutput, QuestionAnsweringModelOutput
-from transformers.models.bert.modeling_bert import BertForPreTrainingOutput, BertSelfAttention, BertModel
+from transformers.models.bert.modeling_bert import BertForPreTrainingOutput, BertModel, BertSelfAttention
 
 from optimum.utils import logging
 
