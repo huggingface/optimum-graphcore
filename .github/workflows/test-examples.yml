@@ -43,7 +43,7 @@ jobs:
         . ${SDK_PATH}/popart-ubuntu_20_04*/enable.sh
         pytest tests/test_examples_match_transformers.py -v --durations=0
         mprof run --exit-code --interval 1 --include-children --multiprocess \
-          pytest tests/test_examples.py -v -n 4
+          pytest tests/test_examples.py -v -n 4 --durations=0
         mprof plot -o memory_profile.png
     - name: Upload memory profile
       if: always()
