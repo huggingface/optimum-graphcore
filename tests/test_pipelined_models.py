@@ -52,10 +52,15 @@ from .utils import MODELS_TO_TEST_MAPPING
 
 
 REVERSE_CONFIG_MAPPING = {v: k for k, v in CONFIG_MAPPING.items()}
-
+# print(REVERSE_CONFIG_MAPPING)
 # Registered models that don't have a mapping in upstream transformers
-MODEL_MAPPING_EXTRA = {T5Config: T5EncoderModel}
+class T5EncoderConfig (T5Config):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.num_decoder_layers = 0
 
+MODEL_MAPPING_EXTRA = {T5EncoderConfig: T5EncoderModel}
+REVERSE_CONFIG_MAPPING[T5EncoderConfig]= 't5Encoder'
 
 def _get_models_to_test(model_to_test_names):
     def find_config_class_from_pretrained_class(pretrained_class):
