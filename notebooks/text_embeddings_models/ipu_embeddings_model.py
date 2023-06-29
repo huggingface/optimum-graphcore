@@ -14,7 +14,8 @@ class IPUEmbeddingsModel(torch.nn.Module):
 
         self.encoder = to_pipelined(model, ipu_config)
         self.encoder = self.encoder.parallelize()
-        if fp16: self.encoder = self.encoder.half()
+        if fp16:
+            self.encoder = self.encoder.half()
 
     def pool(self, last_hidden_states: torch.Tensor, attention_mask: torch.Tensor, pool_type: str) -> torch.Tensor:
         last_hidden = last_hidden_states.masked_fill(~attention_mask[..., None].bool(), 0.0)

@@ -57,10 +57,7 @@ from .models.t5 import PipelinedT5ForConditionalGeneration
 from .models.vit import PipelinedViTForImageClassification
 from .models.wav2vec2 import PipelinedWav2Vec2ForPreTraining
 
-from .models.mpnet import(
-    PipelinedMPNetModel,
-    PipelinedMPNetForMaskedLM
-)
+from .models.mpnet import PipelinedMPNetModel, PipelinedMPNetForMaskedLM
 
 from .pipelines import IPUFillMaskPipeline, IPUTokenClassificationPipeline, pipeline
 from .trainer import IPUTrainer, IPUTrainerState
