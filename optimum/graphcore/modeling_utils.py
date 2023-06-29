@@ -20,9 +20,9 @@ import poptorch
 import torch
 import torch.nn.functional as F
 from torch import nn
+from transformers import PreTrainedModel
 
 from optimum.utils import logging
-from transformers import PreTrainedModel
 
 from .ipu_configuration import IncompatibleIPUConfigError, IPUConfig
 
