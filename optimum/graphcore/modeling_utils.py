@@ -16,14 +16,13 @@ from __future__ import annotations
 import copy
 from typing import List, Optional, Tuple, Union
 
-from functools import partial
 import poptorch
 import torch
 import torch.nn.functional as F
 from torch import nn
-from transformers import PreTrainedModel
 
 from optimum.utils import logging
+from transformers import PreTrainedModel
 
 from .ipu_configuration import IncompatibleIPUConfigError, IPUConfig
 
@@ -622,7 +621,7 @@ class SplitProjection(torch.nn.Module):
         self,
         linear: torch.nn.Linear,
         serialization_factor: int,
-        serialization_mode = poptorch.MatMulSerializationMode.OutputChannels
+        serialization_mode=poptorch.MatMulSerializationMode.OutputChannels,
     ) -> None:
         super().__init__()
 
@@ -630,37 +629,39 @@ class SplitProjection(torch.nn.Module):
         self.out_features = linear.out_features
         self.serialization_mode = serialization_mode
         self.split_linear_layers = torch.nn.ModuleList()
-        
+
         if serialization_mode is poptorch.MatMulSerializationMode.OutputChannels:
-            
             if self.out_features % serialization_factor != 0:
                 raise ValueError(f"{linear.out_features=} must be divisible by {serialization_factor=}")
-            
+
             self.split_size = self.out_features // serialization_factor
             for i in range(0, self.out_features, self.split_size):
-                split_linear = torch.nn.Linear(self.in_features, self.split_size, bias=False, dtype=linear.weight.dtype)
+                split_linear = torch.nn.Linear(
+                    self.in_features, self.split_size, bias=False, dtype=linear.weight.dtype
+                )
                 with torch.no_grad():
-                    split_linear.weight.copy_(linear.weight[i : i + self.split_size, :].detach())    
+                    split_linear.weight.copy_(linear.weight[i : i + self.split_size, :].detach())
                 self.split_linear_layers.append(split_linear)
-                
+
         elif serialization_mode is poptorch.MatMulSerializationMode.ReducingDim:
-            
             if self.in_features % serialization_factor != 0:
                 raise ValueError(f"{linear.in_features=} must be divisible by {serialization_factor=}")
 
             self.split_size = self.in_features // serialization_factor
             for i in range(0, self.out_features, self.split_size):
-                split_linear = torch.nn.Linear(self.split_size, self.out_features, bias=False, dtype=linear.weight.dtype)
+                split_linear = torch.nn.Linear(
+                    self.split_size, self.out_features, bias=False, dtype=linear.weight.dtype
+                )
                 with torch.no_grad():
-                    split_linear.weight.copy_(linear.weight[: , i : i + self.split_size].detach())    
+                    split_linear.weight.copy_(linear.weight[:, i : i + self.split_size].detach())
                 self.split_linear_layers.append(split_linear)
-            
+
         else:
             raise ValueError(
                 f"`SplitProjection` `serialization_mode` can only be {poptorch.MatMulSerializationMode.OutputChannels} or {poptorch.MatMulSerializationMode.ReducingDim}."
                 f" You provided: {serialization_mode=}"
             )
-        
+
         self.bias = None
         if linear.bias is not None:
             self.bias = torch.nn.Parameter(torch.zeros_like(linear.bias))
@@ -668,7 +669,6 @@ class SplitProjection(torch.nn.Module):
                 self.bias.half()
             with torch.no_grad():
                 self.bias.copy_(linear.bias.detach())
-    
 
     def forward(self, x):
         if self.serialization_mode is poptorch.MatMulSerializationMode.OutputChannels:
@@ -676,21 +676,26 @@ class SplitProjection(torch.nn.Module):
             for i, split_linear_layer in enumerate(self.split_linear_layers):
                 out.append(split_linear_layer(x))
             out = torch.concat(out, -1)
-                    
+
         elif self.serialization_mode is poptorch.MatMulSerializationMode.ReducingDim:
-            out = self.split_linear_layers[0](x[..., 0 :  self.split_size])
+            out = self.split_linear_layers[0](x[..., 0 : self.split_size])
             if len(self.split_linear_layers) > 1:
                 for i, split_linear_layer in enumerate(self.split_linear_layers[1:]):
                     out += split_linear_layer(x[..., i * self.split_size : (i + 1) * self.split_size])
 
         if self.bias is not None:
             out += self.bias
-        
+
         return out
 
     @classmethod
-    def from_model(cls, linear: torch.nn.Linear, serialization_factor: int, mode=poptorch.MatMulSerializationMode.OutputChannels) -> SplitProjection:
-        return cls(linear, serialization_factor, mode)
+    def from_model(
+        cls,
+        linear: torch.nn.Linear,
+        serialization_factor: int,
+        serialization_mode=poptorch.MatMulSerializationMode.OutputChannels,
+    ) -> SplitProjection:
+        return cls(linear, serialization_factor, serialization_mode)
 
     def to_model(self) -> nn.Linear:
         """
@@ -703,15 +708,15 @@ class SplitProjection(torch.nn.Module):
         layer = nn.Linear(self.in_features, self.out_features, bias=self.bias is not None)
         if dtype == torch.float16:
             layer = layer.half()
-            
+
         if self.serialization_mode is poptorch.MatMulSerializationMode.OutputChannels:
             with torch.no_grad():
                 layer.weight.copy_(torch.vstack([l.weight.detach() for l in self.split_linear_layers]))
-                       
+
         elif self.serialization_mode is poptorch.MatMulSerializationMode.ReducingDim:
             with torch.no_grad():
                 layer.weight.copy_(torch.hstack([l.weight.detach() for l in self.split_linear_layers]))
-        
+
         if self.bias is not None:
             with torch.no_grad():
                 layer.bias.copy_(self.bias)
