@@ -648,7 +648,7 @@ class SplitProjection(torch.nn.Module):
                 raise ValueError(f"{linear.in_features=} must be divisible by {serialization_factor=}")
 
             self.split_size = self.in_features // serialization_factor
-            for i in range(0, self.out_features, self.split_size):
+            for i in range(0, self.in_features, self.split_size):
                 split_linear = torch.nn.Linear(
                     self.split_size, self.out_features, bias=False, dtype=linear.weight.dtype
                 )
@@ -665,8 +665,6 @@ class SplitProjection(torch.nn.Module):
         self.bias = None
         if linear.bias is not None:
             self.bias = torch.nn.Parameter(torch.zeros_like(linear.bias))
-            if linear.weight.dtype is torch.float16:
-                self.bias.half()
             with torch.no_grad():
                 self.bias.copy_(linear.bias.detach())
 
@@ -679,9 +677,8 @@ class SplitProjection(torch.nn.Module):
 
         elif self.serialization_mode is poptorch.MatMulSerializationMode.ReducingDim:
             out = self.split_linear_layers[0](x[..., 0 : self.split_size])
-            if len(self.split_linear_layers) > 1:
-                for i, split_linear_layer in enumerate(self.split_linear_layers[1:]):
-                    out += split_linear_layer(x[..., i * self.split_size : (i + 1) * self.split_size])
+            for i, split_linear_layer in enumerate(self.split_linear_layers[1:]):
+                out += split_linear_layer(x[..., i * self.split_size : (i + 1) * self.split_size])
 
         if self.bias is not None:
             out += self.bias
