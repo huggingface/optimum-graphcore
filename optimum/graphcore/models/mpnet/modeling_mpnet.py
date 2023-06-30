@@ -24,7 +24,6 @@ from optimum.utils import logging
 
 from ...modeling_utils import (
     PipelineMixin,
-    SerializedEmbedding,
     SerializedLinear,
     get_layer_ipu,
     outline_attribute,
@@ -116,12 +115,6 @@ class PipelinedMPNetModel(MPNetModel, PipelineMixin):
         for layer in self.encoder.layer:
             layer.attention.attn.__class__ = MPNetFusedSelfAttention
 
-        # Serialise the word embeddings - removed here for MPNet due non-divisible embedding dim
-        # if self.ipu_config.embedding_serialization_factor > 1: 
-        #     self.embeddings.word_embeddings = SerializedEmbedding.from_model(
-        #         self.embeddings.word_embeddings, self.ipu_config.embedding_serialization_factor
-        #     )
-
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding --> IPU 0")
 
@@ -153,10 +146,6 @@ class PipelinedMPNetModel(MPNetModel, PipelineMixin):
 
         for layer in self.encoder.layer:
             layer.attention.attn.__class__ = MPNetSelfAttention
-
-        # Deserialize the serialized word embedding - removed here for MPNet due non-divisible embedding dim
-        # if self.ipu_config.embedding_serialization_factor > 1:
-        #     self.embeddings.word_embeddings = self.embeddings.word_embeddings.to_model()
 
         return self
 
