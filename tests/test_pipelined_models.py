@@ -40,28 +40,19 @@ from transformers import (
     MODEL_MAPPING,
     AutoFeatureExtractor,
     AutoProcessor,
-    AutoTokenizer,
-    T5Config,
-    T5EncoderModel,
+    AutoTokenizer
 )
 
 from optimum.graphcore import IPUConfig
 from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
 
-from .utils import MODELS_TO_TEST_MAPPING
+from .utils import MODELS_TO_TEST_MAPPING, MODEL_MAPPING_EXTRA, EXTRA_CONFIG_MAPPING, EXTRA_MODELS_TO_TEST_MAPPING
 
-
+MODELS_TO_TEST_MAPPING.update(EXTRA_MODELS_TO_TEST_MAPPING)
+[CONFIG_MAPPING.register(k, v) for k,v in EXTRA_CONFIG_MAPPING.items()]
 REVERSE_CONFIG_MAPPING = {v: k for k, v in CONFIG_MAPPING.items()}
-# print(REVERSE_CONFIG_MAPPING)
-# Registered models that don't have a mapping in upstream transformers
-class T5EncoderConfig (T5Config):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.num_decoder_layers = 0
 
-MODEL_MAPPING_EXTRA = {T5EncoderConfig: T5EncoderModel}
-REVERSE_CONFIG_MAPPING[T5EncoderConfig]= 't5Encoder'
-
+print(CONFIG_MAPPING)
 def _get_models_to_test(model_to_test_names):
     def find_config_class_from_pretrained_class(pretrained_class):
         mappings = [

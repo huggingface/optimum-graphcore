@@ -30,7 +30,6 @@ MODELS_TO_TEST_MAPPING = {
     "lxmert": ("unc-nlp/lxmert-base-uncased", "Graphcore/lxmert-base-ipu"),
     "roberta": ("roberta-base", "Graphcore/roberta-base-ipu"),
     "t5": ("t5-small", "Graphcore/t5-small-ipu"),
-    "t5Encoder": ("sentence-transformers/sentence-t5-base", "ipu_config_t5Encoder.json"),
     "mt5": ("google/mt5-small", "Graphcore/mt5-small-ipu"),
     "vit": ("google/vit-base-patch16-224-in21k", "Graphcore/vit-base-ipu"),
     "wav2vec2": {
@@ -38,6 +37,21 @@ MODELS_TO_TEST_MAPPING = {
         "ctc": ("facebook/wav2vec2-base", "Graphcore/wav2vec2-ctc-base-ipu"),
     },
     "whisper": ("openai/whisper-tiny", "Graphcore/whisper-tiny-ipu"),
+}
+
+
+# Registered models that don't have a mapping in upstream transformers
+from transformers import T5Config, T5EncoderModel
+
+class T5EncoderConfig (T5Config):
+    pass
+
+MODEL_MAPPING_EXTRA = {T5EncoderConfig: T5EncoderModel}
+EXTRA_CONFIG_MAPPING = {
+    't5Encoder' : T5EncoderConfig
+}
+EXTRA_MODELS_TO_TEST_MAPPING = {
+    "t5Encoder": ("sentence-transformers/sentence-t5-base", "tests/ipu_config_t5Encoder.json"),
 }
 
 
