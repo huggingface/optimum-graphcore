@@ -119,10 +119,11 @@ class PipelinedMPNetModel(MPNetModel, PipelineMixin):
         for layer in self.encoder.layer:
             layer.attention.attn.__class__ = MPNetFusedSelfAttention
 
-        if self.ipu_config.embedding_serialization_factor > 1:
-            self.embeddings.word_embeddings = SerializedEmbedding.from_model(
-                self.embeddings.word_embeddings, self.ipu_config.embedding_serialization_factor
-            )
+        # Serialise the word embeddings - removed here for MPNet due non-divisible embedding dim
+        # if self.ipu_config.embedding_serialization_factor > 1: 
+        #     self.embeddings.word_embeddings = SerializedEmbedding.from_model(
+        #         self.embeddings.word_embeddings, self.ipu_config.embedding_serialization_factor
+        #     )
 
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding --> IPU 0")
@@ -156,9 +157,10 @@ class PipelinedMPNetModel(MPNetModel, PipelineMixin):
         for layer in self.encoder.layer:
             layer.attention.attn.self.__class__ = MPNetSelfAttention
 
-        # Deserialize the serialized word embedding
-        if self.ipu_config.embedding_serialization_factor > 1:
-            self.embeddings.word_embeddings = self.embeddings.word_embeddings.to_model()
+        # Deserialize the serialized word embedding - removed here for MPNet due non-divisible embedding dim
+        # if self.ipu_config.embedding_serialization_factor > 1:
+        #     self.embeddings.word_embeddings = self.embeddings.word_embeddings.to_model()
+
         return self
 
 
@@ -174,6 +176,7 @@ class PipelinedMPNetForMaskedLM(MPNetForMaskedLM, PipelineMixin):
         for layer in self.mpnet.encoder.layer:
             layer.attention.attn.__class__ = MPNetFusedSelfAttention
 
+        # Serialise the prediction head decoder
         if self.ipu_config.embedding_serialization_factor > 1:
             self.lm_head.decoder = SerializedLinear.from_model(
                 self.lm_head.decoder, self.ipu_config.embedding_serialization_factor
@@ -184,6 +187,7 @@ class PipelinedMPNetForMaskedLM(MPNetForMaskedLM, PipelineMixin):
         logger.info("Embedding --> IPU 0")
 
         self.mpnet.embeddings = poptorch.BeginBlock(self.mpnet.embeddings, "Embedding", ipu_id=0)
+
         # Preventing the embeddings.LayerNorm from being outlined with the encoder.layer.LayerNorm
         # improves the tile mapping of the pipeline stashes
         hs = outline_attribute(self.mpnet.embeddings.LayerNorm, "embedding")
@@ -214,10 +218,6 @@ class PipelinedMPNetForMaskedLM(MPNetForMaskedLM, PipelineMixin):
 
         for layer in self.mpnet.encoder.layer:
             layer.attention.attn.__class__ = MPNetSelfAttention
-
-        # Deserialize the serialized word embedding
-        if self.ipu_config.embedding_serialization_factor > 1:
-            self.mpnet.embeddings.word_embeddings = self.mpnet.embeddings.word_embeddings.to_model()
 
         if isinstance(self.lm_head.decoder, SerializedLinear):
             self.lm_head.decoder = self.lm_head.decoder.to_model()
