@@ -42,7 +42,7 @@ from transformers.testing_utils import slow
 from optimum.graphcore import IPUConfig
 from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
 
-from .utils import MODELS_TO_TEST_MAPPING
+from .utils import MODELS_TO_TEST_MAPPING, high_memory_usage
 
 
 def _get_supported_models_for_script(
@@ -119,7 +119,10 @@ class ExampleTestMeta(type):
                 raise AttributeError(f"could not create class because no model was found for example {example_name}")
         for model_type, names in models_to_test:
             model_name, ipu_config, example_config = names
-            attrs[f"test_{example_name}_{model_type}"] = cls._create_test(model_name, ipu_config, example_config)
+            test_name = f"test_{example_name}_{model_type}"
+            attrs[test_name] = cls._create_test(model_name, ipu_config, example_config)
+            if name == "SummarizationExampleTester" and model_name == "google/mt5-small":
+                attrs[test_name] = high_memory_usage(attrs[test_name])
         attrs["EXAMPLE_NAME"] = example_name
         return super().__new__(cls, name, bases, attrs)
 
@@ -343,7 +346,6 @@ class ExampleTesterBase(TestCase):
 
         if extra_command_line_arguments is not None:
             cmd_line += extra_command_line_arguments
-
         pattern = re.compile(r"([\"\'].+?[\"\'])|\s")
         return [x for y in cmd_line for x in re.split(pattern, y) if x]
 

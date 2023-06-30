@@ -12,15 +12,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import unittest
 from collections import namedtuple
 
 import pytest
 from transformers import T5EncoderModel
-
-from optimum.graphcore.models.t5.configuration_t5 import T5EncoderConfig
+from transformers.testing_utils import parse_flag_from_env
 
 from optimum.graphcore import IPUConfig
+from optimum.graphcore.models.t5.configuration_t5 import T5EncoderConfig
 
+
+_run_high_memory_usage_tests = parse_flag_from_env("RUN_HIGH_MEMORY", default=False)
 
 model_test_config = namedtuple(
     "ModelTestConfig",
@@ -79,3 +82,12 @@ MODELS_TO_TEST_MAPPING_EXTRA = {
 
 def skip_unsupported(feature):
     return pytest.mark.skip(f"Skipping since {feature} is not yet supported in Optimum Graphcore")
+
+
+def high_memory_usage(test_case):
+    """
+    Decorator marking a test as using a large amount of DRAM.
+
+    This test is skipped by default. Set the RUN_HIGH_MEMORY environment variable to a truthy value to run them.
+    """
+    return unittest.skipUnless(_run_high_memory_usage_tests, "test requires high resident memory in DRAM")(test_case)
