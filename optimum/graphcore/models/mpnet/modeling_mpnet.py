@@ -166,7 +166,6 @@ class PipelinedMPNetModel(MPNetModel, PipelineMixin):
 class PipelinedMPNetForMaskedLM(MPNetForMaskedLM, PipelineMixin):
     def __init__(self, config):
         super().__init__(config)
-        print("masked lm?")
         self.mpnet = MPNetModel(config, add_pooling_layer=False)
 
     def parallelize(self):
@@ -213,12 +212,12 @@ class PipelinedMPNetForMaskedLM(MPNetForMaskedLM, PipelineMixin):
         """
         super().deparallelize()
 
-        for layer in self.encoder.layer:
+        for layer in self.mpnet.encoder.layer:
             layer.attention.attn.__class__ = MPNetSelfAttention
 
         # Deserialize the serialized word embedding
         if self.ipu_config.embedding_serialization_factor > 1:
-            self.embeddings.word_embeddings = self.embeddings.word_embeddings.to_model()
+            self.mpnet.embeddings.word_embeddings = self.mpnet.embeddings.word_embeddings.to_model()
 
         if isinstance(self.lm_head.decoder, SerializedLinear):
             self.lm_head.decoder = self.lm_head.decoder.to_model()
