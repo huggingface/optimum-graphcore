@@ -43,13 +43,13 @@ MODELS_TO_TEST_MAPPING = {
 # Registered models that don't have a mapping in upstream transformers
 from transformers import T5Config, T5EncoderModel
 
-class T5EncoderConfig (T5Config):
+
+class T5EncoderConfig(T5Config):
     pass
 
+
 MODEL_MAPPING_EXTRA = {T5EncoderConfig: T5EncoderModel}
-EXTRA_CONFIG_MAPPING = {
-    't5Encoder' : T5EncoderConfig
-}
+EXTRA_CONFIG_MAPPING = {"t5Encoder": T5EncoderConfig}
 EXTRA_MODELS_TO_TEST_MAPPING = {
     "t5Encoder": ("sentence-transformers/sentence-t5-base", "tests/ipu_config_t5Encoder.json"),
 }

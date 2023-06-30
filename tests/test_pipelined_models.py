@@ -40,19 +40,22 @@ from transformers import (
     MODEL_MAPPING,
     AutoFeatureExtractor,
     AutoProcessor,
-    AutoTokenizer
+    AutoTokenizer,
 )
 
 from optimum.graphcore import IPUConfig
 from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
 
-from .utils import MODELS_TO_TEST_MAPPING, MODEL_MAPPING_EXTRA, EXTRA_CONFIG_MAPPING, EXTRA_MODELS_TO_TEST_MAPPING
+from .utils import EXTRA_CONFIG_MAPPING, EXTRA_MODELS_TO_TEST_MAPPING, MODEL_MAPPING_EXTRA, MODELS_TO_TEST_MAPPING
+
 
 MODELS_TO_TEST_MAPPING.update(EXTRA_MODELS_TO_TEST_MAPPING)
-[CONFIG_MAPPING.register(k, v) for k,v in EXTRA_CONFIG_MAPPING.items()]
+[CONFIG_MAPPING.register(k, v) for k, v in EXTRA_CONFIG_MAPPING.items()]
 REVERSE_CONFIG_MAPPING = {v: k for k, v in CONFIG_MAPPING.items()}
 
 print(CONFIG_MAPPING)
+
+
 def _get_models_to_test(model_to_test_names):
     def find_config_class_from_pretrained_class(pretrained_class):
         mappings = [
