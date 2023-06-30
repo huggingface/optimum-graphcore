@@ -37,9 +37,6 @@ logger = logging.get_logger(__name__)
 
 
 class MPNetFusedSelfAttention(MPNetSelfAttention):
-    def __init__(self, config):
-        super().__init__(config)
-
     def fused_qkv(self, hidden_state: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         weights = (self.q.weight, self.k.weight, self.v.weight)
         combined_weight = torch.cat(weights, dim=0)
@@ -155,7 +152,7 @@ class PipelinedMPNetModel(MPNetModel, PipelineMixin):
         super().deparallelize()
 
         for layer in self.encoder.layer:
-            layer.attention.attn.self.__class__ = MPNetSelfAttention
+            layer.attention.attn.__class__ = MPNetSelfAttention
 
         # Deserialize the serialized word embedding - removed here for MPNet due non-divisible embedding dim
         # if self.ipu_config.embedding_serialization_factor > 1:
