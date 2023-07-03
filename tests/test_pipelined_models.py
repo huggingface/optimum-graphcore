@@ -53,8 +53,6 @@ MODELS_TO_TEST_MAPPING.update(EXTRA_MODELS_TO_TEST_MAPPING)
 [CONFIG_MAPPING.register(k, v) for k, v in EXTRA_CONFIG_MAPPING.items()]
 REVERSE_CONFIG_MAPPING = {v: k for k, v in CONFIG_MAPPING.items()}
 
-print(CONFIG_MAPPING)
-
 
 def _get_models_to_test(model_to_test_names):
     def find_config_class_from_pretrained_class(pretrained_class):
@@ -105,8 +103,6 @@ def _get_models_to_test(model_to_test_names):
 
 
 MODELS_TO_TEST = _get_models_to_test(MODELS_TO_TEST_MAPPING)
-
-print(MODELS_TO_TEST)
 
 
 class PipelinedModelsTester(TestCase):
