@@ -13,6 +13,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import pytest
+from transformers import T5Config, T5EncoderModel
 
 
 MODELS_TO_TEST_MAPPING = {
@@ -41,9 +42,6 @@ MODELS_TO_TEST_MAPPING = {
 
 
 # Registered models that don't have a mapping in upstream transformers
-from transformers import T5Config, T5EncoderModel
-
-
 class T5EncoderConfig(T5Config):
     pass
 
