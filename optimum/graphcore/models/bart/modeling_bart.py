@@ -130,15 +130,16 @@ class IPUBartAttention(BartAttention, IPUAttentionMixin):
             key_states = self._shape(self.k_proj(hidden_states), -1, bsz)
             value_states = self._shape(self.v_proj(hidden_states), -1, bsz)
 
-        if self.is_decoder:
-            # if cross_attention save Tuple(torch.Tensor, torch.Tensor) of all cross attention key/value_states.
-            # Further calls to cross_attention layer can then reuse all cross-attention
-            # key/value_states (first "if" case)
-            # if uni-directional self-attention (decoder) save Tuple(torch.Tensor, torch.Tensor) of
-            # all previous decoder key/value_states. Further calls to uni-directional self-attention
-            # can concat previous decoder key/value_states to current projected key/value_states (third "elif" case)
-            # if encoder bi-directional self-attention `past_key_value` is always `None`
-            past_key_value = (key_states, value_states)
+        # Change: no need to return kv states if using on device cache
+        # if self.is_decoder:
+        #     # if cross_attention save Tuple(torch.Tensor, torch.Tensor) of all cross attention key/value_states.
+        #     # Further calls to cross_attention layer can then reuse all cross-attention
+        #     # key/value_states (first "if" case)
+        #     # if uni-directional self-attention (decoder) save Tuple(torch.Tensor, torch.Tensor) of
+        #     # all previous decoder key/value_states. Further calls to uni-directional self-attention
+        #     # can concat previous decoder key/value_states to current projected key/value_states (third "elif" case)
+        #     # if encoder bi-directional self-attention `past_key_value` is always `None`
+        #     past_key_value = (key_states, value_states)
 
         proj_shape = (bsz * self.num_heads, -1, self.head_dim)
         query_states = self._shape(query_states, tgt_len, bsz).view(*proj_shape)
