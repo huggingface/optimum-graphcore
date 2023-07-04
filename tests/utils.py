@@ -44,7 +44,7 @@ MODELS_TO_TEST_MAPPING = {
 MODEL_MAPPING_EXTRA = {T5EncoderConfig: T5EncoderModel}
 CONFIG_MAPPING_EXTRA = {"t5encoder": T5EncoderConfig}
 MODELS_TO_TEST_MAPPING_EXTRA = {
-    "t5Encoder": ("sentence-transformers/sentence-t5-base", "tests/ipu_config_t5Encoder.json"), # TODO : change to "Graphcore/sentence-t5-base"
+    "t5encoder": ("sentence-transformers/sentence-t5-base", "Graphcore/sentence-t5-base"),
 }
 
 
