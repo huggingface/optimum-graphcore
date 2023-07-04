@@ -400,6 +400,9 @@ class TokenClassificationExampleTester(ExampleTesterBase, metaclass=ExampleTestM
     TASK_NAME = "conll2003"
     TRAIN_BATCH_SIZE = 1
     EVAL_BATCH_SIZE = 1
+    EXTRA_COMMAND_LINE_ARGUMENTS = [
+        "--preprocessing_num_workers 16",
+    ]
 
 
 class MultipleChoiceExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_swag"):
@@ -407,11 +410,17 @@ class MultipleChoiceExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, 
     TRAIN_BATCH_SIZE = 1
     EVAL_BATCH_SIZE = 1
     EVAL_SCORE_THRESHOLD_OVERRIDES = {"distilbert-base-uncased": 0.645, "Graphcore/groupbert-base-uncased": 0.66}
+    EXTRA_COMMAND_LINE_ARGUMENTS = [
+        "--preprocessing_num_workers 16",
+    ]
 
 
 class QuestionAnsweringExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_qa"):
     TASK_NAME = "squad"
     SCORE_NAME = "eval_f1"
+    EXTRA_COMMAND_LINE_ARGUMENTS = [
+        "--preprocessing_num_workers 16",
+    ]
 
 
 class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_summarization"):
@@ -429,6 +438,7 @@ class SummarizationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, e
         "--pad_to_max_length",
         "--max_target_length 200",
         "--max_source_length 1024",
+        "--preprocessing_num_workers 16",
     ]
 
     def _create_command_line(
@@ -486,6 +496,7 @@ class TranslationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, exa
         "--max_source_length 512",
         "--max_target_length 512",
         "--prediction_loss_only",
+        "--preprocessing_num_workers 16",
     ]
 
     def _create_command_line(
@@ -573,4 +584,5 @@ class SpeechRecognitionExampleTester(
         "--text_column_name sentence",
         "--length_column_name input_length",
         '--chars_to_ignore , ? . ! - \\; \\: \\" “ % ‘ ” � ',
+        "--preprocessing_num_workers 16",
     ]
