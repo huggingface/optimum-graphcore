@@ -14,7 +14,7 @@
 # limitations under the License.
 import pytest
 from transformers import T5Config, T5EncoderModel
-
+from optimum.graphcore.models.t5.configuration_t5 import T5EncoderConfig
 
 MODELS_TO_TEST_MAPPING = {
     "bart": ("facebook/bart-base", "Graphcore/bart-base-ipu"),
@@ -40,16 +40,11 @@ MODELS_TO_TEST_MAPPING = {
     "whisper": ("openai/whisper-tiny", "Graphcore/whisper-tiny-ipu"),
 }
 
-
-# Registered models that don't have a mapping in upstream transformers
-class T5EncoderConfig(T5Config):
-    pass
-
-
+# Register models that don't have a mapping in upstream transformers
 MODEL_MAPPING_EXTRA = {T5EncoderConfig: T5EncoderModel}
-EXTRA_CONFIG_MAPPING = {"t5Encoder": T5EncoderConfig}
-EXTRA_MODELS_TO_TEST_MAPPING = {
-    "t5Encoder": ("sentence-transformers/sentence-t5-base", "tests/ipu_config_t5Encoder.json"),
+CONFIG_MAPPING_EXTRA = {"t5encoder": T5EncoderConfig}
+MODELS_TO_TEST_MAPPING_EXTRA = {
+    "t5Encoder": ("sentence-transformers/sentence-t5-base", "tests/ipu_config_t5Encoder.json"), # TODO : change to "Graphcore/sentence-t5-base"
 }
 
 
