@@ -391,6 +391,9 @@ class TextClassificationExampleTester(ExampleTesterBase, metaclass=ExampleTestMe
     TASK_NAME = "sst2"
     DATASET_PARAMETER_NAME = "task_name"
     INFERENCE_DEVICE_ITERATIONS = 5
+    EXTRA_COMMAND_LINE_ARGUMENTS = [
+        "--loss_scaling 1024",
+    ]
 
 
 class TokenClassificationExampleTester(ExampleTesterBase, metaclass=ExampleTestMeta, example_name="run_ner"):
