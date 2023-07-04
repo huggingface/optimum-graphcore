@@ -20,6 +20,7 @@ Fine-tuning the library models for sequence to sequence speech recognition.
 # recognition task. Pointers for this are left as comments.
 
 import logging
+import math
 import os
 import sys
 import warnings
@@ -28,6 +29,7 @@ from typing import Any, Dict, List, Optional, Union
 
 import datasets
 import evaluate
+import numpy as np
 import torch
 from datasets import DatasetDict, load_dataset
 
@@ -312,10 +314,6 @@ def main():
     transformers.utils.logging.enable_explicit_format()
 
     # Log on each process the small summary:
-    logger.warning(
-        f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
-        f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
-    )
     logger.info(f"Training/evaluation parameters {training_args}")
 
     # 3. Detecting last checkpoint and eventually continue from last checkpoint
@@ -419,8 +417,9 @@ def main():
     ipu_config = IPUConfig.from_pretrained(
         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
         cache_dir=model_args.cache_dir,
-        use_auth_token=True if data_args.use_auth_token else None,
+        use_auth_token=True if model_args.use_auth_token else None,
     )
+
     if model.config.decoder_start_token_id is None:
         raise ValueError("Make sure that `config.decoder_start_token_id` is correctly defined")
 
@@ -470,7 +469,7 @@ def main():
         inputs = feature_extractor(
             sample["array"], sampling_rate=sample["sampling_rate"], return_attention_mask=forward_attention_mask
         )
-        # process audio length
+
         batch[model_input_name] = inputs.get(model_input_name)[0]
         batch["input_length"] = len(sample["array"])
         if forward_attention_mask:
@@ -478,20 +477,19 @@ def main():
 
         if not training_args.fp32:
             # Cast audio inputs to FP16
-            batch["input_values"] = batch["input_values"].astype(np.float16)            
+            batch[model_input_name] = batch[model_input_name].astype(np.float16)            
             
         # process targets
         input_str = batch[text_column_name].lower() if do_lower_case else batch[text_column_name]
         batch["labels"] = tokenizer(input_str).input_ids
         return batch
 
-    with training_args.main_process_first(desc="dataset map pre-processing"):
-        vectorized_datasets = raw_datasets.map(
-            lambda batch: prepare_dataset(batch, feature_extractor, tokenizer),
-            remove_columns=next(iter(raw_datasets.values())).column_names,
-            num_proc=data_args.preprocessing_num_workers,
-            desc="preprocess train dataset",
-        )
+    vectorized_datasets = raw_datasets.map(
+        lambda batch: prepare_dataset(batch, feature_extractor, tokenizer),
+        remove_columns=next(iter(raw_datasets.values())).column_names,
+        num_proc=data_args.preprocessing_num_workers,
+        desc="preprocess train dataset",
+    )
 
     # filter data that is shorter than min_input_length or longer than
     # max_input_length
@@ -543,8 +541,9 @@ def main():
         processor=processor,
         decoder_start_token_id=model.config.decoder_start_token_id,
         forward_attention_mask=forward_attention_mask,
-        pad_to_multiple_of=max_input_length,
-        pad_to_multiple_of_labels=500
+        #pad_to_multiple_of=math.ceil(max_input_length),
+        pad_to_multiple_of=80,
+        pad_to_multiple_of_labels=training_args.generation_max_length
     )
 
     # 11. Initialize Trainer
@@ -556,6 +555,11 @@ def main():
         eval_dataset=vectorized_datasets["eval"] if training_args.do_eval else None,
         data_collator=data_collator,
         compute_metrics=compute_metrics if training_args.predict_with_generate else None,
+        eval_parallelize_kwargs={
+            'use_cache': True,
+            'use_cross_cache': True,
+            'max_length': training_args.generation_max_length
+        }
     )
 
     # 12. Training
