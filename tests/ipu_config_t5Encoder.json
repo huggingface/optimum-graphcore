@@ -1,4 +1,0 @@
-{
-    "executable_cache_dir": "./exe_cache",
-    "ipus_per_replica": 1
- }
