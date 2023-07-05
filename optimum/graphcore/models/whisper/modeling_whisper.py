@@ -136,7 +136,7 @@ class IPUWhisperAttention(WhisperAttention, IPUAttentionMixin):
             if layer_head_mask is not None:
                 raise ValueError("layer_head_mask is not supported yet with serialized attention.")
 
-            if self.dropout or self.training:
+            if self.dropout and self.training:
                 raise ValueError("dropout is not supported yet with serialized attention.")
 
             if attention_mask is not None:
