@@ -215,7 +215,7 @@ def list_tasks() -> List[str]:
 def is_generation_model(model):
     if isinstance(model, PeftModel):
         model = model.get_base_model()
-    return isinstance(model, IPUGenerationMixin)
+    return isinstance(model, IPUGenerationMixin) or isinstance(model, WhisperForConditionalGeneration)
 
 
 def get_poplar_executor(
