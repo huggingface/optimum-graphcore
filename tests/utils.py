@@ -13,8 +13,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import pytest
-from transformers import T5Config, T5EncoderModel
+from transformers import T5EncoderModel
+
 from optimum.graphcore.models.t5.configuration_t5 import T5EncoderConfig
+
 
 MODELS_TO_TEST_MAPPING = {
     "bart": ("facebook/bart-base", "Graphcore/bart-base-ipu"),
