@@ -13,6 +13,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import pytest
+from transformers import T5EncoderModel
+
+from optimum.graphcore.models.t5.configuration_t5 import T5EncoderConfig
 
 
 MODELS_TO_TEST_MAPPING = {
@@ -37,6 +40,13 @@ MODELS_TO_TEST_MAPPING = {
         "ctc": ("facebook/wav2vec2-base", "Graphcore/wav2vec2-ctc-base-ipu"),
     },
     "whisper": ("openai/whisper-tiny", "Graphcore/whisper-tiny-ipu"),
+}
+
+# Register models that don't have a mapping in upstream transformers
+MODEL_MAPPING_EXTRA = {T5EncoderConfig: T5EncoderModel}
+CONFIG_MAPPING_EXTRA = {"t5encoder": T5EncoderConfig}
+MODELS_TO_TEST_MAPPING_EXTRA = {
+    "t5encoder": ("sentence-transformers/sentence-t5-base", "Graphcore/sentence-t5-base"),
 }
 
 

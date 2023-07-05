@@ -51,7 +51,10 @@ from .models.roberta import (
     PipelinedRobertaForSequenceClassification,
     PipelinedRobertaForTokenClassification,
 )
-from .models.t5 import PipelinedT5ForConditionalGeneration
+from .models.t5 import (
+    PipelinedT5ForConditionalGeneration,
+    PipelinedT5EncoderModel,
+)
 from .models.vit import PipelinedViTForImageClassification
 from .models.wav2vec2 import PipelinedWav2Vec2ForPreTraining
 from .pipelines import IPUFillMaskPipeline, IPUTokenClassificationPipeline, pipeline

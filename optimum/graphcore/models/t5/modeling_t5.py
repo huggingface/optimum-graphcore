@@ -22,7 +22,7 @@ from torch import Tensor
 from transformers import T5ForConditionalGeneration
 from transformers.activations import NewGELUActivation
 from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
-from transformers.models.t5.modeling_t5 import __HEAD_MASK_WARNING_MSG, T5Block, T5Stack
+from transformers.models.t5.modeling_t5 import __HEAD_MASK_WARNING_MSG, T5Block, T5EncoderModel, T5Stack
 
 from optimum.utils import logging
 
@@ -472,3 +472,97 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
             encoder_hidden_states=encoder_outputs.hidden_states,
             encoder_attentions=encoder_outputs.attentions,
         )
+
+
+@register(T5EncoderModel)
+class PipelinedT5EncoderModel(T5EncoderModel, PipelineMixin):
+    def parallelize(self):
+        """
+        Transform the model to run in an IPU pipeline.
+        - Adds pipeline stages to the model
+        - Adds recomputation checkpoints
+
+        Recommended usage:
+        ```
+        model = PipelinedT5EncoderModel(config).parallelize().half()
+        ```
+        """
+        PipelineMixin.parallelize(self)
+
+        logger.info("-------------------- Device Allocation --------------------")
+        logger.info("Embedding  --> IPU 0")
+
+        self.shared = poptorch.BeginBlock(self.shared, "Embedding", ipu_id=0)
+
+        # Use a custom T5Stack implementation because sharing the position bias causes OOM error
+        self.encoder.__class__ = CustomT5Stack
+
+        # Upcast input embeddings so that the residuals remain in FP32. This
+        # cast is reversed where necessary by the T5LayerNorm layers in:
+        # - first layer of T5LayerSelfAttention
+        # - first layer of T5LayerFF
+        # - final_layer_norm
+        # Which, conveniently, are all the places that this needs to happen.
+        # Therefore, so we just need to upcast immediately before the residual
+        # adds in T5LayerSelfAttention and T5LayerFF. This is handled in the
+        # for loop below.
+        self.encoder.embed_tokens = UpCastWrapper(self.encoder.embed_tokens)
+
+        # Use a custom T5Block implementation that removes a dynamic if blocks that can't be statically traced
+        for block in self.encoder.block:
+            block.__class__ = CustomT5Block
+            # Dropout happens immediately before the residual add. Inserting a
+            # cast in T5LayerSelfAttention and T5LayerFF keeps the residual
+            # structure in FP32
+            block.layer[0].dropout = UpCastWrapper(block.layer[0].dropout)
+            # Scale down the weights for the T5LayerFF down-projection and
+            # then scale its output back up again after it is cast to FP32
+            scale = 8.0
+            with torch.no_grad():
+                block.layer[1].DenseReluDense.wo.weight /= scale
+            block.layer[1].dropout = UpCastWrapper(block.layer[1].dropout, scale)
+            # Prevent overflow in NewGELUActivation
+            if self.config.dense_act_fn == "gelu_new":
+                # TODO: Work-around bug with torch.nn.GELU(approximate="tanh"). Replace
+                # this with block.layer[1].DenseReluDense.act = torch.nn.GELU(approximate="tanh")
+                # when bug is fixed
+                block.layer[1].DenseReluDense.act = CustomGELU()
+
+        num_encoder_layers = len(self.encoder.block)
+        number_of_layers = num_encoder_layers
+        encoder_layer_ipu = get_layer_ipu(self.ipu_config, number_of_layers)
+
+        for index, (layer, ipu) in enumerate(zip(self.encoder.block, encoder_layer_ipu)):
+            if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_layers - 1:
+                self._hooks.append(recomputation_checkpoint(layer))
+            self.encoder.block[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
+            logger.info(f"Encoder {index:<2} --> IPU {ipu}")
+
+        self.encoder.final_layer_norm = poptorch.BeginBlock(
+            self.encoder.final_layer_norm, "Encoder Stack Final LayerNorm", ipu_id=ipu
+        )
+
+        return self
+
+    def deparallelize(self):
+        """
+        Undo the changes to the model done by `parallelize`.
+        You should call this before doing `save_pretrained` so that the `model.state_dict` is
+        fully compatible with `transformers.T5ForConditionalGeneration`.
+        """
+        # T5ForConditionalGeneration has a deparallelize method, so make sure that the PipelineMixin one is used here.
+        PipelineMixin.deparallelize(self)
+
+        self.encoder.__class__ = T5Stack
+        self.encoder.embed_tokens = self.encoder.embed_tokens.module
+
+        for block in self.encoder.block:
+            block.__class__ = T5Block
+            block.layer[0].dropout = block.layer[0].dropout.module
+            with torch.no_grad():
+                block.layer[1].DenseReluDense.wo.weight *= block.layer[1].dropout.scale
+            block.layer[1].dropout = block.layer[1].dropout.module
+            if self.config.dense_act_fn == "gelu_new":
+                block.layer[1].DenseReluDense.act = NewGELUActivation()
+
+        return self

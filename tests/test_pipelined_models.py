@@ -46,9 +46,11 @@ from transformers import (
 from optimum.graphcore import IPUConfig
 from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
 
-from .utils import MODELS_TO_TEST_MAPPING
+from .utils import CONFIG_MAPPING_EXTRA, MODEL_MAPPING_EXTRA, MODELS_TO_TEST_MAPPING, MODELS_TO_TEST_MAPPING_EXTRA
 
 
+MODELS_TO_TEST_MAPPING.update(MODELS_TO_TEST_MAPPING_EXTRA)
+[CONFIG_MAPPING.register(k, v) for k, v in CONFIG_MAPPING_EXTRA.items()]
 REVERSE_CONFIG_MAPPING = {v: k for k, v in CONFIG_MAPPING.items()}
 
 
@@ -69,6 +71,7 @@ def _get_models_to_test(model_to_test_names):
             MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING,
             MODEL_FOR_TOKEN_CLASSIFICATION_MAPPING,
             MODEL_MAPPING,
+            MODEL_MAPPING_EXTRA,
         ]
         config_class = None
         for mapping in mappings:
