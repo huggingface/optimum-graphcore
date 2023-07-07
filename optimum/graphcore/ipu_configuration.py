@@ -562,7 +562,7 @@ class IPUConfig(BaseConfig):
         return self
 
     def _to_options(self, for_inference: bool = False, compile_only: bool = False) -> poptorch.Options:
-        if not compile_only and poptorch.ipuHardwareVersion() != 2:
+        if not compile_only and poptorch.ipuHardwareVersion() not in (2, 21):
             raise RuntimeError("This requires an IPU Mk2 system to run.")
 
         if self.execute_encoder_on_cpu_for_generation:
