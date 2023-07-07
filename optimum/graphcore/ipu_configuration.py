@@ -351,32 +351,9 @@ class IPUConfig(BaseConfig):
             inference_matmul_proportion if inference_matmul_proportion else fallback_matmul_proportion
         )
 
-        def check_and_set_replication_factor(attr_name, attr, default=False):
+        def check_and_set_replication_factor(attr_name, attr):
             if isinstance(attr, int):
                 setattr(self, attr_name, attr)
-            elif isinstance(attr, dict):
-                base_message = (
-                    f"Dictionary values for `{attr_name}`"
-                    " have been deprecated. Provide values of type `int` instead."
-                )
-
-                if "default" not in attr:
-                    raise ValueError(
-                        base_message + f" Attempted to use the `default`"
-                        f" replication factor in `{attr_name}={attr}"
-                        " however no such key exists."
-                    )
-
-                try:
-                    setattr(self, attr_name, attr.get("default"))
-                except TypeError as e:
-                    raise TypeError(
-                        base_message + f" Attempted to set"
-                        f" `{attr_name}` using the `default` key of `{attr_name}`"
-                        " but a TypeError was raised. Check the error traceback for more information."
-                    ) from e
-
-                warnings.warn(base_message, FutureWarning, stacklevel=2)
             else:
                 raise ValueError(f"{attr_name} must be of type `int`. You provided: {attr_name}={attr}, {type(attr)}.")
 
