@@ -224,6 +224,7 @@ class IPUGenerationMixin(GenerationMixin):
             if on_device_generation_model_ctr is not None:
                 generation_model = on_device_generation_model_ctr(self)
             decoder_wrapper = DecoderWrapper(generation_model.eval())
+
             if os.getenv("DEBUG_RUN_DECODER_ON_CPU", False):
                 self.poptorch_decoder = decoder_wrapper
             else:
@@ -295,6 +296,7 @@ class IPUGenerationMixin(GenerationMixin):
             model_kwargs["encoder_outputs"] = BaseModelOutput(
                 last_hidden_state=torch.zeros(inputs_tensor.shape[0], 1, dtype=encoder.dtype)
             )
+
             return model_kwargs
 
         if not hasattr(self, "poptorch_encoder"):
@@ -599,8 +601,10 @@ class IPUGenerationMixin(GenerationMixin):
                     model_kwargs["attention_mask"] = self._pad_tensors_to_max_len(
                         model_kwargs["attention_mask"], stopping_criteria.max_length, 0
                     )
+
             # prepare model inputs
             model_inputs = self.prepare_inputs_for_generation(input_ids, **model_kwargs)
+
             # forward pass to get next token
             outputs = self._call_generate(
                 generation_step=cur_len - 1,
@@ -617,6 +621,7 @@ class IPUGenerationMixin(GenerationMixin):
                     model_kwargs["attention_mask"] = model_kwargs["attention_mask"][:, :cur_len]
 
             # Change: remove synced_gpu code
+
             next_token_logits = outputs.logits[:, -1, :]
 
             # pre-process distribution
