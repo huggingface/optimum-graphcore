@@ -23,7 +23,7 @@ from torch.utils.checkpoint import checkpoint
 from transformers import T5ForConditionalGeneration
 from transformers.activations import NewGELUActivation
 from transformers.modeling_outputs import BaseModelOutput, BaseModelOutputWithPastAndCrossAttentions, Seq2SeqLMOutput
-from transformers.models.t5.modeling_t5 import __HEAD_MASK_WARNING_MSG, T5Attention, T5Block, T5Stack, T5EncoderModel
+from transformers.models.t5.modeling_t5 import __HEAD_MASK_WARNING_MSG, T5Attention, T5Block, T5EncoderModel, T5Stack
 
 from optimum.utils import logging
 
