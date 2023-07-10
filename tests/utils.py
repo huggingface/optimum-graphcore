@@ -80,7 +80,7 @@ MODELS_TO_TEST_MAPPING = {
 MODEL_MAPPING_EXTRA = {T5EncoderConfig: T5EncoderModel}
 CONFIG_MAPPING_EXTRA = {"t5encoder": T5EncoderConfig}
 MODELS_TO_TEST_MAPPING_EXTRA = {
-    "t5encoder": ("sentence-transformers/sentence-t5-base", "Graphcore/sentence-t5-base"),
+    "t5encoder": model_test_config("sentence-transformers/sentence-t5-base", "Graphcore/sentence-t5-base"),
 }
 
 
