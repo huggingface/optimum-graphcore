@@ -296,7 +296,6 @@ class IPUGenerationMixin(GenerationMixin):
             model_kwargs["encoder_outputs"] = BaseModelOutput(
                 last_hidden_state=torch.zeros(inputs_tensor.shape[0], 1, dtype=encoder.dtype)
             )
-
             return model_kwargs
 
         if not hasattr(self, "poptorch_encoder"):
@@ -309,6 +308,7 @@ class IPUGenerationMixin(GenerationMixin):
                 )
         with graph_profile_dir_append("/encoder"):
             model_kwargs["encoder_outputs"]: ModelOutput = self.poptorch_encoder(**encoder_kwargs)
+
         return model_kwargs
 
     @staticmethod
