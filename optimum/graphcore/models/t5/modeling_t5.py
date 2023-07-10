@@ -19,10 +19,9 @@ import poptorch
 import torch
 import torch.nn as nn
 from torch import Tensor
-from torch.utils.checkpoint import checkpoint
 from transformers import T5ForConditionalGeneration
 from transformers.activations import NewGELUActivation
-from transformers.modeling_outputs import BaseModelOutput, BaseModelOutputWithPastAndCrossAttentions, Seq2SeqLMOutput
+from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
 from transformers.models.t5.modeling_t5 import __HEAD_MASK_WARNING_MSG, T5Attention, T5Block, T5EncoderModel, T5Stack
 
 from optimum.utils import logging
@@ -88,7 +87,7 @@ class IPUT5Attention(T5Attention, IPUAttentionMixin):
         # On the IPU the real sequence length is the padded sequence. If self attention
         # kv caching is enabled, this length can be obtained from the kv cache
         if self.kv_cache_initialized:
-            real_seq_length = self.kv_cache_max_length
+            real_seq_length = self._k_cache.shape[-2]
 
         key_length = real_seq_length if key_value_states is None else key_value_states.shape[1]
 
@@ -109,13 +108,13 @@ class IPUT5Attention(T5Attention, IPUAttentionMixin):
             # (batch_size, n_heads, seq_length, dim_per_head)
             key_states = shape(self.k(hidden_states))
             value_states = shape(self.v(hidden_states))
-        elif not use_cache:
+        elif not self.cross_kv_cache_initialized:
             # cross-attn
             # (batch_size, n_heads, seq_length, dim_per_head)
             key_states = shape(self.k(key_value_states))
             value_states = shape(self.v(key_value_states))
 
-        if use_cache:
+        if self.kv_cache_initialized or self.cross_kv_cache_initialized:
             # Change: remove branch to support prefix tuning
             # This requires the IPU on device to cache to be aware of
             # the prefix tokens
@@ -127,7 +126,6 @@ class IPUT5Attention(T5Attention, IPUAttentionMixin):
                 if tgt_len != 1:
                     raise ValueError(f"KV cache expects tgt_len = 1, received {tgt_len}.")
                 key_states, value_states = self.add_to_kv_cache(key_states, value_states)
-                mask = self.update_attention_mask(mask)
             else:
                 # TODO: support cross kv caching
                 key_states = shape(self.k(key_value_states))
@@ -152,7 +150,7 @@ class IPUT5Attention(T5Attention, IPUAttentionMixin):
             # we want only the last query position bias
             # if kv_cache init or cross_kv_cache init
             if self.kv_cache_initialized:
-                position_bias = poptorch.dynamic_slice(position_bias, 2, self.generation_step, 1, 1)
+                position_bias = poptorch.dynamic_slice(position_bias, 2, self._generation_step, 1, 1)
 
             if mask is not None:
                 position_bias = position_bias + mask  # (batch_size, n_heads, seq_length, key_length)
@@ -181,15 +179,11 @@ class IPUT5Attention(T5Attention, IPUAttentionMixin):
         attn_output = unshape(torch.matmul(attn_weights, value_states))  # (batch_size, seq_length, dim)
         attn_output = self.o(attn_output)
 
-        # TODO: disable return present_key_value_state since caching is on device?
         present_key_value_state = (key_states, value_states) if (self.is_decoder and use_cache) else None
         outputs = (attn_output,) + (present_key_value_state,) + (position_bias,)
 
         if output_attentions:
             outputs = outputs + (attn_weights,)
-
-        if hasattr(self, "_step"):
-            self._step += 1
 
         return outputs
 
@@ -320,27 +314,22 @@ class CustomT5Stack(T5Stack):
 
         for layer in self.block:
             if restore:
-                if hasattr(layer.layer[0].SelfAttention, "num_heads"):
-                    del layer.layer[0].SelfAttention.num_heads
-                if hasattr(layer.layer[0].SelfAttention, "head_dim"):
-                    del layer.layer[0].SelfAttention.head_dim
                 layer.layer[0].SelfAttention = layer.layer[0].SelfAttention.to_model(T5Attention)
                 if self.is_decoder:
                     layer.layer[1].EncDecAttention = layer.layer[1].EncDecAttention.to_model(T5Attention)
                 continue
 
             if self.is_decoder:
-                layer.layer[0].SelfAttention.num_heads = layer.layer[0].SelfAttention.n_heads
-                layer.layer[0].SelfAttention.head_dim = layer.layer[0].SelfAttention.key_value_proj_dim
                 layer.layer[0].SelfAttention = IPUT5Attention.from_model(
                     layer.layer[0].SelfAttention,
                     use_cache=use_cache,
                     batch_size=batch_size,
                     max_length=max_length,
                     num_beams=num_beams,
+                    num_heads=layer.layer[0].SelfAttention.n_heads,
+                    head_dim=layer.layer[0].SelfAttention.key_value_proj_dim,
                     dtype=layer.layer[0].SelfAttention.k.weight.dtype,
                 )
-
                 # TODO: enable cross kv cache
                 layer.layer[1].EncDecAttention = IPUT5Attention.from_model(
                     layer.layer[1].EncDecAttention, use_cache=False
@@ -367,212 +356,40 @@ class CustomT5Stack(T5Stack):
         output_hidden_states=None,
         return_dict=None,
     ):
-        """The same as super().forward but the attention mask is only internally generated if `use_cache` is False.
-        If `use_cache` is True and the user has not provided an attention mask, `IPUAttentionMixin.update_attention_mask`
-        will construct the attention mask taking into account the decoder max length.
         """
-
-        # Model parallel
-        if self.model_parallel:
-            torch.cuda.set_device(self.first_device)
-            self.embed_tokens = self.embed_tokens.to(self.first_device)
-        use_cache = use_cache if use_cache is not None else self.config.use_cache
-        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_hidden_states = (
-            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
-        )
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-
-        if input_ids is not None and inputs_embeds is not None:
-            err_msg_prefix = "decoder_" if self.is_decoder else ""
-            raise ValueError(
-                f"You cannot specify both {err_msg_prefix}input_ids and {err_msg_prefix}inputs_embeds at the same time"
-            )
-        elif input_ids is not None:
-            input_shape = input_ids.size()
-            input_ids = input_ids.view(-1, input_shape[-1])
-        elif inputs_embeds is not None:
-            input_shape = inputs_embeds.size()[:-1]
-        else:
-            err_msg_prefix = "decoder_" if self.is_decoder else ""
-            raise ValueError(f"You have to specify either {err_msg_prefix}input_ids or {err_msg_prefix}inputs_embeds")
-
-        if inputs_embeds is None:
-            assert self.embed_tokens is not None, "You have to initialize the model with valid token embeddings"
-            inputs_embeds = self.embed_tokens(input_ids)
-
-        batch_size, seq_length = input_shape
-
-        # required mask seq length can be calculated via length of past
-        mask_seq_length = past_key_values[0][0].shape[2] + seq_length if past_key_values is not None else seq_length
-
-        if use_cache is True:
-            assert self.is_decoder, f"`use_cache` can only be set to `True` if {self} is used as a decoder"
-
-        # Change: do not construct an attention mask if one has not been provided and
-        # self-attention kv caching is enabled. IPUAttentionMixin::update_attention_mask will construct the
-        # correct mask
-        if attention_mask is None and not use_cache:
-            attention_mask = torch.ones(batch_size, mask_seq_length, device=inputs_embeds.device)
-        if self.is_decoder and encoder_attention_mask is None and encoder_hidden_states is not None:
-            encoder_seq_length = encoder_hidden_states.shape[1]
-            encoder_attention_mask = torch.ones(
-                batch_size, encoder_seq_length, device=inputs_embeds.device, dtype=torch.long
-            )
-
-        # initialize past_key_values with `None` if past does not exist
-        if past_key_values is None:
-            past_key_values = [None] * len(self.block)
-
-        # Change: see above
-        # We can provide a self-attention mask of dimensions [batch_size, from_seq_length, to_seq_length]
-        # ourselves in which case we just need to make it broadcastable to all heads.
-        if attention_mask is not None:
-            extended_attention_mask = self.get_extended_attention_mask(attention_mask, input_shape, dtype=self.dtype)
-        else:
-            extended_attention_mask = None
-
-        # If a 2D or 3D attention mask is provided for the cross-attention
-        # we need to make broadcastable to [batch_size, num_heads, seq_length, seq_length]
-        if self.is_decoder and encoder_hidden_states is not None:
-            encoder_batch_size, encoder_sequence_length, _ = encoder_hidden_states.size()
-            encoder_hidden_shape = (encoder_batch_size, encoder_sequence_length)
-            if encoder_attention_mask is None:
-                encoder_attention_mask = torch.ones(encoder_hidden_shape, device=inputs_embeds.device)
-            encoder_extended_attention_mask = self.invert_attention_mask(encoder_attention_mask)
-        else:
-            encoder_extended_attention_mask = None
-
-        if self.gradient_checkpointing and self.training:
-            if use_cache:
-                logger.warning_once(
-                    "`use_cache=True` is incompatible with gradient checkpointing. Setting `use_cache=False`..."
-                )
-                use_cache = False
-
-        # Prepare head mask if needed
-        head_mask = self.get_head_mask(head_mask, self.config.num_layers)
-        cross_attn_head_mask = self.get_head_mask(cross_attn_head_mask, self.config.num_layers)
-        present_key_value_states = () if use_cache else None
-        all_hidden_states = () if output_hidden_states else None
-        all_attentions = () if output_attentions else None
-        all_cross_attentions = () if (output_attentions and self.is_decoder) else None
-        position_bias = None
-        encoder_decoder_position_bias = None
-
-        hidden_states = self.dropout(inputs_embeds)
-
-        for i, (layer_module, past_key_value) in enumerate(zip(self.block, past_key_values)):
-            layer_head_mask = head_mask[i]
-            cross_attn_layer_head_mask = cross_attn_head_mask[i]
-            # Model parallel
-            if self.model_parallel:
-                torch.cuda.set_device(hidden_states.device)
-                # Ensure that attention_mask is always on the same device as hidden_states
-                if attention_mask is not None:
-                    attention_mask = attention_mask.to(hidden_states.device)
-                if position_bias is not None:
-                    position_bias = position_bias.to(hidden_states.device)
-                if encoder_hidden_states is not None:
-                    encoder_hidden_states = encoder_hidden_states.to(hidden_states.device)
-                if encoder_extended_attention_mask is not None:
-                    encoder_extended_attention_mask = encoder_extended_attention_mask.to(hidden_states.device)
-                if encoder_decoder_position_bias is not None:
-                    encoder_decoder_position_bias = encoder_decoder_position_bias.to(hidden_states.device)
-                if layer_head_mask is not None:
-                    layer_head_mask = layer_head_mask.to(hidden_states.device)
-                if cross_attn_layer_head_mask is not None:
-                    cross_attn_layer_head_mask = cross_attn_layer_head_mask.to(hidden_states.device)
-            if output_hidden_states:
-                all_hidden_states = all_hidden_states + (hidden_states,)
-
-            if self.gradient_checkpointing and self.training:
-
-                def create_custom_forward(module):
-                    def custom_forward(*inputs):
-                        return tuple(module(*inputs, use_cache, output_attentions))
-
-                    return custom_forward
-
-                layer_outputs = checkpoint(
-                    create_custom_forward(layer_module),
-                    hidden_states,
-                    extended_attention_mask,
-                    position_bias,
-                    encoder_hidden_states,
-                    encoder_extended_attention_mask,
-                    encoder_decoder_position_bias,
-                    layer_head_mask,
-                    cross_attn_layer_head_mask,
-                    None,  # past_key_value is always None with gradient checkpointing
-                )
+        Intercept the forward call in order to provide the correct attention mask if self-attention kv caching is enabled.
+        The alternative is to replicate the parent forward call here so that we can prevent the (default) construction of an attention mask
+        when kv caching is enabled. This would allow the attention layers to make the call `IPUT5Attention.update_attention_mask` to create
+        an attention mask with the knowledge of the decoder max length. To avoid replicating all but a few lines of code the former option
+        is kept.
+        """
+        if self.is_decoder and self.block[0].layer[0].SelfAttention.kv_cache_initialized:
+            if attention_mask is None:
+                attention_layer = self.block[0].layer[0].SelfAttention
+                bsz, _, src_len, _ = attention_layer._k_cache.shape
+                attention_mask = torch.ones((1, src_len))
+                mask_cond = torch.arange(src_len).view(1, src_len)
+                attention_mask.masked_fill_(mask_cond >= attention_layer._generation_step + 1, 0)
+                attention_mask = attention_mask.to(attention_layer._k_cache.dtype)
+                attention_mask = attention_mask.expand(bsz, 1, src_len)
             else:
-                layer_outputs = layer_module(
-                    hidden_states,
-                    attention_mask=extended_attention_mask,
-                    position_bias=position_bias,
-                    encoder_hidden_states=encoder_hidden_states,
-                    encoder_attention_mask=encoder_extended_attention_mask,
-                    encoder_decoder_position_bias=encoder_decoder_position_bias,
-                    layer_head_mask=layer_head_mask,
-                    cross_attn_layer_head_mask=cross_attn_layer_head_mask,
-                    past_key_value=past_key_value,
-                    use_cache=use_cache,
-                    output_attentions=output_attentions,
+                raise ValueError(
+                    f"Providing an {attention_mask=} to the decoder when kv-caching is enabled is currently not supported."
                 )
 
-            # layer_outputs is a tuple with:
-            # hidden-states, key-value-states, (self-attention position bias), (self-attention weights), (cross-attention position bias), (cross-attention weights)
-            if use_cache is False:
-                layer_outputs = layer_outputs[:1] + (None,) + layer_outputs[1:]
-
-            hidden_states, present_key_value_state = layer_outputs[:2]
-
-            # We share the position biases between the layers - the first layer store them
-            # layer_outputs = hidden-states, key-value-states (self-attention position bias), (self-attention weights),
-            # (cross-attention position bias), (cross-attention weights)
-            position_bias = layer_outputs[2]
-            if self.is_decoder and encoder_hidden_states is not None:
-                encoder_decoder_position_bias = layer_outputs[4 if output_attentions else 3]
-            # append next layer key value states
-            if use_cache:
-                present_key_value_states = present_key_value_states + (present_key_value_state,)
-
-            if output_attentions:
-                all_attentions = all_attentions + (layer_outputs[3],)
-                if self.is_decoder:
-                    all_cross_attentions = all_cross_attentions + (layer_outputs[5],)
-
-            # Model Parallel: If it's the last layer for that device, put things on the next device
-            if self.model_parallel:
-                for k, v in self.device_map.items():
-                    if i == v[-1] and "cuda:" + str(k) != self.last_device:
-                        hidden_states = hidden_states.to("cuda:" + str(k + 1))
-
-        hidden_states = self.final_layer_norm(hidden_states)
-        hidden_states = self.dropout(hidden_states)
-
-        # Add last layer
-        if output_hidden_states:
-            all_hidden_states = all_hidden_states + (hidden_states,)
-        if not return_dict:
-            return tuple(
-                v
-                for v in [
-                    hidden_states,
-                    present_key_value_states,
-                    all_hidden_states,
-                    all_attentions,
-                    all_cross_attentions,
-                ]
-                if v is not None
-            )
-        return BaseModelOutputWithPastAndCrossAttentions(
-            last_hidden_state=hidden_states,
-            past_key_values=present_key_value_states,
-            hidden_states=all_hidden_states,
-            attentions=all_attentions,
-            cross_attentions=all_cross_attentions,
+        return super().forward(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            encoder_hidden_states=encoder_hidden_states,
+            encoder_attention_mask=encoder_attention_mask,
+            inputs_embeds=inputs_embeds,
+            head_mask=head_mask,
+            cross_attn_head_mask=cross_attn_head_mask,
+            past_key_values=past_key_values,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
         )
 
 
@@ -774,6 +591,9 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
             # cut decoder_input_ids if past is used
             input_ids = input_ids[:, -1:]
             beam_idx = kwargs.get("beam_idx", torch.arange(input_ids.shape[0], dtype=torch.long))
+
+            if attention_mask is None:
+                attention_mask = torch.ones()
 
         return {
             "decoder_input_ids": input_ids,

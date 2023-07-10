@@ -40,7 +40,6 @@ class IPUAttentionMixin:
 
     _kv_cache_initialized: bool = False
     _cross_kv_cache_initialized: bool = False
-    _kv_cache_max_length: int = 1
     _num_beams: int = 1
     _batch_serialization_factor: int = 1
     _sequence_serialization_factor: int = 1
@@ -53,14 +52,6 @@ class IPUAttentionMixin:
     def cross_kv_cache_initialized(self) -> bool:
         return self._cross_kv_cache_initialized
 
-    @property
-    def kv_cache_max_length(self):
-        return self._kv_cache_max_length
-
-    @property
-    def generation_step(self):
-        return self._generation_step
-
     def _create_kv_cache(self, cache_shape: Tuple[int], dtype: torch.dtype, num_beams=1):
         self.register_buffer("_generation_step", torch.tensor([0], dtype=torch.int32), persistent=False)
         self.register_buffer("_k_cache", torch.zeros(cache_shape, dtype=dtype), persistent=False)
@@ -69,7 +60,6 @@ class IPUAttentionMixin:
             self.register_buffer("_beam_idx", torch.arange(cache_shape[0], dtype=torch.int32), persistent=False)
         self._num_beams = num_beams
         self._kv_cache_initialized = True
-        self._kv_cache_max_length = cache_shape[-2]
 
     def _delete_kv_cache(self):
         if not self._kv_cache_initialized:
@@ -82,7 +72,6 @@ class IPUAttentionMixin:
             del self._beam_idx
         del self._num_beams
         del self._kv_cache_initialized
-        del self._kv_cache_max_length
 
     def _create_cross_kv_cache(self, cache_shape: Tuple[int], dtype: torch.dtype, num_beams=1):
         if not hasattr(self, "_generation_step"):
@@ -113,6 +102,8 @@ class IPUAttentionMixin:
         batch_size: int = 1,
         max_length: int = 128,
         num_beams: int = 1,
+        num_heads: Optional[int] = None,
+        head_dim: Optional[int] = None,
         dtype: torch.dtype = torch.float16,
         batch_serialization_factor: int = 1,
         sequence_serialization_factor: int = 1,
@@ -131,9 +122,25 @@ class IPUAttentionMixin:
         clone = copy.deepcopy(attention_layer)
         clone.__class__ = cls
 
+        def infer_attribute_from_layer(attr: str):
+            err_msg = (
+                f"Attempting to replace attention class `{attention_layer.__class__.__name__}` with `{cls.__name__}`."
+                f" However unable to infer `{{0}}` from `{attention_layer.__class__.__name__}`."
+                " Provide the `{0}` argument to `IPUAttentionMixin.from_model`."
+            )
+            try:
+                value = getattr(clone, attr)
+                return value
+            except AttributeError as e:
+                raise AttributeError(err_msg.format(attr)) from e
+
+        if use_cache or use_cross_cache:
+            num_heads = infer_attribute_from_layer("num_heads") if num_heads is None else num_heads
+            head_dim = infer_attribute_from_layer("head_dim") if head_dim is None else head_dim
+
         if use_cache:
             clone._create_kv_cache(
-                (batch_size * num_beams, clone.num_heads, max_length, clone.head_dim),
+                (batch_size * num_beams, num_heads, max_length, head_dim),
                 dtype=dtype,
                 num_beams=num_beams,
             )
@@ -143,7 +150,7 @@ class IPUAttentionMixin:
                 context="Cross-attention KV caching has been enabled with `use_cross_cache=True`."
             )
             clone._create_cross_kv_cache(
-                (batch_size * num_beams, clone.num_heads, encoder_max_length, clone.head_dim),
+                (batch_size * num_beams, num_heads, encoder_max_length, head_dim),
                 dtype=dtype,
                 num_beams=num_beams,
             )
