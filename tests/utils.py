@@ -28,7 +28,11 @@ _run_high_memory_usage_tests = parse_flag_from_env("RUN_HIGH_MEMORY", default=Fa
 model_test_config = namedtuple(
     "ModelTestConfig",
     ["model", "ipu_config", "test_examples_config"],
-    defaults=["hf-internal-testing/tiny-random-t5", "Graphcore/internal-testing-tiny-ipu", {}],
+    defaults=[
+        "hf-internal-testing/tiny-random-t5",
+        "Graphcore/internal-testing-tiny-ipu",
+        {},
+    ],
 )
 
 MODELS_TO_TEST_MAPPING = {

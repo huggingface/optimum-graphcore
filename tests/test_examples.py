@@ -197,9 +197,9 @@ class ExampleTestMeta(type):
                 else:
                     raise KeyError(f"{example_config=} can only override the following keys: {command_line_kwargs=}")
 
-            self._install_requirements(example_script.parent / "requirements.txt")
-
-            with TemporaryDirectory(dir=Path(self.EXAMPLE_DIR)) as tmp_dir:
+            with TemporaryDirectory(dir=Path(self.EXAMPLE_DIR).resolve()) as tmp_dir:
+                self._create_venv(tmp_dir)
+                self._install_requirements(example_script.parent / "requirements.txt")
                 os.environ["HF_HOME"] = os.path.join(tmp_dir, "hf_home")
                 cmd_line = self._create_command_line(
                     example_script, model_name, ipu_config, tmp_dir, **command_line_kwargs
@@ -269,14 +269,6 @@ class ExampleTesterBase(TestCase):
     EXTRA_COMMAND_LINE_ARGUMENTS = None
     N_IPU = 8
 
-    def setUp(self):
-        self.TMP_DIR = TemporaryDirectory()
-        self._create_venv()
-
-    def tearDown(self):
-        self._remove_venv()
-        self.TMP_DIR.cleanup()
-
     @classmethod
     def _convert_extra_command_line_arguments_to_dict(cls):
         return {k: v for param_value in cls.EXTRA_COMMAND_LINE_ARGUMENTS for k, v in param_value.split(maxsplit=1)}
@@ -313,12 +305,12 @@ class ExampleTesterBase(TestCase):
         # if the input is an IPUConfig instance, serialize it locally
         # so that the subprocess can load it
         if isinstance(ipu_config, IPUConfig):
-            local_config_path = os.path.join(self.TMP_DIR.name, "ipu_config")
+            local_config_path = Path(output_dir) / "ipu_config"
             ipu_config.save_pretrained(local_config_path)
             ipu_config = local_config_path
 
         cmd_line = [
-            f"{self.VENV_DIR.name}/bin/python" if self.venv_was_created else "python",
+            f"{self.venv_dir}/bin/python" if self.venv_was_created else "python",
             f"{script}",
             f"--model_name_or_path {model_name}",
             f"--ipu_config_name {ipu_config}",
@@ -351,23 +343,16 @@ class ExampleTesterBase(TestCase):
 
     @property
     def venv_was_created(self):
-        return os.path.isdir(self.VENV_DIR.name)
+        return os.path.isdir(self.venv_dir)
 
-    def _create_venv(self):
+    def _create_venv(self, tmp_dir: str):
         """
         Creates the virtual environment for the example.
         """
-        self.VENV_DIR = TemporaryDirectory(dir=self.TMP_DIR.name, prefix="venv")
-        cmd_line = f"python -m venv {self.VENV_DIR.name}".split()
+        self.venv_dir = Path(tmp_dir) / "venv"
+        cmd_line = f"python -m venv {self.venv_dir}".split()
         p = subprocess.run(cmd_line)
         self.assertEqual(p.returncode, 0)
-
-    def _remove_venv(self):
-        """
-        Creates the virtual environment for the example.
-        """
-        if self.venv_was_created:
-            self.VENV_DIR.cleanup()
 
     def _get_poptorch_wheel_path(self, sdk_path: Optional[str] = None) -> str:
         """
@@ -409,7 +394,7 @@ class ExampleTesterBase(TestCase):
         """
         Installs the necessary requirements to run the example if the provided file exists, otherwise does nothing.
         """
-        pip_name = f"{self.VENV_DIR.name}/bin/pip" if self.venv_was_created else "pip"
+        pip_name = f"{self.venv_dir}/bin/pip" if self.venv_was_created else "pip"
 
         # Update pip
         cmd_line = f"{pip_name} install --upgrade pip".split()
