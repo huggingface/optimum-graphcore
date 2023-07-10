@@ -85,29 +85,12 @@ class IPUT5Attention(T5Attention, IPUAttentionMixin):
         batch_size, seq_length = hidden_states.shape[:2]
         real_seq_length = seq_length
 
-        # if not use_cache:
-        #     if not hasattr(self, "_generation_step"):
-        #         self._generation_step = 0
-        #     print(self.__class__, scores[:, :, self._generation_step: self._generation_step + 1, :])
-        #     self._generation_step += 1
-        #     # bsz, n_heads, target_length, sequence_length
-        # else:
-        #     print(self.__class__, scores)
-
         # On the IPU the real sequence length is the padded sequence. If self attention
         # kv caching is enabled, this length can be obtained from the kv cache
         if self.kv_cache_initialized:
             real_seq_length = self.kv_cache_max_length
 
         key_length = real_seq_length if key_value_states is None else key_value_states.shape[1]
-
-        # if past_key_value is not None:
-        #     assert (
-        #         len(past_key_value) == 2
-        #     ), f"past_key_value should have 2 past states: keys and values. Got { len(past_key_value)} past states"
-        #     real_seq_length += past_key_value[0].shape[2] if query_length is None else query_length
-
-        # key_length = real_seq_length if key_value_states is None else key_value_states.shape[1]
 
         def shape(states):
             """projection"""
@@ -174,16 +157,6 @@ class IPUT5Attention(T5Attention, IPUAttentionMixin):
             if mask is not None:
                 position_bias = position_bias + mask  # (batch_size, n_heads, seq_length, key_length)
 
-        # if self.is_decoder and key_value_states is None:
-        # scores = poptorch.ipu_print_tensor(scores)
-        # if not use_cache:
-        #     if not hasattr(self, "_step"):
-        #         self._step = 0
-        #     # print(self.__class__, position_bias[:, :, -hidden_states.size(1) : , :])
-        #     print("BEFORE MASKING", scores[:, :, self._step: self._step + 1, :])
-        #     # bsz, n_heads, target_length, sequence_length
-        # else:
-        #     print("BEFORE MASKING", scores)
         if self.pruned_heads:
             mask = torch.ones(position_bias.shape[1])
             mask[list(self.pruned_heads)] = 0
@@ -192,15 +165,6 @@ class IPUT5Attention(T5Attention, IPUAttentionMixin):
             position_bias_masked = position_bias
 
         scores += position_bias_masked
-
-        # if not use_cache:
-        #     if not hasattr(self, "_step"):
-        #         self._step = 0
-        #     # print(self.__class__, position_bias[:, :, -hidden_states.size(1) : , :])
-        #     print("AFTER MASKING", scores[:, :, self._step: self._step + 1, :])
-        #     # bsz, n_heads, target_length, sequence_length
-        # else:
-        #     print("AFTER MASKING", scores)
 
         attn_weights = nn.functional.softmax(scores.float(), dim=-1).type_as(
             scores
@@ -342,7 +306,7 @@ class CustomT5Stack(T5Stack):
     def get_extended_attention_mask(self, *args, **kwargs) -> Tensor:
         return super().get_extended_attention_mask(*args, **kwargs) * 0.75
 
-    def change_t5_attention_class(self, restore=False, **kwargs):
+    def change_attention_class(self, restore=False, **kwargs):
         """Changes the attention layers to either use the original T5Attention forward
         or IPUT5Attention forward.
 
@@ -671,7 +635,7 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
         # Use a custom T5Stack implementation because sharing the position bias causes OOM error
         self.encoder.__class__ = CustomT5Stack
         self.decoder.__class__ = CustomT5Stack
-        self.decoder.change_t5_attention_class(restore=False, use_cache=use_cache and for_generation, **kwargs)
+        self.decoder.change_attention_class(restore=False, use_cache=use_cache and for_generation, **kwargs)
 
         # Upcast input embeddings so that the residuals remain in FP32. This
         # cast is reversed where necessary by the T5LayerNorm layers in:
@@ -763,7 +727,7 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
         self.encoder_and_decoder_embeddings_computation(False)
 
         self.encoder.__class__ = T5Stack
-        self.decoder.change_t5_attention_class(restore=True)
+        self.decoder.change_attention_class(restore=True)
         self.decoder.__class__ = T5Stack
 
         self.encoder.embed_tokens = self.encoder.embed_tokens.module
@@ -810,18 +774,6 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
             # cut decoder_input_ids if past is used
             input_ids = input_ids[:, -1:]
             beam_idx = kwargs.get("beam_idx", torch.arange(input_ids.shape[0], dtype=torch.long))
-
-            # If the user has not provided an attention mask for decoder self attention,
-            # the upstream decoder forward method will default construct an attention mask.
-            # however since use_cache is True, the attention mask will not be correct since
-            # the sequence length will not match that in the kv cache. The attribute
-            # `internally_generated` allows us to identify if the attention mask is default constructed
-            # so that we can ignore the attention mask, allowing IPUAttentionMixin::update_attention_mask
-            # to create the correct attention mask
-            # the alternative to this is to override the forward method in T5Stack
-            # if attention_mask is None:
-            #     attention_mask = torch.ones_like(input_ids)[:, :, None]
-            #     setattr(attention_mask, "internally_generated", True)
 
         return {
             "decoder_input_ids": input_ids,
