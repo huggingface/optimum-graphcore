@@ -592,9 +592,6 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
             input_ids = input_ids[:, -1:]
             beam_idx = kwargs.get("beam_idx", torch.arange(input_ids.shape[0], dtype=torch.long))
 
-            if attention_mask is None:
-                attention_mask = torch.ones()
-
         return {
             "decoder_input_ids": input_ids,
             "past_key_values": None,
