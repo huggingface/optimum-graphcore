@@ -40,6 +40,7 @@ class IPUAttentionMixin:
 
     _kv_cache_initialized: bool = False
     _cross_kv_cache_initialized: bool = False
+    _kv_cache_max_length: int = 1
     _num_beams: int = 1
     _batch_serialization_factor: int = 1
     _sequence_serialization_factor: int = 1
@@ -52,6 +53,14 @@ class IPUAttentionMixin:
     def cross_kv_cache_initialized(self) -> bool:
         return self._cross_kv_cache_initialized
 
+    @property
+    def kv_cache_max_length(self):
+        return self._kv_cache_max_length
+
+    @property
+    def generation_step(self):
+        return self._generation_step
+
     def _create_kv_cache(self, cache_shape: Tuple[int], dtype: torch.dtype, num_beams=1):
         self.register_buffer("_generation_step", torch.tensor([0], dtype=torch.int32), persistent=False)
         self.register_buffer("_k_cache", torch.zeros(cache_shape, dtype=dtype), persistent=False)
@@ -60,6 +69,7 @@ class IPUAttentionMixin:
             self.register_buffer("_beam_idx", torch.arange(cache_shape[0], dtype=torch.int32), persistent=False)
         self._num_beams = num_beams
         self._kv_cache_initialized = True
+        self._kv_cache_max_length = cache_shape[-2]
 
     def _delete_kv_cache(self):
         if not self._kv_cache_initialized:
@@ -72,6 +82,7 @@ class IPUAttentionMixin:
             del self._beam_idx
         del self._num_beams
         del self._kv_cache_initialized
+        del self._kv_cache_max_length
 
     def _create_cross_kv_cache(self, cache_shape: Tuple[int], dtype: torch.dtype, num_beams=1):
         if not hasattr(self, "_generation_step"):
