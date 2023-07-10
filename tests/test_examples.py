@@ -269,10 +269,6 @@ class ExampleTesterBase(TestCase):
     EXTRA_COMMAND_LINE_ARGUMENTS = None
     N_IPU = 8
 
-    @classmethod
-    def _convert_extra_command_line_arguments_to_dict(cls):
-        return {k: v for param_value in cls.EXTRA_COMMAND_LINE_ARGUMENTS for k, v in param_value.split(maxsplit=1)}
-
     def _create_command_line(
         self,
         script: str,
