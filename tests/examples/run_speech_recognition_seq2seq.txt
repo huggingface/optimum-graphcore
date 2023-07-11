@@ -1,0 +1,151 @@
+29a30
+> import numpy as np
+31,32d31
+< from datasets import DatasetDict, load_dataset
+< 
+33a33
+> from datasets import DatasetDict, load_dataset
+38d37
+<     AutoProcessor,
+41,42c40
+<     Seq2SeqTrainer,
+<     Seq2SeqTrainingArguments,
+---
+>     WhisperProcessor,
+45c43
+< from transformers.trainer_utils import get_last_checkpoint, is_main_process
+---
+> from transformers.trainer_utils import get_last_checkpoint
+48a47,49
+> from optimum.graphcore import IPUConfig, IPUSeq2SeqTrainer
+> from optimum.graphcore import IPUSeq2SeqTrainingArguments as Seq2SeqTrainingArguments
+> 
+51c52
+< check_min_version("4.31.0.dev0")
+---
+> check_min_version("4.29.0")
+238a240,242
+>     padding: Union[bool, str] = "longest"
+>     pad_to_multiple_of: Optional[int] = None
+>     pad_to_multiple_of_labels: Optional[int] = None
+247c251,253
+<         batch = self.processor.feature_extractor.pad(input_features, return_tensors="pt")
+---
+>         batch = self.processor.feature_extractor.pad(
+>             input_features, pad_to_multiple_of=self.pad_to_multiple_of, return_tensors="pt"
+>         )
+252c258,260
+<         labels_batch = self.processor.tokenizer.pad(label_features, return_tensors="pt")
+---
+>         labels_batch = self.processor.tokenizer.pad(
+>             label_features, pad_to_multiple_of=self.pad_to_multiple_of_labels, return_tensors="pt"
+>         )
+264c272
+<         return batch
+---
+>         return batch.data
+280a289,294
+>     if training_args.gradient_checkpointing:
+>         raise ValueError("Gradient checkpointing not supported.")
+> 
+>     print(f"{training_args.ipu_config_name = }")
+>     print(f"{training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path = }")
+> 
+298,299d311
+<     logger.setLevel(logging.INFO if is_main_process(training_args.local_rank) else logging.WARN)
+< 
+301,304d312
+<     logger.warning(
+<         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
+<         f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
+<     )
+307,311d314
+<     # Set the verbosity to info of the Transformers logger (on main process only):
+<     if is_main_process(training_args.local_rank):
+<         transformers.utils.logging.set_verbosity_info()
+<     logger.info("Training/evaluation parameters %s", training_args)
+< 
+379a383,384
+>         if model_args.apply_spec_augment:
+>             raise ValueError("SpecAugment is not supported on IPU")
+381a387,392
+>     # IPU specific config updates
+>     config.update({"apply_spec_augment": False})
+> 
+>     # Whisper does not have a layer_norm_eps option, remains to be seen if this is a problem
+>     # config.update({"layer_norm_eps": 0.0001})
+> 
+401a413,417
+>     ipu_config = IPUConfig.from_pretrained(
+>         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
+>         cache_dir=model_args.cache_dir,
+>         use_auth_token=True if model_args.use_auth_token else None,
+>     )
+446c462
+<     def prepare_dataset(batch):
+---
+>     def prepare_dataset(batch, feature_extractor, tokenizer):
+451a468,470
+> 
+>         igmin = inputs.get(model_input_name)[0]
+>         # print(igmin.shape)
+453c472
+<         batch[model_input_name] = inputs.get(model_input_name)[0]
+---
+>         batch[model_input_name] = igmin
+457a477,480
+>         if not training_args.fp32:
+>             # Cast audio inputs to FP16
+>             batch[model_input_name] = batch[model_input_name].astype(np.float16)
+> 
+463,469c486,491
+<     with training_args.main_process_first(desc="dataset map pre-processing"):
+<         vectorized_datasets = raw_datasets.map(
+<             prepare_dataset,
+<             remove_columns=next(iter(raw_datasets.values())).column_names,
+<             num_proc=data_args.preprocessing_num_workers,
+<             desc="preprocess train dataset",
+<         )
+---
+>     vectorized_datasets = raw_datasets.map(
+>         lambda batch: prepare_dataset(batch, feature_extractor, tokenizer),
+>         remove_columns=next(iter(raw_datasets.values())).column_names,
+>         num_proc=data_args.preprocessing_num_workers,
+>         desc="preprocess train dataset",
+>     )
+509,516c531,534
+<     # make sure all processes wait until data is saved
+<     with training_args.main_process_first():
+<         # only the main process saves them
+<         if is_main_process(training_args.local_rank):
+<             # save feature extractor, tokenizer and config
+<             feature_extractor.save_pretrained(training_args.output_dir)
+<             tokenizer.save_pretrained(training_args.output_dir)
+<             config.save_pretrained(training_args.output_dir)
+---
+>     # save feature extractor, tokenizer and config
+>     feature_extractor.save_pretrained(training_args.output_dir)
+>     tokenizer.save_pretrained(training_args.output_dir)
+>     config.save_pretrained(training_args.output_dir)
+518c536
+<     processor = AutoProcessor.from_pretrained(training_args.output_dir)
+---
+>     processor = WhisperProcessor(feature_extractor, tokenizer)
+524a543,545
+>         # pad_to_multiple_of=math.ceil(max_input_length),
+>         pad_to_multiple_of=80,
+>         pad_to_multiple_of_labels=training_args.generation_max_length,
+528c549
+<     trainer = Seq2SeqTrainer(
+---
+>     trainer = IPUSeq2SeqTrainer(
+529a551
+>         ipu_config=ipu_config,
+533d554
+<         tokenizer=feature_extractor,
+535a557,561
+>         eval_parallelize_kwargs={
+>             "use_cache": True,
+>             "use_cross_cache": True,
+>             "max_length": training_args.generation_max_length,
+>         },

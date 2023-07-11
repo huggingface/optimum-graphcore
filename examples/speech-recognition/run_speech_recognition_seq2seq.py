@@ -20,10 +20,8 @@ Fine-tuning the library models for sequence to sequence speech recognition.
 # recognition task. Pointers for this are left as comments.
 
 import logging
-import math
 import os
 import sys
-import warnings
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Union
 
@@ -31,14 +29,12 @@ import datasets
 import evaluate
 import numpy as np
 import torch
-from datasets import DatasetDict, load_dataset
-
 import transformers
+from datasets import DatasetDict, load_dataset
 from transformers import (
     AutoConfig,
     AutoFeatureExtractor,
     AutoModelForSpeechSeq2Seq,
-    AutoProcessor,
     AutoTokenizer,
     HfArgumentParser,
     WhisperProcessor,
@@ -50,6 +46,7 @@ from transformers.utils.versions import require_version
 
 from optimum.graphcore import IPUConfig, IPUSeq2SeqTrainer
 from optimum.graphcore import IPUSeq2SeqTrainingArguments as Seq2SeqTrainingArguments
+
 
 # Will error if the minimal version of Transformers is not installed. Remove at your own risks.
 check_min_version("4.29.0")
@@ -252,18 +249,14 @@ class DataCollatorSpeechSeq2SeqWithPadding:
         label_features = [{"input_ids": feature["labels"]} for feature in features]
 
         batch = self.processor.feature_extractor.pad(
-            input_features,
-            pad_to_multiple_of=self.pad_to_multiple_of,
-            return_tensors="pt"
+            input_features, pad_to_multiple_of=self.pad_to_multiple_of, return_tensors="pt"
         )
 
         if self.forward_attention_mask:
             batch["attention_mask"] = torch.LongTensor([feature["attention_mask"] for feature in features])
 
         labels_batch = self.processor.tokenizer.pad(
-            label_features,
-            pad_to_multiple_of=self.pad_to_multiple_of_labels,
-            return_tensors="pt"
+            label_features, pad_to_multiple_of=self.pad_to_multiple_of_labels, return_tensors="pt"
         )
 
         # replace padding with -100 to ignore loss correctly
@@ -390,9 +383,9 @@ def main():
 
     # IPU specific config updates
     config.update({"apply_spec_augment": False})
-        
+
     # Whisper does not have a layer_norm_eps option, remains to be seen if this is a problem
-    #config.update({"layer_norm_eps": 0.0001})
+    # config.update({"layer_norm_eps": 0.0001})
 
     feature_extractor = AutoFeatureExtractor.from_pretrained(
         model_args.feature_extractor_name if model_args.feature_extractor_name else model_args.model_name_or_path,
@@ -477,8 +470,8 @@ def main():
 
         if not training_args.fp32:
             # Cast audio inputs to FP16
-            batch[model_input_name] = batch[model_input_name].astype(np.float16)            
-            
+            batch[model_input_name] = batch[model_input_name].astype(np.float16)
+
         # process targets
         input_str = batch[text_column_name].lower() if do_lower_case else batch[text_column_name]
         batch["labels"] = tokenizer(input_str).input_ids
@@ -541,9 +534,9 @@ def main():
         processor=processor,
         decoder_start_token_id=model.config.decoder_start_token_id,
         forward_attention_mask=forward_attention_mask,
-        #pad_to_multiple_of=math.ceil(max_input_length),
+        # pad_to_multiple_of=math.ceil(max_input_length),
         pad_to_multiple_of=80,
-        pad_to_multiple_of_labels=training_args.generation_max_length
+        pad_to_multiple_of_labels=training_args.generation_max_length,
     )
 
     # 11. Initialize Trainer
@@ -556,10 +549,10 @@ def main():
         data_collator=data_collator,
         compute_metrics=compute_metrics if training_args.predict_with_generate else None,
         eval_parallelize_kwargs={
-            'use_cache': True,
-            'use_cross_cache': True,
-            'max_length': training_args.generation_max_length
-        }
+            "use_cache": True,
+            "use_cross_cache": True,
+            "max_length": training_args.generation_max_length,
+        },
     )
 
     # 12. Training
