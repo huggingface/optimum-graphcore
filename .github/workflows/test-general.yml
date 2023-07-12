@@ -28,7 +28,7 @@ jobs:
     - name: Create and start a virtual environment
       run: |
         python -m venv general_venv --clear 
-        source venv/bin/activate
+        source general_venv/bin/activate
     - name: Install dependencies
       run: |
         source general_venv/bin/activate
