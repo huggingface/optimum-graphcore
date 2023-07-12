@@ -31,6 +31,8 @@ jobs:
 
       - name: Setup environment
         run: |
+          python -m venv doc_builder_venv --clear
+          source doc_builder_venv/bin/activate
           pip uninstall -y doc-builder
           cd doc-builder
           git pull origin main
@@ -40,12 +42,14 @@ jobs:
 
       - name: Make documentation
         run: |
+          source doc_builder_venv/bin/activate
           cd optimum-graphcore
           make doc BUILD_DIR=graphcore-doc-build VERSION=pr_$PR_NUMBER COMMIT_SHA_SUBPACKAGE=$COMMIT_SHA CLONE_URL=$PR_CLONE_URL CLONE_NAME=$PR_CLONE_NAME
           cd ..
 
       - name: Save commit_sha & pr_number
         run: |
+          source doc_builder_venv/bin/activate
           cd optimum-graphcore
           sudo chmod -R ugo+rwx graphcore-doc-build
           cd graphcore-doc-build
