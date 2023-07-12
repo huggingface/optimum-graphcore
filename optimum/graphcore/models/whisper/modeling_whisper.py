@@ -12,12 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 import copy
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 import poptorch
 import torch
 from torch import nn
-from transformers.modeling_outputs import BaseModelOutput
+from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
 from transformers.models.whisper.modeling_whisper import (
     WhisperAttention,
     WhisperDecoder,
@@ -36,6 +36,7 @@ from ...modeling_utils import (
     get_layer_ipu,
     recomputation_checkpoint,
     register,
+    shift_tokens_right,
     split_encoder_decoder_ipu_config,
 )
 
@@ -622,3 +623,55 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         else:
             ret["encoder_outputs"] = encoder_outputs
         return ret
+
+    # TODO: consider making such output subsetting a decorator
+    def forward(
+        self,
+        input_features: Optional[torch.FloatTensor] = None,
+        attention_mask: Optional[torch.LongTensor] = None,
+        decoder_input_ids: Optional[torch.LongTensor] = None,
+        decoder_attention_mask: Optional[torch.LongTensor] = None,
+        head_mask: Optional[torch.Tensor] = None,
+        decoder_head_mask: Optional[torch.Tensor] = None,
+        cross_attn_head_mask: Optional[torch.Tensor] = None,
+        encoder_outputs: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
+        past_key_values: Optional[Tuple[Tuple[torch.FloatTensor]]] = None,
+        decoder_inputs_embeds: Optional[Tuple[torch.FloatTensor]] = None,
+        labels: Optional[torch.LongTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ) -> Union[Tuple[torch.Tensor], Seq2SeqLMOutput]:
+        # Duplicate this portion of upstream logic so we can intercept the call to `shift_tokens_right`.
+        if labels is not None:
+            if decoder_input_ids is None and decoder_inputs_embeds is None:
+                decoder_input_ids = shift_tokens_right(
+                    labels, self.config.pad_token_id, self.config.decoder_start_token_id
+                )
+
+        output = super().forward(
+            input_features=input_features,
+            attention_mask=attention_mask,
+            decoder_input_ids=decoder_input_ids,
+            decoder_attention_mask=decoder_attention_mask,
+            head_mask=head_mask,
+            decoder_head_mask=decoder_head_mask,
+            cross_attn_head_mask=cross_attn_head_mask,
+            encoder_outputs=encoder_outputs,
+            past_key_values=past_key_values,
+            decoder_inputs_embeds=decoder_inputs_embeds,
+            labels=labels,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=True,
+        )
+
+        # Minimize IO and only return loss when training.
+        return Seq2SeqLMOutput(
+            loss=output.loss,
+            logits=None if self.training else output.logits,
+            encoder_last_hidden_state=None if self.training else output.encoder_last_hidden_state,  # for tests to pass
+            past_key_values=None if self.training else output.past_key_values,  # for tests to pass
+        )

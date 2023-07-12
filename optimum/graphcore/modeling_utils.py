@@ -802,3 +802,24 @@ class OnehotGather(nn.Module):
         num_classes = int(sequence.shape[1])
         one_hot_positions = F.one_hot(positions, num_classes).to(dtype=sequence.dtype)
         return torch.matmul(one_hot_positions.detach(), sequence)
+
+
+def shift_tokens_right(input_ids: torch.Tensor, pad_token_id: int, decoder_start_token_id: int):
+    """
+    Shift input ids one token to the right.
+    """
+    # Upstream version:
+    # shifted_input_ids = input_ids.new_zeros(input_ids.shape)
+    # shifted_input_ids[:, 1:] = input_ids[:, :-1].clone()
+    # shifted_input_ids[:, 0] = decoder_start_token_id
+    # Change to fix slice assignment:
+    shifted_input_ids = torch.cat(
+        [torch.ones(input_ids.shape[0], 1, dtype=input_ids.dtype) * decoder_start_token_id, input_ids[:, :-1]], 1
+    )
+
+    if pad_token_id is None:
+        raise ValueError("self.model.config.pad_token_id has to be defined.")
+    # replace possible -100 values in labels by `pad_token_id`
+    shifted_input_ids = torch.where(shifted_input_ids == -100, pad_token_id, shifted_input_ids)
+
+    return shifted_input_ids

@@ -33,7 +33,6 @@ from transformers.models.bart.modeling_bart import (
     BartEncoder,
     BartEncoderLayer,
     BartLearnedPositionalEmbedding,
-    shift_tokens_right,
 )
 
 from optimum.utils import logging
@@ -46,6 +45,7 @@ from ...modeling_utils import (
     get_layer_ipu,
     recomputation_checkpoint,
     register,
+    shift_tokens_right,
     split_encoder_decoder_ipu_config,
 )
 
