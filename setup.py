@@ -15,6 +15,9 @@
 
 import re
 
+import setuptools.command.build_ext
+import subprocess
+from pathlib import Path
 from setuptools import find_namespace_packages, setup
 
 
@@ -61,6 +64,26 @@ EXTRA_REQUIRE = {
     "quality": QUALITY_REQUIRES,
 }
 
+
+
+class make_ext(setuptools.command.build_ext.build_ext):  # type:ignore[misc]
+    def build_extension(self, ext: setuptools.Extension) -> None:
+        if ext.name == "custom_ops":
+            filename = Path(self.build_lib) / self.get_ext_filename(
+                self.get_ext_fullname(ext.name)
+            )
+            objdir = filename.with_suffix("")
+            subprocess.check_call(
+                [
+                    "make",
+                    "custom_ops",
+                    f"OUT={filename}",
+                    f"OBJDIR={objdir}",
+                ]
+            )
+        else:
+            super().build_extension(ext)
+
 setup(
     name="optimum-graphcore",
     version=__version__,
@@ -90,4 +113,12 @@ setup(
     extras_require=EXTRA_REQUIRE,
     include_package_data=True,
     zip_safe=False,
+    ext_modules=[
+        setuptools.Extension(
+            "custom_ops",
+            sources=list(map(str, Path("optimum/graphcore/custom_ops/group_quantize_decompress").glob("*.[ch]pp"))),
+        )
+    ],
+    package_data={"optimum.graphcore": ["custom_ops/group_quantize_decompress/*_codelet_*.cpp"]},
+    cmdclass=dict(build_ext=make_ext),
 )

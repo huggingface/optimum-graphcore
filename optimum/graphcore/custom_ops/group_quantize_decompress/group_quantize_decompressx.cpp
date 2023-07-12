@@ -125,7 +125,7 @@ poplar::Tensor decompressPacked4BitTensor(poplar::Graph &graph,
 GroupQuantizeDecompressOpx::GroupQuantizeDecompressOpx(Op *op, Devicex *devicex)
     : Opx(op, devicex) {
   verifyOp<GroupQuantizeDecompressOp>(op, {GroupQuantizeDecompressId});
-  
+
   graph().addCodelets(getOp<GroupQuantizeDecompressOp>().rootPath + "/group_quantize_decompress_codelet_v1.cpp");
 }
 

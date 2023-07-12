@@ -64,3 +64,27 @@ doc: build_doc_docker_image
 		--version_tag_suffix "" \
 		--html \
 		--clean
+
+
+# make custom_ops
+# Builds the group_quantize_decompress custom ops
+
+CXX ?= g++
+OUT ?= build/custom_ops.so
+OBJDIR ?= $(dir $(OUT))obj
+
+CXXFLAGS = -Wall -Wno-sign-compare -std=c++17 -O2 -g -fPIC -DONNX_NAMESPACE=onnx
+LIBS = -lpoplar -lpopart -lpopops -lpoplin -lpopnn -lpoputil -lpoprand
+
+OBJECTS = $(OBJDIR)/group_quantize_decompress.o $(OBJDIR)/group_quantize_decompressx.o
+
+# Rules
+
+custom_ops: $(OUT)
+
+$(OBJECTS): $(OBJDIR)/%.o: optimum/graphcore/custom_ops/group_quantize_decompress/%.cpp
+	@mkdir -p $(@D)
+	$(CXX) -c $(CXXFLAGS) $< -o $@
+
+$(OUT): $(OBJECTS)
+	$(CXX) $(CXXFLAGS) -shared $^ -o $@ -Wl,--no-undefined $(LIBS)

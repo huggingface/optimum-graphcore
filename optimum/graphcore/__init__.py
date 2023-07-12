@@ -73,14 +73,23 @@ poptorch.setLogLevel("ERR")
 
 
 # Load the custom ops
-def load_custom_ops():
-    dir = os.path.dirname(os.path.realpath(__file__))
-    CUSTOM_OP_PATH = os.path.join(dir, "./custom_ops/custom_ops.so")
-    print(CUSTOM_OP_PATH)
-    if os.path.exists(CUSTOM_OP_PATH):
-        ctypes.cdll.LoadLibrary(CUSTOM_OP_PATH)
-    else:
-        raise ImportError("Could not find custom_ops.so. Execute `make` before running this script.")
+def _load_custom_ops():
+    import ctypes
+    import pathlib
+    import sysconfig
+
+    root = pathlib.Path(__file__).parent.parent.parent.absolute()
+    name = "custom_ops.so"
+    paths = [
+        root / "build" / name,
+        (root / name).with_suffix(sysconfig.get_config_vars()["SO"]),
+    ]
+    print("debug custom ops trying:", paths)
+    for path in paths:
+        if path.exists():
+            ctypes.cdll.LoadLibrary(str(path))
+            return
+    raise ImportError(f"Cannot find extension library {name} - tried {[str(p) for p in paths]}")  # pragma: no cover
 
 
-load_custom_ops()
+_load_custom_ops()
