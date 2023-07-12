@@ -53,7 +53,13 @@ MODELS_TO_TEST_MAPPING = {
     "mt5": {
         "default": model_test_config(
             "google/mt5-small",
-            "Graphcore/mt5-small-ipu",
+            # "Graphcore/mt5-small-ipu",
+            IPUConfig.from_pretrained(
+                "Graphcore/mt5-small-ipu",
+                embedding_serialization_factor=None,
+                serialized_embedding_splits_per_ipu=[4, 4, 0, 0],
+                layers_per_ipu=[0, 2, 14, 0],
+            ),
             {"extra_command_line_arguments": ["--max_source_length 128", "--max_target_length 128"]},
         ),
         "summarization": model_test_config(
