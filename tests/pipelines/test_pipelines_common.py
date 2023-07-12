@@ -94,8 +94,8 @@ def get_supported_models(models_to_test, task_mapping, task="default"):
         if is_valid_model_type(model_type):
             configuration = CONFIG_MAPPING[model_type]
             model_architectures = task_mapping[CONFIG_MAPPING[model_type]]
-            ipu_config = names[1]
-            checkpoint = names[0]
+            ipu_config = names.ipu_config
+            checkpoint = names.model
             supported_models.append((configuration, model_architectures, ipu_config, checkpoint))
 
     return supported_models
