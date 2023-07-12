@@ -36,18 +36,18 @@ jobs:
         python-version: ${{ matrix.python-version }}
     - name: Create and start a virtual environment
       run: |
-        python -m venv venv
-        source venv/bin/activate
+        python -m venv code_quality_venv --clear
+        source code_quality_venv/bin/activate
     - name: Install dependencies
       run: |
-        source venv/bin/activate
+        source code_quality_venv/bin/activate
         pip install --upgrade pip
         pip install .[quality]
     - name: Check style with black
       run: |
-        source venv/bin/activate
+        source code_quality_venv/bin/activate
         black --check examples tests optimum
     - name: Check style with ruff
       run: |
-        source venv/bin/activate
+        source code_quality_venv/bin/activate
         ruff examples tests optimum
