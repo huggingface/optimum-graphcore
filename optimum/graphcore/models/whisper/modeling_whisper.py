@@ -492,7 +492,6 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
 
     def quantize_linear_layers(self, restore: bool, num_groups: int = 16):
         if not restore:
-            print("Quantizing linear layers")
             # Brute force way
             for module in self.model.encoder.layers:
                 module.self_attn.q_proj = GroupQuantLinear.from_model(module.self_attn.q_proj, num_groups)

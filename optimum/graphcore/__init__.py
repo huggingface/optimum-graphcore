@@ -84,7 +84,6 @@ def _load_custom_ops():
         root / "build" / name,
         (root / name).with_suffix(sysconfig.get_config_vars()["SO"]),
     ]
-    print("debug custom ops trying:", paths)
     for path in paths:
         if path.exists():
             ctypes.cdll.LoadLibrary(str(path))
