@@ -59,7 +59,7 @@ MODELS_TO_TEST_MAPPING = {
                 "Graphcore/mt5-small-ipu",
                 embedding_serialization_factor=None,
                 serialized_embedding_splits_per_ipu=[4, 4, 0, 0],
-                layers_per_ipu=[0, 2, 14, 0],
+                layers_per_ipu=[0, 0, 16, 0],
             ),
             {"extra_command_line_arguments": ["--max_source_length 128", "--max_target_length 128"]},
         ),
