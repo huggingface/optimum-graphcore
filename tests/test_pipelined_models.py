@@ -96,12 +96,12 @@ def _get_models_to_test(model_to_test_names):
             task = "ctc" if "CTC" in test_name else "default"
             names = names.get(task, "default")
             model_name_or_path = names.model
-            ipu_config_name_or_path = names.ipu_config
+            ipu_config = names.ipu_config
         else:
             model_name_or_path = names.model
-            ipu_config_name_or_path = names.ipu_config
+            ipu_config = names.ipu_config
         models_to_test.append(
-            (test_name, model_name_or_path, ipu_config_name_or_path, pretrained_class, pipelined_class, config_class)
+            (test_name, model_name_or_path, ipu_config, pretrained_class, pipelined_class, config_class)
         )
     return models_to_test
 
@@ -183,10 +183,11 @@ class PipelinedModelsTester(TestCase):
 
     @parameterized.expand(MODELS_TO_TEST)
     def test_pretrained_and_pipelined_models_match(
-        self, test_name, model_name_or_path, ipu_config_name_or_path, pretrained_class, pipelined_class, config_class
+        self, test_name, model_name_or_path, ipu_config, pretrained_class, pipelined_class, config_class
     ):
         config = config_class.from_pretrained(model_name_or_path)
-        ipu_config = IPUConfig.from_pretrained(ipu_config_name_or_path)
+        if isinstance(ipu_config, str):
+            ipu_config = IPUConfig.from_pretrained(ipu_config)
         pretrained_model = pretrained_class(config).eval()
         pipelined_model = pipelined_class.from_transformers(pretrained_model, ipu_config).eval()
 
@@ -245,9 +246,11 @@ class PipelinedModelsTester(TestCase):
 
     @parameterized.expand(MODELS_TO_TEST)
     def test_parallelize_deparallelize(
-        self, test_name, model_name_or_path, ipu_config_name_or_path, pretrained_class, pipelined_class, config_class
+        self, test_name, model_name_or_path, ipu_config, pretrained_class, pipelined_class, config_class
     ):
-        ipu_config = IPUConfig.from_pretrained(ipu_config_name_or_path)
+        if isinstance(ipu_config, str):
+            ipu_config = IPUConfig.from_pretrained(ipu_config)
+
         model = pipelined_class.from_pretrained_transformers(model_name_or_path, ipu_config)
 
         # Remove the weight-norm hook, if present, because it doesn't work with deepcopy
