@@ -1,4 +1,5 @@
 # Copyright 2020 The HuggingFace Team. All rights reserved.
+# Copyright (c) 2022 Graphcore Ltd. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -567,10 +568,6 @@ class IPUTrainingArguments:
         default=None, metadata={"help": "The name of the organization to use when pushing `Trainer`."}
     )
     push_to_hub_token: str = field(default=None, metadata={"help": "The token to use to push to the Model Hub."})
-    pod_type: Optional[str] = field(
-        default=None,
-        metadata={"help": "The POD type to run the `Trainer` on."},
-    )
     # IPU Specific arguments
     ipu_config_name: Optional[str] = field(
         default=None, metadata={"help": "Pre-trained IPU config name or path if not the same as model_name."}
@@ -746,14 +743,6 @@ class IPUTrainingArguments:
                 f"{self.hub_model_id}).",
                 FutureWarning,
             )
-
-        if self.pod_type is not None:
-            warnings.warn(
-                "`pod_type` is deprecated and will be removed in the next release of Optimum Graphcore. Use `n_ipu` "
-                "instead to specify how many IPUs you would like the Trainer to use.",
-                FutureWarning,
-            )
-            self.n_ipu = int(self.pod_type.strip("pod"))
 
         # IPU specific
         dataloader_mode_mapping = {"sync": 0, "async": 1, "async_rebatched": 2}

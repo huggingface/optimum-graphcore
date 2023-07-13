@@ -1,4 +1,5 @@
 #  Copyright 2022 The HuggingFace Team. All rights reserved.
+#  Copyright (c) 2022 Graphcore Ltd. All rights reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -22,11 +23,11 @@ from torch import Tensor
 from transformers import T5ForConditionalGeneration
 from transformers.activations import NewGELUActivation
 from transformers.modeling_outputs import BaseModelOutput, Seq2SeqLMOutput
-from transformers.models.t5.modeling_t5 import __HEAD_MASK_WARNING_MSG, T5Block, T5Stack
+from transformers.models.t5.modeling_t5 import __HEAD_MASK_WARNING_MSG, T5Attention, T5Block, T5EncoderModel, T5Stack
 
 from optimum.utils import logging
 
-from ...generation import IPUGenerationMixin
+from ...generation import IPUAttentionMixin, IPUGenerationMixin, supports_kv_cache
 from ...modeling_utils import (
     PipelineMixin,
     SerializedLinear,
@@ -60,6 +61,132 @@ class CustomGELU(NewGELUActivation):
         gelu = super().forward(safe_input)
         relu = nn.functional.relu(input)
         return torch.where(safe, gelu, relu)
+
+
+class IPUT5Attention(T5Attention, IPUAttentionMixin):
+    def forward(
+        self,
+        hidden_states,
+        mask=None,
+        key_value_states=None,
+        position_bias=None,
+        past_key_value=None,
+        layer_head_mask=None,
+        query_length=None,
+        use_cache=False,
+        output_attentions=False,
+    ):
+        """
+        Self-attention (if key_value_states is None) or attention over source sentence (provided by key_value_states).
+        """
+        # Input is (batch_size, seq_length, dim)
+        # Mask is (batch_size, key_length) (non-causal) or (batch_size, key_length, key_length)
+        # past_key_value[0] is (batch_size, n_heads, q_len - 1, dim_per_head)
+        batch_size, seq_length = hidden_states.shape[:2]
+        real_seq_length = seq_length
+
+        # On the IPU the real sequence length is the padded sequence. If self attention
+        # kv caching is enabled, this length can be obtained from the kv cache
+        if self.kv_cache_initialized:
+            real_seq_length = self._k_cache.shape[-2]
+
+        key_length = real_seq_length if key_value_states is None else key_value_states.shape[1]
+
+        def shape(states):
+            """projection"""
+            return states.view(batch_size, -1, self.n_heads, self.key_value_proj_dim).transpose(1, 2)
+
+        def unshape(states):
+            """reshape"""
+            return states.transpose(1, 2).contiguous().view(batch_size, -1, self.inner_dim)
+
+        # get query states
+        query_states = shape(self.q(hidden_states))  # (batch_size, n_heads, seq_length, dim_per_head)
+
+        # get key/value states
+        if key_value_states is None:
+            # self-attn
+            # (batch_size, n_heads, seq_length, dim_per_head)
+            key_states = shape(self.k(hidden_states))
+            value_states = shape(self.v(hidden_states))
+        elif not self.cross_kv_cache_initialized:
+            # cross-attn
+            # (batch_size, n_heads, seq_length, dim_per_head)
+            key_states = shape(self.k(key_value_states))
+            value_states = shape(self.v(key_value_states))
+
+        if self.kv_cache_initialized or self.cross_kv_cache_initialized:
+            # Change: remove branch to support prefix tuning
+            # This requires the IPU on device to cache to be aware of
+            # the prefix tokens
+            if key_value_states is None:
+                # caching key states for self attention
+                # self-attn
+                # (batch_size, n_heads, key_length, dim_per_head)
+                tgt_len = key_states.shape[-2]
+                if tgt_len != 1:
+                    raise ValueError(f"KV cache expects tgt_len = 1, received {tgt_len}.")
+                key_states, value_states = self.add_to_kv_cache(key_states, value_states)
+            else:
+                # TODO: support cross kv caching
+                key_states = shape(self.k(key_value_states))
+                value_states = shape(self.v(key_value_states))
+
+        # compute scores
+        scores = torch.matmul(
+            query_states, key_states.transpose(3, 2)
+        )  # equivalent of torch.einsum("bnqd,bnkd->bnqk", query_states, key_states), compatible with onnx op>9
+
+        if position_bias is None:
+            if not self.has_relative_attention_bias:
+                position_bias = torch.zeros(
+                    (1, self.n_heads, real_seq_length, key_length), device=scores.device, dtype=scores.dtype
+                )
+                if self.gradient_checkpointing and self.training:
+                    position_bias.requires_grad = True
+            else:
+                position_bias = self.compute_bias(real_seq_length, key_length, device=scores.device)
+
+            # if key and values are already calculated
+            # we want only the last query position bias
+            # if kv_cache init or cross_kv_cache init
+            if self.kv_cache_initialized:
+                position_bias = poptorch.dynamic_slice(position_bias, 2, self._generation_step, 1, 1)
+
+            if mask is not None:
+                position_bias = position_bias + mask  # (batch_size, n_heads, seq_length, key_length)
+
+        if self.pruned_heads:
+            mask = torch.ones(position_bias.shape[1])
+            mask[list(self.pruned_heads)] = 0
+            position_bias_masked = position_bias[:, mask.bool()]
+        else:
+            position_bias_masked = position_bias
+
+        scores += position_bias_masked
+
+        attn_weights = nn.functional.softmax(scores.float(), dim=-1).type_as(
+            scores
+        )  # (batch_size, n_heads, seq_length, key_length
+
+        attn_weights = nn.functional.dropout(
+            attn_weights, p=self.dropout, training=self.training
+        )  # (batch_size, n_heads, seq_length, key_length)
+
+        # Mask heads if we want to
+        if layer_head_mask is not None:
+            attn_weights = attn_weights * layer_head_mask
+
+        attn_output = unshape(torch.matmul(attn_weights, value_states))  # (batch_size, seq_length, dim)
+        attn_output = self.o(attn_output)
+
+        present_key_value_state = (key_states, value_states) if (self.is_decoder and use_cache) else None
+        outputs = (attn_output,) + (present_key_value_state,) + (position_bias,)
+
+        if output_attentions:
+            outputs = outputs + (attn_weights,)
+
+        return outputs
 
 
 class CustomT5Block(T5Block):
@@ -174,7 +301,100 @@ class CustomT5Stack(T5Stack):
     def get_extended_attention_mask(self, *args, **kwargs) -> Tensor:
         return super().get_extended_attention_mask(*args, **kwargs) * 0.75
 
+    def change_attention_class(self, restore=False, **kwargs):
+        """Changes the attention layers to either use the original T5Attention forward
+        or IPUT5Attention forward.
 
+        Args:
+            restore (bool, optional): whether to restore the attention layers to their original version or not. Defaults to False.
+        """
+        use_cache = kwargs.get("use_cache", False)
+        batch_size = kwargs.get("batch_size", 1)
+        max_length = kwargs.get("max_length", 128)
+        num_beams = kwargs.get("num_beams", 1)
+
+        for layer in self.block:
+            if restore:
+                layer.layer[0].SelfAttention = layer.layer[0].SelfAttention.to_model(T5Attention)
+                if self.is_decoder:
+                    layer.layer[1].EncDecAttention = layer.layer[1].EncDecAttention.to_model(T5Attention)
+                continue
+
+            if self.is_decoder:
+                layer.layer[0].SelfAttention = IPUT5Attention.from_model(
+                    layer.layer[0].SelfAttention,
+                    use_cache=use_cache,
+                    batch_size=batch_size,
+                    max_length=max_length,
+                    num_beams=num_beams,
+                    num_heads=layer.layer[0].SelfAttention.n_heads,
+                    head_dim=layer.layer[0].SelfAttention.key_value_proj_dim,
+                    dtype=layer.layer[0].SelfAttention.k.weight.dtype,
+                )
+                # TODO: enable cross kv cache
+                layer.layer[1].EncDecAttention = IPUT5Attention.from_model(
+                    layer.layer[1].EncDecAttention, use_cache=False
+                )
+
+            else:
+                layer.layer[0].SelfAttention = IPUT5Attention.from_model(
+                    layer.layer[0].SelfAttention,
+                    use_cache=False,
+                )
+
+    def forward(
+        self,
+        input_ids=None,
+        attention_mask=None,
+        encoder_hidden_states=None,
+        encoder_attention_mask=None,
+        inputs_embeds=None,
+        head_mask=None,
+        cross_attn_head_mask=None,
+        past_key_values=None,
+        use_cache=None,
+        output_attentions=None,
+        output_hidden_states=None,
+        return_dict=None,
+    ):
+        """
+        Intercept the forward call in order to provide the correct attention mask if self-attention kv caching is enabled.
+        The alternative is to replicate the parent forward call here so that we can prevent the (default) construction of an attention mask
+        when kv caching is enabled. This would allow the attention layers to make the call `IPUT5Attention.update_attention_mask` to create
+        an attention mask with the knowledge of the decoder max length. To avoid replicating all but a few lines of code the former option
+        is kept.
+        """
+        if self.is_decoder and self.block[0].layer[0].SelfAttention.kv_cache_initialized:
+            if attention_mask is None:
+                attention_layer = self.block[0].layer[0].SelfAttention
+                bsz, _, src_len, _ = attention_layer._k_cache.shape
+                attention_mask = torch.ones((1, src_len))
+                mask_cond = torch.arange(src_len).view(1, src_len)
+                attention_mask.masked_fill_(mask_cond >= attention_layer._generation_step + 1, 0)
+                attention_mask = attention_mask.to(attention_layer._k_cache.dtype)
+                attention_mask = attention_mask.expand(bsz, 1, src_len)
+            else:
+                raise ValueError(
+                    f"Providing an {attention_mask=} to the decoder when kv-caching is enabled is currently not supported."
+                )
+
+        return super().forward(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            encoder_hidden_states=encoder_hidden_states,
+            encoder_attention_mask=encoder_attention_mask,
+            inputs_embeds=inputs_embeds,
+            head_mask=head_mask,
+            cross_attn_head_mask=cross_attn_head_mask,
+            past_key_values=past_key_values,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+
+
+@supports_kv_cache
 @register(T5ForConditionalGeneration)
 class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMixin, IPUGenerationMixin):
     @property
@@ -199,7 +419,7 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
             else:
                 self.shared = self.shared.shared
 
-    def parallelize(self, for_generation=False):
+    def parallelize(self, for_generation=False, use_cache=False, **kwargs):
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model
@@ -213,6 +433,9 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
         """
         PipelineMixin.parallelize(self)
 
+        if use_cache:
+            kwargs = self._populate_parallelize_kwargs_with_generation_config(**kwargs)
+
         logger.info("-------------------- Device Allocation --------------------")
         logger.info("Embedding  --> IPU 0")
 
@@ -222,7 +445,7 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
             if self.config.tie_word_embeddings:
                 self.tie_weights()
 
-        self.change_lm_head_to_indexed_input_linear(restore=not for_generation)
+        self.change_lm_head_to_indexed_input_linear(restore=not (for_generation and not use_cache))
 
         self.encoder_and_decoder_embeddings_computation(True)
         self.shared = poptorch.BeginBlock(self.shared, "Embedding", ipu_id=0)
@@ -230,6 +453,7 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
         # Use a custom T5Stack implementation because sharing the position bias causes OOM error
         self.encoder.__class__ = CustomT5Stack
         self.decoder.__class__ = CustomT5Stack
+        self.decoder.change_attention_class(restore=False, use_cache=use_cache and for_generation, **kwargs)
 
         # Upcast input embeddings so that the residuals remain in FP32. This
         # cast is reversed where necessary by the T5LayerNorm layers in:
@@ -321,6 +545,7 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
         self.encoder_and_decoder_embeddings_computation(False)
 
         self.encoder.__class__ = T5Stack
+        self.decoder.change_attention_class(restore=True)
         self.decoder.__class__ = T5Stack
 
         self.encoder.embed_tokens = self.encoder.embed_tokens.module
@@ -347,6 +572,39 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
                 self.tie_weights()
 
         return self
+
+    def prepare_inputs_for_generation(
+        self,
+        input_ids,
+        past_key_values=None,
+        attention_mask=None,
+        head_mask=None,
+        decoder_head_mask=None,
+        decoder_attention_mask=None,
+        cross_attn_head_mask=None,
+        use_cache=None,
+        encoder_outputs=None,
+        **kwargs,
+    ):
+        # We don't use `past_key_values` for KV caching, and rely on `use_cache` instead.
+        beam_idx = None
+        if use_cache:
+            # cut decoder_input_ids if past is used
+            input_ids = input_ids[:, -1:]
+            beam_idx = kwargs.get("beam_idx", torch.arange(input_ids.shape[0], dtype=torch.long))
+
+        return {
+            "decoder_input_ids": input_ids,
+            "past_key_values": None,
+            "encoder_outputs": encoder_outputs,
+            "attention_mask": attention_mask,
+            "head_mask": head_mask,
+            "decoder_head_mask": decoder_head_mask,
+            "decoder_attention_mask": decoder_attention_mask,
+            "cross_attn_head_mask": cross_attn_head_mask,
+            "use_cache": use_cache,
+            "beam_idx": beam_idx,
+        }
 
     def forward(
         self,
@@ -442,7 +700,6 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
         lm_scale_modifier = getattr(self, "lm_scale_modifier", None)
         if lm_scale_modifier is not None:
             sequence_output = sequence_output * lm_scale_modifier
-
         lm_logits = self.lm_head(sequence_output)
 
         loss = None
@@ -472,3 +729,97 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
             encoder_hidden_states=encoder_outputs.hidden_states,
             encoder_attentions=encoder_outputs.attentions,
         )
+
+
+@register(T5EncoderModel)
+class PipelinedT5EncoderModel(T5EncoderModel, PipelineMixin):
+    def parallelize(self):
+        """
+        Transform the model to run in an IPU pipeline.
+        - Adds pipeline stages to the model
+        - Adds recomputation checkpoints
+
+        Recommended usage:
+        ```
+        model = PipelinedT5EncoderModel(config).parallelize().half()
+        ```
+        """
+        PipelineMixin.parallelize(self)
+
+        logger.info("-------------------- Device Allocation --------------------")
+        logger.info("Embedding  --> IPU 0")
+
+        self.shared = poptorch.BeginBlock(self.shared, "Embedding", ipu_id=0)
+
+        # Use a custom T5Stack implementation because sharing the position bias causes OOM error
+        self.encoder.__class__ = CustomT5Stack
+
+        # Upcast input embeddings so that the residuals remain in FP32. This
+        # cast is reversed where necessary by the T5LayerNorm layers in:
+        # - first layer of T5LayerSelfAttention
+        # - first layer of T5LayerFF
+        # - final_layer_norm
+        # Which, conveniently, are all the places that this needs to happen.
+        # Therefore, so we just need to upcast immediately before the residual
+        # adds in T5LayerSelfAttention and T5LayerFF. This is handled in the
+        # for loop below.
+        self.encoder.embed_tokens = UpCastWrapper(self.encoder.embed_tokens)
+
+        # Use a custom T5Block implementation that removes a dynamic if blocks that can't be statically traced
+        for block in self.encoder.block:
+            block.__class__ = CustomT5Block
+            # Dropout happens immediately before the residual add. Inserting a
+            # cast in T5LayerSelfAttention and T5LayerFF keeps the residual
+            # structure in FP32
+            block.layer[0].dropout = UpCastWrapper(block.layer[0].dropout)
+            # Scale down the weights for the T5LayerFF down-projection and
+            # then scale its output back up again after it is cast to FP32
+            scale = 8.0
+            with torch.no_grad():
+                block.layer[1].DenseReluDense.wo.weight /= scale
+            block.layer[1].dropout = UpCastWrapper(block.layer[1].dropout, scale)
+            # Prevent overflow in NewGELUActivation
+            if self.config.dense_act_fn == "gelu_new":
+                # TODO: Work-around bug with torch.nn.GELU(approximate="tanh"). Replace
+                # this with block.layer[1].DenseReluDense.act = torch.nn.GELU(approximate="tanh")
+                # when bug is fixed
+                block.layer[1].DenseReluDense.act = CustomGELU()
+
+        num_encoder_layers = len(self.encoder.block)
+        number_of_layers = num_encoder_layers
+        encoder_layer_ipu = get_layer_ipu(self.ipu_config, number_of_layers)
+
+        for index, (layer, ipu) in enumerate(zip(self.encoder.block, encoder_layer_ipu)):
+            if self.ipu_config.recompute_checkpoint_every_layer and index != self.config.num_layers - 1:
+                self._hooks.append(recomputation_checkpoint(layer))
+            self.encoder.block[index] = poptorch.BeginBlock(layer, f"Encoder{index}", ipu_id=ipu)
+            logger.info(f"Encoder {index:<2} --> IPU {ipu}")
+
+        self.encoder.final_layer_norm = poptorch.BeginBlock(
+            self.encoder.final_layer_norm, "Encoder Stack Final LayerNorm", ipu_id=ipu
+        )
+
+        return self
+
+    def deparallelize(self):
+        """
+        Undo the changes to the model done by `parallelize`.
+        You should call this before doing `save_pretrained` so that the `model.state_dict` is
+        fully compatible with `transformers.T5ForConditionalGeneration`.
+        """
+        # T5ForConditionalGeneration has a deparallelize method, so make sure that the PipelineMixin one is used here.
+        PipelineMixin.deparallelize(self)
+
+        self.encoder.__class__ = T5Stack
+        self.encoder.embed_tokens = self.encoder.embed_tokens.module
+
+        for block in self.encoder.block:
+            block.__class__ = T5Block
+            block.layer[0].dropout = block.layer[0].dropout.module
+            with torch.no_grad():
+                block.layer[1].DenseReluDense.wo.weight *= block.layer[1].dropout.scale
+            block.layer[1].dropout = block.layer[1].dropout.module
+            if self.config.dense_act_fn == "gelu_new":
+                block.layer[1].DenseReluDense.act = NewGELUActivation()
+
+        return self

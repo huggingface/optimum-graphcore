@@ -1,5 +1,6 @@
 # coding=utf-8
 # Copyright 2021 HuggingFace Inc.
+# Copyright (c) 2022 Graphcore Ltd. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -46,9 +47,11 @@ from transformers import (
 from optimum.graphcore import IPUConfig
 from optimum.graphcore.modeling_utils import _PRETRAINED_TO_PIPELINED_REGISTRY
 
-from .utils import MODELS_TO_TEST_MAPPING
+from .utils import CONFIG_MAPPING_EXTRA, MODEL_MAPPING_EXTRA, MODELS_TO_TEST_MAPPING, MODELS_TO_TEST_MAPPING_EXTRA
 
 
+MODELS_TO_TEST_MAPPING.update(MODELS_TO_TEST_MAPPING_EXTRA)
+[CONFIG_MAPPING.register(k, v) for k, v in CONFIG_MAPPING_EXTRA.items()]
 REVERSE_CONFIG_MAPPING = {v: k for k, v in CONFIG_MAPPING.items()}
 
 
@@ -69,6 +72,7 @@ def _get_models_to_test(model_to_test_names):
             MODEL_FOR_SPEECH_SEQ_2_SEQ_MAPPING,
             MODEL_FOR_TOKEN_CLASSIFICATION_MAPPING,
             MODEL_MAPPING,
+            MODEL_MAPPING_EXTRA,
         ]
         config_class = None
         for mapping in mappings:
@@ -90,9 +94,12 @@ def _get_models_to_test(model_to_test_names):
         names = model_to_test_names[REVERSE_CONFIG_MAPPING[config_class]]
         if isinstance(names, dict):
             task = "ctc" if "CTC" in test_name else "default"
-            model_name_or_path, ipu_config_name_or_path = names.get(task, "default")
+            names = names.get(task, "default")
+            model_name_or_path = names.model
+            ipu_config_name_or_path = names.ipu_config
         else:
-            model_name_or_path, ipu_config_name_or_path = names
+            model_name_or_path = names.model
+            ipu_config_name_or_path = names.ipu_config
         models_to_test.append(
             (test_name, model_name_or_path, ipu_config_name_or_path, pretrained_class, pipelined_class, config_class)
         )

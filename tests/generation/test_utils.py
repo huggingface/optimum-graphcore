@@ -1,5 +1,6 @@
 # coding=utf-8
 # Copyright 2020 The HuggingFace Team Inc.
+# Copyright (c) 2023 Graphcore Ltd. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.

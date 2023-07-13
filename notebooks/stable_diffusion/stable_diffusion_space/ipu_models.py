@@ -112,7 +112,7 @@ class IPUStableDiffusionPipeline(StableDiffusionPipeline):
                 "enable_half_partials": True,
                 "executable_cache_dir": "./exe_cache",
                 "inference_device_iterations": 1,
-                "inference_replication_factor": {"default": 1},
+                "inference_replication_factor": 1,
                 "ipus_per_replica": 4,
                 "matmul_proportion": [0.09, 0.1, 0.1, 0.08],
             }
