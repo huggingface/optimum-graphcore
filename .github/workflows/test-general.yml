@@ -27,21 +27,21 @@ jobs:
         python-version: ${{ matrix.python-version }}
     - name: Create and start a virtual environment
       run: |
-        python -m venv venv
-        source venv/bin/activate
+        python -m venv general_venv --clear 
+        source general_venv/bin/activate
     - name: Install dependencies
       run: |
-        source venv/bin/activate
+        source general_venv/bin/activate
         pip install --upgrade pip
-        export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_20_04-3.2*
+        export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_20_04-3.3*
         pip install ${SDK_PATH}/poptorch-*.whl
         pip install .[testing]
     - name: Test with Pytest
       env:
         POPTORCH_WAIT_FOR_IPU: 1
       run: |
-        source venv/bin/activate
-        export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_20_04-3.2*
+        source general_venv/bin/activate
+        export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_20_04-3.3*
         . ${SDK_PATH}/poplar-ubuntu_20_04*/enable.sh
         . ${SDK_PATH}/popart-ubuntu_20_04*/enable.sh
         pytest tests/ -v -n 16 --ignore=tests/pipelines/ --ignore=tests/test_examples_match_transformers.py

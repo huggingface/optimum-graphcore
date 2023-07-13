@@ -1,4 +1,5 @@
 #  Copyright 2021 The HuggingFace Team. All rights reserved.
+#  Copyright (c) 2022 Graphcore Ltd. All rights reserved.
 #
 #  Licensed under the Apache License, Version 2.0 (the "License");
 #  you may not use this file except in compliance with the License.
@@ -33,7 +34,6 @@ from transformers.models.bart.modeling_bart import (
     BartEncoder,
     BartEncoderLayer,
     BartLearnedPositionalEmbedding,
-    shift_tokens_right,
 )
 
 from optimum.utils import logging
@@ -46,6 +46,7 @@ from ...modeling_utils import (
     get_layer_ipu,
     recomputation_checkpoint,
     register,
+    shift_tokens_right,
     split_encoder_decoder_ipu_config,
 )
 

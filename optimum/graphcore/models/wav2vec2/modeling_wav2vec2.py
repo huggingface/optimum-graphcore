@@ -1,3 +1,4 @@
+# Copyright 2021 The Fairseq Authors and the HuggingFace Inc. team. All rights reserved.
 # Copyright (c) 2022 Graphcore Ltd. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");

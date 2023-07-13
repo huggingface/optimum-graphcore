@@ -1,4 +1,5 @@
 # Copyright 2021 The HuggingFace Team. All rights reserved.
+# Copyright (c) 2023 Graphcore Ltd. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -48,7 +49,7 @@ if is_torch_available():
 
 TINY_IPU_CONFIG_DICT = {
     "inference_device_iterations": 1,
-    "inference_replication_factor": {"default": 1},
+    "inference_replication_factor": 1,
     "executable_cache_dir": "./exe_cache",
     "layers_per_ipu": [4, 5],
     "matmul_proportion": 0.25,
