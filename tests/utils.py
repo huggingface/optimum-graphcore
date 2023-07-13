@@ -52,10 +52,7 @@ MODELS_TO_TEST_MAPPING = {
     "roberta": model_test_config("roberta-base", "Graphcore/roberta-base-ipu"),
     "t5": model_test_config("t5-small", "Graphcore/t5-small-ipu"),
     "mt5": {
-        "default": model_test_config(
-            "google/mt5-small",
-            "Graphcore/mt5-small-ipu"
-        ),
+        "default": model_test_config("google/mt5-small", "Graphcore/mt5-small-ipu"),
         "translation": model_test_config(
             "google/mt5-small",
             IPUConfig.from_pretrained(
