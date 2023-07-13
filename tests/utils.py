@@ -54,9 +54,7 @@ MODELS_TO_TEST_MAPPING = {
     "mt5": {
         "default": model_test_config(
             "google/mt5-small",
-            IPUConfig.from_pretrained(
-                "Graphcore/mt5-small-ipu", embedding_serialization_factor=4, serialized_embedding_splits_per_ipu=None
-            ),
+            "Graphcore/mt5-small-ipu"
         ),
         "translation": model_test_config(
             "google/mt5-small",

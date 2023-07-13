@@ -188,6 +188,20 @@ class PipelinedModelsTester(TestCase):
         config = config_class.from_pretrained(model_name_or_path)
         if isinstance(ipu_config, str):
             ipu_config = IPUConfig.from_pretrained(ipu_config)
+
+        # Serialized layers split large modules into submodules with the result
+        # aggregated/combined across submodules. Since torch uses intra-op parallelism,
+        # intermediate thread results may be different when comparing computation on a single module
+        # vs the serialized module. Since floating point addition is sensitive to the order of accumulation of
+        # intermediate results, results from serialized layers will be marginally different from the original layer.
+        # The code below turns off intra-op parallelism since the aim of this test is to test functional correctnesss
+        model_using_serialized_splits_per_ipu = (
+            ipu_config.serialized_embedding_splits_per_ipu or ipu_config.serialized_projection_splits_per_ipu
+        )
+        if model_using_serialized_splits_per_ipu:
+            torch_original_intra_op_thread_count = torch.get_num_threads()
+            torch.set_num_threads(1)
+
         pretrained_model = pretrained_class(config).eval()
         pipelined_model = pipelined_class.from_transformers(pretrained_model, ipu_config).eval()
 
@@ -243,6 +257,9 @@ class PipelinedModelsTester(TestCase):
                     torch.allclose(pretrained_output, pipelined_output, atol=1e-5),
                     f"Pretrained and pipelined model {idx}th outputs do not match, max difference = {(pretrained_output - pipelined_output).abs().max()}",
                 )
+
+        if model_using_serialized_splits_per_ipu:
+            torch.set_num_threads(torch_original_intra_op_thread_count)
 
     @parameterized.expand(MODELS_TO_TEST)
     def test_parallelize_deparallelize(
