@@ -68,10 +68,10 @@ MODELS_TO_TEST_MAPPING = {
             IPUConfig.from_pretrained(
                 "Graphcore/mt5-small-ipu",
                 ipus_per_replica=8,
-                layers_per_ipu=[0, 2, 2, 2, 6, 4, 0, 0],
-                embedding_serialization_factor=8,
-                serialized_embedding_splits_per_ipu=None,
+                layers_per_ipu=[0, 1, 2, 2, 5, 6, 0, 0],
+                embedding_serialization_factor=None,
                 projection_serialization_factor=None,
+                serialized_embedding_splits_per_ipu=[4,4,0,0,0,0,0,0],
                 serialized_projection_splits_per_ipu=[0, 0, 0, 0, 0, 0, 4, 4],
             ),
         ),
