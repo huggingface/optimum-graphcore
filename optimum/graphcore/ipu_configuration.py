@@ -152,6 +152,10 @@ class IPUConfig(BaseConfig):
             Same as `serialized_projection_splits_per_ipu` but for inference only.
         recompute_checkpoint_every_layer (`bool`, *optional*, defaults to `False`):
             If `True`, uses gradient checkpointing at the end of every layer. It can help to reduce the memory impact.
+        explicit_ir_inference (`bool`, *optional*, defaults to `False`):
+            If `True`, uses experimental explicit-IR feature of PopART for inference models. This feature is only supported 
+            for inference models. For some cases explicit-IR can provide a better memory liveness schedule, reducing the peak
+            memory during runtime.
 
         > Parameters related to host/device synchronization
 
@@ -322,6 +326,7 @@ class IPUConfig(BaseConfig):
         seed: Optional[int] = None,
         auto_loss_scaling: bool = False,
         executable_cache_dir: str = "",
+        explicit_ir_inference: bool = False,
         **kwargs,
     ):
         self.seed = seed
@@ -388,6 +393,7 @@ class IPUConfig(BaseConfig):
         self.auto_loss_scaling = auto_loss_scaling
         self.enable_half_partials = enable_half_partials
         self.executable_cache_dir = executable_cache_dir
+        self.explicit_ir_inference = explicit_ir_inference
         self.embedding_serialization_factor = embedding_serialization_factor
         self.recompute_checkpoint_every_layer = recompute_checkpoint_every_layer
         self.output_mode = output_mode
@@ -641,13 +647,15 @@ class IPUConfig(BaseConfig):
         opts._Popart.setPatterns(
             {"TiedGather": True, "TiedGatherAccumulate": True, "UpdateInplacePrioritiesForIpu": True}
         )
-        opts._popart.set("enableExplicitIR", True)
 
         # Options for profiling with Popvision
         engine_options = {
             "opt.useAutoloader": "true",
             "target.syncReplicasIndependently": "true",
         }
+
+        if for_inference and self.explicit_ir_inference:
+            opts._popart.set("enableExplicitIR", True)
 
         opts._Popart.set("engineOptions", engine_options)
 
