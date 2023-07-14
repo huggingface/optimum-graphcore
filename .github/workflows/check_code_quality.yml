@@ -42,6 +42,9 @@ jobs:
       run: |
         source code_quality_venv/bin/activate
         pip install --upgrade pip
+        export SDK_PATH=/opt/gc/poplar_sdk-ubuntu_20_04-3.3*
+        . ${SDK_PATH}/poplar-ubuntu_20_04*/enable.sh
+        . ${SDK_PATH}/popart-ubuntu_20_04*/enable.sh
         pip install .[quality]
     - name: Check style with black
       run: |
