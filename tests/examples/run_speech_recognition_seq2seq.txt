@@ -44,61 +44,54 @@
 <         return batch
 ---
 >         return batch.data
-280a289,294
+280a289,291
 >     if training_args.gradient_checkpointing:
 >         raise ValueError("Gradient checkpointing not supported.")
 > 
->     print(f"{training_args.ipu_config_name = }")
->     print(f"{training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path = }")
-> 
-298,299d311
+298,299d308
 <     logger.setLevel(logging.INFO if is_main_process(training_args.local_rank) else logging.WARN)
 < 
-301,304d312
+301,304d309
 <     logger.warning(
 <         f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
 <         f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
 <     )
-307,311d314
+307,311d311
 <     # Set the verbosity to info of the Transformers logger (on main process only):
 <     if is_main_process(training_args.local_rank):
 <         transformers.utils.logging.set_verbosity_info()
 <     logger.info("Training/evaluation parameters %s", training_args)
 < 
-379a383,384
+379a380,381
 >         if model_args.apply_spec_augment:
 >             raise ValueError("SpecAugment is not supported on IPU")
-381a387,392
+381a384,389
 >     # IPU specific config updates
 >     config.update({"apply_spec_augment": False})
 > 
 >     # Whisper does not have a layer_norm_eps option, remains to be seen if this is a problem
 >     # config.update({"layer_norm_eps": 0.0001})
 > 
-401a413,417
+401a410,414
 >     ipu_config = IPUConfig.from_pretrained(
 >         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
 >         cache_dir=model_args.cache_dir,
 >         use_auth_token=True if model_args.use_auth_token else None,
 >     )
-446c462
+446c459
 <     def prepare_dataset(batch):
 ---
 >     def prepare_dataset(batch, feature_extractor, tokenizer):
-451a468,470
-> 
->         igmin = inputs.get(model_input_name)[0]
->         # print(igmin.shape)
-453c472
-<         batch[model_input_name] = inputs.get(model_input_name)[0]
+452c465
+<         # process audio length
 ---
->         batch[model_input_name] = igmin
-457a477,480
+> 
+457a471,474
 >         if not training_args.fp32:
 >             # Cast audio inputs to FP16
 >             batch[model_input_name] = batch[model_input_name].astype(np.float16)
 > 
-463,469c486,491
+463,469c480,485
 <     with training_args.main_process_first(desc="dataset map pre-processing"):
 <         vectorized_datasets = raw_datasets.map(
 <             prepare_dataset,
@@ -113,7 +106,7 @@
 >         num_proc=data_args.preprocessing_num_workers,
 >         desc="preprocess train dataset",
 >     )
-509,516c531,534
+509,516c525,528
 <     # make sure all processes wait until data is saved
 <     with training_args.main_process_first():
 <         # only the main process saves them
@@ -127,24 +120,22 @@
 >     feature_extractor.save_pretrained(training_args.output_dir)
 >     tokenizer.save_pretrained(training_args.output_dir)
 >     config.save_pretrained(training_args.output_dir)
-518c536
+518c530
 <     processor = AutoProcessor.from_pretrained(training_args.output_dir)
 ---
 >     processor = WhisperProcessor(feature_extractor, tokenizer)
-524a543,545
->         # pad_to_multiple_of=math.ceil(max_input_length),
->         pad_to_multiple_of=80,
+524a537
 >         pad_to_multiple_of_labels=training_args.generation_max_length,
-528c549
+528c541
 <     trainer = Seq2SeqTrainer(
 ---
 >     trainer = IPUSeq2SeqTrainer(
-529a551
+529a543
 >         ipu_config=ipu_config,
-533d554
+533d546
 <         tokenizer=feature_extractor,
-535a557,561
->         eval_parallelize_kwargs={
+535a549,553
+>         inference_parallelize_kwargs={
 >             "use_cache": True,
 >             "use_cross_cache": True,
 >             "max_length": training_args.generation_max_length,
