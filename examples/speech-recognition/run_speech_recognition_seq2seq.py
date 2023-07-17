@@ -411,6 +411,11 @@ def main():
         training_args.ipu_config_name if training_args.ipu_config_name else model_args.model_name_or_path,
         cache_dir=model_args.cache_dir,
         use_auth_token=True if model_args.use_auth_token else None,
+        inference_parallelize_kwargs={
+            "use_cache": True,
+            "use_cross_cache": True,
+            "max_length": training_args.generation_max_length,
+        },
     )
 
     if model.config.decoder_start_token_id is None:
@@ -546,11 +551,6 @@ def main():
         eval_dataset=vectorized_datasets["eval"] if training_args.do_eval else None,
         data_collator=data_collator,
         compute_metrics=compute_metrics if training_args.predict_with_generate else None,
-        inference_parallelize_kwargs={
-            "use_cache": True,
-            "use_cross_cache": True,
-            "max_length": training_args.generation_max_length,
-        },
     )
 
     # 12. Training
