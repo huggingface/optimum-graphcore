@@ -76,7 +76,7 @@ MODELS_TO_TEST_MAPPING = {
             ),
         ),
     },
-    "mpnet": model_test_config("sentence-transformers/all-mpnet-base-v2", "Graphcore/bert-base-uncased"),
+    "mpnet": model_test_config("sentence-transformers/all-mpnet-base-v2", "Graphcore/mpnet-base-ipu"),
     "vit": model_test_config("google/vit-base-patch16-224-in21k", "Graphcore/vit-base-ipu"),
     "wav2vec2": {
         "default": model_test_config("facebook/wav2vec2-base", "Graphcore/wav2vec2-base-ipu"),
