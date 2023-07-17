@@ -1663,7 +1663,7 @@ class IPUGenerationMixin(GenerationMixin):
             if hasattr(stopping_criterion, "max_length"):
                 max_length = stopping_criterion.max_length
                 new_max_length = max_length - on_device_generation_steps
-                logger.info(
+                logger.debug(
                     f"Temporarily adapting `max_length` from {max_length} to {new_max_length} for on device generation."
                 )
                 stopping_criterion = copy.deepcopy(stopping_criterion)
