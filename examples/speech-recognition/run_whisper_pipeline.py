@@ -96,15 +96,8 @@ if executable_cache_dir is not None:
 
 
 ipu_config = IPUConfig(
-    layers_per_ipu=args.layers_per_ipu, inference_replication_factor=args.replication_factor, **config_kwargs
-)
-ipu_pipeline = pipeline(
-    task="automatic-speech-recognition",
-    model=args.model,
-    feature_extractor=WhisperFeatureExtractorTorch.from_pretrained(args.model),
-    framework="pt",
-    ipu_config=ipu_config,
-    fp16=not args.fp32,
+    layers_per_ipu=args.layers_per_ipu,
+    inference_replication_factor=args.replication_factor,
     parallelize_kwargs={
         "use_cache": args.use_cache,
         "use_encoder_output_buffer": args.use_encoder_output_buffer,
@@ -113,6 +106,15 @@ ipu_pipeline = pipeline(
         "num_beams": args.num_beams,
         "batch_size": args.batch_size,
     },
+    **config_kwargs,
+)
+ipu_pipeline = pipeline(
+    task="automatic-speech-recognition",
+    model=args.model,
+    feature_extractor=WhisperFeatureExtractorTorch.from_pretrained(args.model),
+    framework="pt",
+    ipu_config=ipu_config,
+    fp16=not args.fp32,
     batch_size=args.batch_size * args.replication_factor,
     chunk_length_s=args.chunk_length_s,
     ignore_warning=True,

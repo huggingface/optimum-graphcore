@@ -94,6 +94,10 @@ class IPUConfig(BaseConfig):
             the number of IPUs used in `layers_per_ipu`.
         inference_ipus_per_replica (`int`, *optional*, defaults to `len(inference_layers_per_ipu) if ipus_per_replica==len(layers_per_ipu) else ipus_per_replica):
             Same as `ipus_per_replica` but for inference only.
+        parallelize_kwargs (`Dict[str, Any]`, *optional*, defaults to None):
+            Dictionary holding kwargs used for training model calls to `parallelize`.
+        inference_parallelize_kwargs (`Dict[str, Any]`, *optional*, defaults to None):
+            Dictionary holding kwargs used for inference model calls to `parallelize`.
 
         > Parameters for memory management
 
@@ -207,6 +211,7 @@ class IPUConfig(BaseConfig):
     _serialized_embedding_splits_per_ipu = ManagedAttribute("serialized_embedding_splits_per_ipu")
     _projection_serialization_factor = ManagedAttribute("projection_serialization_factor")
     _serialized_projection_splits_per_ipu = ManagedAttribute("serialized_projection_splits_per_ipu")
+    _parallelize_kwargs = ManagedAttribute("parallelize_kwargs")
 
     # Create a mapping of attributes to their list of validation functions
     attribute_validators = defaultdict(list)
@@ -327,6 +332,8 @@ class IPUConfig(BaseConfig):
         auto_loss_scaling: bool = False,
         executable_cache_dir: str = "",
         explicit_ir_inference: bool = False,
+        parallelize_kwargs: Optional[Dict[str, Any]] = None,
+        inference_parallelize_kwargs: Optional[Dict[str, Any]] = None,
         **kwargs,
     ):
         self.seed = seed
@@ -397,6 +404,9 @@ class IPUConfig(BaseConfig):
         self.embedding_serialization_factor = embedding_serialization_factor
         self.recompute_checkpoint_every_layer = recompute_checkpoint_every_layer
         self.output_mode = output_mode
+
+        self.parallelize_kwargs = parallelize_kwargs or {}
+        self.inference_parallelize_kwargs = inference_parallelize_kwargs or {}
 
         # TODO: remove this if unnecessary.
         self.execute_encoder_on_cpu_for_generation = kwargs.pop("execute_encoder_on_cpu_for_generation", False)
