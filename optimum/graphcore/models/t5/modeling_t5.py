@@ -86,7 +86,9 @@ class IPUT5Attention(T5Attention, IPUAttentionMixin):
         real_seq_length = seq_length
 
         # On the IPU the real sequence length is the padded sequence. If self attention
-        # kv caching is enabled, this length can be obtained from the kv cache
+        # kv caching is enabled, this length can be obtained from the kv cache.
+        # for cross kv caching computing the relative attention bias is disabled
+        # so we do not need to be aware of the decoder max length
         if self.kv_cache_initialized:
             real_seq_length = self._k_cache.shape[-2]
 
@@ -128,9 +130,12 @@ class IPUT5Attention(T5Attention, IPUAttentionMixin):
                     raise ValueError(f"KV cache expects tgt_len = 1, received {tgt_len}.")
                 key_states, value_states = self.add_to_kv_cache(key_states, value_states)
             else:
-                # TODO: support cross kv caching
-                key_states = shape(self.k(key_value_states))
-                value_states = shape(self.v(key_value_states))
+                # cached cross-attn
+                key_states, value_states = self.add_to_cross_kv_cache(
+                    key_value_states,
+                    lambda x: shape(self.k(x)),
+                    lambda x: shape(self.v(x)),
+                )
 
         # compute scores
         scores = torch.matmul(
@@ -145,11 +150,14 @@ class IPUT5Attention(T5Attention, IPUAttentionMixin):
                 if self.gradient_checkpointing and self.training:
                     position_bias.requires_grad = True
             else:
+                if self.cross_kv_cache_initialized:
+                    raise NotImplementedError(
+                        f"Cross KV caching with {self.has_relative_attention_bias=} is not yet supported on the IPU."
+                    )
                 position_bias = self.compute_bias(real_seq_length, key_length, device=scores.device)
 
             # if key and values are already calculated
             # we want only the last query position bias
-            # if kv_cache init or cross_kv_cache init
             if self.kv_cache_initialized:
                 position_bias = poptorch.dynamic_slice(position_bias, 2, self._generation_step, 1, 1)
 
@@ -301,47 +309,6 @@ class CustomT5Stack(T5Stack):
     def get_extended_attention_mask(self, *args, **kwargs) -> Tensor:
         return super().get_extended_attention_mask(*args, **kwargs) * 0.75
 
-    def change_attention_class(self, restore=False, **kwargs):
-        """Changes the attention layers to either use the original T5Attention forward
-        or IPUT5Attention forward.
-
-        Args:
-            restore (bool, optional): whether to restore the attention layers to their original version or not. Defaults to False.
-        """
-        use_cache = kwargs.get("use_cache", False)
-        batch_size = kwargs.get("batch_size", 1)
-        max_length = kwargs.get("max_length", 128)
-        num_beams = kwargs.get("num_beams", 1)
-
-        for layer in self.block:
-            if restore:
-                layer.layer[0].SelfAttention = layer.layer[0].SelfAttention.to_model(T5Attention)
-                if self.is_decoder:
-                    layer.layer[1].EncDecAttention = layer.layer[1].EncDecAttention.to_model(T5Attention)
-                continue
-
-            if self.is_decoder:
-                layer.layer[0].SelfAttention = IPUT5Attention.from_model(
-                    layer.layer[0].SelfAttention,
-                    use_cache=use_cache,
-                    batch_size=batch_size,
-                    max_length=max_length,
-                    num_beams=num_beams,
-                    num_heads=layer.layer[0].SelfAttention.n_heads,
-                    head_dim=layer.layer[0].SelfAttention.key_value_proj_dim,
-                    dtype=layer.layer[0].SelfAttention.k.weight.dtype,
-                )
-                # TODO: enable cross kv cache
-                layer.layer[1].EncDecAttention = IPUT5Attention.from_model(
-                    layer.layer[1].EncDecAttention, use_cache=False
-                )
-
-            else:
-                layer.layer[0].SelfAttention = IPUT5Attention.from_model(
-                    layer.layer[0].SelfAttention,
-                    use_cache=False,
-                )
-
     def forward(
         self,
         input_ids=None,
@@ -419,7 +386,7 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
             else:
                 self.shared = self.shared.shared
 
-    def parallelize(self, for_generation=False, use_cache=False, **kwargs):
+    def parallelize(self, for_generation=False, use_cache=False, use_cross_cache=False, **kwargs):
         """
         Transform the model to run in an IPU pipeline.
         - Adds pipeline stages to the model
@@ -453,7 +420,16 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
         # Use a custom T5Stack implementation because sharing the position bias causes OOM error
         self.encoder.__class__ = CustomT5Stack
         self.decoder.__class__ = CustomT5Stack
-        self.decoder.change_attention_class(restore=False, use_cache=use_cache and for_generation, **kwargs)
+
+        # Optimisations for generation
+        self.change_attention_class(
+            restore=False,
+            use_cache=use_cache and for_generation,
+            use_cross_cache=use_cross_cache and for_generation,
+            **kwargs,
+        )
+        self._use_encoder_output_buffer = kwargs.get("use_encoder_output_buffer", False)
+        self.set_on_device_generation_steps(kwargs.get("on_device_generation_steps", 0))
 
         # Upcast input embeddings so that the residuals remain in FP32. This
         # cast is reversed where necessary by the T5LayerNorm layers in:
@@ -544,8 +520,9 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
 
         self.encoder_and_decoder_embeddings_computation(False)
 
+        self.set_on_device_generation_steps(0)
+        self.change_attention_class(restore=True)
         self.encoder.__class__ = T5Stack
-        self.decoder.change_attention_class(restore=True)
         self.decoder.__class__ = T5Stack
 
         self.encoder.embed_tokens = self.encoder.embed_tokens.module
@@ -572,6 +549,60 @@ class PipelinedT5ForConditionalGeneration(T5ForConditionalGeneration, PipelineMi
                 self.tie_weights()
 
         return self
+
+    def change_attention_class(self, restore=False, **kwargs):
+        """Changes the attention layers to either use the original T5Attention forward
+        or IPUT5Attention forward.
+
+        Args:
+            restore (bool, optional): whether to restore the attention layers to their original version or not. Defaults to False.
+        """
+        use_cache = kwargs.get("use_cache", False)
+        use_cross_cache = kwargs.get("use_cross_cache", False)
+        batch_size = kwargs.get("batch_size", 1)
+        max_length = kwargs.get("max_length", 128)
+        encoder_max_length = kwargs.get("encoder_max_length", 1500)
+        num_beams = kwargs.get("num_beams", 1)
+
+        for layer in self.encoder.block:
+            if restore:
+                layer.layer[0].SelfAttention = layer.layer[0].SelfAttention.to_model(T5Attention)
+                continue
+
+            layer.layer[0].SelfAttention = IPUT5Attention.from_model(
+                layer.layer[0].SelfAttention,
+                use_cache=False,
+            )
+
+        for layer in self.decoder.block:
+            if restore:
+                layer.layer[0].SelfAttention = layer.layer[0].SelfAttention.to_model(T5Attention)
+                layer.layer[1].EncDecAttention = layer.layer[1].EncDecAttention.to_model(T5Attention)
+                continue
+
+            layer.layer[0].SelfAttention = IPUT5Attention.from_model(
+                layer.layer[0].SelfAttention,
+                use_cache=use_cache,
+                use_cross_cache=False,
+                batch_size=batch_size,
+                max_length=max_length,
+                num_beams=num_beams,
+                num_heads=layer.layer[0].SelfAttention.n_heads,
+                head_dim=layer.layer[0].SelfAttention.key_value_proj_dim,
+                dtype=layer.layer[0].SelfAttention.k.weight.dtype,
+            )
+
+            layer.layer[1].EncDecAttention = IPUT5Attention.from_model(
+                layer.layer[1].EncDecAttention,
+                use_cache=False,
+                use_cross_cache=use_cross_cache,
+                batch_size=batch_size,
+                encoder_max_length=encoder_max_length,
+                num_beams=num_beams,
+                num_heads=layer.layer[1].EncDecAttention.n_heads,
+                head_dim=layer.layer[1].EncDecAttention.key_value_proj_dim,
+                dtype=layer.layer[1].EncDecAttention.k.weight.dtype,
+            )
 
     def prepare_inputs_for_generation(
         self,
