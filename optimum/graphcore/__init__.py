@@ -84,7 +84,6 @@ def _load_custom_ops():
     import sysconfig
     from pathlib import Path
 
-
     root = Path(pkg_resources.get_distribution("optimum-graphcore").location).absolute()
     names = ["custom_ops.so", str(Path("custom_ops.so").with_suffix(sysconfig.get_config_vars()["SO"]))]
     paths = [

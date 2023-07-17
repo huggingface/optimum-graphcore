@@ -157,7 +157,7 @@ class IPUConfig(BaseConfig):
         recompute_checkpoint_every_layer (`bool`, *optional*, defaults to `False`):
             If `True`, uses gradient checkpointing at the end of every layer. It can help to reduce the memory impact.
         explicit_ir_inference (`bool`, *optional*, defaults to `False`):
-            If `True`, uses experimental explicit-IR feature of PopART for inference models. This feature is only supported 
+            If `True`, uses experimental explicit-IR feature of PopART for inference models. This feature is only supported
             for inference models. For some cases explicit-IR can provide a better memory liveness schedule, reducing the peak
             memory during runtime.
 
