@@ -534,8 +534,6 @@ def main():
         processor=processor,
         decoder_start_token_id=model.config.decoder_start_token_id,
         forward_attention_mask=forward_attention_mask,
-        # pad_to_multiple_of=math.ceil(max_input_length),
-        pad_to_multiple_of=80,
         pad_to_multiple_of_labels=training_args.generation_max_length,
     )
 
