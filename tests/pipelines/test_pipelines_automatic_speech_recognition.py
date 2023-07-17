@@ -38,7 +38,7 @@ from transformers.testing_utils import (
     slow,
 )
 
-from optimum.graphcore import pipeline
+from optimum.graphcore import IPUConfig, pipeline
 
 from .test_pipelines_common import ANY, PipelineTestCaseMeta
 
@@ -79,11 +79,16 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
             return
             # return None, None
 
+        if isinstance(ipu_config, str):
+            ipu_config = IPUConfig.from_pretrained(ipu_config)
+        elif isinstance(ipu_config, dict):
+            ipu_config = IPUConfig.from_dict(ipu_config)
+        ipu_config.inference_parallelize_kwargs.update(parallelize_kwargs or {})
+
         speech_recognizer = pipeline(
             task="automatic-speech-recognition",
             model=model,
             ipu_config=ipu_config,
-            parallelize_kwargs=parallelize_kwargs,
             tokenizer=tokenizer,
             feature_extractor=feature_extractor,
         )
@@ -336,12 +341,13 @@ class AutomaticSpeechRecognitionPipelineTests(unittest.TestCase, metaclass=Pipel
         output = speech_recognizer(filename)
         self.assertEqual(output, {"text": " A man said to the universe, Sir, I exist."})
 
+        ipu_config = IPUConfig.from_pretrained("Graphcore/whisper-tiny-ipu")
+        ipu_config.inference_parallelize_kwargs["batch_size"] = 4
         # We need to create a new pipeline for a different batch size
         speech_recognizer = pipeline(
             task="automatic-speech-recognition",
             model="openai/whisper-tiny",
-            ipu_config="Graphcore/whisper-tiny-ipu",
-            parallelize_kwargs={"batch_size": 4},
+            ipu_config=ipu_config,
             fp16=True,
         )
         output = speech_recognizer([filename], chunk_length_s=5, batch_size=4)

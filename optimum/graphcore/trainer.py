@@ -308,7 +308,7 @@ class IPUTrainer:
                 self.eval_data_collator = data_collator_wrapper(self.eval_data_collator)
 
         self.model = to_pipelined(model, self.ipu_config, force=force_to_pipelined)
-        self.model.parallelize()
+        self.model.parallelize(**self.ipu_config.parallelize_kwargs)
 
         self.original_model = model
 
@@ -908,7 +908,7 @@ class IPUTrainer:
             if self.training_model is None:
                 model.deparallelize()
                 model.ipu_config.train()
-                model.parallelize()
+                model.parallelize(**model.ipu_config.parallelize_kwargs)
                 self.create_optimizer()
                 self.training_model = poptorch.trainingModel(
                     model.train(), options=self.opts, optimizer=self.optimizer
@@ -918,7 +918,7 @@ class IPUTrainer:
             if self.inference_model is None:
                 model.deparallelize()
                 model.ipu_config.eval()
-                model.parallelize()
+                model.parallelize(**model.ipu_config.inference_parallelize_kwargs)
                 self.inference_model = poptorch.inferenceModel(model.eval(), options=self.eval_opts)
             wrapped = self.inference_model
 
@@ -1319,7 +1319,7 @@ class IPUTrainer:
     def _load_state_dict_in_model(self, state_dict):
         self.model.deparallelize()
         load_result = self.model.load_state_dict(state_dict, strict=False)
-        self.model.parallelize()
+        self.model.parallelize(**self.model.ipu_config._parallelize_kwargs)
         if not self.args.fp32:
             self.model.half()
 
@@ -1636,7 +1636,7 @@ class IPUTrainer:
             rng_state = torch.random.get_rng_state()
             self.model.deparallelize()
             self.model.save_pretrained(output_dir, state_dict=state_dict)
-            self.model.parallelize()
+            self.model.parallelize(**self.model.ipu_config.parallelize_kwargs)
             torch.random.set_rng_state(rng_state)
 
         if self.tokenizer is not None:
