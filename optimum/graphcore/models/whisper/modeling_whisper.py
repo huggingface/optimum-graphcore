@@ -389,9 +389,9 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
             if isinstance(encoder, IPUWhisperConditionalEncoder):
                 self.model.encoder = encoder.to_model()
         else:
-            if self.ipu_config.ipus_per_replica > 1:
+            if self.ipu_config.inference_ipus_per_replica > 1:
                 raise ValueError(
-                    f"`{self.ipu_config.ipus_per_replica=}` should be 1 when placing encoder and decoder on the same IPU."
+                    f"`{self.ipu_config.inference_ipus_per_replica=}` should be 1 when placing encoder and decoder on the same IPU."
                 )
             assert_poptorch_supports_cond(
                 context="Whisper encoder is being conditionally run on the same IPU as the decoder since `use_cond_encoder=True`."
