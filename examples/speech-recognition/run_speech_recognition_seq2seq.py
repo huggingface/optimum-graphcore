@@ -548,7 +548,7 @@ def main():
         eval_dataset=vectorized_datasets["eval"] if training_args.do_eval else None,
         data_collator=data_collator,
         compute_metrics=compute_metrics if training_args.predict_with_generate else None,
-        eval_parallelize_kwargs={
+        inference_parallelize_kwargs={
             "use_cache": True,
             "use_cross_cache": True,
             "max_length": training_args.generation_max_length,
