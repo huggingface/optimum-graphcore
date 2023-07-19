@@ -630,6 +630,12 @@ class IPUTrainer:
             self.args.per_device_eval_batch_size if for_inference else self.args.per_device_train_batch_size
         )
         global_batch_size = micro_batch_size * replication_factor * gradient_accumulation_steps * device_iterations
+
+        try:
+            len(dataset)
+        except Exception:
+            # If the length of the dataset cannot be determined skip the checks
+            return
         if len(dataset) < global_batch_size:
             mode_str = "inference_" if for_inference else ""
             logger.warning(
