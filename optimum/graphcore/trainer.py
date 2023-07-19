@@ -387,7 +387,14 @@ class IPUTrainer:
             if args.do_train:
                 train_dl = self.get_train_dataloader()
                 model = self.wrap_model(self.model)
-                self.compile_model(model, next(iter(train_dl)), log=True)
+                try:
+                    model_inputs = next(iter(train_dl))
+                except StopIteration:
+                    raise ValueError(
+                        "Couldn't get first sample from dataloader, please check for warnings "
+                        "during dataloader construction."
+                    )
+                self.compile_model(model, model_inputs, log=True)
             if args.do_eval:
                 # Same thing with _wrap_and_compile_for_evaluation
                 eval_dl = self.get_eval_dataloader()
@@ -613,6 +620,36 @@ class IPUTrainer:
         else:
             return RandomSampler(self.train_dataset)
 
+    def _check_dataset_can_fill_batch(self, dataset: torch.utils.data.Dataset, for_inference: bool = False) -> None:
+        replication_factor = (
+            self.ipu_config.inference_replication_factor if for_inference else self.ipu_config.replication_factor
+        )
+        gradient_accumulation_steps = 1 if for_inference else self.ipu_config.gradient_accumulation_steps
+        device_iterations = (
+            self.ipu_config.inference_device_iterations if for_inference else self.ipu_config.device_iterations
+        )
+        micro_batch_size = (
+            self.args.per_device_eval_batch_size if for_inference else self.args.per_device_train_batch_size
+        )
+        global_batch_size = micro_batch_size * replication_factor * gradient_accumulation_steps * device_iterations
+
+        try:
+            len(dataset)
+        except Exception:
+            # If the length of the dataset cannot be determined skip the checks
+            return
+        if len(dataset) < global_batch_size:
+            mode_str = "inference_" if for_inference else ""
+            logger.warning(
+                f"The provided dataset is of length {len(dataset)}, but the total dataset batch size is {global_batch_size}. "
+                f"This batch size is calculated as:\n"
+                f"  per_device_{'eval' if for_inference else 'train'}_batch_size={micro_batch_size}\n"
+                f"* {mode_str}{replication_factor=}\n"
+                f"* {mode_str}{gradient_accumulation_steps=}\n"
+                f"* {mode_str}{device_iterations=}\n"
+                "Please disregard this warning if you believe the dataset is reporting an incorrect length, such as 1."
+            )
+
     def get_train_dataloader(self) -> poptorch.DataLoader:
         """
         Returns the training `poptorch.DataLoader`.
@@ -657,6 +694,8 @@ class IPUTrainer:
             if self.args.dataloader_num_workers
             else combined_batch_size
         )
+
+        self._check_dataset_can_fill_batch(train_dataset, for_inference=False)
 
         return poptorch.DataLoader(
             self.opts,
@@ -713,6 +752,8 @@ class IPUTrainer:
 
         eval_sampler = self._get_eval_sampler(eval_dataset)
 
+        self._check_dataset_can_fill_batch(eval_dataset, for_inference=True)
+
         return poptorch.DataLoader(
             self.eval_opts,
             eval_dataset,
@@ -760,6 +801,8 @@ class IPUTrainer:
             )
 
         test_sampler = self._get_eval_sampler(test_dataset)
+
+        self._check_dataset_can_fill_batch(test_dataset, for_inference=True)
 
         # We use the same batch_size as for eval.
         return poptorch.DataLoader(
@@ -1070,7 +1113,14 @@ class IPUTrainer:
         # Check if saved optimizer or scheduler states exist
         self._load_optimizer_and_scheduler(resume_from_checkpoint)
 
-        self.compile_model(self.training_model, next(iter(train_dataloader)), log=True)
+        try:
+            model_inputs = next(iter(train_dataloader))
+        except StopIteration:
+            raise ValueError(
+                "Couldn't get first sample from dataloader, please check for warnings "
+                "during dataloader construction."
+            )
+        self.compile_model(self.training_model, model_inputs, log=True)
 
         # Train!
         num_examples = (
@@ -1849,7 +1899,14 @@ class IPUTrainer:
 
     def _wrap_and_compile_model_for_evaluation(self, dataloader, prediction_loss_only):
         model = self.wrap_model(self.model, training=False)
-        self.compile_model(model, next(iter(dataloader)), log=True)
+        try:
+            model_inputs = next(iter(dataloader))
+        except StopIteration:
+            raise ValueError(
+                "Couldn't get first sample from dataloader, please check for warnings "
+                "during dataloader construction."
+            )
+        self.compile_model(model, model_inputs, log=True)
         return model
 
     def evaluation_loop(
