@@ -387,7 +387,12 @@ class IPUTrainer:
             if args.do_train:
                 train_dl = self.get_train_dataloader()
                 model = self.wrap_model(self.model)
-                self.compile_model(model, next(iter(train_dl)), log=True)
+                try:
+                    model_inputs = next(iter(train_dl))
+                except StopIteration:
+                    raise ValueError("Couldn't get first sample from dataloader, please check for warnings "
+                                     "during dataloader construction.")
+                self.compile_model(model, model_inputs, log=True)
             if args.do_eval:
                 # Same thing with _wrap_and_compile_for_evaluation
                 eval_dl = self.get_eval_dataloader()
@@ -1100,7 +1105,12 @@ class IPUTrainer:
         # Check if saved optimizer or scheduler states exist
         self._load_optimizer_and_scheduler(resume_from_checkpoint)
 
-        self.compile_model(self.training_model, next(iter(train_dataloader)), log=True)
+        try:
+            model_inputs = next(iter(train_dataloader))
+        except StopIteration:
+            raise ValueError("Couldn't get first sample from dataloader, please check for warnings "
+                             "during dataloader construction.")
+        self.compile_model(self.training_model, model_inputs, log=True)
 
         # Train!
         num_examples = (
@@ -1879,7 +1889,12 @@ class IPUTrainer:
 
     def _wrap_and_compile_model_for_evaluation(self, dataloader, prediction_loss_only):
         model = self.wrap_model(self.model, training=False)
-        self.compile_model(model, next(iter(dataloader)), log=True)
+        try:
+            model_inputs = next(iter(dataloader))
+        except StopIteration:
+            raise ValueError("Couldn't get first sample from dataloader, please check for warnings "
+                             "during dataloader construction.")
+        self.compile_model(model, model_inputs, log=True)
         return model
 
     def evaluation_loop(
