@@ -390,8 +390,10 @@ class IPUTrainer:
                 try:
                     model_inputs = next(iter(train_dl))
                 except StopIteration:
-                    raise ValueError("Couldn't get first sample from dataloader, please check for warnings "
-                                     "during dataloader construction.")
+                    raise ValueError(
+                        "Couldn't get first sample from dataloader, please check for warnings "
+                        "during dataloader construction."
+                    )
                 self.compile_model(model, model_inputs, log=True)
             if args.do_eval:
                 # Same thing with _wrap_and_compile_for_evaluation
@@ -1114,8 +1116,10 @@ class IPUTrainer:
         try:
             model_inputs = next(iter(train_dataloader))
         except StopIteration:
-            raise ValueError("Couldn't get first sample from dataloader, please check for warnings "
-                             "during dataloader construction.")
+            raise ValueError(
+                "Couldn't get first sample from dataloader, please check for warnings "
+                "during dataloader construction."
+            )
         self.compile_model(self.training_model, model_inputs, log=True)
 
         # Train!
@@ -1898,8 +1902,10 @@ class IPUTrainer:
         try:
             model_inputs = next(iter(dataloader))
         except StopIteration:
-            raise ValueError("Couldn't get first sample from dataloader, please check for warnings "
-                             "during dataloader construction.")
+            raise ValueError(
+                "Couldn't get first sample from dataloader, please check for warnings "
+                "during dataloader construction."
+            )
         self.compile_model(model, model_inputs, log=True)
         return model
 
