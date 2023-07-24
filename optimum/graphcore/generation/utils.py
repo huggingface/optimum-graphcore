@@ -1739,7 +1739,7 @@ class IPUGenerationMixin(GenerationMixin):
             raise ValueError("Context length (input_ids.shape[-1]) > 1 is not supported yet.")
 
         if (max_length - context_length) % self.on_device_generation_steps != 0:
-            logger.info(
+            logger.debug(
                 "`max_length - context_length` does not evenly divide `on_device_generation_steps` "
                 f"({max_length - context_length} vs {self.on_device_generation_steps}). Generation will be done "
                 f"{self.on_device_generation_steps} tokens at a time and stop short of `max_length` so as not to exceed it."
@@ -1841,7 +1841,7 @@ class IPUGenerationMixin(GenerationMixin):
             raise ValueError("Context length (input_ids.shape[-1]) > 1 is not supported yet.")
 
         if (max_length - context_length) % self.on_device_generation_steps != 0:
-            logger.info(
+            logger.debug(
                 "`max_length - context_length` does not evenly divide `on_device_generation_steps` "
                 f"({max_length - context_length} vs {self.on_device_generation_steps}). Generation will be done "
                 f"{self.on_device_generation_steps} tokens at a time and stop short of `max_length` so as not to exceed it."
