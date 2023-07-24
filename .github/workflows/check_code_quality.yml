@@ -42,7 +42,7 @@ jobs:
       run: |
         source code_quality_venv/bin/activate
         pip install --upgrade pip
-        pip install "black~=23.1" "isort>=5.5.4" "ruff>=0.0.241,<=0.0.259"
+        pip install .[quality]
     - name: Check style with black
       run: |
         source code_quality_venv/bin/activate
