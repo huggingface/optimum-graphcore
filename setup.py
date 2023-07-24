@@ -15,7 +15,6 @@
 
 import re
 
-import subprocess
 from pathlib import Path
 from setuptools import find_namespace_packages, setup
 
@@ -94,6 +93,5 @@ setup(
     extras_require=EXTRA_REQUIRE,
     include_package_data=True,
     zip_safe=False,
-#    package_data={"optimum.graphcore": list(map(str, Path("optimum/graphcore/custom_ops/group_quantize_decompress").glob("*.[ch]pp"))) + [str(Path("optimum/graphcore/custom_ops/sdk_version_hash/sdk_version_hash_lib.cpp"))]}
-   package_data={"optimum-graphcore": [str(Path("optimum/graphcore/custom_ops/sdk_version_hash/sdk_version_hash_lib.cpp"))]}
+    package_data={"": ["*.cpp", "*.hpp"]}
 )
