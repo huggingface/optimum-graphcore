@@ -489,6 +489,31 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
                 )
                 self.tie_weights()
 
+    def quantize_linear_layers(self, restore: bool, num_groups: int = 16):
+        if not restore:
+            from ...quantization.group_quantize import GroupQuantLinear
+
+            logger.info("Group quantizing linear layers")
+            for module in self.model.encoder.layers:
+                module.self_attn.q_proj = GroupQuantLinear.from_model(module.self_attn.q_proj, num_groups)
+                module.self_attn.k_proj = GroupQuantLinear.from_model(module.self_attn.k_proj, num_groups)
+                module.self_attn.v_proj = GroupQuantLinear.from_model(module.self_attn.v_proj, num_groups)
+                module.self_attn.out_proj = GroupQuantLinear.from_model(module.self_attn.out_proj, num_groups)
+                module.fc1 = GroupQuantLinear.from_model(module.fc1, num_groups)
+                module.fc2 = GroupQuantLinear.from_model(module.fc2, num_groups)
+
+            for module in self.model.decoder.layers:
+                module.self_attn.q_proj = GroupQuantLinear.from_model(module.self_attn.q_proj, num_groups)
+                module.self_attn.k_proj = GroupQuantLinear.from_model(module.self_attn.k_proj, num_groups)
+                module.self_attn.v_proj = GroupQuantLinear.from_model(module.self_attn.v_proj, num_groups)
+                module.self_attn.out_proj = GroupQuantLinear.from_model(module.self_attn.out_proj, num_groups)
+                module.encoder_attn.q_proj = GroupQuantLinear.from_model(module.encoder_attn.q_proj, num_groups)
+                module.encoder_attn.k_proj = GroupQuantLinear.from_model(module.encoder_attn.k_proj, num_groups)
+                module.encoder_attn.v_proj = GroupQuantLinear.from_model(module.encoder_attn.v_proj, num_groups)
+                module.encoder_attn.out_proj = GroupQuantLinear.from_model(module.encoder_attn.out_proj, num_groups)
+                module.fc1 = GroupQuantLinear.from_model(module.fc1, num_groups)
+                module.fc2 = GroupQuantLinear.from_model(module.fc2, num_groups)
+
     def parallelize(self, for_generation=False, use_cache=False, use_cross_cache=False, **kwargs):
         super().parallelize()
 
@@ -501,6 +526,7 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
             raise ValueError(
                 "`use_cond_encoder=True` is incompatible with `use_encoder_output_buffer=True`, only set one to True."
             )
+        self._use_group_quantized_linears = kwargs.get("use_group_quantized_linears", False)
 
         self.change_encoder_layer_class(restore=False)
         self.change_decoder_class(restore=False)
@@ -513,6 +539,7 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
         )
         self.change_lm_head(restore=False, use_cache=use_cache or not for_generation)
         self.change_encoder_class(restore=not self._use_cond_encoder, **kwargs)
+        self.quantize_linear_layers(restore=not self._use_group_quantized_linears, num_groups=16)
         self.set_on_device_generation_steps(kwargs.get("on_device_generation_steps", 0))
 
         logger.info("---------- Device Allocation -----------")

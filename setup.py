@@ -31,6 +31,7 @@ INSTALL_REQUIRES = [
     "transformers==4.29.2",
     "optimum==1.6.1",
     "diffusers[torch]==0.12.1",
+    "cppimport==22.8.2",
     "datasets",
     "tokenizers",
     "typeguard",
@@ -61,6 +62,7 @@ EXTRA_REQUIRE = {
     "quality": QUALITY_REQUIRES,
 }
 
+
 setup(
     name="optimum-graphcore",
     version=__version__,
@@ -90,4 +92,5 @@ setup(
     extras_require=EXTRA_REQUIRE,
     include_package_data=True,
     zip_safe=False,
+    package_data={"": ["*.cpp", "*.hpp"]}
 )
