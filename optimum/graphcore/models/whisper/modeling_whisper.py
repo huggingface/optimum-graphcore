@@ -492,6 +492,7 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
     def quantize_linear_layers(self, restore: bool, num_groups: int = 16):
         if not restore:
             from ...quantization.group_quantize import GroupQuantLinear
+            logger.info("Group quantizing linear layers")
             for module in self.model.encoder.layers:
                 module.self_attn.q_proj = GroupQuantLinear.from_model(module.self_attn.q_proj, num_groups)
                 module.self_attn.k_proj = GroupQuantLinear.from_model(module.self_attn.k_proj, num_groups)
@@ -525,7 +526,6 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
                 "`use_cond_encoder=True` is incompatible with `use_encoder_output_buffer=True`, only set one to True."
             )
         self._use_group_quantized_linears = kwargs.get("use_group_quantized_linears", False)
-        print(self._use_group_quantized_linears)
 
         self.change_encoder_layer_class(restore=False)
         self.change_decoder_class(restore=False)
