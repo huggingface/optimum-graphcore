@@ -17,6 +17,7 @@ from typing import Tuple
 import numpy as np
 import poptorch
 import torch
+import torch.nn.functional as F
 from numpy.typing import NDArray
 from torch import nn
 
@@ -207,7 +208,4 @@ class GroupQuantLinear(nn.Module):
 
     def forward(self, input):
         weight = group_quantize_decompress(self.w_packed.data, self.w_scale.data, self.w_bias.data, dtype=input.dtype)
-        output = input @ weight.t()
-        if self.bias is not None:
-            output += self.bias
-        return output
+        return F.linear(input, weight, self.bias)
