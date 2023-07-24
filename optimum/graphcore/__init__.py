@@ -17,8 +17,6 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 
-import ctypes
-import os
 import poptorch
 
 from .ipu_configuration import IPUConfig
@@ -75,35 +73,3 @@ from .version import __version__
 
 # Disable poptorch compiler warnings by default
 poptorch.setLogLevel("ERR")
-
-
-# # Load the custom ops
-# def _load_custom_ops():
-#     import ctypes
-#     import pkg_resources
-#     import sysconfig
-#     from pathlib import Path
-
-#     root = Path(pkg_resources.get_distribution("optimum-graphcore").location).absolute()
-#     names = ["custom_ops.so", str(Path("custom_ops.so").with_suffix(sysconfig.get_config_vars()["SO"]))]
-#     paths = [
-#         root / "build" / names[0],
-#         root / names[1],
-#     ]
-#     print("CUSTOM OPS", paths)
-#     for path in paths:
-#         if path.exists():
-#             ctypes.cdll.LoadLibrary(str(path))
-#             print("Loading:", path)
-#             return
-#     # Search recursively in build dir if not found in first level
-#     for name in names:
-#         for path in (root / "build").rglob(str(name)):
-#             if path.exists():
-#                 ctypes.cdll.LoadLibrary(str(path))
-#                 print("Loading:", path)
-#                 return
-#     raise ImportError(f"Cannot find extension library {name} - tried {[str(p) for p in paths]}")  # pragma: no cover
-
-
-# _load_custom_ops()
