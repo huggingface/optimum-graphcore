@@ -12,8 +12,10 @@
 #  See the License for the specific language governing permissions and
 #  limitations under the License.
 from pathlib import Path
+
 from ..custom_ops.utils import load_lib
+
 
 load_lib(Path(__file__).parent.parent / "custom_ops/group_quantize_decompress/group_quantize_decompress.cpp")
 
-from .group_quantize import group_quantize_compress, group_quantize_decompress, GroupQuantLinear
+from .group_quantize import GroupQuantLinear, group_quantize_compress, group_quantize_decompress

@@ -17,12 +17,12 @@ import unittest
 
 
 class TestCustomOps(unittest.TestCase):
-
     def test_group_quantize_compiles(self):
         # Importing quantize should compile
-        from optimum.graphcore.quantization import group_quantize
+        from optimum.graphcore.quantization import group_quantize  # noqa: F401
 
     def test_sdk_version_hash(self):
-        from optimum.graphcore.custom_ops.sdk_version_hash import sdk_version_hash 
+        from optimum.graphcore.custom_ops.sdk_version_hash import sdk_version_hash
+
         hash = sdk_version_hash()
         self.assertTrue(type(hash) is str)
