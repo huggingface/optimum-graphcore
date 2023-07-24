@@ -40,7 +40,6 @@ from ...modeling_utils import (
     shift_tokens_right,
     split_encoder_decoder_ipu_config,
 )
-from ...quantization.group_quantize import GroupQuantLinear
 
 
 logger = logging.get_logger(__name__)
@@ -492,7 +491,7 @@ class PipelinedWhisperForConditionalGeneration(WhisperForConditionalGeneration, 
 
     def quantize_linear_layers(self, restore: bool, num_groups: int = 16):
         if not restore:
-            # Brute force way
+            from ...quantization.group_quantize import GroupQuantLinear
             for module in self.model.encoder.layers:
                 module.self_attn.q_proj = GroupQuantLinear.from_model(module.self_attn.q_proj, num_groups)
                 module.self_attn.k_proj = GroupQuantLinear.from_model(module.self_attn.k_proj, num_groups)

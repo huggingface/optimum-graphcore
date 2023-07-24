@@ -1,3 +1,5 @@
+// cppimport
+// NOTE: the cppimport comment is necessary for dynamic compilation when loading
 // Copyright (c) 2023 Graphcore Ltd. All rights reserved.
 #include <algorithm>
 #include <cstdint>
@@ -106,3 +108,16 @@ true);
 // static popart::popx::OpxCreator<GroupQuantizeDecompressOpx> GroupQuantizeDecompressOpxCreator({GroupQuantizeDecompressOpId});
 
 } // namespace popart
+
+// -------------- cppimport --------------
+// cppimport configuration for compiling the pybind11 module.
+// clang-format off
+/*
+<%
+cfg['sources'] = ['group_quantize_decompressx.cpp']
+cfg['dependencies'] = ['common.hpp', 'group_quantize_decompress.cpp', 'group_quantize_decompressx.cpp']
+cfg['extra_compile_args'] = ['-std=c++17', '-fPIC', '-O2', '-DONNX_NAMESPACE=onnx', '-Wall', '-Wno-sign-compare']
+cfg['libraries'] = ['poplar', 'popart', 'poputil', 'popops', 'poplin', 'popnn', 'poprand']
+setup_pybind11(cfg)
+%>
+*/
