@@ -263,6 +263,8 @@ class IPUGenerationMixin(GenerationMixin):
                 self.poptorch_decoder.encoder_last_hidden_state.copy_(encoder_last_hidden_state)
                 if attention_mask is not None:
                     self.poptorch_decoder.encoder_attention_mask.copy_(attention_mask.half())
+                if self.poptorch_decoder.isCompiled() and not self.poptorch_decoder.isAttachedToDevice():
+                    self.poptorch_decoder.attachToDevice()
                 self.poptorch_decoder.copyNamedBuffersToDevice()
 
         # This will trigger a compile first time it's ran
