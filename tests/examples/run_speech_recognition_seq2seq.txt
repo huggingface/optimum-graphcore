@@ -20,10 +20,6 @@
 > from optimum.graphcore import IPUConfig, IPUSeq2SeqTrainer
 > from optimum.graphcore import IPUSeq2SeqTrainingArguments as Seq2SeqTrainingArguments
 > 
-51c52
-< check_min_version("4.31.0.dev0")
----
-> check_min_version("4.29.0")
 238a240,242
 >     padding: Union[bool, str] = "longest"
 >     pad_to_multiple_of: Optional[int] = None
