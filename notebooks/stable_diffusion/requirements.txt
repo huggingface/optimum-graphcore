@@ -1,2 +1,3 @@
-optimum-graphcore
+optimum-graphcore==0.7
 matplotlib
+graphcore-cloud-tools[logger] @ git+https://github.com/graphcore/graphcore-cloud-tools
