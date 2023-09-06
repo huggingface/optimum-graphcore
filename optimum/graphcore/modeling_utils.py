@@ -20,6 +20,7 @@ from typing import List, Optional, Tuple, Union
 import poptorch
 import torch
 import torch.nn.functional as F
+from peft import PeftModel, PeftType, get_peft_model
 from torch import nn
 from transformers import PreTrainedModel
 
@@ -53,9 +54,11 @@ def register(transformers_cls=None):
 
 
 def to_pipelined(model: nn.Module, ipu_config: IPUConfig, force: bool = False):
-    model_cls = model.__class__
+    model_cls = model.get_base_model().__class__ if isinstance(model, PeftModel) else model.__class__
     pipelined_cls = _PRETRAINED_TO_PIPELINED_REGISTRY.get(model_cls, None)
-    if pipelined_cls is not None:
+    if pipelined_cls is not None and isinstance(model, PeftModel):
+        return pipelined_cls.from_peft(model, ipu_config)
+    elif pipelined_cls is not None:
         return pipelined_cls.from_transformers(model, ipu_config)
     # If the user defined his/her own model and already subclassed from PipelineMixin. I.e., the model is already pipelined.
     elif isinstance(model, PipelineMixin):
@@ -92,9 +95,9 @@ class PipelineMixin:
         config = copy.deepcopy(model.config)
         generation_config = copy.deepcopy(model.generation_config)
         pipelined_model = cls(config)
-        pipelined_model.generation_config = generation_config
         pipelined_model.load_state_dict(model.state_dict())
         pipelined_model.ipu_config = copy.deepcopy(ipu_config)
+        pipelined_model.generation_config = generation_config
         pipelined_model.training = model.training
         return pipelined_model
 
@@ -119,6 +122,42 @@ class PipelineMixin:
         pipelined_model = cls.from_pretrained(model_name_or_path, *model_args, **kwargs)
         pipelined_model.ipu_config = copy.deepcopy(ipu_config)
         return pipelined_model
+
+    @classmethod
+    def from_peft(cls, model: PeftModel, ipu_config: IPUConfig):
+        """
+        Creates a pipelined version of model from a [`~peft.PeftModel`] instance.
+
+        Currently, only `peft.PeftType.LORA` is supported.
+
+        Args:
+            model ([`~peft.PeftModel`]):
+                The model to convert to a pipelined model.
+            ipu_config ([`IPUConfig`]):
+                The `IPUConfig` instance of the pipelined model.
+
+        Returns:
+            An instance of `peft.PeftModel` wrapping a pipelined version of the base model.
+        """
+        # Technically speaking, instead of returning an instance of a `PipelineMixin`, such as Pipelined<Model>For<Task>,
+        # we return an instance of a `peft.PeftModel` which wraps such a pipelined model and defers attribute access.
+        if len(model.peft_config) > 1 or model.active_adapter != "default":
+            raise ValueError("Currently only `PeftModel` instances with the `'default'` adapter are supported.")
+        if model.peft_type != PeftType.LORA:
+            raise ValueError(f"Currently only LoRA is supported, received {model.peft_type}.")
+
+        pretrained = model.get_base_model()
+        config = copy.deepcopy(pretrained.config)
+        generation_config = copy.deepcopy(pretrained.generation_config)
+        peft_config = model.active_peft_config
+
+        pipelined_model = cls(config)
+        pipelined_model.ipu_config = copy.deepcopy(ipu_config)
+        pipelined_model.generation_config = generation_config
+        peft_pipelined_model = get_peft_model(pipelined_model, peft_config)
+        peft_pipelined_model.load_state_dict(model.state_dict())
+        peft_pipelined_model.training = model.training
+        return peft_pipelined_model
 
     @classmethod
     def from_model(cls, model: nn.Module):

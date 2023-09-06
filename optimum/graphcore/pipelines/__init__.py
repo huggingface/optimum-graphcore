@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional, Union
 import poptorch
 import torch
 import transformers.pipelines
+from peft import PeftModel
 from transformers import (
     AudioClassificationPipeline,
     AutoFeatureExtractor,
@@ -375,6 +376,11 @@ def pipeline(
                 break
             except ValueError:
                 continue
+    elif isinstance(model, PeftModel):
+        raise TypeError(
+            "Instead of providing `model` as an instance of `PeftModel`, please call `merge_and_unload()` if LoRA "
+            "or equivalent to obtain the original `PreTrainedModel` back with adapter weights merged in."
+        )
     elif isinstance(model, PreTrainedModel):
         if tokenizer is None and load_tokenizer:
             raise ValueError("If you pass a model as a PreTrainedModel, you must pass a tokenizer as well")
