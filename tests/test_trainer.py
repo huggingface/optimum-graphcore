@@ -713,7 +713,7 @@ class IPUTrainerIntegrationTest(TestCasePlus, IPUTrainerIntegrationCommon):
         trainer = get_regression_trainer(a=1.5, b=2.5, double_output=True, label_names=["labels"])
         preds = trainer.predict(trainer.eval_dataset).predictions
         x = trainer.eval_dataset.x
-        self.assertTrue(len(preds), 2)
+        self.assertEqual(len(preds), 2)
         self.assertTrue(np.allclose(preds[0], 1.5 * x + 2.5))
         self.assertTrue(np.allclose(preds[1], 1.5 * x + 2.5))
 
