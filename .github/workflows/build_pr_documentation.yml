@@ -54,8 +54,8 @@ jobs:
           sudo chmod -R ugo+rwx graphcore-doc-build
           cd graphcore-doc-build
           sudo mv optimum.graphcore optimum-graphcore
-          echo ${{ env.COMMIT_SHA }} > ./commit_sha
-          echo ${{ env.PR_NUMBER }} > ./pr_number
+          echo ${COMMIT_SHA} > ./commit_sha
+          echo ${PR_NUMBER} > ./pr_number
 
       - uses: actions/upload-artifact@ff15f0306b3f739f7b6fd43fb5d26cd321bd4de5 # v3.2.1
         with:
