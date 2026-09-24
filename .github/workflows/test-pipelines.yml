@@ -5,8 +5,12 @@ on:
     # At the end of everyday
     - cron: 0 6 * * *
 
+permissions: {}
+
 jobs:
   build:
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
